@@ -1,6 +1,11 @@
 import type {Metadata} from 'next';
 import type {ReactNode} from 'react';
+import {IBM_Plex_Sans, IBM_Plex_Mono} from 'next/font/google';
+import {cn} from '@/lib/utils';
 import './globals.css';
+
+const sans = IBM_Plex_Sans({subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-sans'});
+const mono = IBM_Plex_Mono({subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-mono'});
 
 export const metadata: Metadata = {
   title: 'Zoomy — weekly digests',
@@ -10,13 +15,7 @@ export const metadata: Metadata = {
 export default function RootLayout({children}: {children: ReactNode}) {
   return (
     <html lang="en">
-      <body>
-        <header className="topbar">
-          <span className="brand">Zoomy</span>
-          <span className="topbar__sub">weekly store-ops digests</span>
-        </header>
-        {children}
-      </body>
+      <body className={cn(sans.variable, mono.variable, 'font-sans antialiased')}>{children}</body>
     </html>
   );
 }
