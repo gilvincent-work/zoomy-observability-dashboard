@@ -10,10 +10,14 @@ no synthesis, no retrieval, no writes.
 
 ## Security boundary (load-bearing)
 
-Reads use the Supabase **anon key + a row-level-security read policy** on
-`digest_archive`. The **service-role key must never be used here** — it bypasses
-RLS and belongs only to the server-side batch job. See
-`knowledge/best-practices/vercel-react-dashboard.md` in the daVinci knowledge base.
+`digest_archive` is **not anon-readable** — its `bundle` column holds verbatim
+customer quotes — so the dashboard reads it **server-side** (a Server Component)
+with the observability project's **service-role key**, selecting only the
+rendered `digest` (never `bundle`). The key lives in **server-only** env vars
+(`SUPABASE_*_ARCHIVE`, no `NEXT_PUBLIC_`); `src/data.ts` starts with
+`import 'server-only'` so the build fails if it's ever pulled into a client
+component. The key never reaches the browser. See
+`knowledge/best-practices/vercel-react-dashboard.md`.
 
 ## Run
 
@@ -22,10 +26,10 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-With no `NEXT_PUBLIC_SUPABASE_*` env set, the app renders **built-in mock
-digests** (one normal, one degraded) so it runs with no database. Set the env
-(see `.env.example`) to read live archives once the `digest_archive` table and
-its anon RLS policy exist.
+With no `SUPABASE_*_ARCHIVE` env set, the app renders **built-in mock digests**
+(one normal, one degraded) so it runs with no database. Set the env (see
+`.env.example`) to read live archives once the `digest_archive` table exists in
+the observability project (server-side service-role read; no anon policy).
 
 ```bash
 npm run build      # production build

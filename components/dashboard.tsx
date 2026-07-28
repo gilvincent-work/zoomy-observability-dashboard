@@ -80,7 +80,8 @@ export function Dashboard({digests, usingMock}: {digests: DigestArchiveRow[]; us
               <>
                 <Separator />
                 <div className="p-3 text-[11px] leading-snug text-muted-foreground">
-                  Mock data — set <code className="font-mono">NEXT_PUBLIC_SUPABASE_*</code> to read live archives.
+                  Mock data — set <code className="font-mono">SUPABASE_*_ARCHIVE</code> (server-side) to read live
+                  archives.
                 </div>
               </>
             )}

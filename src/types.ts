@@ -34,6 +34,6 @@ export interface DigestArchiveRow {
   window_to: string;
   digest: DigestDocument;
   created_at: string;
-  emailed_at: string | null;
-  bundle?: unknown;
+  emailed_at?: string | null; // not in the archive schema yet (added when email idempotency lands)
+  bundle?: unknown;           // never fetched by the dashboard (holds verbatim quotes)
 }
