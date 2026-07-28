@@ -154,6 +154,18 @@
   --chart-3: oklch(0.68 0.085 184);
   --chart-4: oklch(0.62 0.055 212);
   --chart-5: oklch(0.4 0.05 216);
+  /* Categorical series — the dataviz skill's VALIDATED reference palette
+     (blue/orange/aqua/magenta = slots 1/2/3/5; yellow skipped, it fails
+     all-pairs beside orange). Used only where hues must be distinct (the
+     4-way traffic donut), never for single-series marks. Light steps. */
+  --cat-1: #2a78d6; /* blue   */
+  --cat-2: #eb6834; /* orange */
+  --cat-3: #1baf7a; /* aqua — ties to the teal brand */
+  --cat-4: #e87ba4; /* magenta */
+  /* Status — reserved, always shipped with an icon + label, never a series. */
+  --status-good: #128a5b;
+  --status-warn: #b4780a;
+  --status-crit: #d1453b;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -187,5 +199,14 @@
     --chart-3: oklch(0.8 0.09 180);
     --chart-4: oklch(0.66 0.06 212);
     --chart-5: oklch(0.5 0.06 216);
+    /* Categorical — the reference palette's DARK steps (same hues, re-stepped
+       for the dark surface, validated as a set). */
+    --cat-1: #3987e5;
+    --cat-2: #d95926;
+    --cat-3: #199e70;
+    --cat-4: #d55181;
+    --status-good: #2ec27e;
+    --status-warn: #e0a232;
+    --status-crit: #f26d68;
   }
 }
