@@ -1,13 +1,12 @@
 import {getDigests, usingMock} from '../src/data';
-import {getBrief} from '../src/salesSignals';
+import {maskRows} from '../src/pii';
 import {AnalystDashboard} from '@/components/analyst/analyst-dashboard';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
 export default async function Page() {
-  const digests = await getDigests();
-  // Sales/CRM/traffic analyst brief is mocked until the extended retrieval bundle
-  // (Shopify/CRM/GA4 — Dev A's seam) exists; the digest archive is already live-shaped.
-  const brief = getBrief();
-  return <AnalystDashboard digests={digests} brief={brief} usingMock={usingMock()} />;
+  // Server Component: read archives (service-role) and mask customer PII HERE,
+  // before anything reaches the browser (no auth in front of this app yet).
+  const digests = maskRows(await getDigests());
+  return <AnalystDashboard digests={digests} usingMock={usingMock()} />;
 }
