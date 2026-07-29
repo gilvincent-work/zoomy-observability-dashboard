@@ -18,6 +18,39 @@ export interface DigestFigure {
   timeBasis: TimeBasis;   // explicit — all-time is never shown as "this week"
 }
 
+// Sales/customers figures use only window|allTime (no 'recurring'), but reuse
+// DigestFigure — the wider TimeBasis is a harmless superset here.
+
+export interface DigestSalesProduct {
+  title: string;
+  revenue: number;
+}
+export interface DigestSalesWatch {
+  title: string;
+  note: string;
+}
+export interface DigestSales {
+  headline: string;
+  figures: DigestFigure[];
+  topProducts: DigestSalesProduct[];   // title ∈ salesSignals.windowed.topProducts
+  watch: DigestSalesWatch[];           // title ∈ salesSignals.windowed.decliningProducts
+  recommendations: string[];
+}
+
+export type OutreachList = 'vip' | 'atRisk' | 'new';
+export interface DigestOutreach {
+  name: string;            // masked server-side before it reaches the browser (see src/pii.ts)
+  list: OutreachList;
+  canEmail: boolean;       // MARKETING consent — not general reachability
+  note: string;
+}
+export interface DigestCustomers {
+  headline: string;
+  figures: DigestFigure[];
+  outreach: DigestOutreach[];
+  recommendations: string[];
+}
+
 export interface DigestDocument {
   window: { label: string; from: string; to: string };
   degraded: boolean;
@@ -25,6 +58,10 @@ export interface DigestDocument {
   themes: DigestTheme[];
   figures: DigestFigure[];
   recommendations: string[];
+  // Optional sections — present only when the batch job passed a sales/customers
+  // block; null (or absent, for older archived rows) otherwise.
+  sales?: DigestSales | null;
+  customers?: DigestCustomers | null;
 }
 
 // One row of the digest_archive table (bundle omitted — the dashboard doesn't
