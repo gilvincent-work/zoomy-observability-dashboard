@@ -14,6 +14,7 @@ import {
   ShoppingCart,
   Sparkles,
   TrendingDown,
+  TrendingUp,
   TriangleAlert,
   Users,
 } from 'lucide-react';
@@ -122,31 +123,6 @@ function DigestPane({row}: {row: DigestArchiveRow}) {
         </p>
       </header>
 
-      {/* CONVERSATIONS */}
-      <section className="mb-10">
-        <Eyebrow icon={MessageSquare}>This week in conversations</Eyebrow>
-        <FigureTiles figures={view.figures} />
-        {view.themes.length > 0 && (
-          <div className="mb-6 space-y-3">
-            {view.themes.map((t, i) => (
-              <Card key={i}>
-                <CardContent className="p-4">
-                  <div className="mb-1 flex items-center gap-1.5 font-medium">
-                    <Quote className="size-3.5 text-muted-foreground" />
-                    {t.displayName}
-                  </div>
-                  <blockquote className="border-l-2 border-primary/40 pl-3 text-sm italic text-foreground/80">
-                    “{t.quote}”
-                  </blockquote>
-                  <div className="mt-2 font-mono text-[11px] text-muted-foreground">{t.conversationId}</div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-        <ActionList items={view.recommendations} />
-      </section>
-
       {/* SALES */}
       {sales && (
         <section className="mb-10">
@@ -175,6 +151,22 @@ function DigestPane({row}: {row: DigestArchiveRow}) {
                 </ul>
               </CardContent>
             </Card>
+          )}
+
+          {sales.rising && sales.rising.length > 0 && (
+            <div className="mb-4 space-y-2">
+              {sales.rising.map((r, i) => (
+                <Card key={i} className="border-l-2" style={{borderLeftColor: 'var(--status-good)'}}>
+                  <CardContent className="flex items-start gap-3 p-4">
+                    <TrendingUp className="mt-0.5 size-4 shrink-0" style={{color: 'var(--status-good)'}} />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{r.title}</div>
+                      <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{r.note}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
 
           {sales.watch.length > 0 && (
@@ -236,6 +228,31 @@ function DigestPane({row}: {row: DigestArchiveRow}) {
           <ActionList items={customers.recommendations} />
         </section>
       )}
+
+      {/* CONVERSATIONS — PawPal (last; thinnest data for now) */}
+      <section className="mb-10">
+        <Eyebrow icon={MessageSquare}>This week in conversations (PawPal)</Eyebrow>
+        <FigureTiles figures={view.figures} />
+        {view.themes.length > 0 && (
+          <div className="mb-6 space-y-3">
+            {view.themes.map((t, i) => (
+              <Card key={i}>
+                <CardContent className="p-4">
+                  <div className="mb-1 flex items-center gap-1.5 font-medium">
+                    <Quote className="size-3.5 text-muted-foreground" />
+                    {t.displayName}
+                  </div>
+                  <blockquote className="border-l-2 border-primary/40 pl-3 text-sm italic text-foreground/80">
+                    “{t.quote}”
+                  </blockquote>
+                  <div className="mt-2 font-mono text-[11px] text-muted-foreground">{t.conversationId}</div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+        <ActionList items={view.recommendations} />
+      </section>
 
       {/* COMING SOON — honest placeholder for the not-yet-wired retrieval seams */}
       <section className="mb-10">

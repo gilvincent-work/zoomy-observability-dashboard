@@ -38,6 +38,9 @@ export const MOCK_DIGESTS: DigestArchiveRow[] = [
           {title: 'Freeze Dried Munchies', revenue: 980},
           {title: 'Meaty Treats', revenue: 620.25},
         ],
+        rising: [
+          {title: 'Joint Support Chews', note: 'Up 38% vs last week (₱900 → ₱1,240) — momentum building.'},
+        ],
         watch: [
           {title: 'Grain-Free Senior Kibble', note: 'Dropped from ₱540 last week to ₱0 this week (-100%) — check stock/listing.'},
         ],
