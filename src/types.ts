@@ -33,6 +33,7 @@ export interface DigestSales {
   headline: string;
   figures: DigestFigure[];
   topProducts: DigestSalesProduct[];   // title ∈ salesSignals.windowed.topProducts
+  rising?: DigestSalesWatch[];         // momentum: title ∈ risingProducts. Optional — archived rows predating the enrichment lack it.
   watch: DigestSalesWatch[];           // title ∈ salesSignals.windowed.decliningProducts
   recommendations: string[];
 }

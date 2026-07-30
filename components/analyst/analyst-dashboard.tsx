@@ -14,6 +14,7 @@ import {
   ShoppingCart,
   Sparkles,
   TrendingDown,
+  TrendingUp,
   TriangleAlert,
   Users,
 } from 'lucide-react';
@@ -150,6 +151,22 @@ function DigestPane({row}: {row: DigestArchiveRow}) {
                 </ul>
               </CardContent>
             </Card>
+          )}
+
+          {sales.rising && sales.rising.length > 0 && (
+            <div className="mb-4 space-y-2">
+              {sales.rising.map((r, i) => (
+                <Card key={i} className="border-l-2" style={{borderLeftColor: 'var(--status-good)'}}>
+                  <CardContent className="flex items-start gap-3 p-4">
+                    <TrendingUp className="mt-0.5 size-4 shrink-0" style={{color: 'var(--status-good)'}} />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{r.title}</div>
+                      <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{r.note}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
 
           {sales.watch.length > 0 && (
