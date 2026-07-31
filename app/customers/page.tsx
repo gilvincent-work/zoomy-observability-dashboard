@@ -1,15 +1,13 @@
 import {getDigests} from '@/src/data';
 import {getBrief} from '@/src/salesSignals';
 import {pickIndex} from '@/src/week';
-import {OverviewTab} from '@/components/analyst/tabs';
+import {CustomersTab} from '@/components/analyst/tabs';
 
-export const dynamic = 'force-dynamic'; // reflect the latest archive when live
+export const dynamic = 'force-dynamic';
 
 export default async function Page({searchParams}: {searchParams: {week?: string}}) {
-  // Customer PII is masked inside getDigests() (server-only) rather than here, so
-  // every route is fail-closed — see src/data.ts + src/pii.ts.
   const digests = await getDigests();
   const row = digests[pickIndex(digests, searchParams.week)];
   if (!row) return <div className="p-10 text-muted-foreground">No digests archived yet.</div>;
-  return <OverviewTab brief={getBrief()} row={row} />;
+  return <CustomersTab brief={getBrief()} row={row} />;
 }
