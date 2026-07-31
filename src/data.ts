@@ -1,4 +1,5 @@
 import 'server-only';
+import {cache} from 'react';
 import {createClient} from '@supabase/supabase-js';
 import type {DigestArchiveRow} from './types';
 import {MOCK_DIGESTS} from './mock';
@@ -21,13 +22,16 @@ export function usingMock(): boolean {
 
 /**
  * Read archived digests, newest first (server-side, service-role, no `bundle`).
+ * Wrapped in React `cache()` so the shared layout and the page don't double-fetch
+ * within a single request.
  *
  * PII masking happens HERE, at the single read seam, rather than in each Server
- * Component: masking per-caller makes a leak one forgotten call away. Masking at
- * the source is fail-closed — no unmasked customer name can enter an RSC payload.
- * (There is no auth in front of this app yet; relax once there is.) See src/pii.ts.
+ * Component: the shell plus five routes all consume this, and masking per-caller
+ * makes a leak one forgotten call away. Masking at the source is fail-closed —
+ * no unmasked customer name can enter an RSC payload. (There is no auth in front
+ * of this app yet; relax once there is.) See src/pii.ts.
  */
-export async function getDigests(): Promise<DigestArchiveRow[]> {
+export const getDigests = cache(async (): Promise<DigestArchiveRow[]> => {
   if (usingMock()) return maskRows(MOCK_DIGESTS);
   const supabase = createClient(url as string, serviceKey as string, {auth: {persistSession: false}});
   const {data, error} = await supabase
@@ -36,4 +40,4 @@ export async function getDigests(): Promise<DigestArchiveRow[]> {
     .order('window_to', {ascending: false});
   if (error) throw new Error(`digest_archive read failed: ${error.message}`);
   return maskRows((data ?? []) as unknown as DigestArchiveRow[]);
-}
+});

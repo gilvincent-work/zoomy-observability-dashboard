@@ -45,6 +45,7 @@ export interface Anomaly {
   severity: Severity;
   detail: string;
   metric: string; // the figure that tripped it
+  category: Category; // which tab/domain it belongs to
 }
 
 export interface SalesSignals {
@@ -218,18 +219,21 @@ export const MOCK_BRIEF: AnalystBrief = {
       severity: 'critical',
       detail: 'Repeated asks and a live query against 0 units on hand — the store is turning away ready buyers.',
       metric: '6 asks · 0 units',
+      category: 'inventory',
     },
     {
       label: 'Puppy starter pack sales down 22% WoW',
       severity: 'warning',
       detail: 'A double-digit drop week-over-week; worth checking pricing, listing, or seasonality.',
       metric: '▼22% WoW',
+      category: 'revenue',
     },
     {
       label: 'Churn ticked to 9%',
       severity: 'watch',
       detail: 'Within normal range but trending up; the at-risk win-back should keep it in check.',
       metric: '9% churn',
+      category: 'crm',
     },
   ],
 };
