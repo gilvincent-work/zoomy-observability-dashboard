@@ -1,5 +1,6 @@
 import 'server-only';
 import {cache} from 'react';
+import {unstable_noStore as noStore} from 'next/cache';
 import {createClient} from '@supabase/supabase-js';
 import type {DigestArchiveRow} from './types';
 import {MOCK_DIGESTS} from './mock';
@@ -32,6 +33,11 @@ export function usingMock(): boolean {
  * of this app yet; relax once there is.) See src/pii.ts.
  */
 export const getDigests = cache(async (): Promise<DigestArchiveRow[]> => {
+  // Never serve a stale archive: opt out of Next's Data Cache so a freshly
+  // generated digest shows immediately. (React cache() above still de-dupes the
+  // read within a single request.) Without this, the Supabase fetch could be
+  // cached in .next/cache across dev-server restarts, hiding the newest week.
+  noStore();
   if (usingMock()) return maskRows(MOCK_DIGESTS);
   const supabase = createClient(url as string, serviceKey as string, {auth: {persistSession: false}});
   const {data, error} = await supabase
