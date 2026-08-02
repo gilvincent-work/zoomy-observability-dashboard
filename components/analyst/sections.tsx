@@ -198,7 +198,7 @@ export function SalesSection({row}: {row: DigestArchiveRow}) {
   const topMax = Math.max(1, ...sales.topProducts.map((p) => p.revenue));
   return (
     <section className="mb-10">
-      <Eyebrow icon={ShoppingCart}>Sales</Eyebrow>
+      <Eyebrow icon={ShoppingCart}>Website sales — zoomyforpets.com</Eyebrow>
       <p className="mb-4 text-sm leading-relaxed text-foreground/80">{sales.headline}</p>
       <FigureTiles figures={sales.figures} />
 

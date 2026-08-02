@@ -4,9 +4,11 @@
 // the server pages pass only serializable data (brief/row), and these compose the
 // client sections (./sections) + charts (./charts), which take lucide icon
 // component props — those can't cross the server→client boundary, so tabs are client.
-import {Activity, Gauge, Lightbulb, Package, Sparkles, TriangleAlert, Users} from 'lucide-react';
+import {useState} from 'react';
+import {Activity, Gauge, Globe, Lightbulb, Package, Sparkles, Store, TriangleAlert, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import type {AnalystBrief, Category} from '../../src/salesSignals';
+import {cn} from '@/lib/utils';
 import {ConversionFunnel, TopSkusChart, TrafficDonut} from './charts';
 import {PreferencesForm} from './settings/preferences-form';
 import {
@@ -46,53 +48,134 @@ function TabContainer({children}: {children: React.ReactNode}) {
 
 type TabProps = {brief: AnalystBrief; row: DigestArchiveRow};
 
-// ── Overview — the executive summary ────────────────────────────────────────────
-// Real digest first (sales → customers → conversations), then the mock predictive
-// layer, then the honest "not wired yet" note. The mock KPI row that used to head
-// this tab was dropped in the merge: its revenue/AOV numbers sat directly above the
-// real ones from `digest.sales`, which read as two conflicting truths.
+// ── Channel switch — Website (zoomyforpets.com) vs Shopee marketplace ───────────
+// The two are separate businesses with different metrics; mixing them on one page
+// reads as conflicting truths. Pick a channel first, then see its breakdown.
+type Channel = 'all' | 'website' | 'shopee';
+const CHANNELS: {key: Channel; label: string; icon: typeof Globe; source: string; accent: string}[] = [
+  {key: 'all', label: 'All channels', icon: Sparkles, source: 'Website + Shopee', accent: 'text-muted-foreground'},
+  {key: 'website', label: 'Website', icon: Globe, source: 'zoomyforpets.com', accent: 'text-primary'},
+  {key: 'shopee', label: 'Shopee', icon: Store, source: 'Marketplace', accent: 'text-[#ee4d2d]'},
+];
+
+// The primary control: pick a channel, then see its breakdown. Cards (not tiny
+// segmented buttons) so it reads as the first decision — each shows its source,
+// carries a channel-recognizable icon color, and the active one gets a primary ring.
+function ChannelSwitch({value, onChange}: {value: Channel; onChange: (c: Channel) => void}) {
+  return (
+    <div className="mb-8">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">View by channel</div>
+      <div role="radiogroup" aria-label="Channel" className="grid gap-2.5 sm:grid-cols-3">
+        {CHANNELS.map((c) => {
+          const Icon = c.icon;
+          const active = value === c.key;
+          return (
+            <button
+              key={c.key}
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(c.key)}
+              className={cn(
+                'group flex items-center gap-3 rounded-xl border p-3 text-left outline-none transition-all',
+                'focus-visible:ring-2 focus-visible:ring-ring',
+                active
+                  ? 'border-primary/60 bg-primary/[0.06] ring-1 ring-primary/25'
+                  : 'border-border bg-card hover:border-foreground/20 hover:bg-muted/40',
+              )}
+            >
+              <span
+                className={cn(
+                  'flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+                  active ? 'bg-primary/15' : 'bg-muted group-hover:bg-muted/70',
+                )}
+              >
+                <Icon className={cn('size-4', c.accent)} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold leading-tight text-foreground">{c.label}</span>
+                <span className="block truncate text-xs text-muted-foreground">{c.source}</span>
+              </span>
+              <span
+                className={cn(
+                  'ml-auto size-2 shrink-0 rounded-full transition-opacity',
+                  active ? 'bg-primary opacity-100' : 'opacity-0',
+                )}
+                aria-hidden
+              />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Overview — the executive summary, scoped by channel ─────────────────────────
 export function OverviewTab({brief, row}: TabProps) {
+  const [channel, setChannel] = useState<Channel>('all');
   if (row.digest.degraded) return <TabContainer><DegradedNote row={row} /></TabContainer>;
   const s = brief.signals;
+  const showWebsite = channel === 'all' || channel === 'website';
+  const showShopee = channel === 'all' || channel === 'shopee';
+  const hasShopee = Boolean(row.digest.shopee);
   return (
     <TabContainer>
       <VerdictHero row={row} />
+      <ChannelSwitch value={channel} onChange={setChannel} />
 
-      <SalesSection row={row} />
-      <ShopeeSection row={row} />
-      <CustomersSection row={row} />
-      <ConversationsSection row={row} />
+      {/* Website (zoomyforpets.com): Shopify sales, CRM customers, PawPal conversations */}
+      {showWebsite && (
+        <>
+          <SalesSection row={row} />
+          <CustomersSection row={row} />
+          <ConversationsSection row={row} />
+        </>
+      )}
 
-      <section className="mb-10">
-        <Eyebrow icon={Sparkles}>What I predict</Eyebrow>
-        <MockNote>
-          Mock predictive layer — the forecast, predictions and anomalies below are generated from sample signals,
-          not from the archived digest. Everything above this point is real.
-        </MockNote>
-        <div className="grid gap-4 lg:grid-cols-5">
-          <RevenueForecastCard revenue={s.revenue} />
-          <PredictionCards predictions={brief.predictions} className="lg:col-span-2" />
-        </div>
-      </section>
+      {/* Shopee marketplace: sales, ads/ROAS, traffic */}
+      {showShopee && <ShopeeSection row={row} />}
+      {channel === 'shopee' && !hasShopee && (
+        <ComingSoonNote>
+          No Shopee data for this week yet. Drop the Seller-Center exports (sales / traffic / ads) into
+          <code className="mx-1 font-mono">data/shopee/</code> and re-run the digest to populate this channel.
+        </ComingSoonNote>
+      )}
 
-      <section className="mb-10">
-        <Eyebrow icon={Lightbulb}>What you should do — ranked by impact × confidence</Eyebrow>
-        <MockNote>Mock — ranked actions from the sample brief. The digest&apos;s real actions are listed in each section above.</MockNote>
-        <RecommendationsList recs={brief.recommendations} />
-      </section>
+      {/* Mock predictive layer is website/brand-level — hide it in the Shopee-only view */}
+      {showWebsite && (
+        <>
+          <section className="mb-10">
+            <Eyebrow icon={Sparkles}>What I predict</Eyebrow>
+            <MockNote>
+              Mock predictive layer — the forecast, predictions and anomalies below are generated from sample signals,
+              not from the archived digest. Everything above this point is real.
+            </MockNote>
+            <div className="grid gap-4 lg:grid-cols-5">
+              <RevenueForecastCard revenue={s.revenue} />
+              <PredictionCards predictions={brief.predictions} className="lg:col-span-2" />
+            </div>
+          </section>
 
-      <section className="mb-10">
-        <Eyebrow icon={TriangleAlert}>Anomaly radar</Eyebrow>
-        <MockNote>Mock — anomaly detection has no retrieval seam yet.</MockNote>
-        <AnomalyRadar anomalies={brief.anomalies} />
-      </section>
+          <section className="mb-10">
+            <Eyebrow icon={Lightbulb}>What you should do — ranked by impact × confidence</Eyebrow>
+            <MockNote>Mock — ranked actions from the sample brief. The digest&apos;s real actions are listed in each section above.</MockNote>
+            <RecommendationsList recs={brief.recommendations} />
+          </section>
 
-      <ComingSoonNote>
-        {PENDING_SEAMS} They&apos;re labeled as mock rather than presented as real — every unlabeled number on this
-        page comes from the archived digest.
-      </ComingSoonNote>
+          <section className="mb-10">
+            <Eyebrow icon={TriangleAlert}>Anomaly radar</Eyebrow>
+            <MockNote>Mock — anomaly detection has no retrieval seam yet.</MockNote>
+            <AnomalyRadar anomalies={brief.anomalies} />
+          </section>
 
-      <RepromptPanel row={row} />
+          <ComingSoonNote>
+            {PENDING_SEAMS} They&apos;re labeled as mock rather than presented as real — every unlabeled number on this
+            page comes from the archived digest.
+          </ComingSoonNote>
+
+          <RepromptPanel row={row} />
+        </>
+      )}
     </TabContainer>
   );
 }
