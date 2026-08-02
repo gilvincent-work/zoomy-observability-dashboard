@@ -66,6 +66,20 @@ export const MOCK_DIGESTS: DigestArchiveRow[] = [
           'Reward Jane with a loyalty perk to reinforce repeat purchases.',
         ],
       },
+      shopee: {
+        headline: 'Shopee ads are profitable at 2.3× ROAS — the marketplace is carrying volume this week.',
+        figures: [
+          {label: 'Ad spend (PHP)', value: 8177.18, timeBasis: 'window'},
+          {label: 'Ad GMV (PHP)', value: 18827, timeBasis: 'window'},
+          {label: 'ROAS', value: 2.3, timeBasis: 'window'},
+          {label: 'Marketplace buyers', value: 22, timeBasis: 'window'},
+          {label: 'Visitors', value: 616, timeBasis: 'window'},
+        ],
+        recommendations: [
+          'Scale the "Shop GMV Max" campaign — ROAS 2.3× is well above break-even.',
+          'ACOS is 43% — trim bids on low-converting placements to protect margin.',
+        ],
+      },
     },
   },
   {

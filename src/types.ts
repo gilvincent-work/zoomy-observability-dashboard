@@ -52,6 +52,14 @@ export interface DigestCustomers {
   recommendations: string[];
 }
 
+// Shopee marketplace channel (separate from the website). Fed from manual
+// Seller-Center exports; a simple headline + figures + actions shape.
+export interface DigestShopee {
+  headline: string;
+  figures: DigestFigure[];
+  recommendations: string[];
+}
+
 export interface DigestDocument {
   window: { label: string; from: string; to: string };
   degraded: boolean;
@@ -59,10 +67,11 @@ export interface DigestDocument {
   themes: DigestTheme[];
   figures: DigestFigure[];
   recommendations: string[];
-  // Optional sections — present only when the batch job passed a sales/customers
+  // Optional sections — present only when the batch job passed the corresponding
   // block; null (or absent, for older archived rows) otherwise.
   sales?: DigestSales | null;
   customers?: DigestCustomers | null;
+  shopee?: DigestShopee | null;
 }
 
 // One row of the digest_archive table (bundle omitted — the dashboard doesn't

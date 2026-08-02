@@ -24,6 +24,7 @@ import {
   RepromptPanel,
   RevenueForecastCard,
   SalesSection,
+  ShopeeSection,
   VerdictHero,
 } from './sections';
 
@@ -58,6 +59,7 @@ export function OverviewTab({brief, row}: TabProps) {
       <VerdictHero row={row} />
 
       <SalesSection row={row} />
+      <ShopeeSection row={row} />
       <CustomersSection row={row} />
       <ConversationsSection row={row} />
 
