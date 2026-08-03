@@ -59,6 +59,10 @@ export interface DigestShopeeFacet {
   headline: string;
   figures: DigestFigure[];
   recommendations: string[];
+  // Real export date range for THIS facet (ads is a 14-day window; sales/traffic/
+  // products are 30-day). Stamped from the export by the batch job — see
+  // reconcileShopeeWindows. Absent on older archived rows.
+  window?: {from: string | null; to: string | null; label: string | null} | null;
 }
 export interface DigestShopee {
   sales?: DigestShopeeFacet | null;

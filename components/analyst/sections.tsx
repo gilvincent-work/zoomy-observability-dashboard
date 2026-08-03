@@ -26,7 +26,7 @@ import {
   TriangleAlert,
   Users,
 } from 'lucide-react';
-import type {DigestArchiveRow, DigestFigure, OutreachList, TimeBasis} from '../../src/types';
+import type {DigestArchiveRow, DigestFigure, DigestShopeeFacet, OutreachList, TimeBasis} from '../../src/types';
 import type {AnalystBrief, Anomaly, Category, Impact, Prediction, Recommendation, Severity} from '../../src/salesSignals';
 import {mockReprompt} from '../../src/reprompt';
 import {Card, CardContent} from '@/components/ui/card';
@@ -157,8 +157,10 @@ function basisLabel(basis: TimeBasis): string {
   return 'all-time';
 }
 
-/** Read-only metric tiles — value + label + explicit time basis (never fake). */
-export function FigureTiles({figures}: {figures: DigestFigure[]}) {
+/** Read-only metric tiles — value + label + explicit time basis (never fake).
+ *  `hideBasis` drops the per-tile "this window" line when the window is already
+ *  shown once at the section header (Shopee facets carry their own date range). */
+export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hideBasis?: boolean}) {
   if (!figures.length) return null;
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -167,7 +169,7 @@ export function FigureTiles({figures}: {figures: DigestFigure[]}) {
           <CardContent className="p-4">
             <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{f.label}</div>
             <div className="font-mono text-2xl font-semibold tabular-nums">{f.value.toLocaleString()}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>
+            {!hideBasis && <div className="mt-1 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>}
           </CardContent>
         </Card>
       ))}
@@ -271,6 +273,24 @@ const SHOPEE_FACETS: {key: 'sales' | 'ads' | 'traffic' | 'products'; label: stri
   {key: 'products', label: 'Product funnel'},
 ];
 
+const WINDOW_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "2026-07-04" → "Jul 4". */
+function fmtIsoDay(iso: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ''));
+  return m ? `${WINDOW_MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : null;
+}
+/** A facet's real export range as "Jul 4 – Aug 2, 2026" (falls back to its raw label). */
+function fmtWindow(win: DigestShopeeFacet['window']): string | null {
+  if (!win) return null;
+  const a = fmtIsoDay(win.from);
+  const b = fmtIsoDay(win.to);
+  if (a && b) {
+    const yr = /^(\d{4})/.exec(String(win.to ?? ''));
+    return `${a} – ${b}${yr ? `, ${yr[1]}` : ''}`;
+  }
+  return win.label ?? null;
+}
+
 export function ShopeeSection({row}: {row: DigestArchiveRow}) {
   const shopee = row.digest.shopee ?? null;
   if (!shopee) return null;
@@ -279,16 +299,20 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
   return (
     <section className="mb-10">
       <Eyebrow icon={Store}>Shopee — marketplace channel</Eyebrow>
-      <div className="space-y-8">
+      <div className="space-y-10">
         {present.map(({key, label}) => {
           const facet = shopee[key]!;
+          const win = fmtWindow(facet.window);
           return (
             <div key={key}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/80">{label}</span>
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b pb-2">
+                <h3 className="text-xl font-semibold tracking-tight text-foreground">{label}</h3>
+                {win && (
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">{win}</span>
+                )}
               </div>
-              <p className="mb-3 text-sm leading-relaxed text-foreground/80">{facet.headline}</p>
-              <FigureTiles figures={facet.figures} />
+              <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
+              <FigureTiles figures={facet.figures} hideBasis />
               <ActionList items={facet.recommendations} />
             </div>
           );
