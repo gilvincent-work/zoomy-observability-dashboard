@@ -9,6 +9,7 @@ import {Activity, Gauge, Globe, Lightbulb, Package, Sparkles, Store, TriangleAle
 import type {DigestArchiveRow} from '../../src/types';
 import type {AnalystBrief, Category} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
+import {fmtRange} from '../../src/week';
 import {ConversionFunnel, TopSkusChart, TrafficDonut} from './charts';
 import {PreferencesForm} from './settings/preferences-form';
 import {
@@ -320,9 +321,9 @@ function TabHeading({icon: Icon, title, row}: {icon: typeof Package; title: stri
     <header className="mb-8">
       <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <Icon className="size-3.5" />
-        {row.digest.window.label}
+        {fmtRange(row.window_from, row.window_to, row.digest.window.label)}
       </div>
-      <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
+      <h1 className="mt-1 text-3xl font-semibold tracking-tight">{title}</h1>
     </header>
   );
 }

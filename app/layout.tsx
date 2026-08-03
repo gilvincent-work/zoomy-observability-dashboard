@@ -21,7 +21,17 @@ export default async function RootLayout({children}: {children: ReactNode}) {
   // page doesn't re-fetch. useSearchParams inside the shell needs a Suspense boundary.
   const digests = await getDigests();
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Seed the theme class before first paint so there's no light→dark flash.
+            Chooses saved preference, else the OS setting. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('zoomy-theme');if(!t){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}})();",
+          }}
+        />
+      </head>
       <body className={cn(sans.variable, mono.variable, 'font-sans antialiased')}>
         <Suspense>
           <DashboardShell digests={digests} usingMock={usingMock()}>

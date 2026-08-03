@@ -7,6 +7,7 @@ import {useState} from 'react';
 import {
   Activity,
   ArrowRight,
+  CalendarDays,
   ChevronDown,
   Clock,
   Eye,
@@ -26,9 +27,10 @@ import {
   TriangleAlert,
   Users,
 } from 'lucide-react';
-import type {DigestArchiveRow, DigestFigure, OutreachList, TimeBasis} from '../../src/types';
+import type {DigestArchiveRow, DigestFigure, DigestShopeeFacet, OutreachList, TimeBasis} from '../../src/types';
 import type {AnalystBrief, Anomaly, Category, Impact, Prediction, Recommendation, Severity} from '../../src/salesSignals';
 import {mockReprompt} from '../../src/reprompt';
+import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
@@ -126,22 +128,18 @@ export function KpiTile({
 // mock brief's verdict. Everything above the "predictive layer" divider on a tab
 // is real; the mock brief is confined to blocks marked with <MockNote>.
 export function VerdictHero({row}: {row: DigestArchiveRow}) {
+  const range = fmtRange(row.window_from, row.window_to, row.digest.window.label);
   return (
-    <header className="mb-8">
-      <div className="mb-2 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">{row.digest.window.label}</h1>
-        <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
-          <Sparkles className="size-3" /> AI analyst
+    <header className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <h1 className="text-3xl font-semibold tracking-tight text-foreground">{range}</h1>
+      <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
+        <Sparkles className="size-3" /> AI analyst
+      </Badge>
+      {row.emailed_at && (
+        <Badge variant="secondary" className="gap-1">
+          <Mail className="size-3" /> emailed
         </Badge>
-        {row.emailed_at && (
-          <Badge variant="secondary" className="gap-1">
-            <Mail className="size-3" /> emailed
-          </Badge>
-        )}
-      </div>
-      <p className="text-pretty text-2xl font-semibold leading-snug tracking-tight text-foreground">
-        {row.digest.headline}
-      </p>
+      )}
     </header>
   );
 }
@@ -152,13 +150,15 @@ export function VerdictHero({row}: {row: DigestArchiveRow}) {
 // straight from the archived DigestDocument — nothing here is mocked.
 
 function basisLabel(basis: TimeBasis): string {
-  if (basis === 'window') return 'this week';
+  if (basis === 'window') return 'this window';
   if (basis === 'recurring') return 'weekly trend';
   return 'all-time';
 }
 
-/** Read-only metric tiles — value + label + explicit time basis (never fake). */
-export function FigureTiles({figures}: {figures: DigestFigure[]}) {
+/** Read-only metric tiles — value + label + explicit time basis (never fake).
+ *  `hideBasis` drops the per-tile "this window" line when the window is already
+ *  shown once at the section header (Shopee facets carry their own date range). */
+export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hideBasis?: boolean}) {
   if (!figures.length) return null;
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -167,7 +167,7 @@ export function FigureTiles({figures}: {figures: DigestFigure[]}) {
           <CardContent className="p-4">
             <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{f.label}</div>
             <div className="font-mono text-2xl font-semibold tabular-nums">{f.value.toLocaleString()}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>
+            {!hideBasis && <div className="mt-1 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>}
           </CardContent>
         </Card>
       ))}
@@ -182,9 +182,9 @@ export function ActionList({items}: {items: string[]}) {
     <div className="space-y-2">
       {items.map((text, i) => (
         <Card key={i}>
-          <CardContent className="flex items-start gap-3 p-3.5">
+          <CardContent className="flex items-start gap-3 p-4">
             <ArrowRight className="mt-0.5 size-4 shrink-0 text-primary" />
-            <p className="text-sm leading-relaxed text-foreground/90">{text}</p>
+            <p className="text-[15px] leading-relaxed text-foreground/90">{text}</p>
           </CardContent>
         </Card>
       ))}
@@ -199,13 +199,13 @@ export function SalesSection({row}: {row: DigestArchiveRow}) {
   return (
     <section className="mb-10">
       <Eyebrow icon={ShoppingCart}>Website sales — zoomyforpets.com</Eyebrow>
-      <p className="mb-4 text-sm leading-relaxed text-foreground/80">{sales.headline}</p>
+      <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{sales.headline}</p>
       <FigureTiles figures={sales.figures} />
 
       {sales.topProducts.length > 0 && (
         <Card className="mb-4">
           <CardContent className="p-4">
-            <div className="mb-3 text-sm font-medium">Top sellers this week</div>
+            <div className="mb-3 text-sm font-medium">Top sellers this window</div>
             <ul className="space-y-2.5">
               {sales.topProducts.map((p, i) => (
                 <li key={i}>
@@ -262,17 +262,96 @@ export function SalesSection({row}: {row: DigestArchiveRow}) {
   );
 }
 
-// Shopee marketplace channel — headline + figure tiles + actions. Simple shape
-// (no product/watch lists); the figures carry spend/GMV/ROAS/traffic.
+// Shopee marketplace channel — one titled sub-section per facet (sales / ads /
+// traffic / products), each its own mini-synthesis (headline + tiles + actions).
+const SHOPEE_FACETS: {key: 'sales' | 'ads' | 'traffic' | 'products'; label: string}[] = [
+  {key: 'sales', label: 'Sales'},
+  {key: 'ads', label: 'Ads'},
+  {key: 'traffic', label: 'Traffic'},
+  {key: 'products', label: 'Product funnel'},
+];
+
+const WINDOW_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "2026-07-04" → "Jul 4". */
+function fmtIsoDay(iso: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ''));
+  return m ? `${WINDOW_MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : null;
+}
+/** A facet's real export range as "Jul 4 – Aug 2, 2026" (falls back to its raw label). */
+function fmtWindow(win: DigestShopeeFacet['window']): string | null {
+  if (!win) return null;
+  const a = fmtIsoDay(win.from);
+  const b = fmtIsoDay(win.to);
+  if (a && b) {
+    const yr = /^(\d{4})/.exec(String(win.to ?? ''));
+    return `${a} – ${b}${yr ? `, ${yr[1]}` : ''}`;
+  }
+  return win.label ?? null;
+}
+
+/** Inclusive length of the window in days (Jul 20 → Aug 2 = 14), or null. */
+function windowDays(win: DigestShopeeFacet['window']): number | null {
+  if (!win?.from || !win?.to) return null;
+  const from = Date.parse(`${String(win.from).slice(0, 10)}T00:00:00Z`);
+  const to = Date.parse(`${String(win.to).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.round((to - from) / 86_400_000) + 1;
+}
+
 export function ShopeeSection({row}: {row: DigestArchiveRow}) {
   const shopee = row.digest.shopee ?? null;
   if (!shopee) return null;
+  const present = SHOPEE_FACETS.filter((f) => shopee[f.key]);
+  if (!present.length) return null;
   return (
     <section className="mb-10">
       <Eyebrow icon={Store}>Shopee — marketplace channel</Eyebrow>
-      <p className="mb-4 text-sm leading-relaxed text-foreground/80">{shopee.headline}</p>
-      <FigureTiles figures={shopee.figures} />
-      <ActionList items={shopee.recommendations} />
+      <div className="space-y-10">
+        {present.map(({key, label}) => {
+          const facet = shopee[key]!;
+          const win = fmtWindow(facet.window);
+          const days = windowDays(facet.window);
+          return (
+            <div key={key}>
+              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b pb-2.5">
+                <h3 className="text-xl font-semibold tracking-tight text-foreground">{label}</h3>
+                {win && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.07] px-2.5 py-1 font-mono text-xs font-medium tabular-nums text-primary">
+                    <CalendarDays className="size-3.5" />
+                    {win}
+                    {days != null && <span className="text-primary/70">· {days} days</span>}
+                  </span>
+                )}
+              </div>
+              <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
+              <FigureTiles figures={facet.figures} hideBasis />
+              {facet.assessment && facet.assessment.length > 0 && (
+                <div className="mb-4">
+                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Gauge className="size-3.5" /> Reading the numbers
+                  </div>
+                  <div className="space-y-2">
+                    {facet.assessment.map((text, i) => (
+                      <Card key={i} className="border-l-2" style={{borderLeftColor: 'var(--primary)'}}>
+                        <CardContent className="flex items-start gap-3 p-4">
+                          <Activity className="mt-0.5 size-4 shrink-0 text-primary" />
+                          <p className="text-[15px] leading-relaxed text-foreground/85">{text}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {facet.recommendations.length > 0 && (
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <ArrowRight className="size-3.5" /> Recommended actions
+                </div>
+              )}
+              <ActionList items={facet.recommendations} />
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -285,7 +364,7 @@ export function CustomersSection({row}: {row: DigestArchiveRow}) {
   return (
     <section className="mb-10">
       <Eyebrow icon={Users}>Customers — who to reach out to</Eyebrow>
-      <p className="mb-4 text-sm leading-relaxed text-foreground/80">{customers.headline}</p>
+      <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{customers.headline}</p>
       <FigureTiles figures={customers.figures} />
 
       {customers.outreach.length > 0 && (
@@ -328,7 +407,7 @@ export function ConversationsSection({row}: {row: DigestArchiveRow}) {
   const digest = row.digest;
   return (
     <section className="mb-10">
-      <Eyebrow icon={MessageSquare}>This week in conversations (PawPal)</Eyebrow>
+      <Eyebrow icon={MessageSquare}>Conversations (PawPal)</Eyebrow>
       <FigureTiles figures={digest.figures} />
       {digest.themes.length > 0 && (
         <div className="mb-6 space-y-3">
@@ -503,7 +582,7 @@ export function RecommendationCard({rec, rank}: {rec: Recommendation; rank: numb
 }
 
 export function RecommendationsList({recs}: {recs: Recommendation[]}) {
-  if (!recs.length) return <EmptyNote>No recommendations in this area this week.</EmptyNote>;
+  if (!recs.length) return <EmptyNote>No recommendations in this area.</EmptyNote>;
   return (
     <div className="space-y-3">
       {recs.map((r, i) => (

@@ -53,11 +53,25 @@ export interface DigestCustomers {
 }
 
 // Shopee marketplace channel (separate from the website). Fed from manual
-// Seller-Center exports; a simple headline + figures + actions shape.
-export interface DigestShopee {
+// Seller-Center exports. One sub-section PER FACET (sales/ads/traffic/products),
+// each its own mini-synthesis — present only when that facet's file was ingested.
+export interface DigestShopeeFacet {
   headline: string;
   figures: DigestFigure[];
+  // Diagnosis: plain-language findings reading the numbers, shown before the
+  // action recommendations. Absent on older archived rows.
+  assessment?: string[];
   recommendations: string[];
+  // Real export date range for THIS facet (ads is a 14-day window; sales/traffic/
+  // products are 30-day). Stamped from the export by the batch job — see
+  // reconcileShopeeWindows. Absent on older archived rows.
+  window?: {from: string | null; to: string | null; label: string | null} | null;
+}
+export interface DigestShopee {
+  sales?: DigestShopeeFacet | null;
+  ads?: DigestShopeeFacet | null;
+  traffic?: DigestShopeeFacet | null;
+  products?: DigestShopeeFacet | null;
 }
 
 export interface DigestDocument {
