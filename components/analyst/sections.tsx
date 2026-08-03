@@ -29,6 +29,7 @@ import {
 import type {DigestArchiveRow, DigestFigure, DigestShopeeFacet, OutreachList, TimeBasis} from '../../src/types';
 import type {AnalystBrief, Anomaly, Category, Impact, Prediction, Recommendation, Severity} from '../../src/salesSignals';
 import {mockReprompt} from '../../src/reprompt';
+import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
@@ -126,22 +127,18 @@ export function KpiTile({
 // mock brief's verdict. Everything above the "predictive layer" divider on a tab
 // is real; the mock brief is confined to blocks marked with <MockNote>.
 export function VerdictHero({row}: {row: DigestArchiveRow}) {
+  const range = fmtRange(row.window_from, row.window_to, row.digest.window.label);
   return (
-    <header className="mb-8">
-      <div className="mb-2 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">{row.digest.window.label}</h1>
-        <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
-          <Sparkles className="size-3" /> AI analyst
+    <header className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <h1 className="text-3xl font-semibold tracking-tight text-foreground">{range}</h1>
+      <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
+        <Sparkles className="size-3" /> AI analyst
+      </Badge>
+      {row.emailed_at && (
+        <Badge variant="secondary" className="gap-1">
+          <Mail className="size-3" /> emailed
         </Badge>
-        {row.emailed_at && (
-          <Badge variant="secondary" className="gap-1">
-            <Mail className="size-3" /> emailed
-          </Badge>
-        )}
-      </div>
-      <p className="text-pretty text-2xl font-semibold leading-snug tracking-tight text-foreground">
-        {row.digest.headline}
-      </p>
+      )}
     </header>
   );
 }
@@ -184,9 +181,9 @@ export function ActionList({items}: {items: string[]}) {
     <div className="space-y-2">
       {items.map((text, i) => (
         <Card key={i}>
-          <CardContent className="flex items-start gap-3 p-3.5">
+          <CardContent className="flex items-start gap-3 p-4">
             <ArrowRight className="mt-0.5 size-4 shrink-0 text-primary" />
-            <p className="text-sm leading-relaxed text-foreground/90">{text}</p>
+            <p className="text-[15px] leading-relaxed text-foreground/90">{text}</p>
           </CardContent>
         </Card>
       ))}
@@ -201,7 +198,7 @@ export function SalesSection({row}: {row: DigestArchiveRow}) {
   return (
     <section className="mb-10">
       <Eyebrow icon={ShoppingCart}>Website sales — zoomyforpets.com</Eyebrow>
-      <p className="mb-4 text-sm leading-relaxed text-foreground/80">{sales.headline}</p>
+      <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{sales.headline}</p>
       <FigureTiles figures={sales.figures} />
 
       {sales.topProducts.length > 0 && (
@@ -330,7 +327,7 @@ export function CustomersSection({row}: {row: DigestArchiveRow}) {
   return (
     <section className="mb-10">
       <Eyebrow icon={Users}>Customers — who to reach out to</Eyebrow>
-      <p className="mb-4 text-sm leading-relaxed text-foreground/80">{customers.headline}</p>
+      <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{customers.headline}</p>
       <FigureTiles figures={customers.figures} />
 
       {customers.outreach.length > 0 && (

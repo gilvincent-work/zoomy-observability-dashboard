@@ -167,8 +167,10 @@
   --status-warn: #b4780a;
   --status-crit: #d1453b;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Dark theme is CLASS-driven (.dark on <html>) so the header toggle can override
+   the OS preference. An inline script in app/layout.tsx seeds the class from
+   localStorage or the system preference before first paint (no flash). */
+.dark {
     --background: oklch(0.17 0.012 214);
     --foreground: oklch(0.96 0.005 200);
     --card: oklch(0.21 0.014 214);
@@ -208,5 +210,11 @@
     --status-good: #2ec27e;
     --status-warn: #e0a232;
     --status-crit: #f26d68;
+}
+
+/* Smooth the flip between themes without animating layout. */
+@media (prefers-reduced-motion: no-preference) {
+  body {
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 }
