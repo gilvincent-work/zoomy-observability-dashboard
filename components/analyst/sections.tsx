@@ -310,6 +310,28 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
               </div>
               <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
               <FigureTiles figures={facet.figures} hideBasis />
+              {facet.assessment && facet.assessment.length > 0 && (
+                <div className="mb-4">
+                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Gauge className="size-3.5" /> Reading the numbers
+                  </div>
+                  <div className="space-y-2">
+                    {facet.assessment.map((text, i) => (
+                      <Card key={i} className="border-l-2" style={{borderLeftColor: 'var(--primary)'}}>
+                        <CardContent className="flex items-start gap-3 p-4">
+                          <Activity className="mt-0.5 size-4 shrink-0 text-primary" />
+                          <p className="text-[15px] leading-relaxed text-foreground/85">{text}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {facet.recommendations.length > 0 && (
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <ArrowRight className="size-3.5" /> Recommended actions
+                </div>
+              )}
               <ActionList items={facet.recommendations} />
             </div>
           );

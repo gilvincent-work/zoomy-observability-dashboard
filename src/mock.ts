@@ -76,6 +76,10 @@ export const MOCK_DIGESTS: DigestArchiveRow[] = [
             {label: 'Buyers', value: 22, timeBasis: 'window'},
             {label: 'Sales per buyer (PHP)', value: 446.36, timeBasis: 'window'},
           ],
+          assessment: [
+            'The ₱446 average basket is healthy — buyers who do purchase are spending well, so the issue is volume, not order size.',
+            'Only 22 buyers out of the traffic converted, so the biggest lever is turning more visitors into orders rather than raising the basket.',
+          ],
           recommendations: [
             'Bundle your two best-selling treats into a single listing — with a ₱446 average basket, a "buy 2, save 10%" pack nudges buyers to add one more item without discounting everything.',
             'Add a low-price add-on product (e.g. a ₱99 chew) near checkout so light buyers can top up their cart and lift the per-buyer figure.',
@@ -91,6 +95,11 @@ export const MOCK_DIGESTS: DigestArchiveRow[] = [
             {label: 'Ad GMV (PHP)', value: 18827, timeBasis: 'window'},
             {label: 'ROAS', value: 2.3, timeBasis: 'window'},
             {label: 'ACOS (%)', value: 43.43, timeBasis: 'window'},
+          ],
+          assessment: [
+            'A 2.3× ROAS means every ₱1 of ad spend returns ₱2.30 in sales — the campaign is profitable overall.',
+            'But a 43% ACOS means nearly half of every ad-driven sale is eaten by ad cost, so the margin left over is thin.',
+            'There is little headroom to spend more before the campaign tips into losing money — profitability, not scale, is the constraint right now.',
           ],
           recommendations: [
             'Pause or cut bids on the lowest-converting placements first — trimming waste lowers the 43% ad-cost ratio without losing the sales that are actually landing.',
@@ -108,6 +117,10 @@ export const MOCK_DIGESTS: DigestArchiveRow[] = [
             {label: 'Bounce rate (%)', value: 15.9, timeBasis: 'window'},
             {label: 'New followers', value: 28, timeBasis: 'window'},
           ],
+          assessment: [
+            'A 15.9% bounce rate is low (good) — the people who arrive are staying and browsing, not leaving immediately.',
+            'Only 28 new followers means almost none of the 616 visitors are being captured as an audience you can re-market to for free.',
+          ],
           recommendations: [
             'Add a "follow us for a voucher" banner on your storefront — converting even 10% of the 616 visitors into followers builds a free retargeting audience.',
             'Post to Shopee Feed 2-3× a week so existing followers see your products again, turning one-time visitors into repeat traffic.',
@@ -122,6 +135,11 @@ export const MOCK_DIGESTS: DigestArchiveRow[] = [
             {label: 'Add-to-cart rate (%)', value: 18, timeBasis: 'window'},
             {label: 'Visit-to-buy rate (%)', value: 3.65, timeBasis: 'window'},
             {label: 'Search clicks', value: 2100, timeBasis: 'window'},
+          ],
+          assessment: [
+            'An 18% add-to-cart rate is strong — shoppers clearly like the products and intend to buy.',
+            'But only about 4 in 100 visitors actually complete the purchase, so most full carts are abandoned right before payment.',
+            'The gap is at checkout, not in product appeal — the money is being lost in the final step.',
           ],
           recommendations: [
             'Send cart-recovery vouchers to shoppers who added items but did not pay — this is the single biggest lever given the strong 18% add-to-cart rate.',

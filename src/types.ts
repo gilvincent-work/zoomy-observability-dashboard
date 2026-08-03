@@ -58,6 +58,9 @@ export interface DigestCustomers {
 export interface DigestShopeeFacet {
   headline: string;
   figures: DigestFigure[];
+  // Diagnosis: plain-language findings reading the numbers, shown before the
+  // action recommendations. Absent on older archived rows.
+  assessment?: string[];
   recommendations: string[];
   // Real export date range for THIS facet (ads is a 14-day window; sales/traffic/
   // products are 30-day). Stamped from the export by the batch job — see
