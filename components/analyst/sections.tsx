@@ -7,6 +7,7 @@ import {useState} from 'react';
 import {
   Activity,
   ArrowRight,
+  CalendarDays,
   ChevronDown,
   Clock,
   Eye,
@@ -288,6 +289,15 @@ function fmtWindow(win: DigestShopeeFacet['window']): string | null {
   return win.label ?? null;
 }
 
+/** Inclusive length of the window in days (Jul 20 → Aug 2 = 14), or null. */
+function windowDays(win: DigestShopeeFacet['window']): number | null {
+  if (!win?.from || !win?.to) return null;
+  const from = Date.parse(`${String(win.from).slice(0, 10)}T00:00:00Z`);
+  const to = Date.parse(`${String(win.to).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.round((to - from) / 86_400_000) + 1;
+}
+
 export function ShopeeSection({row}: {row: DigestArchiveRow}) {
   const shopee = row.digest.shopee ?? null;
   if (!shopee) return null;
@@ -300,12 +310,17 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
         {present.map(({key, label}) => {
           const facet = shopee[key]!;
           const win = fmtWindow(facet.window);
+          const days = windowDays(facet.window);
           return (
             <div key={key}>
-              <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b pb-2">
+              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b pb-2.5">
                 <h3 className="text-xl font-semibold tracking-tight text-foreground">{label}</h3>
                 {win && (
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">{win}</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.07] px-2.5 py-1 font-mono text-xs font-medium tabular-nums text-primary">
+                    <CalendarDays className="size-3.5" />
+                    {win}
+                    {days != null && <span className="text-primary/70">· {days} days</span>}
+                  </span>
                 )}
               </div>
               <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
