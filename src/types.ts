@@ -53,11 +53,18 @@ export interface DigestCustomers {
 }
 
 // Shopee marketplace channel (separate from the website). Fed from manual
-// Seller-Center exports; a simple headline + figures + actions shape.
-export interface DigestShopee {
+// Seller-Center exports. One sub-section PER FACET (sales/ads/traffic/products),
+// each its own mini-synthesis — present only when that facet's file was ingested.
+export interface DigestShopeeFacet {
   headline: string;
   figures: DigestFigure[];
   recommendations: string[];
+}
+export interface DigestShopee {
+  sales?: DigestShopeeFacet | null;
+  ads?: DigestShopeeFacet | null;
+  traffic?: DigestShopeeFacet | null;
+  products?: DigestShopeeFacet | null;
 }
 
 export interface DigestDocument {

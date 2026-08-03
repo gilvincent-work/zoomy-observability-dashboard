@@ -262,17 +262,38 @@ export function SalesSection({row}: {row: DigestArchiveRow}) {
   );
 }
 
-// Shopee marketplace channel — headline + figure tiles + actions. Simple shape
-// (no product/watch lists); the figures carry spend/GMV/ROAS/traffic.
+// Shopee marketplace channel — one titled sub-section per facet (sales / ads /
+// traffic / products), each its own mini-synthesis (headline + tiles + actions).
+const SHOPEE_FACETS: {key: 'sales' | 'ads' | 'traffic' | 'products'; label: string}[] = [
+  {key: 'sales', label: 'Sales'},
+  {key: 'ads', label: 'Ads'},
+  {key: 'traffic', label: 'Traffic'},
+  {key: 'products', label: 'Product funnel'},
+];
+
 export function ShopeeSection({row}: {row: DigestArchiveRow}) {
   const shopee = row.digest.shopee ?? null;
   if (!shopee) return null;
+  const present = SHOPEE_FACETS.filter((f) => shopee[f.key]);
+  if (!present.length) return null;
   return (
     <section className="mb-10">
       <Eyebrow icon={Store}>Shopee — marketplace channel</Eyebrow>
-      <p className="mb-4 text-sm leading-relaxed text-foreground/80">{shopee.headline}</p>
-      <FigureTiles figures={shopee.figures} />
-      <ActionList items={shopee.recommendations} />
+      <div className="space-y-8">
+        {present.map(({key, label}) => {
+          const facet = shopee[key]!;
+          return (
+            <div key={key}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/80">{label}</span>
+              </div>
+              <p className="mb-3 text-sm leading-relaxed text-foreground/80">{facet.headline}</p>
+              <FigureTiles figures={facet.figures} />
+              <ActionList items={facet.recommendations} />
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

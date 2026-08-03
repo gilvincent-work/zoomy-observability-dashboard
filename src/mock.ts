@@ -67,18 +67,43 @@ export const MOCK_DIGESTS: DigestArchiveRow[] = [
         ],
       },
       shopee: {
-        headline: 'Shopee ads are profitable at 2.3× ROAS — the marketplace is carrying volume this week.',
-        figures: [
-          {label: 'Ad spend (PHP)', value: 8177.18, timeBasis: 'window'},
-          {label: 'Ad GMV (PHP)', value: 18827, timeBasis: 'window'},
-          {label: 'ROAS', value: 2.3, timeBasis: 'window'},
-          {label: 'Marketplace buyers', value: 22, timeBasis: 'window'},
-          {label: 'Visitors', value: 616, timeBasis: 'window'},
-        ],
-        recommendations: [
-          'Scale the "Shop GMV Max" campaign — ROAS 2.3× is well above break-even.',
-          'ACOS is 43% — trim bids on low-converting placements to protect margin.',
-        ],
+        sales: {
+          headline: 'Marketplace moved ₱9,820 across 22 buyers this window.',
+          figures: [
+            {label: 'Sales (PHP)', value: 9820, timeBasis: 'window'},
+            {label: 'Buyers', value: 22, timeBasis: 'window'},
+            {label: 'Sales per buyer (PHP)', value: 446.36, timeBasis: 'window'},
+          ],
+          recommendations: ['Bundle the top treats to lift the ₱446 basket further.'],
+        },
+        ads: {
+          headline: 'Ads profitable at 2.3× ROAS, but a 43% ACOS leaves little margin.',
+          figures: [
+            {label: 'Ad spend (PHP)', value: 8177.18, timeBasis: 'window'},
+            {label: 'Ad GMV (PHP)', value: 18827, timeBasis: 'window'},
+            {label: 'ROAS', value: 2.3, timeBasis: 'window'},
+            {label: 'ACOS (%)', value: 43.43, timeBasis: 'window'},
+          ],
+          recommendations: ['Trim bids on low-converting placements to pull ACOS down before scaling spend.'],
+        },
+        traffic: {
+          headline: '616 visitors with a healthy 15.9% bounce, but only 28 new followers.',
+          figures: [
+            {label: 'Visitors', value: 616, timeBasis: 'window'},
+            {label: 'Bounce rate (%)', value: 15.9, timeBasis: 'window'},
+            {label: 'New followers', value: 28, timeBasis: 'window'},
+          ],
+          recommendations: ['Add a follow-incentive to convert traffic into a retargetable audience.'],
+        },
+        products: {
+          headline: 'Add-to-cart is strong (18%) but only 3.6% of visitors buy — the leak is at checkout.',
+          figures: [
+            {label: 'Add-to-cart rate (%)', value: 18, timeBasis: 'window'},
+            {label: 'Visit-to-buy rate (%)', value: 3.65, timeBasis: 'window'},
+            {label: 'Search clicks', value: 2100, timeBasis: 'window'},
+          ],
+          recommendations: ['Send cart-recovery vouchers to convert the stalled add-to-carts.'],
+        },
       },
     },
   },
