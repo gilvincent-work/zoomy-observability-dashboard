@@ -152,7 +152,7 @@ export function VerdictHero({row}: {row: DigestArchiveRow}) {
 // straight from the archived DigestDocument — nothing here is mocked.
 
 function basisLabel(basis: TimeBasis): string {
-  if (basis === 'window') return 'this week';
+  if (basis === 'window') return 'this window';
   if (basis === 'recurring') return 'weekly trend';
   return 'all-time';
 }
@@ -205,7 +205,7 @@ export function SalesSection({row}: {row: DigestArchiveRow}) {
       {sales.topProducts.length > 0 && (
         <Card className="mb-4">
           <CardContent className="p-4">
-            <div className="mb-3 text-sm font-medium">Top sellers this week</div>
+            <div className="mb-3 text-sm font-medium">Top sellers this window</div>
             <ul className="space-y-2.5">
               {sales.topProducts.map((p, i) => (
                 <li key={i}>
@@ -328,7 +328,7 @@ export function ConversationsSection({row}: {row: DigestArchiveRow}) {
   const digest = row.digest;
   return (
     <section className="mb-10">
-      <Eyebrow icon={MessageSquare}>This week in conversations (PawPal)</Eyebrow>
+      <Eyebrow icon={MessageSquare}>Conversations (PawPal)</Eyebrow>
       <FigureTiles figures={digest.figures} />
       {digest.themes.length > 0 && (
         <div className="mb-6 space-y-3">
@@ -503,7 +503,7 @@ export function RecommendationCard({rec, rank}: {rec: Recommendation; rank: numb
 }
 
 export function RecommendationsList({recs}: {recs: Recommendation[]}) {
-  if (!recs.length) return <EmptyNote>No recommendations in this area this week.</EmptyNote>;
+  if (!recs.length) return <EmptyNote>No recommendations in this area.</EmptyNote>;
   return (
     <div className="space-y-3">
       {recs.map((r, i) => (

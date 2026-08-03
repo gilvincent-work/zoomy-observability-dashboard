@@ -48,7 +48,7 @@ export function DashboardShell({
         </Button>
         <Sparkles className="size-5 text-primary" />
         <span className="text-base font-semibold tracking-tight">Zoomy</span>
-        <span className="hidden text-sm text-muted-foreground sm:inline">weekly AI store-ops analyst</span>
+        <span className="hidden text-sm text-muted-foreground sm:inline">AI store-ops analyst</span>
       </header>
 
       <div className="flex min-h-0 flex-1">
