@@ -74,6 +74,19 @@ export interface DigestShopee {
   products?: DigestShopeeFacet | null;
 }
 
+export interface DigestLazadaFacet {
+  headline: string;
+  figures: DigestFigure[];
+  assessment?: string[];
+  recommendations: string[];
+  window?: {from: string | null; to: string | null; label: string | null} | null;
+}
+export interface DigestLazada {
+  sales?: DigestLazadaFacet | null;
+  finance?: DigestLazadaFacet | null;
+  inventory?: DigestLazadaFacet | null;
+}
+
 export interface DigestDocument {
   window: { label: string; from: string; to: string };
   degraded: boolean;
@@ -86,6 +99,7 @@ export interface DigestDocument {
   sales?: DigestSales | null;
   customers?: DigestCustomers | null;
   shopee?: DigestShopee | null;
+  lazada?: DigestLazada | null;
 }
 
 // One row of the digest_archive table (bundle omitted — the dashboard doesn't

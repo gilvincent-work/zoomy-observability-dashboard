@@ -26,6 +26,7 @@ import {
   RecommendationsList,
   RepromptPanel,
   RevenueForecastCard,
+  LazadaSection,
   SalesSection,
   ShopeeSection,
   VerdictHero,
@@ -52,11 +53,12 @@ type TabProps = {brief: AnalystBrief; row: DigestArchiveRow};
 // ── Channel switch — Website (zoomyforpets.com) vs Shopee marketplace ───────────
 // The two are separate businesses with different metrics; mixing them on one page
 // reads as conflicting truths. Pick a channel first, then see its breakdown.
-type Channel = 'all' | 'website' | 'shopee';
+type Channel = 'all' | 'website' | 'shopee' | 'lazada';
 const CHANNELS: {key: Channel; label: string; icon: typeof Globe; source: string; accent: string}[] = [
   {key: 'all', label: 'All channels', icon: Sparkles, source: 'Website + Shopee', accent: 'text-muted-foreground'},
   {key: 'website', label: 'Website', icon: Globe, source: 'zoomyforpets.com', accent: 'text-primary'},
   {key: 'shopee', label: 'Shopee', icon: Store, source: 'Marketplace', accent: 'text-[#ee4d2d]'},
+  {key: 'lazada', label: 'Lazada', icon: Store, source: 'Marketplace', accent: 'text-[#f57224]'},
 ];
 
 // The primary control: pick a channel, then see its breakdown. Cards (not tiny
@@ -118,6 +120,7 @@ export function OverviewTab({brief, row}: TabProps) {
   const s = brief.signals;
   const showWebsite = channel === 'all' || channel === 'website';
   const showShopee = channel === 'all' || channel === 'shopee';
+  const showLazada = channel === 'all' || channel === 'lazada';
   const hasShopee = Boolean(row.digest.shopee);
   return (
     <TabContainer>
@@ -139,6 +142,16 @@ export function OverviewTab({brief, row}: TabProps) {
         <ComingSoonNote>
           No Shopee data for this week yet. Drop the Seller-Center exports (sales / traffic / ads) into
           <code className="mx-1 font-mono">data/shopee/</code> and re-run the digest to populate this channel.
+        </ComingSoonNote>
+      )}
+
+      {/* Lazada marketplace: sales, finance, inventory */}
+      {showLazada && <LazadaSection row={row} />}
+      {channel === 'lazada' && !row.digest.lazada && (
+        <ComingSoonNote>
+          No Lazada data for this week yet. Configure <code className="mx-1 font-mono">LAZADA_APP_KEY</code>,{' '}
+          <code className="font-mono">LAZADA_APP_SECRET</code>, and <code className="mx-1 font-mono">LAZADA_ACCESS_TOKEN</code> in{' '}
+          <code className="font-mono">.env</code> and re-run the digest to populate this channel.
         </ComingSoonNote>
       )}
 

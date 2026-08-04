@@ -27,7 +27,7 @@ import {
   TriangleAlert,
   Users,
 } from 'lucide-react';
-import type {DigestArchiveRow, DigestFigure, DigestShopeeFacet, OutreachList, TimeBasis} from '../../src/types';
+import type {DigestArchiveRow, DigestFigure, DigestLazadaFacet, DigestShopeeFacet, OutreachList, TimeBasis} from '../../src/types';
 import type {AnalystBrief, Anomaly, Category, Impact, Prediction, Recommendation, Severity} from '../../src/salesSignals';
 import {mockReprompt} from '../../src/reprompt';
 import {fmtRange} from '../../src/week';
@@ -277,8 +277,9 @@ function fmtIsoDay(iso: string | null | undefined): string | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ''));
   return m ? `${WINDOW_MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : null;
 }
+type FacetWindow = DigestShopeeFacet['window'] | DigestLazadaFacet['window'];
 /** A facet's real export range as "Jul 4 – Aug 2, 2026" (falls back to its raw label). */
-function fmtWindow(win: DigestShopeeFacet['window']): string | null {
+function fmtWindow(win: FacetWindow): string | null {
   if (!win) return null;
   const a = fmtIsoDay(win.from);
   const b = fmtIsoDay(win.to);
@@ -290,7 +291,7 @@ function fmtWindow(win: DigestShopeeFacet['window']): string | null {
 }
 
 /** Inclusive length of the window in days (Jul 20 → Aug 2 = 14), or null. */
-function windowDays(win: DigestShopeeFacet['window']): number | null {
+function windowDays(win: FacetWindow): number | null {
   if (!win?.from || !win?.to) return null;
   const from = Date.parse(`${String(win.from).slice(0, 10)}T00:00:00Z`);
   const to = Date.parse(`${String(win.to).slice(0, 10)}T00:00:00Z`);
@@ -309,6 +310,72 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
       <div className="space-y-10">
         {present.map(({key, label}) => {
           const facet = shopee[key]!;
+          const win = fmtWindow(facet.window);
+          const days = windowDays(facet.window);
+          return (
+            <div key={key}>
+              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b pb-2.5">
+                <h3 className="text-xl font-semibold tracking-tight text-foreground">{label}</h3>
+                {win && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.07] px-2.5 py-1 font-mono text-xs font-medium tabular-nums text-primary">
+                    <CalendarDays className="size-3.5" />
+                    {win}
+                    {days != null && <span className="text-primary/70">· {days} days</span>}
+                  </span>
+                )}
+              </div>
+              <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
+              <FigureTiles figures={facet.figures} hideBasis />
+              {facet.assessment && facet.assessment.length > 0 && (
+                <div className="mb-4">
+                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Gauge className="size-3.5" /> Reading the numbers
+                  </div>
+                  <div className="space-y-2">
+                    {facet.assessment.map((text, i) => (
+                      <Card key={i} className="border-l-2" style={{borderLeftColor: 'var(--primary)'}}>
+                        <CardContent className="flex items-start gap-3 p-4">
+                          <Activity className="mt-0.5 size-4 shrink-0 text-primary" />
+                          <p className="text-[15px] leading-relaxed text-foreground/85">{text}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {facet.recommendations.length > 0 && (
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <ArrowRight className="size-3.5" /> Recommended actions
+                </div>
+              )}
+              <ActionList items={facet.recommendations} />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// Lazada marketplace channel — one titled sub-section per facet (sales / finance /
+// inventory), each its own mini-synthesis (headline + tiles + assessment + actions).
+const LAZADA_FACETS: {key: 'sales' | 'finance' | 'inventory'; label: string}[] = [
+  {key: 'sales', label: 'Sales'},
+  {key: 'finance', label: 'Finance'},
+  {key: 'inventory', label: 'Inventory'},
+];
+
+export function LazadaSection({row}: {row: DigestArchiveRow}) {
+  const lazada = row.digest.lazada ?? null;
+  if (!lazada) return null;
+  const present = LAZADA_FACETS.filter((f) => lazada[f.key]);
+  if (!present.length) return null;
+  return (
+    <section className="mb-10">
+      <Eyebrow icon={Store}>Lazada — marketplace channel</Eyebrow>
+      <div className="space-y-10">
+        {present.map(({key, label}) => {
+          const facet = lazada[key]!;
           const win = fmtWindow(facet.window);
           const days = windowDays(facet.window);
           return (
