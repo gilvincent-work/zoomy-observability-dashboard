@@ -55,7 +55,7 @@ type TabProps = {brief: AnalystBrief; row: DigestArchiveRow};
 // reads as conflicting truths. Pick a channel first, then see its breakdown.
 type Channel = 'all' | 'website' | 'shopee' | 'lazada';
 const CHANNELS: {key: Channel; label: string; icon: typeof Globe; source: string; accent: string}[] = [
-  {key: 'all', label: 'All channels', icon: Sparkles, source: 'Website + Shopee', accent: 'text-muted-foreground'},
+  {key: 'all', label: 'All channels', icon: Sparkles, source: 'Website + Shopee + Lazada', accent: 'text-muted-foreground'},
   {key: 'website', label: 'Website', icon: Globe, source: 'zoomyforpets.com', accent: 'text-primary'},
   {key: 'shopee', label: 'Shopee', icon: Store, source: 'Marketplace', accent: 'text-[#ee4d2d]'},
   {key: 'lazada', label: 'Lazada', icon: Store, source: 'Marketplace', accent: 'text-[#f57224]'},
