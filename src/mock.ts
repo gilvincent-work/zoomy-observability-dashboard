@@ -149,6 +149,69 @@ export const MOCK_DIGESTS: DigestArchiveRow[] = [
           ],
         },
       },
+      lazada: {
+        sales: {
+          window: {from: '2026-07-05', to: '2026-08-03', label: 'Jul 5 – Aug 3, 2026'},
+          headline:
+            'Lazada brought in ₱20,935 gross from 44 orders this period — after 3 cancellations the net settled at ₱20,796, averaging ₱483.64 per order. Volume is solid and cancellation impact is minimal.',
+          figures: [
+            {label: 'Gross revenue (PHP)', value: 20935, timeBasis: 'window'},
+            {label: 'Net revenue (PHP)', value: 20796, timeBasis: 'window'},
+            {label: 'Orders', value: 44, timeBasis: 'window'},
+            {label: 'AOV (PHP)', value: 483.64, timeBasis: 'window'},
+          ],
+          assessment: [
+            'Gross ₱20,935 vs net ₱20,796 — the ₱139 gap comes from just 3 canceled orders, a very low cancellation rate.',
+            'An AOV of ₱483.64 is healthy; buyers are purchasing multi-unit bundles rather than single items.',
+            '44 orders over the period translates to roughly 1.5 orders per day — consistent throughput with no major drop-off.',
+          ],
+          recommendations: [
+            'List a bundle SKU at ₱480–₱500 to anchor the current AOV and encourage buyers to trade up from single-item purchases.',
+            'Investigate the 3 canceled orders for a common reason (shipping lead time, OOS) and address it before the next promo period.',
+            'Run a flash voucher at the next Lazada campaign date to push volume above 50 orders and test whether demand can support a higher run rate.',
+          ],
+        },
+        finance: {
+          window: {from: '2026-07-05', to: '2026-08-03', label: 'Jul 5 – Aug 3, 2026'},
+          headline:
+            'Platform fees of ₱9,714 were deducted from ₱22,504 in gross credits, leaving a net payout of ₱12,790. Fees represent about 43% of gross — a margin to watch as volume grows.',
+          figures: [
+            {label: 'Platform fees (PHP)', value: 9714, timeBasis: 'window'},
+            {label: 'Net payout (PHP)', value: 12790, timeBasis: 'window'},
+          ],
+          assessment: [
+            'Fees at ₱9,714 are 43% of gross credits — a high take-rate that compresses margin significantly.',
+            'Net payout of ₱12,790 represents the actual cash the store receives after Lazada deductions.',
+            'Monitoring the released vs pending split will clarify how much of the ₱12,790 is already liquid.',
+          ],
+          recommendations: [
+            'Audit the fee breakdown in the Lazada Finance dashboard to identify which fee types (commission, fulfilment, campaign) are largest and target reductions there.',
+            'Price Lazada listings 10–15% above the website baseline to absorb the 43% fee rate without cutting into product margin.',
+            'Track payout timing each cycle — if a large share is pending, plan cash flow around the settlement schedule.',
+          ],
+        },
+        inventory: {
+          window: {from: '2026-07-05', to: '2026-08-03', label: 'Jul 5 – Aug 3, 2026'},
+          headline:
+            'Five active listings with 167,829 units in total stock and no low- or out-of-stock SKUs — inventory is in a healthy position with no immediate restock risk.',
+          figures: [
+            {label: 'Active listings', value: 5, timeBasis: 'window'},
+            {label: 'Total stock (units)', value: 167829, timeBasis: 'window'},
+            {label: 'Low-stock SKUs', value: 0, timeBasis: 'window'},
+            {label: 'Out-of-stock SKUs', value: 0, timeBasis: 'window'},
+          ],
+          assessment: [
+            'All 5 active listings are adequately stocked — zero low- or out-of-stock events during the period.',
+            'Total stock of 167,829 units provides substantial runway even if order velocity increases materially.',
+            'With only 5 active listings, there is room to expand the catalogue and capture more search terms on the platform.',
+          ],
+          recommendations: [
+            'Expand to at least 10 active listings — more SKUs means more search visibility and a lower dependency on any single product.',
+            'Set Lazada stock alerts at 500 units per SKU so restock decisions are proactive rather than reactive.',
+            'Review inactive listings and re-activate any that have past demand signals, using current healthy stock as the buffer.',
+          ],
+        },
+      },
     },
   },
   {
