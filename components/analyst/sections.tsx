@@ -20,7 +20,6 @@ import {
   RotateCcw,
   ShoppingCart,
   Sparkles,
-  Store,
   Target,
   TrendingDown,
   TrendingUp,
@@ -31,6 +30,7 @@ import type {DigestArchiveRow, DigestFigure, DigestLazadaFacet, DigestShopeeFace
 import type {AnalystBrief, Anomaly, Category, Impact, Prediction, Recommendation, Severity} from '../../src/salesSignals';
 import {mockReprompt} from '../../src/reprompt';
 import {fmtRange} from '../../src/week';
+import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
@@ -57,7 +57,7 @@ const SEVERITY_VAR: Record<Severity, string> = {
 const SEVERITY_LABEL: Record<Severity, string> = {watch: 'Watch', warning: 'Warning', critical: 'Critical'};
 const IMPACT_LABEL: Record<Impact, string> = {high: 'High impact', medium: 'Medium impact', low: 'Low impact'};
 
-export function Eyebrow({icon: Icon, children}: {icon: typeof Gauge; children: React.ReactNode}) {
+export function Eyebrow({icon: Icon, children}: {icon: React.ComponentType<{className?: string}>; children: React.ReactNode}) {
   return (
     <h2 className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
       <Icon className="size-3.5" />
@@ -316,7 +316,7 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
   if (!present.length) return null;
   return (
     <section className="mb-10">
-      <Eyebrow icon={Store}>Shopee — marketplace channel</Eyebrow>
+      <Eyebrow icon={ShopeeIcon}>Shopee — marketplace channel</Eyebrow>
       <div className="space-y-10">
         {present.map(({key, label}) => {
           const facet = shopee[key]!;
@@ -382,7 +382,7 @@ export function LazadaSection({row}: {row: DigestArchiveRow}) {
   if (!present.length) return null;
   return (
     <section className="mb-10">
-      <Eyebrow icon={Store}>Lazada — marketplace channel</Eyebrow>
+      <Eyebrow icon={LazadaIcon}>Lazada — marketplace channel</Eyebrow>
       <div className="space-y-10">
         {present.map(({key, label}) => {
           const facet = lazada[key]!;

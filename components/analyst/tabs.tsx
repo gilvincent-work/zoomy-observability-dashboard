@@ -6,11 +6,12 @@
 // component props — those can't cross the server→client boundary, so tabs are client.
 import {useState} from 'react';
 import Link from 'next/link';
-import {Activity, ArrowLeft, Gauge, Globe, Lightbulb, Package, Sparkles, Store, TriangleAlert, Users} from 'lucide-react';
+import {Activity, ArrowLeft, Gauge, Globe, Lightbulb, Package, Sparkles, TriangleAlert, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import type {AnalystBrief, Category} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
+import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {ConversionFunnel, TopSkusChart, TrafficDonut} from './charts';
 import {PreferencesForm} from './settings/preferences-form';
 import {
@@ -56,9 +57,9 @@ type TabProps = {brief: AnalystBrief; row: DigestArchiveRow};
 // truths). Marketplaces first (Shopee, Lazada), then the website. Pick one, then
 // see its breakdown.
 type Channel = 'shopee' | 'lazada' | 'website';
-const CHANNELS: {key: Channel; label: string; icon: typeof Globe; source: string; accent: string}[] = [
-  {key: 'shopee', label: 'Shopee', icon: Store, source: 'Marketplace', accent: 'text-[#ee4d2d]'},
-  {key: 'lazada', label: 'Lazada', icon: Store, source: 'Marketplace', accent: 'text-[#f57224]'},
+const CHANNELS: {key: Channel; label: string; icon: React.ComponentType<{className?: string}>; source: string; accent: string}[] = [
+  {key: 'shopee', label: 'Shopee', icon: ShopeeIcon, source: 'Marketplace', accent: 'text-[#ee4d2d]'},
+  {key: 'lazada', label: 'Lazada', icon: LazadaIcon, source: 'Marketplace', accent: 'text-[#f57224]'},
   {key: 'website', label: 'Website', icon: Globe, source: 'zoomyforpets.com', accent: 'text-primary'},
 ];
 
@@ -93,7 +94,7 @@ function ChannelSwitch({value, onChange}: {value: Channel; onChange: (c: Channel
                   active ? 'bg-primary/15' : 'bg-muted group-hover:bg-muted/70',
                 )}
               >
-                <Icon className={cn('size-4', c.accent)} />
+                <Icon className={cn('size-5', c.accent)} />
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold leading-tight text-foreground">{c.label}</span>

@@ -1,8 +1,9 @@
 import Link from 'next/link';
-import {ArrowRight, Check, Globe, Store} from 'lucide-react';
+import {ArrowRight, Check, Globe} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
+import {ShopeeIcon, LazadaIcon} from './brand-icons';
 
 // The Coop "daily brief" home — a calm landing that mirrors the video's
 // "What should we do today?" screen, tailored to Zoomy's real channels. Each
@@ -12,7 +13,7 @@ const MODULES = [
     key: 'shopee',
     label: 'Shopee',
     tag: 'Marketplace',
-    icon: Store,
+    icon: ShopeeIcon,
     accent: '#ee4d2d',
     tasks: ['Read sales, ads & traffic', 'Diagnose the funnel', 'Flag ROAS / ACOS', 'Recommend actions'],
   },
@@ -20,7 +21,7 @@ const MODULES = [
     key: 'lazada',
     label: 'Lazada',
     tag: 'Marketplace',
-    icon: Store,
+    icon: LazadaIcon,
     accent: '#f57224',
     tasks: ['Pull orders via API', 'Read finance & payouts', 'Check inventory', 'Recommend actions'],
   },
