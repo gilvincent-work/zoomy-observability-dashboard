@@ -3,16 +3,15 @@
 import {useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
-import {Activity, LayoutDashboard, Mail, Menu, Package, Settings, Sparkles, Users} from 'lucide-react';
+import {Activity, ChevronDown, Home, Mail, Package, Search, Settings, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
-import {Button} from '@/components/ui/button';
-import {Separator} from '@/components/ui/separator';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 
+// The left icon rail — Coop's thin nav. Each tab is an icon with a green active pill.
 const TABS = [
-  {href: '/', label: 'Overview', icon: LayoutDashboard},
+  {href: '/', label: 'Overview', icon: Home},
   {href: '/inventory', label: 'Inventory', icon: Package},
   {href: '/customers', label: 'Customers', icon: Users},
   {href: '/traffic', label: 'Traffic', icon: Activity},
@@ -20,6 +19,15 @@ const TABS = [
 ] as const;
 
 const isActive = (pathname: string, href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+
+/** The Coop wordmark — lowercase, with the second "o" in brand green. */
+function CoopMark() {
+  return (
+    <span className="select-none font-sans text-[19px] font-extrabold leading-none tracking-tight text-foreground">
+      co<span style={{color: 'var(--primary)'}}>o</span>p
+    </span>
+  );
+}
 
 export function DashboardShell({
   digests,
@@ -30,110 +38,138 @@ export function DashboardShell({
   usingMock: boolean;
   children: React.ReactNode;
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname() || '/';
   const searchParams = useSearchParams();
   const currentWeek = searchParams.get('week') ?? digests[0]?.window_from ?? '';
   const withWeek = (href: string) => (currentWeek ? `${href}?week=${encodeURIComponent(currentWeek)}` : href);
 
-  return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card/40 px-4 backdrop-blur-sm">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setSidebarOpen((o) => !o)}
-          aria-label={sidebarOpen ? 'Collapse sidebar' : 'Open sidebar'}
-          aria-expanded={sidebarOpen}
-        >
-          <Menu className="size-5" />
-        </Button>
-        <span className="flex size-8 items-center justify-center rounded-lg bg-primary/12 text-primary">
-          <Sparkles className="size-[18px]" />
-        </span>
-        <div className="flex min-w-0 items-baseline gap-2.5">
-          <span className="text-lg font-semibold tracking-tight">Zoomy</span>
-          <span className="hidden truncate text-sm text-muted-foreground sm:inline">AI store-ops analyst</span>
-        </div>
-        <div className="ml-auto">
-          <ThemeToggle />
-        </div>
-      </header>
+  const current = digests.find((d) => d.window_from === currentWeek) ?? digests[0];
+  const currentRange = current ? fmtRange(current.window_from, current.window_to, current.digest.window.label) : '';
 
-      <div className="flex min-h-0 flex-1">
-        {sidebarOpen && (
-          <aside className="flex w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
-            <nav className="flex-1 overflow-y-auto p-2.5">
-              <div className="px-2.5 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Reporting periods
-              </div>
-              <div className="space-y-0.5">
-                {digests.map((d) => {
-                  const active = d.window_from === currentWeek;
-                  const range = fmtRange(d.window_from, d.window_to, d.digest.window.label);
-                  return (
-                    <Link
-                      key={d.window_from}
-                      href={`${pathname}?week=${encodeURIComponent(d.window_from)}`}
-                      aria-current={active ? 'page' : undefined}
-                      className={cn(
-                        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
-                        active
-                          ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'size-2 shrink-0 rounded-full',
-                          d.digest.degraded ? 'bg-amber-500' : active ? 'bg-primary' : 'bg-primary/50',
-                        )}
-                      />
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-sm tabular-nums">{range}</span>
-                        <span className="truncate text-[11px] text-muted-foreground">{d.digest.window.label}</span>
-                      </span>
-                      {d.emailed_at && <Mail className="size-3.5 shrink-0 text-muted-foreground" />}
-                    </Link>
-                  );
-                })}
-              </div>
-            </nav>
-            {usingMock && (
+  const [periodOpen, setPeriodOpen] = useState(false);
+
+  return (
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <CoopMark />
+          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:inline">
+            BrandOS
+          </span>
+        </div>
+
+        {/* Brand switcher (Zoomy) — visual for now */}
+        <button
+          type="button"
+          className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted"
+        >
+          <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
+          Zoomy
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        </button>
+
+        {/* Reporting-period switcher */}
+        {current && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPeriodOpen((o) => !o)}
+              aria-expanded={periodOpen}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground/80 transition-colors hover:bg-muted"
+            >
+              <span className="font-mono text-xs tabular-nums">{currentRange}</span>
+              <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', periodOpen && 'rotate-180')} />
+            </button>
+            {periodOpen && (
               <>
-                <Separator />
-                <div className="p-3 text-[11px] leading-snug text-muted-foreground">
-                  Mock data — sales/CRM/traffic signals are mocked until the extended retrieval bundle lands.
+                <button className="fixed inset-0 z-10 cursor-default" aria-hidden onClick={() => setPeriodOpen(false)} />
+                <div className="absolute left-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+                  <div className="px-3 pb-1.5 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Reporting periods
+                  </div>
+                  <div className="max-h-72 overflow-y-auto pb-1">
+                    {digests.map((d) => {
+                      const active = d.window_from === currentWeek;
+                      return (
+                        <Link
+                          key={d.window_from}
+                          href={`${pathname}?week=${encodeURIComponent(d.window_from)}`}
+                          onClick={() => setPeriodOpen(false)}
+                          className={cn(
+                            'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                            active ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
+                          )}
+                        >
+                          <span
+                            className={cn('size-1.5 shrink-0 rounded-full', d.digest.degraded ? 'bg-amber-500' : 'bg-primary')}
+                          />
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate tabular-nums">{fmtRange(d.window_from, d.window_to, d.digest.window.label)}</span>
+                            <span className="truncate text-[11px] text-muted-foreground">{d.digest.window.label}</span>
+                          </span>
+                          {d.emailed_at && <Mail className="size-3.5 shrink-0 text-muted-foreground" />}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </div>
               </>
             )}
-          </aside>
+          </div>
         )}
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <nav className="flex h-12 shrink-0 items-center gap-1 overflow-x-auto border-b px-3">
-            {TABS.map((t) => {
-              const active = isActive(pathname, t.href);
-              return (
-                <Link
-                  key={t.href}
-                  href={withWeek(t.href)}
-                  className={cn(
-                    'inline-flex h-12 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 text-sm transition-colors',
-                    active
-                      ? 'border-primary font-medium text-foreground'
-                      : 'border-transparent text-muted-foreground hover:text-foreground',
-                  )}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  <t.icon className="size-4" />
-                  {t.label}
-                </Link>
-              );
-            })}
-          </nav>
-          <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+        {/* Right cluster: search · theme · avatar */}
+        <div className="ml-auto flex items-center gap-2">
+          <div className="hidden items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-muted-foreground md:flex">
+            <Search className="size-3.5" />
+            <span>Ask Coop anything</span>
+            <kbd className="ml-6 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
+          </div>
+          <ThemeToggle />
+          <span
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-primary-foreground"
+            style={{backgroundColor: 'var(--primary)'}}
+            title="Account"
+          >
+            ZY
+          </span>
         </div>
+      </header>
+
+      {/* ── Body: icon rail + canvas ────────────────────────────────────────── */}
+      <div className="flex min-h-0 flex-1">
+        <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-sidebar-border bg-sidebar py-4">
+          {TABS.map((t) => {
+            const active = isActive(pathname, t.href);
+            return (
+              <Link
+                key={t.href}
+                href={withWeek(t.href)}
+                title={t.label}
+                aria-label={t.label}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'flex size-10 items-center justify-center rounded-xl transition-colors',
+                  active
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+                )}
+              >
+                <t.icon className="size-[18px]" />
+              </Link>
+            );
+          })}
+        </nav>
+
+        <main className="min-w-0 flex-1 overflow-y-auto">
+          {children}
+          <footer className="mx-auto max-w-5xl px-6 pb-8 pt-4 md:px-10">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+              Coop · BrandOS · Zoomy{usingMock ? ' · sample data' : ' · live data'}
+            </p>
+          </footer>
+        </main>
       </div>
     </div>
   );

@@ -131,7 +131,7 @@ export function VerdictHero({row}: {row: DigestArchiveRow}) {
   const range = fmtRange(row.window_from, row.window_to, row.digest.window.label);
   return (
     <header className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <h1 className="text-3xl font-semibold tracking-tight text-foreground">{range}</h1>
+      <h1 className="font-serif text-[2.6rem] font-normal leading-[1.05] tracking-tight text-foreground">{range}</h1>
       <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
         <Sparkles className="size-3" /> AI analyst
       </Badge>

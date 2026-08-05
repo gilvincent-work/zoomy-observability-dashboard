@@ -1,18 +1,19 @@
 import type {Metadata} from 'next';
 import type {ReactNode} from 'react';
 import {Suspense} from 'react';
-import {IBM_Plex_Sans, IBM_Plex_Mono} from 'next/font/google';
+import {Inter, Newsreader} from 'next/font/google';
 import {cn} from '@/lib/utils';
 import {getDigests, usingMock} from '@/src/data';
 import {DashboardShell} from '@/components/analyst/dashboard-shell';
 import './globals.css';
 
-const sans = IBM_Plex_Sans({subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-sans'});
-const mono = IBM_Plex_Mono({subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-mono'});
+// Coop identity: Inter for UI/data, Newsreader for the editorial serif display.
+const sans = Inter({subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-sans'});
+const serif = Newsreader({subsets: ['latin'], weight: ['300', '400', '500', '600'], style: ['normal', 'italic'], variable: '--font-serif'});
 
 export const metadata: Metadata = {
-  title: 'Zoomy — AI store-ops analyst',
-  description: 'Weekly AI store-ops analyst — insights, predictions, and recommendations',
+  title: 'Coop · BrandOS — Zoomy',
+  description: 'The Brand Operating System — store-ops analytics for Zoomy across Shopee, Lazada and the website.',
 };
 
 export default async function RootLayout({children}: {children: ReactNode}) {
@@ -23,16 +24,16 @@ export default async function RootLayout({children}: {children: ReactNode}) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Seed the theme class before first paint so there's no light→dark flash.
-            Chooses saved preference, else the OS setting. */}
+        {/* Seed the theme class before first paint (no flash). Coop is light-first
+            (cream canvas), so default to light unless the user explicitly chose dark. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('zoomy-theme');if(!t){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}})();",
+              "(function(){try{var t=localStorage.getItem('zoomy-theme');document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}})();",
           }}
         />
       </head>
-      <body className={cn(sans.variable, mono.variable, 'font-sans antialiased')}>
+      <body className={cn(sans.variable, serif.variable, 'font-sans antialiased')}>
         <Suspense>
           <DashboardShell digests={digests} usingMock={usingMock()}>
             {children}
