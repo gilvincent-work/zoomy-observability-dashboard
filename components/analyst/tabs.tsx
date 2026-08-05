@@ -50,15 +50,15 @@ function TabContainer({children}: {children: React.ReactNode}) {
 
 type TabProps = {brief: AnalystBrief; row: DigestArchiveRow};
 
-// ── Channel switch — Website (zoomyforpets.com) vs Shopee marketplace ───────────
-// The two are separate businesses with different metrics; mixing them on one page
-// reads as conflicting truths. Pick a channel first, then see its breakdown.
-type Channel = 'all' | 'website' | 'shopee' | 'lazada';
+// ── Channel switch — each channel is a separate business with its own metrics, so
+// they're viewed one at a time (mixing them on one page reads as conflicting
+// truths). Marketplaces first (Shopee, Lazada), then the website. Pick one, then
+// see its breakdown.
+type Channel = 'shopee' | 'lazada' | 'website';
 const CHANNELS: {key: Channel; label: string; icon: typeof Globe; source: string; accent: string}[] = [
-  {key: 'all', label: 'All channels', icon: Sparkles, source: 'Website + Shopee + Lazada', accent: 'text-muted-foreground'},
-  {key: 'website', label: 'Website', icon: Globe, source: 'zoomyforpets.com', accent: 'text-primary'},
   {key: 'shopee', label: 'Shopee', icon: Store, source: 'Marketplace', accent: 'text-[#ee4d2d]'},
   {key: 'lazada', label: 'Lazada', icon: Store, source: 'Marketplace', accent: 'text-[#f57224]'},
+  {key: 'website', label: 'Website', icon: Globe, source: 'zoomyforpets.com', accent: 'text-primary'},
 ];
 
 // The primary control: pick a channel, then see its breakdown. Cards (not tiny
@@ -115,12 +115,12 @@ function ChannelSwitch({value, onChange}: {value: Channel; onChange: (c: Channel
 
 // ── Overview — the executive summary, scoped by channel ─────────────────────────
 export function OverviewTab({brief, row}: TabProps) {
-  const [channel, setChannel] = useState<Channel>('all');
+  const [channel, setChannel] = useState<Channel>('shopee');
   if (row.digest.degraded) return <TabContainer><DegradedNote row={row} /></TabContainer>;
   const s = brief.signals;
-  const showWebsite = channel === 'all' || channel === 'website';
-  const showShopee = channel === 'all' || channel === 'shopee';
-  const showLazada = channel === 'all' || channel === 'lazada';
+  const showWebsite = channel === 'website';
+  const showShopee = channel === 'shopee';
+  const showLazada = channel === 'lazada';
   const hasShopee = Boolean(row.digest.shopee);
   return (
     <TabContainer>
