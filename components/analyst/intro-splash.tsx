@@ -15,7 +15,7 @@ export function IntroSplash() {
 
   useEffect(() => {
     const t1 = setTimeout(() => setFading(true), 1700);
-    const t2 = setTimeout(() => setGone(true), 2450);
+    const t2 = setTimeout(() => setGone(true), 2750);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -28,11 +28,19 @@ export function IntroSplash() {
     <div
       aria-hidden
       className={cn(
-        'fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background transition-opacity duration-700 ease-out',
+        // The whole overlay crossfades out over the (already-present) dashboard.
+        'fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background transition-opacity duration-[1000ms] ease-out',
         fading ? 'opacity-0' : 'opacity-100',
       )}
     >
-      <div className="coop-intro-rise flex flex-col items-center text-center">
+      <div
+        className={cn(
+          // The title card gently scales up + softens as it leaves — feels like it
+          // lifts away to reveal the app, rather than a hard cut.
+          'coop-intro-rise flex flex-col items-center text-center transition-[transform,filter] duration-[1000ms] ease-out will-change-transform',
+          fading ? 'scale-[1.05] blur-[3px]' : 'scale-100 blur-0',
+        )}
+      >
         <span className="font-sans text-[3.25rem] font-extrabold leading-none tracking-tight text-foreground">
           co<span style={{color: 'var(--primary)'}}>o</span>p
         </span>

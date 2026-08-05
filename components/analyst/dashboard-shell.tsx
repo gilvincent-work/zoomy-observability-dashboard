@@ -162,7 +162,7 @@ export function DashboardShell({
           })}
         </nav>
 
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        <main className="coop-app-in min-w-0 flex-1 overflow-y-auto">
           {children}
           <footer className="mx-auto max-w-5xl px-6 pb-8 pt-4 md:px-10">
             <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">

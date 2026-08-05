@@ -239,6 +239,16 @@
   to   { opacity: 1; transform: none; }
 }
 .coop-intro-rise { animation: coop-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* Dashboard content rises into place as the intro card lifts away (timed to
+   overlap the splash fade). Pure CSS; reduced-motion users just see it normally. */
+@keyframes coop-app-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.coop-app-in { animation: coop-app-in 0.85s cubic-bezier(0.2, 0.7, 0.2, 1) 1.55s both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .coop-intro-rise { animation: none; }
+  .coop-intro-rise,
+  .coop-app-in { animation: none; }
 }
