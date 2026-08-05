@@ -46,6 +46,12 @@ export function DashboardShell({
   const current = digests.find((d) => d.window_from === currentWeek) ?? digests[0];
   const currentRange = current ? fmtRange(current.window_from, current.window_to, current.digest.window.label) : '';
 
+  // The reporting-period picker only makes sense in period-scoped analytics views —
+  // hide it on the home brief ("/" with no channel) and on Settings.
+  const channel = searchParams.get('channel');
+  const isHome = pathname === '/' && !channel;
+  const showPeriod = Boolean(current) && !isHome && !pathname.startsWith('/settings');
+
   const [periodOpen, setPeriodOpen] = useState(false);
 
   return (
@@ -69,8 +75,8 @@ export function DashboardShell({
           <ChevronDown className="size-3.5 text-muted-foreground" />
         </button>
 
-        {/* Reporting-period switcher */}
-        {current && (
+        {/* Reporting-period switcher — analytics views only */}
+        {showPeriod && (
           <div className="relative">
             <button
               type="button"
