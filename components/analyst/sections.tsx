@@ -155,19 +155,29 @@ function basisLabel(basis: TimeBasis): string {
   return 'all-time';
 }
 
-/** Read-only metric tiles — value + label + explicit time basis (never fake).
- *  `hideBasis` drops the per-tile "this window" line when the window is already
- *  shown once at the section header (Shopee facets carry their own date range). */
+/** Drop the redundant trailing "(window)"/"(this window)" — the section already
+ *  shows the date range once, Coop-style. */
+function cleanFigureLabel(label: string): string {
+  return label.replace(/\s*\((?:this\s+)?window\)\s*$/i, '').trim();
+}
+
+/** Read-only metric tiles — Coop editorial style: tiny uppercase label, big number
+ *  in the sans face. `hideBasis` drops the per-tile basis line (the section header
+ *  already carries the window). */
 export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hideBasis?: boolean}) {
   if (!figures.length) return null;
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {figures.map((f, i) => (
         <Card key={`${f.label}-${i}`}>
-          <CardContent className="p-4">
-            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{f.label}</div>
-            <div className="font-mono text-2xl font-semibold tabular-nums">{f.value.toLocaleString()}</div>
-            {!hideBasis && <div className="mt-1 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>}
+          <CardContent className="p-5">
+            <div className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+              {cleanFigureLabel(f.label)}
+            </div>
+            <div className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
+              {f.value.toLocaleString()}
+            </div>
+            {!hideBasis && <div className="mt-1.5 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>}
           </CardContent>
         </Card>
       ))}
