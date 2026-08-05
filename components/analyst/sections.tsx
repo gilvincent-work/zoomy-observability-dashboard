@@ -155,11 +155,30 @@ function basisLabel(basis: TimeBasis): string {
   return 'all-time';
 }
 
-/** Drop the redundant trailing "(window)"/"(this window)" and a trailing "%"
- *  (rendered separately as a unit) — the section header already shows the window. */
-function cleanFigureLabel(label: string): string {
-  return label.replace(/\s*\((?:this\s+)?window\)\s*$/i, '').replace(/\s*%\s*$/, '').trim();
+/** Bold the figures inside AI narrative (percentages, ×, currency, plain numbers)
+ *  so the eye catches the data while reading. Returns an array of strings/JSX. */
+const FIGURE_RE = /(₱\s?\d[\d,]*(?:\.\d+)?|PHP\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?%|\d+(?:\.\d+)?\s?[×x](?![a-z])|\d[\d,]*(?:\.\d+)?)/gi;
+function emphasizeFigures(text: string): React.ReactNode[] {
+  return text.split(FIGURE_RE).map((part, i) =>
+    i % 2 === 1 ? (
+      <strong key={i} className="font-semibold text-foreground">
+        {part}
+      </strong>
+    ) : (
+      part
+    ),
+  );
 }
+
+/** Conservative sentiment of a finding, used only to tint its marker. */
+const GOOD_RE = /\b(profitable|healthy|strong|positive|clean|almost always|follow through|not the problem|no (?:supply )?risk)\b/i;
+const WATCH_RE = /\b(leak|weak|eaten|thinning|drag|bottleneck|abandon|does\s?n'?t (?:buy|convert)|leave without|not converting|below benchmark|at risk|overstat)\b/i;
+function findingTone(text: string): 'good' | 'watch' | 'neutral' {
+  if (WATCH_RE.test(text)) return 'watch';
+  if (GOOD_RE.test(text)) return 'good';
+  return 'neutral';
+}
+const TONE_VAR = {good: 'var(--status-good)', watch: 'var(--status-warn)', neutral: 'var(--primary)'} as const;
 
 /** Read-only metric tiles — Coop editorial style: tiny uppercase label, big number
  *  in the sans face with a small unit. Percentage tiles carry a progress bar so a
@@ -169,13 +188,16 @@ export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hide
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {figures.map((f, i) => {
-        const isPct = /%\s*$/.test(f.label);
+        // Strip the "(window)" suffix first, THEN test/strip a trailing "%".
+        const base = f.label.replace(/\s*\((?:this\s+)?window\)\s*$/i, '').trim();
+        const isPct = /%\s*$/.test(base);
+        const label = base.replace(/\s*%\s*$/, '').trim();
         const pct = isPct ? Math.max(0, Math.min(100, f.value)) : null;
         return (
           <Card key={`${f.label}-${i}`}>
             <CardContent className="p-5">
               <div className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-                {cleanFigureLabel(f.label)}
+                {label}
               </div>
               <div className="flex items-baseline gap-0.5">
                 <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
@@ -207,17 +229,20 @@ export function AssessmentBlock({items}: {items: string[]}) {
         <Gauge className="size-3.5" /> Reading the numbers
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        {items.map((text, i) => (
-          <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-card p-4">
-            <span
-              className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full"
-              style={{backgroundColor: 'color-mix(in oklab, var(--primary) 14%, transparent)'}}
-            >
-              <Activity className="size-3.5 text-primary" />
-            </span>
-            <p className="text-[14.5px] leading-relaxed text-foreground/85">{text}</p>
-          </div>
-        ))}
+        {items.map((text, i) => {
+          const color = TONE_VAR[findingTone(text)];
+          return (
+            <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-card p-4">
+              <span
+                className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full"
+                style={{backgroundColor: `color-mix(in oklab, ${color} 15%, transparent)`}}
+              >
+                <Activity className="size-3.5" style={{color}} />
+              </span>
+              <p className="text-[14.5px] leading-relaxed text-foreground/85">{emphasizeFigures(text)}</p>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -234,7 +259,7 @@ export function ActionList({items}: {items: string[]}) {
             <span className="mt-px flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[12px] font-semibold tabular-nums text-primary-foreground">
               {i + 1}
             </span>
-            <p className="text-[15px] leading-relaxed text-foreground/90">{text}</p>
+            <p className="text-[15px] leading-relaxed text-foreground/90">{emphasizeFigures(text)}</p>
           </CardContent>
         </Card>
       ))}
@@ -249,7 +274,7 @@ export function SalesSection({row}: {row: DigestArchiveRow}) {
   return (
     <section className="mb-10">
       <Eyebrow icon={ShoppingCart}>Website sales — zoomyforpets.com</Eyebrow>
-      <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{sales.headline}</p>
+      <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{emphasizeFigures(sales.headline)}</p>
       <FigureTiles figures={sales.figures} />
 
       {sales.topProducts.length > 0 && (
@@ -374,7 +399,7 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
                   </span>
                 )}
               </div>
-              <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
+              <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{emphasizeFigures(facet.headline)}</p>
               <FigureTiles figures={facet.figures} hideBasis />
               <AssessmentBlock items={facet.assessment ?? []} />
               {facet.recommendations.length > 0 && (
@@ -424,7 +449,7 @@ export function LazadaSection({row}: {row: DigestArchiveRow}) {
                   </span>
                 )}
               </div>
-              <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
+              <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{emphasizeFigures(facet.headline)}</p>
               <FigureTiles figures={facet.figures} hideBasis />
               <AssessmentBlock items={facet.assessment ?? []} />
               {facet.recommendations.length > 0 && (
@@ -449,7 +474,7 @@ export function CustomersSection({row}: {row: DigestArchiveRow}) {
   return (
     <section className="mb-10">
       <Eyebrow icon={Users}>Customers — who to reach out to</Eyebrow>
-      <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{customers.headline}</p>
+      <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{emphasizeFigures(customers.headline)}</p>
       <FigureTiles figures={customers.figures} />
 
       {customers.outreach.length > 0 && (
