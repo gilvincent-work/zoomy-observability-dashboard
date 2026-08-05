@@ -51,7 +51,7 @@ export function DashboardShell({
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur-sm">
+      <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <CoopMark />
           <span className="hidden text-[13px] font-medium tracking-tight text-muted-foreground sm:inline">
