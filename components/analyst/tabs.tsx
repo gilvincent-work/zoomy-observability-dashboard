@@ -5,7 +5,8 @@
 // client sections (./sections) + charts (./charts), which take lucide icon
 // component props — those can't cross the server→client boundary, so tabs are client.
 import {useState} from 'react';
-import {Activity, Gauge, Globe, Lightbulb, Package, Sparkles, Store, TriangleAlert, Users} from 'lucide-react';
+import Link from 'next/link';
+import {Activity, ArrowLeft, Gauge, Globe, Lightbulb, Package, Sparkles, Store, TriangleAlert, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import type {AnalystBrief, Category} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
@@ -114,16 +115,23 @@ function ChannelSwitch({value, onChange}: {value: Channel; onChange: (c: Channel
 }
 
 // ── Overview — the executive summary, scoped by channel ─────────────────────────
-export function OverviewTab({brief, row}: TabProps) {
-  const [channel, setChannel] = useState<Channel>('shopee');
+export function OverviewTab({brief, row, initialChannel}: TabProps & {initialChannel?: Channel}) {
+  const [channel, setChannel] = useState<Channel>(initialChannel ?? 'shopee');
   if (row.digest.degraded) return <TabContainer><DegradedNote row={row} /></TabContainer>;
   const s = brief.signals;
   const showWebsite = channel === 'website';
   const showShopee = channel === 'shopee';
   const showLazada = channel === 'lazada';
   const hasShopee = Boolean(row.digest.shopee);
+  const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
   return (
     <TabContainer>
+      <Link
+        href={backHref}
+        className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="size-3.5" /> Today
+      </Link>
       <VerdictHero row={row} />
       <ChannelSwitch value={channel} onChange={setChannel} />
 
