@@ -232,3 +232,13 @@
     transition: background-color 0.25s ease, color 0.25s ease;
   }
 }
+
+/* Coop intro splash — gentle fade-up of the title card on load. */
+@keyframes coop-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.coop-intro-rise { animation: coop-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .coop-intro-rise { animation: none; }
+}

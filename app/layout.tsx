@@ -5,6 +5,7 @@ import {Inter, Newsreader} from 'next/font/google';
 import {cn} from '@/lib/utils';
 import {getDigests, usingMock} from '@/src/data';
 import {DashboardShell} from '@/components/analyst/dashboard-shell';
+import {IntroSplash} from '@/components/analyst/intro-splash';
 import './globals.css';
 
 // Coop identity: Inter for UI/data, Newsreader for the editorial serif display.
@@ -34,6 +35,7 @@ export default async function RootLayout({children}: {children: ReactNode}) {
         />
       </head>
       <body className={cn(sans.variable, serif.variable, 'font-sans antialiased')}>
+        <IntroSplash />
         <Suspense>
           <DashboardShell digests={digests} usingMock={usingMock()}>
             {children}
