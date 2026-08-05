@@ -155,45 +155,85 @@ function basisLabel(basis: TimeBasis): string {
   return 'all-time';
 }
 
-/** Drop the redundant trailing "(window)"/"(this window)" — the section already
- *  shows the date range once, Coop-style. */
+/** Drop the redundant trailing "(window)"/"(this window)" and a trailing "%"
+ *  (rendered separately as a unit) — the section header already shows the window. */
 function cleanFigureLabel(label: string): string {
-  return label.replace(/\s*\((?:this\s+)?window\)\s*$/i, '').trim();
+  return label.replace(/\s*\((?:this\s+)?window\)\s*$/i, '').replace(/\s*%\s*$/, '').trim();
 }
 
 /** Read-only metric tiles — Coop editorial style: tiny uppercase label, big number
- *  in the sans face. `hideBasis` drops the per-tile basis line (the section header
- *  already carries the window). */
+ *  in the sans face with a small unit. Percentage tiles carry a progress bar so a
+ *  low rate reads as a near-empty bar (the leak) and a high rate as nearly full. */
 export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hideBasis?: boolean}) {
   if (!figures.length) return null;
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {figures.map((f, i) => (
-        <Card key={`${f.label}-${i}`}>
-          <CardContent className="p-5">
-            <div className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-              {cleanFigureLabel(f.label)}
-            </div>
-            <div className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
-              {f.value.toLocaleString()}
-            </div>
-            {!hideBasis && <div className="mt-1.5 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>}
-          </CardContent>
-        </Card>
-      ))}
+      {figures.map((f, i) => {
+        const isPct = /%\s*$/.test(f.label);
+        const pct = isPct ? Math.max(0, Math.min(100, f.value)) : null;
+        return (
+          <Card key={`${f.label}-${i}`}>
+            <CardContent className="p-5">
+              <div className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+                {cleanFigureLabel(f.label)}
+              </div>
+              <div className="flex items-baseline gap-0.5">
+                <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
+                  {f.value.toLocaleString()}
+                </span>
+                {isPct && <span className="text-[17px] font-medium leading-none text-muted-foreground">%</span>}
+              </div>
+              {pct != null ? (
+                <div className="mt-3.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary transition-all" style={{width: `${pct}%`}} />
+                </div>
+              ) : (
+                !hideBasis && <div className="mt-1.5 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }
 
-/** The 👉 actions — plain strings from the digest, rendered as a ranked list. */
+/** Diagnosis findings — a scannable grid of insight tiles (not a wall of text). */
+export function AssessmentBlock({items}: {items: string[]}) {
+  if (!items?.length) return null;
+  return (
+    <div className="mb-5">
+      <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <Gauge className="size-3.5" /> Reading the numbers
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {items.map((text, i) => (
+          <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-card p-4">
+            <span
+              className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full"
+              style={{backgroundColor: 'color-mix(in oklab, var(--primary) 14%, transparent)'}}
+            >
+              <Activity className="size-3.5 text-primary" />
+            </span>
+            <p className="text-[14.5px] leading-relaxed text-foreground/85">{text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Recommended actions — numbered action cards, ranked. */
 export function ActionList({items}: {items: string[]}) {
   if (!items.length) return null;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {items.map((text, i) => (
         <Card key={i}>
           <CardContent className="flex items-start gap-3 p-4">
-            <ArrowRight className="mt-0.5 size-4 shrink-0 text-primary" />
+            <span className="mt-px flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[12px] font-semibold tabular-nums text-primary-foreground">
+              {i + 1}
+            </span>
             <p className="text-[15px] leading-relaxed text-foreground/90">{text}</p>
           </CardContent>
         </Card>
@@ -336,25 +376,9 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
               </div>
               <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
               <FigureTiles figures={facet.figures} hideBasis />
-              {facet.assessment && facet.assessment.length > 0 && (
-                <div className="mb-4">
-                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    <Gauge className="size-3.5" /> Reading the numbers
-                  </div>
-                  <div className="space-y-2">
-                    {facet.assessment.map((text, i) => (
-                      <Card key={i} className="border-l-2" style={{borderLeftColor: 'var(--primary)'}}>
-                        <CardContent className="flex items-start gap-3 p-4">
-                          <Activity className="mt-0.5 size-4 shrink-0 text-primary" />
-                          <p className="text-[15px] leading-relaxed text-foreground/85">{text}</p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <AssessmentBlock items={facet.assessment ?? []} />
               {facet.recommendations.length > 0 && (
-                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <ArrowRight className="size-3.5" /> Recommended actions
                 </div>
               )}
@@ -402,25 +426,9 @@ export function LazadaSection({row}: {row: DigestArchiveRow}) {
               </div>
               <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{facet.headline}</p>
               <FigureTiles figures={facet.figures} hideBasis />
-              {facet.assessment && facet.assessment.length > 0 && (
-                <div className="mb-4">
-                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    <Gauge className="size-3.5" /> Reading the numbers
-                  </div>
-                  <div className="space-y-2">
-                    {facet.assessment.map((text, i) => (
-                      <Card key={i} className="border-l-2" style={{borderLeftColor: 'var(--primary)'}}>
-                        <CardContent className="flex items-start gap-3 p-4">
-                          <Activity className="mt-0.5 size-4 shrink-0 text-primary" />
-                          <p className="text-[15px] leading-relaxed text-foreground/85">{text}</p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <AssessmentBlock items={facet.assessment ?? []} />
               {facet.recommendations.length > 0 && (
-                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <ArrowRight className="size-3.5" /> Recommended actions
                 </div>
               )}
