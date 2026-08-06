@@ -93,26 +93,26 @@ function ComparisonChart({metrics, channels}: {metrics: Record<Channel, ChannelM
           <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
         ) : (
           <>
-          <div className="flex items-end justify-around gap-4 border-b border-border pt-2" style={{height: 300}}>
+          <div className="flex items-end justify-center gap-8 border-b border-border pt-2 sm:gap-12" style={{height: 240}}>
             {rows.map(({c, value}) => {
               const meta = CH[c];
               return (
-                <div key={c} className="flex flex-1 flex-col items-center justify-end gap-2.5">
+                <div key={c} className="flex flex-col items-center justify-end gap-2">
                   <div className="text-[15px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
                   <div
-                    className="w-16 rounded-t-xl transition-all sm:w-28 lg:w-32"
-                    style={{height: Math.max(6, (value / max) * 230), backgroundColor: meta.accent}}
+                    className="w-20 rounded-t-xl transition-all sm:w-24 lg:w-28"
+                    style={{height: Math.max(6, (value / max) * 185), backgroundColor: meta.accent}}
                   />
                 </div>
               );
             })}
           </div>
-          <div className="flex justify-around gap-4 pt-3">
+          <div className="flex justify-center gap-8 pt-3 sm:gap-12">
             {rows.map(({c}) => {
               const meta = CH[c];
               const Icon = meta.icon;
               return (
-                <div key={c} className="flex flex-1 items-center justify-center gap-1.5 text-[13px] font-medium text-foreground">
+                <div key={c} className="flex w-20 items-center justify-center gap-1.5 text-[13px] font-medium text-foreground sm:w-24 lg:w-28">
                   <Icon className="size-4" style={{color: meta.accent}} /> {meta.label}
                 </div>
               );
@@ -140,14 +140,12 @@ function CombinedKpis({metrics, channels}: {metrics: Record<Channel, ChannelMetr
     {label: 'Blended AOV', value: money(aov)},
   ];
   return (
-    <div className="grid grid-cols-3 gap-3">
-      {tiles.map((t) => (
-        <Card key={t.label}>
-          <CardContent className="p-4">
-            <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">{t.label}</div>
-            <div className="text-[24px] font-semibold leading-none tracking-tight tabular-nums text-foreground">{t.value}</div>
-          </CardContent>
-        </Card>
+    <div className="flex flex-wrap items-center gap-x-7 gap-y-3 sm:gap-x-9">
+      {tiles.map((t, i) => (
+        <div key={t.label} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
+          <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">{t.label}</span>
+          <span className="text-[19px] font-semibold leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
+        </div>
       ))}
     </div>
   );
@@ -172,7 +170,7 @@ function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
   const {open} = usePlaybook();
   if (!items.length) return null;
   return (
-    <div className="space-y-2.5">
+    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
       {items.map(({channel, rec}, i) => {
         const meta = CH[channel];
         const Icon = meta.icon;
@@ -191,13 +189,13 @@ function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
           </CardContent>
         );
         return clickable ? (
-          <Card key={i} className="cursor-pointer transition-colors hover:border-primary/40">
-            <button type="button" onClick={() => open({action, steps})} className="block w-full text-left">
+          <Card key={i} className="h-full cursor-pointer transition-colors hover:border-primary/40">
+            <button type="button" onClick={() => open({action, steps})} className="block h-full w-full text-left">
               {body}
             </button>
           </Card>
         ) : (
-          <Card key={i}>{body}</Card>
+          <Card key={i} className="h-full">{body}</Card>
         );
       })}
     </div>
@@ -241,7 +239,12 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
       <Link href={backHref} className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
         <ArrowLeft className="size-3.5" /> Today
       </Link>
-      <VerdictHero row={row} />
+
+      {/* header — date range on the left, compact KPIs filling the space on the right */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-x-8 gap-y-4 [&_header]:mb-0">
+        <VerdictHero row={row} />
+        <CombinedKpis metrics={metrics} channels={selected} />
+      </div>
 
       {/* channel filter */}
       <div className="mb-6">
@@ -275,26 +278,19 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         </div>
       </div>
 
-      {/* combined KPIs — full width */}
-      <div className="mb-6">
-        <CombinedKpis metrics={metrics} channels={selected} />
-      </div>
-
-      {/* recs sidebar + main (comparison chart, or the single channel's detail) */}
-      <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <aside>
-          <div className="lg:sticky lg:top-4">
-            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <Sparkles className="size-3.5 text-primary" /> Recommended actions
-              <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
-            </div>
-            <div className="lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1">
-              <MergedActions items={recs} />
-            </div>
+      {/* recs (2-col) + main (comparison chart, or the single channel's detail) */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+        <section className="min-w-0">
+          <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Sparkles className="size-3.5 text-primary" /> Recommended actions
+            <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
           </div>
-        </aside>
+          <div className="lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1">
+            <MergedActions items={recs} />
+          </div>
+        </section>
 
-        <main className="min-w-0">
+        <main className="min-w-0 lg:sticky lg:top-4 lg:self-start">
           {single ? <ChannelDetail channel={single} row={row} /> : <ComparisonChart metrics={metrics} channels={selected} />}
         </main>
       </div>
