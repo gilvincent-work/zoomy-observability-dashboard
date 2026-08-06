@@ -1,13 +1,12 @@
 import {getDigests} from '@/src/data';
 import {getBrief} from '@/src/salesSignals';
 import {pickIndex} from '@/src/week';
-import {OverviewTab} from '@/components/analyst/tabs';
+import {ChannelOverview, type Channel} from '@/components/analyst/channel-compare';
 import {HomeLanding} from '@/components/analyst/home-landing';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
-const CHANNELS = ['shopee', 'lazada', 'website'] as const;
-type Channel = (typeof CHANNELS)[number];
+const CHANNELS: Channel[] = ['shopee', 'lazada', 'website'];
 
 export default async function Page({searchParams}: {searchParams: {week?: string; channel?: string}}) {
   // Customer PII is masked inside getDigests() (server-only) rather than here, so
@@ -16,9 +15,11 @@ export default async function Page({searchParams}: {searchParams: {week?: string
   const row = digests[pickIndex(digests, searchParams.week)];
   if (!row) return <div className="p-10 text-muted-foreground">No digests archived yet.</div>;
 
-  // Home ("What should we do today?") is the default; a ?channel opens that
-  // channel's analytics.
-  const channel = CHANNELS.includes(searchParams.channel as Channel) ? (searchParams.channel as Channel) : null;
-  if (!channel) return <HomeLanding row={row} />;
-  return <OverviewTab brief={getBrief()} row={row} initialChannel={channel} />;
+  // Home ("What should we do today?") is the default; a ?channel opens the unified
+  // overview — 'all' (or an unknown value) selects every channel, a single channel
+  // starts filtered to it (drills into its detail).
+  const ch = searchParams.channel;
+  if (!ch) return <HomeLanding row={row} />;
+  const initial = CHANNELS.includes(ch as Channel) ? [ch as Channel] : CHANNELS;
+  return <ChannelOverview brief={getBrief()} row={row} initialChannels={initial} />;
 }

@@ -32,11 +32,10 @@ function CoopMark() {
 
 export function DashboardShell({
   digests,
-  usingMock,
   children,
 }: {
   digests: DigestArchiveRow[];
-  usingMock: boolean;
+  usingMock?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || '/';
@@ -172,11 +171,6 @@ export function DashboardShell({
 
         <main className="coop-app-in min-w-0 flex-1 overflow-y-auto">
           {children}
-          <footer className="mx-auto max-w-5xl px-6 pb-8 pt-4 md:px-10">
-            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-              Coop · BrandOS · Zoomy{usingMock ? ' · sample data' : ' · live data'}
-            </p>
-          </footer>
         </main>
       </div>
     </div>
