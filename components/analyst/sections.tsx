@@ -13,6 +13,7 @@ import {
   Clock,
   Eye,
   FlaskConical,
+  Check,
   Gauge,
   ListChecks,
   Mail,
@@ -29,7 +30,7 @@ import {
   Users,
 } from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestLazadaFacet, DigestRec, DigestShopeeFacet, OutreachList, TimeBasis} from '../../src/types';
-import {usePlaybook, recAction, recSteps} from './playbook';
+import {usePlaybook, usePlaybookProgress, recAction, recSteps} from './playbook';
 import type {AnalystBrief, Anomaly, Category, Impact, Prediction, Recommendation, Severity} from '../../src/salesSignals';
 import {mockReprompt} from '../../src/reprompt';
 import {fmtRange} from '../../src/week';
@@ -331,39 +332,59 @@ export function AssessmentBlock({items}: {items: string[]}) {
   );
 }
 
+/** One recommendation card — shows a step-count badge (and a green "Done" badge
+ *  once every step is ticked), and opens the playbook drawer when clicked. */
+function ActionCard({item, rank}: {item: DigestRec; rank: number}) {
+  const {open} = usePlaybook();
+  const action = recAction(item);
+  const steps = recSteps(item);
+  const total = steps.length;
+  const {done, complete} = usePlaybookProgress(action, total);
+
+  const badge =
+    total === 0 ? null : complete ? (
+      <span
+        className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+        style={{color: 'var(--status-good)', backgroundColor: 'color-mix(in oklab, var(--status-good) 14%, transparent)'}}
+      >
+        <Check className="size-3" /> Done
+      </span>
+    ) : (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <ListChecks className="size-3" />
+        {done > 0 ? `${done}/${total}` : `${total} steps`}
+      </span>
+    );
+
+  const body = (
+    <CardContent className="flex items-start gap-3 p-4">
+      <span className="mt-px flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[12px] font-semibold tabular-nums text-primary-foreground">
+        {rank}
+      </span>
+      <p className="flex-1 text-[15px] leading-relaxed text-foreground/90">{emphasizeFigures(action)}</p>
+      {badge && <span className="mt-0.5">{badge}</span>}
+    </CardContent>
+  );
+
+  return total > 0 ? (
+    <Card className="cursor-pointer transition-colors hover:border-primary/40">
+      <button type="button" onClick={() => open({action, steps})} className="block w-full text-left">
+        {body}
+      </button>
+    </Card>
+  ) : (
+    <Card>{body}</Card>
+  );
+}
+
 /** Recommended actions — numbered cards; those with a playbook open a step drawer. */
 export function ActionList({items}: {items: DigestRec[]}) {
-  const {open} = usePlaybook();
   if (!items.length) return null;
   return (
     <div className="space-y-2.5">
-      {items.map((item, i) => {
-        const action = recAction(item);
-        const steps = recSteps(item);
-        const clickable = steps.length > 0;
-        const body = (
-          <CardContent className="flex items-start gap-3 p-4">
-            <span className="mt-px flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[12px] font-semibold tabular-nums text-primary-foreground">
-              {i + 1}
-            </span>
-            <p className="flex-1 text-[15px] leading-relaxed text-foreground/90">{emphasizeFigures(action)}</p>
-            {clickable && (
-              <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                <ListChecks className="size-3.5" /> Steps
-              </span>
-            )}
-          </CardContent>
-        );
-        return clickable ? (
-          <Card key={i} className="group cursor-pointer transition-colors hover:border-primary/40">
-            <button type="button" onClick={() => open({action, steps})} className="block w-full text-left">
-              {body}
-            </button>
-          </Card>
-        ) : (
-          <Card key={i}>{body}</Card>
-        );
-      })}
+      {items.map((item, i) => (
+        <ActionCard key={i} item={item} rank={i + 1} />
+      ))}
     </div>
   );
 }

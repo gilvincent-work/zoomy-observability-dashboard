@@ -32,6 +32,36 @@ export function PlaybookProvider({children}: {children: React.ReactNode}) {
 // persist across visits (truncated to keep the key bounded).
 const keyFor = (action: string) => `coop-pb:${action.slice(0, 140)}`;
 
+// Fired whenever a checklist changes, so action cards re-read their progress live.
+const PROGRESS_EVENT = 'coop-pb-progress';
+
+function readDoneCount(action: string): number {
+  try {
+    const raw = localStorage.getItem(keyFor(action));
+    if (!raw) return 0;
+    const arr = JSON.parse(raw) as boolean[];
+    return Array.isArray(arr) ? arr.filter(Boolean).length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Live completion for one action's playbook (updates when the drawer toggles). */
+export function usePlaybookProgress(action: string, total: number): {done: number; complete: boolean} {
+  const [done, setDone] = useState(0);
+  useEffect(() => {
+    const update = () => setDone(readDoneCount(action));
+    update();
+    window.addEventListener(PROGRESS_EVENT, update);
+    window.addEventListener('storage', update);
+    return () => {
+      window.removeEventListener(PROGRESS_EVENT, update);
+      window.removeEventListener('storage', update);
+    };
+  }, [action, total]);
+  return {done, complete: total > 0 && done >= total};
+}
+
 function PlaybookDrawer({rec, onClose}: {rec: ActiveRec | null; onClose: () => void}) {
   const [done, setDone] = useState<boolean[]>([]);
 
@@ -60,6 +90,7 @@ function PlaybookDrawer({rec, onClose}: {rec: ActiveRec | null; onClose: () => v
       const next = prev.map((v, j) => (j === i ? !v : v));
       try {
         localStorage.setItem(keyFor(rec.action), JSON.stringify(next));
+        window.dispatchEvent(new CustomEvent(PROGRESS_EVENT));
       } catch {
         /* private mode — progress just isn't persisted */
       }
