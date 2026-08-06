@@ -14,8 +14,9 @@ import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Sparkles} from 'lucide-react';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
-import {usePlaybook, recAction, recSteps} from './playbook';
-import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, ConversationsSection, VerdictHero} from './sections';
+import {usePlaybook, usePlaybookProgress, recAction, recSteps} from './playbook';
+import {fmtRange} from '../../src/week';
+import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, ConversationsSection} from './sections';
 
 export type Channel = 'shopee' | 'lazada' | 'website';
 const CHANNELS: {key: Channel; label: string; icon: React.ComponentType<{className?: string; style?: React.CSSProperties}>; accent: string}[] = [
@@ -166,38 +167,54 @@ function collectRecs(row: DigestArchiveRow, channels: Channel[]): {channel: Chan
   return out;
 }
 
-function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
+function MergedActionCard({channel, rec}: {channel: Channel; rec: DigestRec}) {
   const {open} = usePlaybook();
+  const meta = CH[channel];
+  const Icon = meta.icon;
+  const action = recAction(rec);
+  const steps = recSteps(rec);
+  const clickable = steps.length > 0;
+  const {done, complete} = usePlaybookProgress(action, steps.length);
+
+  const badge = complete ? (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary">
+      <Check className="size-3" /> Done
+    </span>
+  ) : (
+    <span className="shrink-0 text-[10.5px] font-medium text-primary">
+      {done > 0 ? `${done}/${steps.length} done` : `${steps.length} steps`} →
+    </span>
+  );
+
+  const body = (
+    <CardContent className="p-3.5">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+          <Icon className="size-3" style={{color: meta.accent}} /> {meta.label}
+        </span>
+        {clickable && badge}
+      </div>
+      <p className="line-clamp-2 text-[13.5px] leading-snug text-foreground/90">{action}</p>
+    </CardContent>
+  );
+
+  if (!clickable) return <Card className="h-full">{body}</Card>;
+  return (
+    <Card className="h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md">
+      <button type="button" onClick={() => open({action, steps})} className="block h-full w-full text-left">
+        {body}
+      </button>
+    </Card>
+  );
+}
+
+function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
   if (!items.length) return null;
   return (
     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-      {items.map(({channel, rec}, i) => {
-        const meta = CH[channel];
-        const Icon = meta.icon;
-        const action = recAction(rec);
-        const steps = recSteps(rec);
-        const clickable = steps.length > 0;
-        const body = (
-          <CardContent className="p-3.5">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
-                <Icon className="size-3" style={{color: meta.accent}} /> {meta.label}
-              </span>
-              {clickable && <span className="shrink-0 text-[10.5px] font-medium text-primary">{steps.length} steps →</span>}
-            </div>
-            <p className="line-clamp-2 text-[13.5px] leading-snug text-foreground/90">{action}</p>
-          </CardContent>
-        );
-        return clickable ? (
-          <Card key={i} className="h-full cursor-pointer transition-colors hover:border-primary/40">
-            <button type="button" onClick={() => open({action, steps})} className="block h-full w-full text-left">
-              {body}
-            </button>
-          </Card>
-        ) : (
-          <Card key={i} className="h-full">{body}</Card>
-        );
-      })}
+      {items.map(({channel, rec}, i) => (
+        <MergedActionCard key={i} channel={channel} rec={rec} />
+      ))}
     </div>
   );
 }
@@ -240,16 +257,13 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         <ArrowLeft className="size-3.5" /> Today
       </Link>
 
-      {/* header — date range on the left, compact KPIs filling the space on the right */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-x-8 gap-y-4 [&_header]:mb-0">
-        <VerdictHero row={row} />
-        <CombinedKpis metrics={metrics} channels={selected} />
-      </div>
+      {/* header — date range · channel filter (center) · compact KPIs (right), one band */}
+      <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-4">
+        <h1 className="font-serif text-[2.6rem] font-normal leading-[1.05] tracking-tight text-foreground">
+          {fmtRange(row.window_from, row.window_to, row.digest.window.label)}
+        </h1>
 
-      {/* channel filter */}
-      <div className="mb-6">
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Channels</div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {CHANNELS.map((c) => {
             const on = selected.includes(c.key);
             const Icon = c.icon;
@@ -275,6 +289,10 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
               </button>
             );
           })}
+        </div>
+
+        <div className="ml-auto">
+          <CombinedKpis metrics={metrics} channels={selected} />
         </div>
       </div>
 
