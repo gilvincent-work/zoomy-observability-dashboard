@@ -7,7 +7,7 @@
 // figures (label-matched) — interim until the batch emits a normalized summary.
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, Globe} from 'lucide-react';
+import {ArrowLeft, Check, Globe} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
 import type {AnalystBrief} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
@@ -93,19 +93,20 @@ function ComparisonChart({metrics, channels}: {metrics: Record<Channel, ChannelM
         {rows.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="flex items-end justify-around gap-6 pt-2" style={{height: 236}}>
             {rows.map(({c, value}) => {
               const meta = CH[c];
               const Icon = meta.icon;
               return (
-                <div key={c} className="flex items-center gap-3">
-                  <div className="flex w-28 shrink-0 items-center gap-1.5 text-[13px] font-medium text-foreground">
+                <div key={c} className="flex flex-1 flex-col items-center gap-2">
+                  <div className="text-[13px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
+                  <div
+                    className="w-14 rounded-t-lg transition-all sm:w-20"
+                    style={{height: Math.max(4, (value / max) * 176), backgroundColor: meta.accent}}
+                  />
+                  <div className="flex items-center gap-1.5 text-[13px] font-medium text-foreground">
                     <Icon className="size-4" style={{color: meta.accent}} /> {meta.label}
                   </div>
-                  <div className="h-8 flex-1 overflow-hidden rounded-lg bg-muted">
-                    <div className="h-full rounded-lg transition-all" style={{width: `${Math.max(3, (value / max) * 100)}%`, backgroundColor: meta.accent}} />
-                  </div>
-                  <div className="w-28 shrink-0 text-right text-[14px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
                 </div>
               );
             })}
@@ -171,14 +172,14 @@ function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
         const steps = recSteps(rec);
         const clickable = steps.length > 0;
         const body = (
-          <CardContent className="p-4">
-            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-              <Icon className="size-3" style={{color: meta.accent}} /> {meta.label}
+          <CardContent className="p-3.5">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+                <Icon className="size-3" style={{color: meta.accent}} /> {meta.label}
+              </span>
+              {clickable && <span className="shrink-0 text-[10.5px] font-medium text-primary">{steps.length} steps →</span>}
             </div>
-            <p className="text-[14.5px] leading-relaxed text-foreground/90">{action}</p>
-            {clickable && (
-              <div className="mt-2 text-[11px] font-medium text-primary">{steps.length} steps →</div>
-            )}
+            <p className="line-clamp-2 text-[13.5px] leading-snug text-foreground/90">{action}</p>
           </CardContent>
         );
         return clickable ? (
@@ -248,11 +249,18 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
                 aria-pressed={on}
                 className={cn(
                   'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all',
-                  on ? 'border-primary/60 bg-primary/[0.06] text-foreground' : 'border-border bg-card text-muted-foreground hover:text-foreground',
+                  on
+                    ? 'border-primary bg-primary/[0.1] text-foreground shadow-sm'
+                    : 'border-border bg-card text-muted-foreground opacity-70 hover:opacity-100',
                 )}
               >
                 <Icon className="size-4" style={{color: on ? c.accent : undefined}} />
                 {c.label}
+                {on ? (
+                  <Check className="size-3.5 text-primary" />
+                ) : (
+                  <span className="size-3.5 rounded-full border border-current opacity-40" aria-hidden />
+                )}
               </button>
             );
           })}
@@ -260,12 +268,17 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* left: merged recommendations */}
+        {/* left: merged recommendations (sticky, internally scrollable) */}
         <div className="lg:col-span-1">
-          <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Sparkles className="size-3.5 text-primary" /> Recommended actions
+          <div className="lg:sticky lg:top-4">
+            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Sparkles className="size-3.5 text-primary" /> Recommended actions
+              <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
+            </div>
+            <div className="lg:max-h-[calc(100vh-11rem)] lg:overflow-y-auto lg:pr-1">
+              <MergedActions items={recs} />
+            </div>
           </div>
-          <MergedActions items={recs} />
         </div>
 
         {/* right: KPIs + comparison (or single-channel note) */}

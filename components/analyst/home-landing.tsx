@@ -96,23 +96,14 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
 
           <div className="h-px w-full bg-border" />
 
-          <div className="mt-4 flex justify-end">
-            <Link
-              href={`/?channel=all${week ? `&week=${encodeURIComponent(week)}` : ''}`}
-              className="inline-flex items-center gap-1 text-[13px] font-medium text-primary transition-opacity hover:opacity-80"
-            >
-              Compare all channels <ArrowRight className="size-3.5" />
-            </Link>
-          </div>
-
-          {/* channel columns — each a doorway into that channel's analytics */}
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
+          {/* channel columns — clicking any opens the unified 3-channel comparison */}
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
             {MODULES.map((m) => {
               const Icon = m.icon;
               return (
                 <Link
                   key={m.key}
-                  href={`/?channel=${m.key}${week ? `&week=${encodeURIComponent(week)}` : ''}`}
+                  href={`/?channel=all${week ? `&week=${encodeURIComponent(week)}` : ''}`}
                   style={{backgroundColor: 'var(--card-warm)'}}
                   className="group flex flex-col rounded-xl border border-border p-4 transition-all hover:border-foreground/20 hover:shadow-sm"
                 >
