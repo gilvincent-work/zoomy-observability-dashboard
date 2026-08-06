@@ -7,7 +7,7 @@
 // figures (label-matched) — interim until the batch emits a normalized summary.
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, Check, Globe} from 'lucide-react';
+import {ArrowLeft, Check, Globe, Search} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
 import type {AnalystBrief} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
@@ -276,43 +276,63 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         <ArrowLeft className="size-3.5" /> Today
       </Link>
 
-      {/* header — date range · channel filter (center) · compact KPIs (right), one band */}
-      <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-4">
+      {/* header — date range (left) · compact KPIs (right) */}
+      <div className="mb-6 flex flex-wrap items-center gap-x-8 gap-y-4">
         <h1 className="font-serif text-[2.6rem] font-normal leading-[1.05] tracking-tight text-foreground">
           {fmtRange(row.window_from, row.window_to, row.digest.window.label)}
         </h1>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {CHANNELS.map((c) => {
-            const on = selected.includes(c.key);
-            const Icon = c.icon;
-            return (
-              <button
-                key={c.key}
-                onClick={() => toggle(c.key)}
-                aria-pressed={on}
-                className={cn(
-                  'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all',
-                  on
-                    ? 'border-primary bg-primary/[0.1] text-foreground shadow-sm'
-                    : 'border-border bg-card text-muted-foreground opacity-70 hover:opacity-100',
-                )}
-              >
-                <Icon className="size-4" style={{color: on ? c.accent : undefined}} />
-                {c.label}
-                {on ? (
-                  <Check className="size-3.5 text-primary" />
-                ) : (
-                  <span className="size-3.5 rounded-full border border-current opacity-40" aria-hidden />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
         <div className="ml-auto">
           <CombinedKpis metrics={metrics} channels={selected} />
         </div>
+      </div>
+
+      {/* Ask Coop — centered hero search (frontend only for now) */}
+      <form
+        onSubmit={(e) => e.preventDefault()}
+        className="mx-auto mb-6 flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-1.5 pl-4 shadow-sm transition-shadow focus-within:shadow-md focus-within:border-primary/40"
+      >
+        <Search className="size-5 shrink-0 text-muted-foreground" />
+        <input
+          type="text"
+          placeholder="Chat with Coop!"
+          aria-label="Chat with Coop"
+          className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-xl bg-primary px-6 py-2 text-sm font-semibold tracking-wide text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          ASK
+        </button>
+      </form>
+
+      {/* channel filter */}
+      <div className="mb-7 flex flex-wrap items-center gap-2">
+        {CHANNELS.map((c) => {
+          const on = selected.includes(c.key);
+          const Icon = c.icon;
+          return (
+            <button
+              key={c.key}
+              onClick={() => toggle(c.key)}
+              aria-pressed={on}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all',
+                on
+                  ? 'border-primary bg-primary/[0.1] text-foreground shadow-sm'
+                  : 'border-border bg-card text-muted-foreground opacity-70 hover:opacity-100',
+              )}
+            >
+              <Icon className="size-4" style={{color: on ? c.accent : undefined}} />
+              {c.label}
+              {on ? (
+                <Check className="size-3.5 text-primary" />
+              ) : (
+                <span className="size-3.5 rounded-full border border-current opacity-40" aria-hidden />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {single ? (
