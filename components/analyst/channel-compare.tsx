@@ -12,7 +12,6 @@ import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
 import type {AnalystBrief} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
-import {Badge} from '@/components/ui/badge';
 import {Sparkles} from 'lucide-react';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {usePlaybook, recAction, recSteps} from './playbook';
@@ -93,24 +92,33 @@ function ComparisonChart({metrics, channels}: {metrics: Record<Channel, ChannelM
         {rows.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
         ) : (
-          <div className="flex items-end justify-around gap-6 pt-2" style={{height: 236}}>
+          <>
+          <div className="flex items-end justify-around gap-4 border-b border-border pt-2" style={{height: 300}}>
             {rows.map(({c, value}) => {
               const meta = CH[c];
-              const Icon = meta.icon;
               return (
-                <div key={c} className="flex flex-1 flex-col items-center gap-2">
-                  <div className="text-[13px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
+                <div key={c} className="flex flex-1 flex-col items-center justify-end gap-2.5">
+                  <div className="text-[15px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
                   <div
-                    className="w-14 rounded-t-lg transition-all sm:w-20"
-                    style={{height: Math.max(4, (value / max) * 176), backgroundColor: meta.accent}}
+                    className="w-16 rounded-t-xl transition-all sm:w-28 lg:w-32"
+                    style={{height: Math.max(6, (value / max) * 230), backgroundColor: meta.accent}}
                   />
-                  <div className="flex items-center gap-1.5 text-[13px] font-medium text-foreground">
-                    <Icon className="size-4" style={{color: meta.accent}} /> {meta.label}
-                  </div>
                 </div>
               );
             })}
           </div>
+          <div className="flex justify-around gap-4 pt-3">
+            {rows.map(({c}) => {
+              const meta = CH[c];
+              const Icon = meta.icon;
+              return (
+                <div key={c} className="flex flex-1 items-center justify-center gap-1.5 text-[13px] font-medium text-foreground">
+                  <Icon className="size-4" style={{color: meta.accent}} /> {meta.label}
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
         {channels.includes('shopee') && metric === 'units' && (
           <p className="mt-3 text-[11px] text-muted-foreground">Shopee doesn’t report units in its sales export, so it’s omitted here.</p>
@@ -229,7 +237,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
   const single = selected.length === 1 ? selected[0] : null;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
+    <div className="w-full px-6 py-8 md:px-10 lg:px-12">
       <Link href={backHref} className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
         <ArrowLeft className="size-3.5" /> Today
       </Link>
@@ -267,39 +275,29 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* left: merged recommendations (sticky, internally scrollable) */}
-        <div className="lg:col-span-1">
+      {/* combined KPIs — full width */}
+      <div className="mb-6">
+        <CombinedKpis metrics={metrics} channels={selected} />
+      </div>
+
+      {/* recs sidebar + main (comparison chart, or the single channel's detail) */}
+      <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <aside>
           <div className="lg:sticky lg:top-4">
             <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               <Sparkles className="size-3.5 text-primary" /> Recommended actions
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
             </div>
-            <div className="lg:max-h-[calc(100vh-11rem)] lg:overflow-y-auto lg:pr-1">
+            <div className="lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1">
               <MergedActions items={recs} />
             </div>
           </div>
-        </div>
+        </aside>
 
-        {/* right: KPIs + comparison (or single-channel note) */}
-        <div className="space-y-5 lg:col-span-2">
-          <CombinedKpis metrics={metrics} channels={selected} />
-          {selected.length >= 2 ? (
-            <ComparisonChart metrics={metrics} channels={selected} />
-          ) : (
-            <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
-              <Sparkles className="size-3" /> Showing {CH[single!].label} detail below
-            </Badge>
-          )}
-        </div>
+        <main className="min-w-0">
+          {single ? <ChannelDetail channel={single} row={row} /> : <ComparisonChart metrics={metrics} channels={selected} />}
+        </main>
       </div>
-
-      {/* single-channel drill-down */}
-      {single && (
-        <div className="mt-10 border-t border-border pt-8">
-          <ChannelDetail channel={single} row={row} />
-        </div>
-      )}
     </div>
   );
 }
