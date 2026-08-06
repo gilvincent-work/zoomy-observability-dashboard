@@ -12,7 +12,7 @@ export function recSteps(r: DigestRec): string[] {
   return typeof r === 'string' ? [] : r.steps ?? [];
 }
 
-type ActiveRec = {action: string; steps: string[]};
+type ActiveRec = {action: string; steps: string[]; label?: string};
 const PlaybookCtx = createContext<{open: (r: ActiveRec) => void}>({open: () => {}});
 export const usePlaybook = () => useContext(PlaybookCtx);
 
@@ -149,7 +149,7 @@ function PlaybookDrawer({rec, onClose}: {rec: ActiveRec | null; onClose: () => v
             <ListChecks className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Playbook</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{rec.label ?? 'Playbook'}</div>
             <p className="mt-1 text-[15px] font-medium leading-snug text-foreground">{rec.action}</p>
           </div>
           <button

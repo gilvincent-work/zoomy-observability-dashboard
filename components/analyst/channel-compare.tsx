@@ -63,8 +63,7 @@ const money = (n: number) => `₱${n.toLocaleString(undefined, {maximumFractionD
 const fmt = (m: Metric, n: number) => (METRICS.find((x) => x.key === m)?.money ? money(n) : n.toLocaleString());
 
 // ── comparison chart ─────────────────────────────────────────────────────────────
-function ComparisonChart({metrics, channels}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]}) {
-  const [metric, setMetric] = useState<Metric>('revenue');
+function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]; metric: Metric; setMetric: (m: Metric) => void}) {
   const rows = channels
     .map((c) => ({c, value: metrics[c]?.[metric] ?? null}))
     .filter((r): r is {c: Channel; value: number} => r.value != null);
@@ -167,6 +166,24 @@ function collectRecs(row: DigestArchiveRow, channels: Channel[]): {channel: Chan
   return out;
 }
 
+// Keywords that mark a recommendation as relevant to the metric currently on the
+// chart — used to float the related actions to the top (regardless of channel).
+const METRIC_KEYWORDS: Record<Metric, RegExp> = {
+  revenue: /revenue|sales|gmv|turnover|top-?line|growth|traffic|visitor|acquisition|discover/i,
+  orders: /order|conversion|convert|checkout|cart|placed|click-to-order|visit-to-placed|bounce|funnel|abandon/i,
+  aov: /basket|sales-?per-?buyer|per buyer|aov|order value|bundle|voucher|upsell|cross-?sell|add-?on|minimum spend/i,
+  units: /unit|stock|inventory|quantity|sku|restock|out of stock|sell-?through/i,
+};
+
+/** Stable-sort recs so those matching the active metric come first (channel-agnostic). */
+function orderRecsByMetric(items: {channel: Channel; rec: DigestRec}[], metric: Metric): {channel: Channel; rec: DigestRec}[] {
+  const re = METRIC_KEYWORDS[metric];
+  return items
+    .map((it, i) => ({it, i, hit: re.test(recAction(it.rec)) ? 0 : 1}))
+    .sort((a, b) => a.hit - b.hit || a.i - b.i)
+    .map((x) => x.it);
+}
+
 function MergedActionCard({channel, rec}: {channel: Channel; rec: DigestRec}) {
   const {open} = usePlaybook();
   const meta = CH[channel];
@@ -201,7 +218,7 @@ function MergedActionCard({channel, rec}: {channel: Channel; rec: DigestRec}) {
   if (!clickable) return <Card className="h-full">{body}</Card>;
   return (
     <Card className="h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md">
-      <button type="button" onClick={() => open({action, steps})} className="block h-full w-full text-left">
+      <button type="button" onClick={() => open({action, steps, label: meta.label})} className="block h-full w-full text-left">
         {body}
       </button>
     </Card>
@@ -235,8 +252,10 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 // ── the unified overview ─────────────────────────────────────────────────────────
 export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; initialChannels: Channel[]}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
+  const [metric, setMetric] = useState<Metric>('revenue');
   const metrics = useMemo(() => channelMetrics(row), [row]);
-  const recs = useMemo(() => collectRecs(row, selected), [row, selected]);
+  // Merged recs, reordered so those relevant to the metric on the chart come first.
+  const recs = useMemo(() => orderRecsByMetric(collectRecs(row, selected), metric), [row, selected, metric]);
   const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
 
   if (row.digest.degraded) {
@@ -305,6 +324,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
           <section className="min-w-0">
             <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               <Sparkles className="size-3.5 text-primary" /> Recommended actions
+              <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first</span>
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
             </div>
             <div className="lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1">
@@ -313,7 +333,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
           </section>
 
           <main className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-            <ComparisonChart metrics={metrics} channels={selected} />
+            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={setMetric} />
           </main>
         </div>
       )}

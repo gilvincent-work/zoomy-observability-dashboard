@@ -334,7 +334,7 @@ export function AssessmentBlock({items}: {items: string[]}) {
 
 /** One recommendation card — shows a step-count badge (and a green "Done" badge
  *  once every step is ticked), and opens the playbook drawer when clicked. */
-function ActionCard({item, rank}: {item: DigestRec; rank: number}) {
+function ActionCard({item, rank, label}: {item: DigestRec; rank: number; label?: string}) {
   const {open} = usePlaybook();
   const action = recAction(item);
   const steps = recSteps(item);
@@ -368,7 +368,7 @@ function ActionCard({item, rank}: {item: DigestRec; rank: number}) {
 
   return total > 0 ? (
     <Card className="cursor-pointer transition-colors hover:border-primary/40">
-      <button type="button" onClick={() => open({action, steps})} className="block w-full text-left">
+      <button type="button" onClick={() => open({action, steps, label})} className="block w-full text-left">
         {body}
       </button>
     </Card>
@@ -378,12 +378,12 @@ function ActionCard({item, rank}: {item: DigestRec; rank: number}) {
 }
 
 /** Recommended actions — numbered cards; those with a playbook open a step drawer. */
-export function ActionList({items}: {items: DigestRec[]}) {
+export function ActionList({items, label}: {items: DigestRec[]; label?: string}) {
   if (!items.length) return null;
   return (
     <div className="space-y-2.5">
       {items.map((item, i) => (
-        <ActionCard key={i} item={item} rank={i + 1} />
+        <ActionCard key={i} item={item} rank={i + 1} label={label} />
       ))}
     </div>
   );
@@ -454,7 +454,7 @@ export function SalesSection({row}: {row: DigestArchiveRow}) {
         </div>
       )}
 
-      <ActionList items={sales.recommendations} />
+      <ActionList items={sales.recommendations} label="Website" />
     </section>
   );
 }
@@ -497,6 +497,7 @@ function windowDays(win: FacetWindow): number | null {
 }
 
 export function ShopeeSection({row}: {row: DigestArchiveRow}) {
+  const channelLabel = 'Shopee';
   const shopee = row.digest.shopee ?? null;
   if (!shopee) return null;
   const present = SHOPEE_FACETS.filter((f) => shopee[f.key]);
@@ -530,7 +531,7 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
                   <ArrowRight className="size-3.5" /> Recommended actions
                 </div>
               )}
-              <ActionList items={facet.recommendations} />
+              <ActionList items={facet.recommendations} label={channelLabel} />
             </div>
           );
         })}
@@ -548,6 +549,7 @@ const LAZADA_FACETS: {key: 'sales' | 'finance' | 'inventory'; label: string}[] =
 ];
 
 export function LazadaSection({row}: {row: DigestArchiveRow}) {
+  const channelLabel = 'Lazada';
   const lazada = row.digest.lazada ?? null;
   if (!lazada) return null;
   const present = LAZADA_FACETS.filter((f) => lazada[f.key]);
@@ -581,7 +583,7 @@ export function LazadaSection({row}: {row: DigestArchiveRow}) {
                   <ArrowRight className="size-3.5" /> Recommended actions
                 </div>
               )}
-              <ActionList items={facet.recommendations} />
+              <ActionList items={facet.recommendations} label={channelLabel} />
             </div>
           );
         })}
@@ -631,7 +633,7 @@ export function CustomersSection({row}: {row: DigestArchiveRow}) {
         </div>
       )}
 
-      <ActionList items={customers.recommendations} />
+      <ActionList items={customers.recommendations} label="Website" />
     </section>
   );
 }
@@ -661,7 +663,7 @@ export function ConversationsSection({row}: {row: DigestArchiveRow}) {
           ))}
         </div>
       )}
-      <ActionList items={digest.recommendations} />
+      <ActionList items={digest.recommendations} label="Website" />
     </section>
   );
 }
