@@ -6,6 +6,7 @@
 import {useState} from 'react';
 import {
   Activity,
+  ArrowDown,
   ArrowRight,
   CalendarDays,
   ChevronDown,
@@ -220,6 +221,86 @@ export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hide
   );
 }
 
+/** A compact conversion funnel — ordered stages, each a bar scaled to the top
+ *  stage, with the step-through % between, so the drop-off reads at a glance. */
+function FunnelStrip({title, stages}: {title?: string; stages: {label: string; value: number}[]}) {
+  if (stages.length < 2) return null;
+  const max = Math.max(...stages.map((s) => s.value), 1);
+  return (
+    <div className="mb-6 rounded-xl border border-border bg-card p-5">
+      {title && <div className="mb-3.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>}
+      <div className="space-y-2.5">
+        {stages.map((s, i) => {
+          const w = Math.max(3, (s.value / max) * 100);
+          const prev = i > 0 ? stages[i - 1].value : null;
+          const step = prev ? (s.value / prev) * 100 : null;
+          return (
+            <div key={s.label}>
+              {step != null && (
+                <div className="mb-1.5 ml-[124px] flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <ArrowDown className="size-3" />
+                  {(step < 10 ? step.toFixed(2) : step.toFixed(1)) + '% continue'}
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <div className="w-28 shrink-0 truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {s.label}
+                </div>
+                <div className="h-7 flex-1 overflow-hidden rounded-lg bg-muted">
+                  <div className="h-full rounded-lg bg-primary/85 transition-all" style={{width: `${w}%`}} />
+                </div>
+                <div className="w-20 shrink-0 text-right text-[14px] font-semibold tabular-nums text-foreground">
+                  {s.value.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Funnel specs, auto-matched to a facet by its figure labels (label signatures are
+// distinct across facets, so the first spec whose stages resolve wins).
+const FACET_FUNNELS: {title: string; stages: {label: string; match: (l: string) => boolean}[]}[] = [
+  {
+    title: 'Traffic → buyers',
+    stages: [
+      {label: 'Visitors', match: (l) => /visitor/i.test(l)},
+      {label: 'Buyers', match: (l) => /buyer/i.test(l)},
+    ],
+  },
+  {
+    title: 'Clicks → conversions',
+    stages: [
+      {label: 'Clicks', match: (l) => /clicks/i.test(l)},
+      {label: 'Conversions', match: (l) => /conversion/i.test(l) && !/rate|%/i.test(l)},
+    ],
+  },
+  {
+    title: 'Orders → net of cancellations',
+    stages: [
+      {label: 'Orders', match: (l) => /orders/i.test(l) && !/net/i.test(l)},
+      {label: 'Net orders', match: (l) => /net orders/i.test(l)},
+    ],
+  },
+];
+
+/** Render a funnel for the facet if its figures resolve one of the specs. */
+function FacetFunnel({figures}: {figures: DigestFigure[]}) {
+  for (const spec of FACET_FUNNELS) {
+    const stages = spec.stages
+      .map((st) => {
+        const f = figures.find((x) => st.match(x.label));
+        return f ? {label: st.label, value: f.value} : null;
+      })
+      .filter((s): s is {label: string; value: number} => s !== null);
+    if (stages.length >= 2) return <FunnelStrip title={spec.title} stages={stages} />;
+  }
+  return null;
+}
+
 /** Diagnosis findings — a scannable grid of insight tiles (not a wall of text). */
 export function AssessmentBlock({items}: {items: string[]}) {
   if (!items?.length) return null;
@@ -401,6 +482,7 @@ export function ShopeeSection({row}: {row: DigestArchiveRow}) {
               </div>
               <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{emphasizeFigures(facet.headline)}</p>
               <FigureTiles figures={facet.figures} hideBasis />
+              <FacetFunnel figures={facet.figures} />
               <AssessmentBlock items={facet.assessment ?? []} />
               {facet.recommendations.length > 0 && (
                 <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -451,6 +533,7 @@ export function LazadaSection({row}: {row: DigestArchiveRow}) {
               </div>
               <p className="mb-4 text-[15px] leading-relaxed text-foreground/85">{emphasizeFigures(facet.headline)}</p>
               <FigureTiles figures={facet.figures} hideBasis />
+              <FacetFunnel figures={facet.figures} />
               <AssessmentBlock items={facet.assessment ?? []} />
               {facet.recommendations.length > 0 && (
                 <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

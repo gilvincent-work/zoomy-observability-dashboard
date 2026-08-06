@@ -58,12 +58,12 @@ export function DashboardShell({
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur-sm">
-        <div className="flex items-center gap-2">
+        <Link href="/" aria-label="Coop home" className="flex items-center gap-2 rounded-lg transition-opacity hover:opacity-70">
           <CoopMark />
           <span className="hidden text-[13px] font-medium tracking-tight text-muted-foreground sm:inline">
             BrandOS
           </span>
-        </div>
+        </Link>
 
         {/* Brand switcher (Zoomy) — visual for now */}
         <button
