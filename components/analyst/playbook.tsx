@@ -46,6 +46,38 @@ function readDoneCount(action: string): number {
   }
 }
 
+/** The home "Actions" stat, made progress-aware: shows fully-completed vs total,
+ *  updating live as playbook checklists are ticked. */
+export function ActionsStat({actions}: {actions: {action: string; total: number}[]}) {
+  const [done, setDone] = useState(0);
+  useEffect(() => {
+    const update = () => setDone(actions.filter((a) => a.total > 0 && readDoneCount(a.action) >= a.total).length);
+    update();
+    window.addEventListener(PROGRESS_EVENT, update);
+    window.addEventListener('storage', update);
+    return () => {
+      window.removeEventListener(PROGRESS_EVENT, update);
+      window.removeEventListener('storage', update);
+    };
+  }, [actions]);
+  const total = actions.length;
+  return (
+    <div className="text-right">
+      <div className="text-[10.5px] font-medium uppercase tracking-[0.09em] text-muted-foreground">Actions</div>
+      <div className="text-xl font-semibold tabular-nums text-foreground">
+        {done > 0 ? (
+          <>
+            <span style={{color: 'var(--status-good)'}}>{done}</span>
+            <span className="text-muted-foreground">/{total}</span>
+          </>
+        ) : (
+          total
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Live completion for one action's playbook (updates when the drawer toggles). */
 export function usePlaybookProgress(action: string, total: number): {done: number; complete: boolean} {
   const [done, setDone] = useState(0);

@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import {ArrowRight, Check, Globe} from 'lucide-react';
-import type {DigestArchiveRow} from '../../src/types';
+import type {DigestArchiveRow, DigestRec} from '../../src/types';
 import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
+import {ActionsStat} from './playbook';
 
 // The Coop "daily brief" home — a calm landing that mirrors the video's
 // "What should we do today?" screen, tailored to Zoomy's real channels. Each
@@ -35,13 +36,22 @@ const MODULES = [
   },
 ] as const;
 
-/** Count every recommended action across the digest — the "actions" stat. */
-function countActions(row: DigestArchiveRow): number {
+/** Every recommended action across the digest, with its playbook step count — feeds
+ *  the progress-aware "Actions" stat. */
+function collectActions(row: DigestArchiveRow): {action: string; total: number}[] {
+  const out: {action: string; total: number}[] = [];
+  const push = (recs?: DigestRec[]) => {
+    for (const r of recs ?? []) {
+      out.push(typeof r === 'string' ? {action: r, total: 0} : {action: r.action, total: r.steps?.length ?? 0});
+    }
+  };
   const d = row.digest;
-  let n = (d.recommendations?.length ?? 0) + (d.sales?.recommendations?.length ?? 0) + (d.customers?.recommendations?.length ?? 0);
-  for (const f of ['sales', 'ads', 'traffic', 'products'] as const) n += d.shopee?.[f]?.recommendations?.length ?? 0;
-  for (const f of ['sales', 'finance', 'inventory'] as const) n += d.lazada?.[f]?.recommendations?.length ?? 0;
-  return n;
+  push(d.recommendations);
+  push(d.sales?.recommendations);
+  push(d.customers?.recommendations);
+  for (const f of ['sales', 'ads', 'traffic', 'products'] as const) push(d.shopee?.[f]?.recommendations);
+  for (const f of ['sales', 'finance', 'inventory'] as const) push(d.lazada?.[f]?.recommendations);
+  return out;
 }
 
 function Stat({label, value}: {label: string; value: string}) {
@@ -57,6 +67,7 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
   const range = fmtRange(row.window_from, row.window_to, row.digest.window.label);
   const present = [row.digest.shopee, row.digest.lazada, row.digest.sales || row.digest.customers].filter(Boolean).length;
   const week = row.window_from;
+  const actions = collectActions(row);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
@@ -78,7 +89,7 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
             </div>
             <div className="flex items-center gap-8">
               <Stat label="Channels" value={String(present)} />
-              <Stat label="Actions" value={String(countActions(row))} />
+              <ActionsStat actions={actions} />
               <Stat label="Sources" value="Live" />
             </div>
           </div>
