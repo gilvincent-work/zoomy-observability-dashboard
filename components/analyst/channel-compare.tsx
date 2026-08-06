@@ -296,22 +296,27 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         </div>
       </div>
 
-      {/* recs (2-col) + main (comparison chart, or the single channel's detail) */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
-        <section className="min-w-0">
-          <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Sparkles className="size-3.5 text-primary" /> Recommended actions
-            <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
-          </div>
-          <div className="lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1">
-            <MergedActions items={recs} />
-          </div>
-        </section>
+      {single ? (
+        /* single channel — full-width detail, no compact comparison layout */
+        <ChannelDetail channel={single} row={row} />
+      ) : (
+        /* comparing 2+ channels — merged recs (2-col) beside the comparison chart */
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+          <section className="min-w-0">
+            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Sparkles className="size-3.5 text-primary" /> Recommended actions
+              <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
+            </div>
+            <div className="lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1">
+              <MergedActions items={recs} />
+            </div>
+          </section>
 
-        <main className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-          {single ? <ChannelDetail channel={single} row={row} /> : <ComparisonChart metrics={metrics} channels={selected} />}
-        </main>
-      </div>
+          <main className="min-w-0 lg:sticky lg:top-4 lg:self-start">
+            <ComparisonChart metrics={metrics} channels={selected} />
+          </main>
+        </div>
+      )}
     </div>
   );
 }
