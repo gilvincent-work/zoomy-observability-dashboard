@@ -5,6 +5,10 @@
 
 export type TimeBasis = 'window' | 'recurring' | 'allTime';
 
+// A recommended action. Legacy digests store a plain string; newer ones store an
+// {action, steps} object (the AI-written how-to playbook). The dashboard accepts both.
+export type DigestRec = string | {action: string; steps?: string[]};
+
 export interface DigestTheme {
   theme: string;
   displayName: string;
@@ -35,7 +39,7 @@ export interface DigestSales {
   topProducts: DigestSalesProduct[];   // title ∈ salesSignals.windowed.topProducts
   rising?: DigestSalesWatch[];         // momentum: title ∈ risingProducts. Optional — archived rows predating the enrichment lack it.
   watch: DigestSalesWatch[];           // title ∈ salesSignals.windowed.decliningProducts
-  recommendations: string[];
+  recommendations: DigestRec[];
 }
 
 export type OutreachList = 'vip' | 'atRisk' | 'new';
@@ -49,7 +53,7 @@ export interface DigestCustomers {
   headline: string;
   figures: DigestFigure[];
   outreach: DigestOutreach[];
-  recommendations: string[];
+  recommendations: DigestRec[];
 }
 
 // Shopee marketplace channel (separate from the website). Fed from manual
@@ -61,7 +65,7 @@ export interface DigestShopeeFacet {
   // Diagnosis: plain-language findings reading the numbers, shown before the
   // action recommendations. Absent on older archived rows.
   assessment?: string[];
-  recommendations: string[];
+  recommendations: DigestRec[];
   // Real export date range for THIS facet (ads is a 14-day window; sales/traffic/
   // products are 30-day). Stamped from the export by the batch job — see
   // reconcileShopeeWindows. Absent on older archived rows.
@@ -78,7 +82,7 @@ export interface DigestLazadaFacet {
   headline: string;
   figures: DigestFigure[];
   assessment?: string[];
-  recommendations: string[];
+  recommendations: DigestRec[];
   window?: {from: string | null; to: string | null; label: string | null} | null;
 }
 export interface DigestLazada {
@@ -93,7 +97,7 @@ export interface DigestDocument {
   headline: string;
   themes: DigestTheme[];
   figures: DigestFigure[];
-  recommendations: string[];
+  recommendations: DigestRec[];
   // Optional sections — present only when the batch job passed the corresponding
   // block; null (or absent, for older archived rows) otherwise.
   sales?: DigestSales | null;
