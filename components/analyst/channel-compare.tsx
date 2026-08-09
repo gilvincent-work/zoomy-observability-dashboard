@@ -227,7 +227,7 @@ function MergedActionCard({channel, rec}: {channel: Channel; rec: DigestRec}) {
 
   if (!clickable) return <Card className="h-full py-0">{body}</Card>;
   return (
-    <Card className="h-full cursor-pointer py-0 transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md">
+    <Card className="h-full cursor-pointer py-0 transition-all hover:-translate-y-0.5 hover:shadow-md hover:ring-2 hover:ring-primary">
       <button type="button" onClick={() => open({action, steps, label: meta.label})} className="block h-full w-full text-left">
         {body}
       </button>
