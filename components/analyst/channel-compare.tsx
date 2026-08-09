@@ -246,6 +246,45 @@ function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
   );
 }
 
+// ── top products by revenue (Website store — the only per-SKU data in the archive) ─
+function TopProducts({row}: {row: DigestArchiveRow}) {
+  const products = row.digest.sales?.topProducts ?? [];
+  if (!products.length) return null;
+  const top = [...products].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+  const max = Math.max(1, ...top.map((p) => p.revenue));
+  return (
+    <Card className="py-0">
+      <CardContent className="p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Top products by revenue</div>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+            <Globe className="size-3" /> Website store
+          </span>
+        </div>
+        <ol className="space-y-3">
+          {top.map((p, i) => (
+            <li key={p.title} className="flex items-center gap-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold tabular-nums text-primary-foreground">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-baseline justify-between gap-3">
+                  <span className="truncate text-[13px] font-medium text-foreground">{p.title}</span>
+                  <span className="shrink-0 text-[13px] font-semibold tabular-nums text-foreground">{money(p.revenue)}</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary/80 transition-all" style={{width: `${(p.revenue / max) * 100}%`}} />
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3.5 text-[11px] text-muted-foreground">Per-SKU revenue is only exported for the Website store; marketplace SKUs aren’t in the feed yet.</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── single-channel drill-down detail ─────────────────────────────────────────────
 function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}) {
   if (channel === 'shopee') return <ShopeeSection row={row} />;
@@ -389,8 +428,9 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
             </div>
           </section>
 
-          <main className="min-w-0 lg:sticky lg:top-4 lg:self-start">
+          <main className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:self-start">
             <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={pickMetric} />
+            {selected.includes('website') && <TopProducts row={row} />}
           </main>
         </div>
       )}
