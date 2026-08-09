@@ -253,7 +253,11 @@ type SkuRow = {title: string; revenue: number; units?: number};
 function productsFor(row: DigestArchiveRow, c: Channel): SkuRow[] {
   const d = row.digest;
   const raw =
-    c === 'shopee' ? d.shopee?.products?.topProducts : c === 'lazada' ? d.lazada?.sales?.topProducts : d.sales?.topProducts;
+    c === 'shopee'
+      ? d.shopee?.sales?.topProducts ?? d.shopee?.products?.topProducts
+      : c === 'lazada'
+        ? d.lazada?.sales?.topProducts
+        : d.sales?.topProducts;
   return [...(raw ?? [])].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
 }
 
