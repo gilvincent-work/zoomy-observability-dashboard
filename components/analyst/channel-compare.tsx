@@ -317,7 +317,7 @@ function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[
                   </div>
                   <span className="shrink-0 text-[13px] font-semibold tabular-nums text-foreground">
                     {money(p.revenue)}
-                    {p.units ? <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">· {p.units.toLocaleString()}u</span> : null}
+                    {p.units ? <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">· {p.units.toLocaleString()} units</span> : null}
                   </span>
                 </div>
               </div>
@@ -465,15 +465,15 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
       ) : (
         /* comparing 2+ channels — merged recs (2-col) beside the comparison chart */
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
-          <section className="min-w-0">
+          <section className="flex min-w-0 flex-col lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
             <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
               <Sparkles className="size-3.5 text-primary" /> Recommended actions
               <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first</span>
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
             </div>
-            {/* px/py + matching -mx give the card borders, shadows and hover-lift
-                room so overflow-y-auto doesn't crop their edges */}
-            <div className="lg:-mx-2 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:px-2 lg:py-1.5">
+            {/* fills the column height and scrolls; px/py + matching -mx give the
+                card borders, shadows and hover-lift room so overflow doesn't crop them */}
+            <div className="lg:-mx-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-2 lg:py-1.5">
               <MergedActions items={recs} />
             </div>
           </section>
