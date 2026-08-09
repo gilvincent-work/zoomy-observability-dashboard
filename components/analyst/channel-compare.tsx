@@ -5,7 +5,7 @@
 // (channel-tagged) recommendations. Single-channel selection drills into that
 // channel's full detail. Comparison numbers are read from each channel's existing
 // figures (label-matched) — interim until the batch emits a normalized summary.
-import {useMemo, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import Link from 'next/link';
 import {ArrowLeft, Check, Globe, Search} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
@@ -73,15 +73,25 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
     <Card>
       <CardContent className="p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Compare channels</div>
-          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Compare channels</div>
+          <div className="relative grid grid-cols-4 rounded-xl border border-border bg-muted/40 p-1">
+            {/* liquid-glass sliding indicator — springs to the active metric */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-1 left-1 rounded-lg bg-primary shadow-sm"
+              style={{
+                width: 'calc((100% - 0.5rem) / 4)',
+                transform: `translateX(${Math.max(0, METRICS.findIndex((m) => m.key === metric)) * 100}%)`,
+                transition: 'transform 600ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}
+            />
             {METRICS.map((m) => (
               <button
                 key={m.key}
                 onClick={() => setMetric(m.key)}
                 className={cn(
-                  'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
-                  metric === m.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  'relative z-10 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors duration-300',
+                  metric === m.key ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
                 {m.label}
@@ -143,7 +153,7 @@ function CombinedKpis({metrics, channels}: {metrics: Record<Channel, ChannelMetr
     <div className="flex flex-wrap items-center gap-x-7 gap-y-3 sm:gap-x-9">
       {tiles.map((t, i) => (
         <div key={t.label} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
-          <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">{t.label}</span>
+          <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">{t.label}</span>
           <span className="text-[19px] font-semibold leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
         </div>
       ))}
@@ -204,8 +214,8 @@ function MergedActionCard({channel, rec}: {channel: Channel; rec: DigestRec}) {
   );
 
   const body = (
-    <CardContent className="p-3.5">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
+    <CardContent className="px-3.5 py-3">
+      <div className="mb-1 flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
           <Icon className="size-3" style={{color: meta.accent}} /> {meta.label}
         </span>
@@ -215,9 +225,9 @@ function MergedActionCard({channel, rec}: {channel: Channel; rec: DigestRec}) {
     </CardContent>
   );
 
-  if (!clickable) return <Card className="h-full">{body}</Card>;
+  if (!clickable) return <Card className="h-full py-0">{body}</Card>;
   return (
-    <Card className="h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md">
+    <Card className="h-full cursor-pointer py-0 transition-all hover:-translate-y-0.5 hover:shadow-md hover:ring-2 hover:ring-primary">
       <button type="button" onClick={() => open({action, steps, label: meta.label})} className="block h-full w-full text-left">
         {body}
       </button>
@@ -233,6 +243,94 @@ function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
         <MergedActionCard key={i} channel={channel} rec={rec} />
       ))}
     </div>
+  );
+}
+
+// ── top products by revenue — one ranked list per channel, in a tabbed card ───────
+type SkuRow = {title: string; revenue: number; units?: number};
+
+/** Per-SKU ranking for a channel, or [] when that channel has no per-product data. */
+function productsFor(row: DigestArchiveRow, c: Channel): SkuRow[] {
+  const d = row.digest;
+  const raw =
+    c === 'shopee'
+      ? d.shopee?.sales?.topProducts ?? d.shopee?.products?.topProducts
+      : c === 'lazada'
+        ? d.lazada?.sales?.topProducts
+        : d.sales?.topProducts;
+  return [...(raw ?? [])].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+}
+
+function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[]}) {
+  const sources = channels.map((c) => ({channel: c, meta: CH[c], items: productsFor(row, c)})).filter((s) => s.items.length);
+  const [tab, setTab] = useState<Channel | null>(null);
+  if (!sources.length) return null;
+  const active = sources.find((s) => s.channel === tab) ?? sources[0];
+  const max = Math.max(1, ...active.items.map((p) => p.revenue));
+  // channels selected but without any per-SKU feed yet (e.g. Shopee before its export)
+  const missing = channels.filter((c) => !sources.some((s) => s.channel === c));
+
+  return (
+    <Card className="py-0">
+      <CardContent className="p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Top products by revenue</div>
+          {sources.length > 1 && (
+            <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+              {sources.map((s) => {
+                const on = s.channel === active.channel;
+                const Icon = s.meta.icon;
+                return (
+                  <button
+                    key={s.channel}
+                    onClick={() => setTab(s.channel)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+                      on ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Icon className="size-3.5" style={{color: on ? s.meta.accent : undefined}} /> {s.meta.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {sources.length === 1 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+              <active.meta.icon className="size-3" style={{color: active.meta.accent}} /> {active.meta.label}
+            </span>
+          )}
+        </div>
+
+        <ol className="space-y-3">
+          {active.items.map((p, i) => (
+            <li key={p.title} className="flex items-center gap-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold tabular-nums text-primary-foreground">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-baseline justify-between gap-3">
+                  <span className="truncate text-[13px] font-medium text-foreground">{p.title}</span>
+                  <span className="shrink-0 text-[13px] font-semibold tabular-nums text-foreground">
+                    {money(p.revenue)}
+                    {p.units ? <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">· {p.units.toLocaleString()}u</span> : null}
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full transition-all" style={{width: `${(p.revenue / max) * 100}%`, backgroundColor: active.meta.accent}} />
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        {missing.length > 0 && (
+          <p className="mt-3.5 text-[11px] text-muted-foreground">
+            No per-SKU feed yet for {missing.map((c) => CH[c].label).join(', ')}.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -253,10 +351,28 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; initialChannels: Channel[]}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
   const [metric, setMetric] = useState<Metric>('revenue');
+  // Auto-cycle the chart metric every 3s so users notice the toggles are clickable;
+  // stops permanently once they pick a metric themselves.
+  const [autoCycle, setAutoCycle] = useState(true);
   const metrics = useMemo(() => channelMetrics(row), [row]);
   // Merged recs, reordered so those relevant to the metric on the chart come first.
   const recs = useMemo(() => orderRecsByMetric(collectRecs(row, selected), metric), [row, selected, metric]);
   const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
+
+  const comparing = selected.length >= 2;
+  useEffect(() => {
+    if (!autoCycle || !comparing) return;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const order: Metric[] = ['revenue', 'orders', 'aov', 'units'];
+    const id = setInterval(() => setMetric((m) => order[(order.indexOf(m) + 1) % order.length]), 3000);
+    return () => clearInterval(id);
+  }, [autoCycle, comparing]);
+
+  // A manual pick stops the auto-cycle for good.
+  const pickMetric = (m: Metric) => {
+    setAutoCycle(false);
+    setMetric(m);
+  };
 
   if (row.digest.degraded) {
     return <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 text-muted-foreground">No data for this window — check the batch job.</div>;
@@ -272,15 +388,20 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
 
   return (
     <div className="w-full px-6 py-8 md:px-10 lg:px-12">
-      <Link href={backHref} className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-        <ArrowLeft className="size-3.5" /> Today
-      </Link>
+      {/* return link + Ask Coop hero search on one line to conserve space */}
+      <div className="mb-6 flex items-center gap-4">
+        <Link
+          href={backHref}
+          aria-label="Back to Today"
+          className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+        >
+          <ArrowLeft className="size-5" />
+        </Link>
 
-      {/* Ask Coop — hero search on top (frontend only for now) */}
-      <form
-        onSubmit={(e) => e.preventDefault()}
-        className="mb-6 flex items-center gap-2 rounded-2xl border border-border bg-card p-1.5 pl-4 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:shadow-md"
-      >
+        <form
+          onSubmit={(e) => e.preventDefault()}
+          className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-card p-1.5 pl-4 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:shadow-md"
+        >
         <Search className="size-5 shrink-0 text-muted-foreground" />
         <input
           type="text"
@@ -294,7 +415,8 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         >
           ASK
         </button>
-      </form>
+        </form>
+      </div>
 
       {/* header — date range · channel filter (center) · compact KPIs (right) */}
       <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-4">
@@ -303,7 +425,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         </h1>
 
         <div className="flex flex-wrap items-center gap-2">
-          {CHANNELS.map((c) => {
+          {CHANNELS.map((c, i) => {
             const on = selected.includes(c.key);
             const Icon = c.icon;
             return (
@@ -311,8 +433,9 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
                 key={c.key}
                 onClick={() => toggle(c.key)}
                 aria-pressed={on}
+                style={{animationDelay: `${1.7 + i * 0.18}s`}}
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all',
+                  'coop-chip-hint inline-flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-95',
                   on
                     ? 'border-primary bg-primary/[0.1] text-foreground shadow-sm'
                     : 'border-border bg-card text-muted-foreground opacity-70 hover:opacity-100',
@@ -342,18 +465,21 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         /* comparing 2+ channels — merged recs (2-col) beside the comparison chart */
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
           <section className="min-w-0">
-            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
               <Sparkles className="size-3.5 text-primary" /> Recommended actions
               <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first</span>
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
             </div>
-            <div className="lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1">
+            {/* px/py + matching -mx give the card borders, shadows and hover-lift
+                room so overflow-y-auto doesn't crop their edges */}
+            <div className="lg:-mx-2 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:px-2 lg:py-1.5">
               <MergedActions items={recs} />
             </div>
           </section>
 
-          <main className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={setMetric} />
+          <main className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:self-start">
+            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={pickMetric} />
+            <TopProducts row={row} channels={selected} />
           </main>
         </div>
       )}

@@ -56,6 +56,14 @@ export interface DigestCustomers {
   recommendations: DigestRec[];
 }
 
+// Per-SKU revenue ranking, stamped by the batch (reconcileTopProducts). Marketplace
+// facets carry it once their export/pull provides per-product data.
+export interface DigestSkuRank {
+  title: string;
+  revenue: number;
+  units: number;
+}
+
 // Shopee marketplace channel (separate from the website). Fed from manual
 // Seller-Center exports. One sub-section PER FACET (sales/ads/traffic/products),
 // each its own mini-synthesis — present only when that facet's file was ingested.
@@ -70,6 +78,8 @@ export interface DigestShopeeFacet {
   // products are 30-day). Stamped from the export by the batch job — see
   // reconcileShopeeWindows. Absent on older archived rows.
   window?: {from: string | null; to: string | null; label: string | null} | null;
+  // Per-SKU revenue ranking (products facet). Absent until the Shopee export lands.
+  topProducts?: DigestSkuRank[];
 }
 export interface DigestShopee {
   sales?: DigestShopeeFacet | null;
@@ -84,6 +94,8 @@ export interface DigestLazadaFacet {
   assessment?: string[];
   recommendations: DigestRec[];
   window?: {from: string | null; to: string | null; label: string | null} | null;
+  // Per-SKU revenue ranking (sales facet), from GetOrders + GetOrderItems.
+  topProducts?: DigestSkuRank[];
 }
 export interface DigestLazada {
   sales?: DigestLazadaFacet | null;
