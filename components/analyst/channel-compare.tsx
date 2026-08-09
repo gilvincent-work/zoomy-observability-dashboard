@@ -73,7 +73,7 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
     <Card>
       <CardContent className="p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Compare channels</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Compare channels</div>
           <div className="relative grid grid-cols-4 rounded-xl border border-border bg-muted/40 p-1">
             {/* liquid-glass sliding indicator — springs to the active metric */}
             <span
@@ -153,7 +153,7 @@ function CombinedKpis({metrics, channels}: {metrics: Record<Channel, ChannelMetr
     <div className="flex flex-wrap items-center gap-x-7 gap-y-3 sm:gap-x-9">
       {tiles.map((t, i) => (
         <div key={t.label} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
-          <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">{t.label}</span>
+          <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">{t.label}</span>
           <span className="text-[19px] font-semibold leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
         </div>
       ))}
@@ -377,7 +377,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         /* comparing 2+ channels — merged recs (2-col) beside the comparison chart */
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
           <section className="min-w-0">
-            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
               <Sparkles className="size-3.5 text-primary" /> Recommended actions
               <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first</span>
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
