@@ -302,22 +302,23 @@ function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[
           )}
         </div>
 
-        <ol className="space-y-3">
+        <ol className="space-y-4">
           {active.items.map((p, i) => (
-            <li key={p.title} className="flex items-center gap-3">
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold tabular-nums text-primary-foreground">
+            <li key={p.title} className="flex gap-3">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold tabular-nums text-primary-foreground">
                 {i + 1}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="mb-1 flex items-baseline justify-between gap-3">
-                  <span className="truncate text-[13px] font-medium text-foreground">{p.title}</span>
+                {/* full title on its own line — wraps, never truncated */}
+                <p className="mb-1.5 text-[13px] font-medium leading-snug text-foreground">{p.title}</p>
+                <div className="flex items-center gap-3">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full transition-all" style={{width: `${(p.revenue / max) * 100}%`, backgroundColor: active.meta.accent}} />
+                  </div>
                   <span className="shrink-0 text-[13px] font-semibold tabular-nums text-foreground">
                     {money(p.revenue)}
                     {p.units ? <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">· {p.units.toLocaleString()}u</span> : null}
                   </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full transition-all" style={{width: `${(p.revenue / max) * 100}%`, backgroundColor: active.meta.accent}} />
                 </div>
               </div>
             </li>
