@@ -156,12 +156,13 @@ export function DashboardShell({
                 aria-label={t.label}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex size-10 items-center justify-center rounded-xl transition-colors',
+                  'relative flex size-10 items-center justify-center rounded-xl transition-colors',
                   active
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
                 )}
               >
+                {active && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
                 <t.icon className="size-[18px]" />
               </Link>
             );

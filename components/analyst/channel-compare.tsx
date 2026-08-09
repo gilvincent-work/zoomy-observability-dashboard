@@ -103,15 +103,26 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
         ) : (
           <>
-          <div className="flex items-end justify-center gap-8 border-b border-border pt-1 sm:gap-12" style={{height: 168}}>
+          <div
+            className="flex items-end justify-center gap-8 border-b border-border pt-1 sm:gap-12"
+            style={{
+              height: 168,
+              // faint horizontal gridlines for a sense of scale
+              backgroundImage:
+                'repeating-linear-gradient(to top, transparent 0, transparent 41px, color-mix(in oklab, var(--border) 55%, transparent) 41px, color-mix(in oklab, var(--border) 55%, transparent) 42px)',
+            }}
+          >
             {rows.map(({c, value}) => {
               const meta = CH[c];
               return (
                 <div key={c} className="flex flex-col items-center justify-end gap-1.5">
                   <div className="text-[15px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
                   <div
-                    className="w-20 rounded-t-xl transition-all sm:w-24 lg:w-28"
-                    style={{height: Math.max(6, (value / max) * 130), backgroundColor: meta.accent}}
+                    className="w-20 rounded-t-xl shadow-sm transition-all sm:w-24 lg:w-28"
+                    style={{
+                      height: Math.max(6, (value / max) * 130),
+                      backgroundImage: `linear-gradient(180deg, ${meta.accent} 0%, color-mix(in oklab, ${meta.accent} 72%, white) 100%)`,
+                    }}
                   />
                 </div>
               );
@@ -154,7 +165,7 @@ function CombinedKpis({metrics, channels}: {metrics: Record<Channel, ChannelMetr
       {tiles.map((t, i) => (
         <div key={t.label} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
           <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">{t.label}</span>
-          <span className="text-[19px] font-semibold leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
+          <span className="font-serif text-[23px] font-normal leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
         </div>
       ))}
     </div>

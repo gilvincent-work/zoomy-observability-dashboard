@@ -64,7 +64,7 @@ export function ActionsStat({actions}: {actions: {action: string; total: number}
   return (
     <div className="text-right">
       <div className="text-[10.5px] font-medium uppercase tracking-[0.09em] text-muted-foreground">Actions</div>
-      <div className="text-xl font-semibold tabular-nums text-foreground">
+      <div className="font-serif text-2xl font-normal tabular-nums text-foreground">
         {done > 0 ? (
           <>
             <span style={{color: 'var(--status-good)'}}>{done}</span>

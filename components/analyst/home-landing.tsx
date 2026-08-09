@@ -58,7 +58,7 @@ function Stat({label, value}: {label: string; value: string}) {
   return (
     <div className="text-right">
       <div className="text-[10.5px] font-medium uppercase tracking-[0.09em] text-muted-foreground">{label}</div>
-      <div className="text-xl font-semibold tabular-nums text-foreground">{value}</div>
+      <div className="font-serif text-2xl font-normal tabular-nums text-foreground">{value}</div>
     </div>
   );
 }
@@ -71,7 +71,12 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
-      <h1 className="mb-8 text-[30px] font-semibold tracking-tight text-foreground">What should we do today?</h1>
+      <h1 className="mb-3 text-[30px] font-semibold tracking-tight text-foreground">What should we do today?</h1>
+      {row.digest.headline && (
+        <p className="mb-8 max-w-3xl font-serif text-[22px] font-normal italic leading-snug text-foreground/75">
+          {row.digest.headline}
+        </p>
+      )}
 
       <Card>
         <CardContent className="p-6 md:p-7">
