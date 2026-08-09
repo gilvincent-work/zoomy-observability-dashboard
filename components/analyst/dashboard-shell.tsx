@@ -3,7 +3,7 @@
 import {useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
-import {Activity, ChevronDown, Home, Mail, Package, Search, Settings, Users} from 'lucide-react';
+import {Activity, ChevronDown, Home, Mail, Package, Settings, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -130,13 +130,8 @@ export function DashboardShell({
           </div>
         )}
 
-        {/* Right cluster: search · theme · avatar */}
+        {/* Right cluster: theme · avatar (the in-page "Chat with Coop" box is the ask entry point) */}
         <div className="ml-auto flex items-center gap-2">
-          <div className="hidden items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-muted-foreground md:flex">
-            <Search className="size-3.5" />
-            <span>Ask Coop anything</span>
-            <kbd className="ml-6 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
-          </div>
           <ThemeToggle />
           <span
             className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-primary-foreground"
