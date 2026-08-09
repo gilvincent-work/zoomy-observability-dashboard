@@ -382,7 +382,9 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
               <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first</span>
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
             </div>
-            <div className="lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1">
+            {/* px/py + matching -mx give the card borders, shadows and hover-lift
+                room so overflow-y-auto doesn't crop their edges */}
+            <div className="lg:-mx-2 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:px-2 lg:py-1.5">
               <MergedActions items={recs} />
             </div>
           </section>
