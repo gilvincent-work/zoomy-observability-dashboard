@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import {ArrowRight, Check, Globe} from 'lucide-react';
+import {ArrowRight, Check, Globe, Megaphone, Sparkles} from 'lucide-react';
 import type {DigestArchiveRow, DigestRec} from '../../src/types';
 import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
@@ -96,50 +96,82 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
 
           <div className="h-px w-full bg-border" />
 
-          {/* one merged "Sales" box — opens the unified cross-channel comparison */}
-          <div className="mt-5">
+          {/* module cards — Sales (live) + Marketing (placeholder) */}
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {/* Sales — opens the unified cross-channel comparison */}
             <Link
               href={`/?channel=all${week ? `&week=${encodeURIComponent(week)}` : ''}`}
               style={{backgroundColor: 'var(--card-warm)'}}
-              className="group flex flex-col gap-5 rounded-xl border border-border p-5 transition-all hover:border-foreground/20 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
+              className="group flex flex-col rounded-xl border border-border p-5 transition-all hover:border-foreground/20 hover:shadow-sm"
             >
-              <div className="min-w-0">
-                <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
-                  <span className="flex items-center -space-x-1.5">
-                    {MODULES.map((m) => {
-                      const Icon = m.icon;
-                      return (
-                        <span
-                          key={m.key}
-                          className="flex size-7 items-center justify-center rounded-lg bg-muted ring-2"
-                          style={{'--tw-ring-color': 'var(--card-warm)'} as React.CSSProperties}
-                        >
-                          <Icon className="size-4" style={{color: m.accent}} />
-                        </span>
-                      );
-                    })}
-                  </span>
-                  <span className="text-[16px] font-semibold text-foreground">Sales</span>
-                  <span className="text-xs text-muted-foreground">Shopee · Lazada · Website</span>
-                </div>
-                <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-                  {[
-                    'Compare revenue, orders & AOV across channels',
-                    'Diagnose the funnel & flag ROAS / ACOS',
-                    'Rank top products & spot at-risk customers',
-                    'Recommend prioritized actions',
-                  ].map((t) => (
-                    <li key={t} className="flex items-center gap-2 text-sm text-foreground/80">
-                      <Check className="size-3.5 shrink-0 text-primary" />
-                      {t}
-                    </li>
-                  ))}
-                </ul>
+              <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
+                <span className="flex items-center -space-x-1.5">
+                  {MODULES.map((m) => {
+                    const Icon = m.icon;
+                    return (
+                      <span
+                        key={m.key}
+                        className="flex size-7 items-center justify-center rounded-lg bg-muted ring-2"
+                        style={{'--tw-ring-color': 'var(--card-warm)'} as React.CSSProperties}
+                      >
+                        <Icon className="size-4" style={{color: m.accent}} />
+                      </span>
+                    );
+                  })}
+                </span>
+                <span className="text-[16px] font-semibold text-foreground">Sales</span>
+                <span className="text-xs text-muted-foreground">Shopee · Lazada · Website</span>
               </div>
-              <span className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors group-hover:bg-primary/90 sm:self-center">
+              <ul className="space-y-2">
+                {[
+                  'Compare revenue, orders & AOV across channels',
+                  'Diagnose the funnel & flag ROAS / ACOS',
+                  'Rank top products & spot at-risk customers',
+                  'Recommend prioritized actions',
+                ].map((t) => (
+                  <li key={t} className="flex items-center gap-2 text-sm text-foreground/80">
+                    <Check className="size-3.5 shrink-0 text-primary" />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+              <span className="mt-5 inline-flex items-center gap-1.5 self-start rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors group-hover:bg-primary/90">
                 View <ArrowRight className="size-4" />
               </span>
             </Link>
+
+            {/* Marketing — placeholder for the AI marketing content studio (coming soon) */}
+            <div
+              style={{backgroundColor: 'var(--card-warm)'}}
+              className="relative flex flex-col rounded-xl border border-dashed border-border p-5"
+            >
+              <span className="absolute right-4 top-4 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Coming soon
+              </span>
+              <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-muted">
+                  <Megaphone className="size-4 text-primary" />
+                </span>
+                <span className="text-[16px] font-semibold text-foreground">Marketing</span>
+                <span className="text-xs text-muted-foreground">AI content studio</span>
+              </div>
+              <ul className="space-y-2">
+                {[
+                  'Generate on-brand campaign briefs',
+                  'Plan production, assets & scenes',
+                  'Write ad image prompts',
+                  'Direct video ads',
+                ].map((t) => (
+                  <li key={t} className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Sparkles className="size-3.5 shrink-0 text-muted-foreground/60" />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+              <span className="mt-5 inline-flex cursor-not-allowed items-center gap-1.5 self-start rounded-xl border border-border bg-muted px-6 py-2.5 text-sm font-semibold text-muted-foreground">
+                Coming soon
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
