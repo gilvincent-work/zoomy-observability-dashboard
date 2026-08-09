@@ -3,7 +3,7 @@
 import {useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
-import {Activity, ChevronDown, Home, Mail, Package, Search, Settings, Users} from 'lucide-react';
+import {Activity, ChevronDown, Home, Mail, Package, Settings, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -98,10 +98,14 @@ export function DashboardShell({
                   <div className="max-h-72 overflow-y-auto pb-1">
                     {digests.map((d) => {
                       const active = d.window_from === currentWeek;
+                      // Preserve the current view's params (e.g. ?channel=) — only swap the week,
+                      // so changing period reloads the same view instead of bouncing home.
+                      const params = new URLSearchParams(searchParams.toString());
+                      params.set('week', d.window_from);
                       return (
                         <Link
                           key={d.window_from}
-                          href={`${pathname}?week=${encodeURIComponent(d.window_from)}`}
+                          href={`${pathname}?${params.toString()}`}
                           onClick={() => setPeriodOpen(false)}
                           className={cn(
                             'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
@@ -126,13 +130,8 @@ export function DashboardShell({
           </div>
         )}
 
-        {/* Right cluster: search · theme · avatar */}
+        {/* Right cluster: theme · avatar (the in-page "Chat with Coop" box is the ask entry point) */}
         <div className="ml-auto flex items-center gap-2">
-          <div className="hidden items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-muted-foreground md:flex">
-            <Search className="size-3.5" />
-            <span>Ask Coop anything</span>
-            <kbd className="ml-6 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
-          </div>
           <ThemeToggle />
           <span
             className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-primary-foreground"
@@ -157,12 +156,13 @@ export function DashboardShell({
                 aria-label={t.label}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex size-10 items-center justify-center rounded-xl transition-colors',
+                  'relative flex size-10 items-center justify-center rounded-xl transition-colors',
                   active
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
                 )}
               >
+                {active && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
                 <t.icon className="size-[18px]" />
               </Link>
             );

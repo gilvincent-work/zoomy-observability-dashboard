@@ -5,7 +5,7 @@
 // (channel-tagged) recommendations. Single-channel selection drills into that
 // channel's full detail. Comparison numbers are read from each channel's existing
 // figures (label-matched) — interim until the batch emits a normalized summary.
-import {useEffect, useMemo, useState} from 'react';
+import {useMemo, useState} from 'react';
 import Link from 'next/link';
 import {ArrowLeft, Check, Globe, Search} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
@@ -21,18 +21,20 @@ import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, Conversati
 export type Channel = 'shopee' | 'lazada' | 'website';
 const CHANNELS: {key: Channel; label: string; icon: React.ComponentType<{className?: string; style?: React.CSSProperties}>; accent: string}[] = [
   {key: 'shopee', label: 'Shopee', icon: ShopeeIcon, accent: '#ee4d2d'},
-  {key: 'lazada', label: 'Lazada', icon: LazadaIcon, accent: '#f57224'},
+  {key: 'lazada', label: 'Lazada', icon: LazadaIcon, accent: '#2f6bd4'},
   {key: 'website', label: 'Website', icon: Globe, accent: 'var(--primary)'},
 ];
 const CH = Object.fromEntries(CHANNELS.map((c) => [c.key, c])) as Record<Channel, (typeof CHANNELS)[number]>;
 
 // ── metric extraction (interim: read from each channel's existing figures) ───────
-type Metric = 'revenue' | 'orders' | 'aov' | 'units';
-const METRICS: {key: Metric; label: string; money?: boolean}[] = [
+type Metric = 'revenue' | 'orders' | 'aov' | 'units' | 'adSpend' | 'roas';
+const METRICS: {key: Metric; label: string; money?: boolean; ratio?: boolean}[] = [
   {key: 'revenue', label: 'Revenue', money: true},
   {key: 'orders', label: 'Orders'},
   {key: 'aov', label: 'AOV', money: true},
   {key: 'units', label: 'Units'},
+  {key: 'adSpend', label: 'Ad spend', money: true},
+  {key: 'roas', label: 'ROAS', ratio: true},
 ];
 
 function figVal(figs: DigestFigure[] | undefined, re: RegExp, exclude?: RegExp): number | null {
@@ -46,21 +48,42 @@ function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics |
   const sh = d.shopee?.sales?.figures;
   const lz = d.lazada?.sales?.figures;
   const wb = d.sales?.figures;
+  // Ad spend / ROAS: Shopee has them (from the Ads export → shopee.ads figures).
+  // Lazada ads (Sponsored Solutions API) and Website ads (Meta) aren't wired yet.
+  const shAds = d.shopee?.ads?.figures;
   return {
     shopee: d.shopee?.sales
-      ? {revenue: figVal(sh, /^sales php/i), orders: figVal(sh, /buyers/i), aov: figVal(sh, /per buyer/i), units: null}
+      ? {
+          revenue: figVal(sh, /^sales php/i),
+          orders: figVal(sh, /buyers/i),
+          aov: figVal(sh, /per buyer/i),
+          units: null,
+          adSpend: figVal(shAds, /ad spend/i),
+          roas: figVal(shAds, /^roas$/i, /direct/i),
+        }
       : null,
     lazada: d.lazada?.sales
-      ? {revenue: figVal(lz, /net revenue/i), orders: figVal(lz, /net orders/i), aov: figVal(lz, /aov/i), units: figVal(lz, /units/i)}
+      ? {
+          revenue: figVal(lz, /net revenue/i),
+          orders: figVal(lz, /net orders/i),
+          aov: figVal(lz, /aov/i),
+          units: figVal(lz, /units/i),
+          adSpend: figVal(d.lazada?.ads?.figures, /ad spend|spend/i),
+          roas: figVal(d.lazada?.ads?.figures, /^roas$/i, /direct/i),
+        }
       : null,
     website: d.sales
-      ? {revenue: figVal(wb, /net revenue/i), orders: figVal(wb, /orders/i, /trend|%/i), aov: figVal(wb, /aov/i), units: figVal(wb, /units/i)}
+      ? {revenue: figVal(wb, /net revenue/i), orders: figVal(wb, /orders/i, /trend|%/i), aov: figVal(wb, /aov/i), units: figVal(wb, /units/i), adSpend: null, roas: null}
       : null,
   };
 }
 
 const money = (n: number) => `₱${n.toLocaleString(undefined, {maximumFractionDigits: n < 100 ? 2 : 0})}`;
-const fmt = (m: Metric, n: number) => (METRICS.find((x) => x.key === m)?.money ? money(n) : n.toLocaleString());
+const fmt = (m: Metric, n: number) => {
+  const meta = METRICS.find((x) => x.key === m);
+  if (meta?.ratio) return `${n.toFixed(2)}×`;
+  return meta?.money ? money(n) : n.toLocaleString();
+};
 
 // ── comparison chart ─────────────────────────────────────────────────────────────
 function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]; metric: Metric; setMetric: (m: Metric) => void}) {
@@ -71,16 +94,19 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
 
   return (
     <Card>
-      <CardContent className="p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <CardContent className="p-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Compare channels</div>
-          <div className="relative grid grid-cols-4 rounded-xl border border-border bg-muted/40 p-1">
+          <div
+            className="relative grid rounded-xl border border-border bg-muted/40 p-1"
+            style={{gridTemplateColumns: `repeat(${METRICS.length}, minmax(0, 1fr))`}}
+          >
             {/* liquid-glass sliding indicator — springs to the active metric */}
             <span
               aria-hidden
               className="pointer-events-none absolute inset-y-1 left-1 rounded-lg bg-primary shadow-sm"
               style={{
-                width: 'calc((100% - 0.5rem) / 4)',
+                width: `calc((100% - 0.5rem) / ${METRICS.length})`,
                 transform: `translateX(${Math.max(0, METRICS.findIndex((m) => m.key === metric)) * 100}%)`,
                 transition: 'transform 600ms cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
@@ -90,7 +116,7 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
                 key={m.key}
                 onClick={() => setMetric(m.key)}
                 className={cn(
-                  'relative z-10 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors duration-300',
+                  'relative z-10 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-colors duration-300',
                   metric === m.key ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -103,21 +129,32 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
         ) : (
           <>
-          <div className="flex items-end justify-center gap-8 border-b border-border pt-2 sm:gap-12" style={{height: 240}}>
+          <div
+            className="flex items-end justify-center gap-8 border-b border-border pt-1 sm:gap-12"
+            style={{
+              height: 168,
+              // faint horizontal gridlines for a sense of scale
+              backgroundImage:
+                'repeating-linear-gradient(to top, transparent 0, transparent 41px, color-mix(in oklab, var(--border) 55%, transparent) 41px, color-mix(in oklab, var(--border) 55%, transparent) 42px)',
+            }}
+          >
             {rows.map(({c, value}) => {
               const meta = CH[c];
               return (
-                <div key={c} className="flex flex-col items-center justify-end gap-2">
+                <div key={c} className="flex flex-col items-center justify-end gap-1.5">
                   <div className="text-[15px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
                   <div
-                    className="w-20 rounded-t-xl transition-all sm:w-24 lg:w-28"
-                    style={{height: Math.max(6, (value / max) * 185), backgroundColor: meta.accent}}
+                    className="w-20 rounded-t-xl shadow-sm transition-all sm:w-24 lg:w-28"
+                    style={{
+                      height: Math.max(6, (value / max) * 130),
+                      backgroundImage: `linear-gradient(180deg, ${meta.accent} 0%, color-mix(in oklab, ${meta.accent} 72%, white) 100%)`,
+                    }}
                   />
                 </div>
               );
             })}
           </div>
-          <div className="flex justify-center gap-8 pt-3 sm:gap-12">
+          <div className="flex justify-center gap-8 pt-2.5 sm:gap-12">
             {rows.map(({c}) => {
               const meta = CH[c];
               const Icon = meta.icon;
@@ -130,9 +167,16 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           </div>
           </>
         )}
-        {channels.includes('shopee') && metric === 'units' && (
-          <p className="mt-3 text-[11px] text-muted-foreground">Shopee doesn’t report units in its sales export, so it’s omitted here.</p>
-        )}
+        {(() => {
+          const omitted = channels.filter((c) => !rows.some((r) => r.c === c));
+          if (!omitted.length) return null;
+          const names = omitted.map((c) => CH[c].label).join(', ');
+          let why = `no ${METRICS.find((m) => m.key === metric)?.label.toLowerCase()} data for ${names} in this window.`;
+          if (metric === 'units') why = `Shopee doesn’t report units in its sales export, so it’s omitted here.`;
+          if (metric === 'adSpend' || metric === 'roas')
+            why = `No ad spend for ${names} in this window — Website (Meta) isn’t connected, and Lazada shows here only when Sponsored Solutions has active spend.`;
+          return <p className="mt-3 text-[11px] text-muted-foreground">{why}</p>;
+        })()}
       </CardContent>
     </Card>
   );
@@ -154,7 +198,7 @@ function CombinedKpis({metrics, channels}: {metrics: Record<Channel, ChannelMetr
       {tiles.map((t, i) => (
         <div key={t.label} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
           <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">{t.label}</span>
-          <span className="text-[19px] font-semibold leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
+          <span className="font-serif text-[23px] font-normal leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
         </div>
       ))}
     </div>
@@ -183,6 +227,8 @@ const METRIC_KEYWORDS: Record<Metric, RegExp> = {
   orders: /order|conversion|convert|checkout|cart|placed|click-to-order|visit-to-placed|bounce|funnel|abandon/i,
   aov: /basket|sales-?per-?buyer|per buyer|aov|order value|bundle|voucher|upsell|cross-?sell|add-?on|minimum spend/i,
   units: /unit|stock|inventory|quantity|sku|restock|out of stock|sell-?through/i,
+  adSpend: /ad|ads|spend|budget|campaign|acos|cpc|cpm|bid|keyword|sponsored/i,
+  roas: /roas|acos|return on ad|ad spend|ads|campaign|bid|budget|margin/i,
 };
 
 /** Stable-sort recs so those matching the active metric come first (channel-agnostic). */
@@ -286,10 +332,10 @@ function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[
                     onClick={() => setTab(s.channel)}
                     className={cn(
                       'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
-                      on ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                      on ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
-                    <Icon className="size-3.5" style={{color: on ? s.meta.accent : undefined}} /> {s.meta.label}
+                    <Icon className="size-3.5" style={{color: on ? undefined : s.meta.accent}} /> {s.meta.label}
                   </button>
                 );
               })}
@@ -317,7 +363,7 @@ function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[
                   </div>
                   <span className="shrink-0 text-[13px] font-semibold tabular-nums text-foreground">
                     {money(p.revenue)}
-                    {p.units ? <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">· {p.units.toLocaleString()}u</span> : null}
+                    {p.units ? <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">· {p.units.toLocaleString()} units</span> : null}
                   </span>
                 </div>
               </div>
@@ -352,28 +398,10 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; initialChannels: Channel[]}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
   const [metric, setMetric] = useState<Metric>('revenue');
-  // Auto-cycle the chart metric every 3s so users notice the toggles are clickable;
-  // stops permanently once they pick a metric themselves.
-  const [autoCycle, setAutoCycle] = useState(true);
   const metrics = useMemo(() => channelMetrics(row), [row]);
   // Merged recs, reordered so those relevant to the metric on the chart come first.
   const recs = useMemo(() => orderRecsByMetric(collectRecs(row, selected), metric), [row, selected, metric]);
   const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
-
-  const comparing = selected.length >= 2;
-  useEffect(() => {
-    if (!autoCycle || !comparing) return;
-    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    const order: Metric[] = ['revenue', 'orders', 'aov', 'units'];
-    const id = setInterval(() => setMetric((m) => order[(order.indexOf(m) + 1) % order.length]), 3000);
-    return () => clearInterval(id);
-  }, [autoCycle, comparing]);
-
-  // A manual pick stops the auto-cycle for good.
-  const pickMetric = (m: Metric) => {
-    setAutoCycle(false);
-    setMetric(m);
-  };
 
   if (row.digest.degraded) {
     return <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 text-muted-foreground">No data for this window — check the batch job.</div>;
@@ -465,21 +493,21 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
       ) : (
         /* comparing 2+ channels — merged recs (2-col) beside the comparison chart */
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
-          <section className="min-w-0">
+          <section className="flex min-w-0 flex-col lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
             <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
               <Sparkles className="size-3.5 text-primary" /> Recommended actions
               <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first</span>
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
             </div>
-            {/* px/py + matching -mx give the card borders, shadows and hover-lift
-                room so overflow-y-auto doesn't crop their edges */}
-            <div className="lg:-mx-2 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:px-2 lg:py-1.5">
+            {/* fills the column height and scrolls; px/py + matching -mx give the
+                card borders, shadows and hover-lift room so overflow doesn't crop them */}
+            <div className="lg:-mx-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-2 lg:py-1.5">
               <MergedActions items={recs} />
             </div>
           </section>
 
           <main className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:self-start">
-            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={pickMetric} />
+            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={setMetric} />
             <TopProducts row={row} channels={selected} />
           </main>
         </div>

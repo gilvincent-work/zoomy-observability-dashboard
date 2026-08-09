@@ -187,6 +187,21 @@ const TONE_VAR = {good: 'var(--status-good)', watch: 'var(--status-warn)', neutr
 /** Read-only metric tiles — Coop editorial style: tiny uppercase label, big number
  *  in the sans face with a small unit. Percentage tiles carry a progress bar so a
  *  low rate reads as a near-empty bar (the leak) and a high rate as nearly full. */
+// Semantic status for a metric — ONLY for figures whose good/bad direction and
+// danger zones are unambiguous (ACOS & bounce rate: lower is better). Everything
+// else returns null and stays neutral, so we never mislabel a normal metric.
+function figureStatus(label: string, value: number): 'good' | 'warn' | 'crit' | null {
+  const l = label.toLowerCase();
+  if (/acos/.test(l)) return value >= 40 ? 'crit' : value >= 25 ? 'warn' : 'good';
+  if (/bounce/.test(l)) return value >= 60 ? 'crit' : value >= 40 ? 'warn' : 'good';
+  return null;
+}
+const STATUS_VAR: Record<'good' | 'warn' | 'crit', string> = {
+  good: 'var(--status-good)',
+  warn: 'var(--status-warn)',
+  crit: 'var(--status-crit)',
+};
+
 export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hideBasis?: boolean}) {
   if (!figures.length) return null;
   return (
@@ -197,21 +212,27 @@ export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hide
         const isPct = /%\s*$/.test(base);
         const label = base.replace(/\s*%\s*$/, '').trim();
         const pct = isPct ? Math.max(0, Math.min(100, f.value)) : null;
+        const status = isPct ? figureStatus(label, f.value) : null;
+        const statusColor = status ? STATUS_VAR[status] : null;
         return (
           <Card key={`${f.label}-${i}`}>
             <CardContent className="p-5">
-              <div className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+              <div className="mb-2.5 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
                 {label}
+                {statusColor && <span className="size-1.5 shrink-0 rounded-full" style={{backgroundColor: statusColor}} aria-hidden />}
               </div>
               <div className="flex items-baseline gap-0.5">
-                <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
+                <span
+                  className="text-[30px] font-semibold leading-none tracking-tight tabular-nums"
+                  style={{color: status === 'warn' || status === 'crit' ? statusColor! : 'var(--foreground)'}}
+                >
                   {f.value.toLocaleString()}
                 </span>
                 {isPct && <span className="text-[17px] font-medium leading-none text-muted-foreground">%</span>}
               </div>
               {pct != null ? (
                 <div className="mt-3.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-primary transition-all" style={{width: `${pct}%`}} />
+                  <div className="h-full rounded-full transition-all" style={{width: `${pct}%`, backgroundColor: statusColor ?? 'var(--primary)'}} />
                 </div>
               ) : (
                 !hideBasis && <div className="mt-1.5 text-xs text-muted-foreground">{basisLabel(f.timeBasis)}</div>
