@@ -29,12 +29,12 @@ const CH = Object.fromEntries(CHANNELS.map((c) => [c.key, c])) as Record<Channel
 // ── metric extraction (interim: read from each channel's existing figures) ───────
 type Metric = 'revenue' | 'orders' | 'aov' | 'units' | 'adSpend' | 'roas';
 const METRICS: {key: Metric; label: string; money?: boolean; ratio?: boolean}[] = [
+  {key: 'adSpend', label: 'Ad spend', money: true},
+  {key: 'roas', label: 'ROAS', ratio: true},
   {key: 'revenue', label: 'Revenue', money: true},
   {key: 'orders', label: 'Orders'},
   {key: 'aov', label: 'AOV', money: true},
   {key: 'units', label: 'Units'},
-  {key: 'adSpend', label: 'Ad spend', money: true},
-  {key: 'roas', label: 'ROAS', ratio: true},
 ];
 
 function figVal(figs: DigestFigure[] | undefined, re: RegExp, exclude?: RegExp): number | null {
@@ -209,7 +209,7 @@ function collectRecs(row: DigestArchiveRow, channels: Channel[]): {channel: Chan
   const out: {channel: Channel; rec: DigestRec}[] = [];
   const add = (channel: Channel, recs?: DigestRec[]) => (recs ?? []).forEach((rec) => out.push({channel, rec}));
   if (channels.includes('shopee')) for (const f of ['sales', 'ads', 'traffic', 'products'] as const) add('shopee', d.shopee?.[f]?.recommendations);
-  if (channels.includes('lazada')) for (const f of ['sales', 'finance', 'inventory'] as const) add('lazada', d.lazada?.[f]?.recommendations);
+  if (channels.includes('lazada')) for (const f of ['sales', 'finance', 'inventory', 'ads'] as const) add('lazada', d.lazada?.[f]?.recommendations);
   if (channels.includes('website')) {
     add('website', d.sales?.recommendations);
     add('website', d.customers?.recommendations);
@@ -395,7 +395,7 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 // ── the unified overview ─────────────────────────────────────────────────────────
 export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; initialChannels: Channel[]}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
-  const [metric, setMetric] = useState<Metric>('revenue');
+  const [metric, setMetric] = useState<Metric>('adSpend');
   const metrics = useMemo(() => channelMetrics(row), [row]);
   // Merged recs, reordered so those relevant to the metric on the chart come first.
   const recs = useMemo(() => orderRecsByMetric(collectRecs(row, selected), metric), [row, selected, metric]);
