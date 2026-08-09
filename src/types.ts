@@ -104,11 +104,23 @@ export interface DigestLazada {
   ads?: DigestLazadaFacet | null; // Sponsored Solutions ad spend/ROAS
 }
 
+// Normalized cross-channel comparison numbers, stamped by the batch as facts
+// (reconcileComparison) so the dashboard doesn't label-match model figures.
+export interface ChannelComparison {
+  revenue: number | null;
+  orders: number | null;
+  aov: number | null;
+  units: number | null;
+  adSpend: number | null;
+  roas: number | null;
+}
+
 export interface DigestDocument {
   window: { label: string; from: string; to: string };
   degraded: boolean;
   headline: string;
   themes: DigestTheme[];
+  comparison?: Partial<Record<'shopee' | 'lazada' | 'website', ChannelComparison>>;
   figures: DigestFigure[];
   recommendations: DigestRec[];
   // Optional sections — present only when the batch job passed the corresponding
