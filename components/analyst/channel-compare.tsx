@@ -274,8 +274,12 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
     <div className="w-full px-6 py-8 md:px-10 lg:px-12">
       {/* return link + Ask Coop hero search on one line to conserve space */}
       <div className="mb-6 flex items-center gap-4">
-        <Link href={backHref} className="inline-flex shrink-0 items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-          <ArrowLeft className="size-3.5" /> Today
+        <Link
+          href={backHref}
+          aria-label="Back to Today"
+          className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+        >
+          <ArrowLeft className="size-5" />
         </Link>
 
         <form
