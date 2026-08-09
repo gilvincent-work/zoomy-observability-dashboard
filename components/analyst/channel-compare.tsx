@@ -45,32 +45,24 @@ type ChannelMetrics = Record<Metric, number | null>;
 
 function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics | null> {
   const d = row.digest;
+  // Preferred: the batch's stamped, normalized comparison numbers (facts — no
+  // label matching). Falls back to figure label-matching for pre-stamp archives.
+  const c = d.comparison;
+  if (c) {
+    const pick = (m?: {revenue: number | null; orders: number | null; aov: number | null; units: number | null; adSpend: number | null; roas: number | null}) =>
+      m ? {revenue: m.revenue, orders: m.orders, aov: m.aov, units: m.units, adSpend: m.adSpend, roas: m.roas} : null;
+    return {shopee: pick(c.shopee), lazada: pick(c.lazada), website: pick(c.website)};
+  }
   const sh = d.shopee?.sales?.figures;
   const lz = d.lazada?.sales?.figures;
   const wb = d.sales?.figures;
-  // Ad spend / ROAS: Shopee has them (from the Ads export → shopee.ads figures).
-  // Lazada ads (Sponsored Solutions API) and Website ads (Meta) aren't wired yet.
   const shAds = d.shopee?.ads?.figures;
   return {
     shopee: d.shopee?.sales
-      ? {
-          revenue: figVal(sh, /^sales php/i),
-          orders: figVal(sh, /buyers/i),
-          aov: figVal(sh, /per buyer/i),
-          units: null,
-          adSpend: figVal(shAds, /ad spend/i),
-          roas: figVal(shAds, /^roas$/i, /direct/i),
-        }
+      ? {revenue: figVal(sh, /^sales\s*(₱|php)/i), orders: figVal(sh, /buyers/i), aov: figVal(sh, /per buyer/i), units: null, adSpend: figVal(shAds, /ad spend/i), roas: figVal(shAds, /^roas\b/i, /direct/i)}
       : null,
     lazada: d.lazada?.sales
-      ? {
-          revenue: figVal(lz, /net revenue/i),
-          orders: figVal(lz, /net orders/i),
-          aov: figVal(lz, /aov/i),
-          units: figVal(lz, /units/i),
-          adSpend: figVal(d.lazada?.ads?.figures, /ad spend|spend/i),
-          roas: figVal(d.lazada?.ads?.figures, /^roas$/i, /direct/i),
-        }
+      ? {revenue: figVal(lz, /net revenue/i), orders: figVal(lz, /net orders/i), aov: figVal(lz, /aov/i), units: figVal(lz, /units/i), adSpend: figVal(d.lazada?.ads?.figures, /ad spend|spend/i), roas: figVal(d.lazada?.ads?.figures, /^roas\b/i, /direct/i)}
       : null,
     website: d.sales
       ? {revenue: figVal(wb, /net revenue/i), orders: figVal(wb, /orders/i, /trend|%/i), aov: figVal(wb, /aov/i), units: figVal(wb, /units/i), adSpend: null, roas: null}
@@ -87,8 +79,14 @@ const fmt = (m: Metric, n: number) => {
 
 // ── comparison chart ─────────────────────────────────────────────────────────────
 function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]; metric: Metric; setMetric: (m: Metric) => void}) {
+  // Ad-spend / ROAS: show every channel with a value of 0 when it has no spend
+  // (rather than dropping it), so the comparison reads at a glance.
+  const isAdMetric = metric === 'adSpend' || metric === 'roas';
   const rows = channels
-    .map((c) => ({c, value: metrics[c]?.[metric] ?? null}))
+    .map((c) => {
+      const raw = metrics[c]?.[metric] ?? null;
+      return {c, value: raw == null && isAdMetric ? 0 : raw};
+    })
     .filter((r): r is {c: Channel; value: number} => r.value != null);
   const max = Math.max(1, ...rows.map((r) => r.value));
 
@@ -171,10 +169,10 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           const omitted = channels.filter((c) => !rows.some((r) => r.c === c));
           if (!omitted.length) return null;
           const names = omitted.map((c) => CH[c].label).join(', ');
-          let why = `no ${METRICS.find((m) => m.key === metric)?.label.toLowerCase()} data for ${names} in this window.`;
-          if (metric === 'units') why = `Shopee doesn’t report units in its sales export, so it’s omitted here.`;
-          if (metric === 'adSpend' || metric === 'roas')
-            why = `No ad spend for ${names} in this window — Website (Meta) isn’t connected, and Lazada shows here only when Sponsored Solutions has active spend.`;
+          const why =
+            metric === 'units'
+              ? `Shopee doesn’t report units in its sales export, so it’s omitted here.`
+              : `No ${METRICS.find((m) => m.key === metric)?.label.toLowerCase()} data for ${names} in this window.`;
           return <p className="mt-3 text-[11px] text-muted-foreground">{why}</p>;
         })()}
       </CardContent>
