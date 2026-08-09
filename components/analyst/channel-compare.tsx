@@ -214,8 +214,8 @@ function MergedActionCard({channel, rec}: {channel: Channel; rec: DigestRec}) {
   );
 
   const body = (
-    <CardContent className="p-3.5">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
+    <CardContent className="px-3.5 py-3">
+      <div className="mb-1 flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
           <Icon className="size-3" style={{color: meta.accent}} /> {meta.label}
         </span>
@@ -225,9 +225,9 @@ function MergedActionCard({channel, rec}: {channel: Channel; rec: DigestRec}) {
     </CardContent>
   );
 
-  if (!clickable) return <Card className="h-full">{body}</Card>;
+  if (!clickable) return <Card className="h-full py-0">{body}</Card>;
   return (
-    <Card className="h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md">
+    <Card className="h-full cursor-pointer py-0 transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md">
       <button type="button" onClick={() => open({action, steps, label: meta.label})} className="block h-full w-full text-left">
         {body}
       </button>
