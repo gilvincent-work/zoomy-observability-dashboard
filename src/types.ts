@@ -101,6 +101,7 @@ export interface DigestLazada {
   sales?: DigestLazadaFacet | null;
   finance?: DigestLazadaFacet | null;
   inventory?: DigestLazadaFacet | null;
+  ads?: DigestLazadaFacet | null; // Sponsored Solutions ad spend/ROAS
 }
 
 export interface DigestDocument {

@@ -63,7 +63,14 @@ function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics |
         }
       : null,
     lazada: d.lazada?.sales
-      ? {revenue: figVal(lz, /net revenue/i), orders: figVal(lz, /net orders/i), aov: figVal(lz, /aov/i), units: figVal(lz, /units/i), adSpend: null, roas: null}
+      ? {
+          revenue: figVal(lz, /net revenue/i),
+          orders: figVal(lz, /net orders/i),
+          aov: figVal(lz, /aov/i),
+          units: figVal(lz, /units/i),
+          adSpend: figVal(d.lazada?.ads?.figures, /ad spend|spend/i),
+          roas: figVal(d.lazada?.ads?.figures, /^roas$/i, /direct/i),
+        }
       : null,
     website: d.sales
       ? {revenue: figVal(wb, /net revenue/i), orders: figVal(wb, /orders/i, /trend|%/i), aov: figVal(wb, /aov/i), units: figVal(wb, /units/i), adSpend: null, roas: null}
@@ -167,7 +174,7 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           let why = `no ${METRICS.find((m) => m.key === metric)?.label.toLowerCase()} data for ${names} in this window.`;
           if (metric === 'units') why = `Shopee doesn’t report units in its sales export, so it’s omitted here.`;
           if (metric === 'adSpend' || metric === 'roas')
-            why = `Ad spend is only wired for Shopee so far — ${names} not in the feed yet (Lazada Sponsored Solutions API pending, Meta not connected).`;
+            why = `No ad spend for ${names} in this window — Website (Meta) isn’t connected, and Lazada shows here only when Sponsored Solutions has active spend.`;
           return <p className="mt-3 text-[11px] text-muted-foreground">{why}</p>;
         })()}
       </CardContent>
