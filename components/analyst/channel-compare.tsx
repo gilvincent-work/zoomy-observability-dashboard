@@ -246,23 +246,60 @@ function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
   );
 }
 
-// ── top products by revenue (Website store — the only per-SKU data in the archive) ─
-function TopProducts({row}: {row: DigestArchiveRow}) {
-  const products = row.digest.sales?.topProducts ?? [];
-  if (!products.length) return null;
-  const top = [...products].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
-  const max = Math.max(1, ...top.map((p) => p.revenue));
+// ── top products by revenue — one ranked list per channel, in a tabbed card ───────
+type SkuRow = {title: string; revenue: number; units?: number};
+
+/** Per-SKU ranking for a channel, or [] when that channel has no per-product data. */
+function productsFor(row: DigestArchiveRow, c: Channel): SkuRow[] {
+  const d = row.digest;
+  const raw =
+    c === 'shopee' ? d.shopee?.products?.topProducts : c === 'lazada' ? d.lazada?.sales?.topProducts : d.sales?.topProducts;
+  return [...(raw ?? [])].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+}
+
+function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[]}) {
+  const sources = channels.map((c) => ({channel: c, meta: CH[c], items: productsFor(row, c)})).filter((s) => s.items.length);
+  const [tab, setTab] = useState<Channel | null>(null);
+  if (!sources.length) return null;
+  const active = sources.find((s) => s.channel === tab) ?? sources[0];
+  const max = Math.max(1, ...active.items.map((p) => p.revenue));
+  // channels selected but without any per-SKU feed yet (e.g. Shopee before its export)
+  const missing = channels.filter((c) => !sources.some((s) => s.channel === c));
+
   return (
     <Card className="py-0">
       <CardContent className="p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Top products by revenue</div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
-            <Globe className="size-3" /> Website store
-          </span>
+          {sources.length > 1 && (
+            <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+              {sources.map((s) => {
+                const on = s.channel === active.channel;
+                const Icon = s.meta.icon;
+                return (
+                  <button
+                    key={s.channel}
+                    onClick={() => setTab(s.channel)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+                      on ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Icon className="size-3.5" style={{color: on ? s.meta.accent : undefined}} /> {s.meta.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {sources.length === 1 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+              <active.meta.icon className="size-3" style={{color: active.meta.accent}} /> {active.meta.label}
+            </span>
+          )}
         </div>
+
         <ol className="space-y-3">
-          {top.map((p, i) => (
+          {active.items.map((p, i) => (
             <li key={p.title} className="flex items-center gap-3">
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold tabular-nums text-primary-foreground">
                 {i + 1}
@@ -270,16 +307,24 @@ function TopProducts({row}: {row: DigestArchiveRow}) {
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-baseline justify-between gap-3">
                   <span className="truncate text-[13px] font-medium text-foreground">{p.title}</span>
-                  <span className="shrink-0 text-[13px] font-semibold tabular-nums text-foreground">{money(p.revenue)}</span>
+                  <span className="shrink-0 text-[13px] font-semibold tabular-nums text-foreground">
+                    {money(p.revenue)}
+                    {p.units ? <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">· {p.units.toLocaleString()}u</span> : null}
+                  </span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-primary/80 transition-all" style={{width: `${(p.revenue / max) * 100}%`}} />
+                  <div className="h-full rounded-full transition-all" style={{width: `${(p.revenue / max) * 100}%`, backgroundColor: active.meta.accent}} />
                 </div>
               </div>
             </li>
           ))}
         </ol>
-        <p className="mt-3.5 text-[11px] text-muted-foreground">Per-SKU revenue is only exported for the Website store; marketplace SKUs aren’t in the feed yet.</p>
+
+        {missing.length > 0 && (
+          <p className="mt-3.5 text-[11px] text-muted-foreground">
+            No per-SKU feed yet for {missing.map((c) => CH[c].label).join(', ')}.
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -430,7 +475,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
 
           <main className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:self-start">
             <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={pickMetric} />
-            {selected.includes('website') && <TopProducts row={row} />}
+            <TopProducts row={row} channels={selected} />
           </main>
         </div>
       )}
