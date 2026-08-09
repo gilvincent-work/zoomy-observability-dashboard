@@ -27,12 +27,14 @@ const CHANNELS: {key: Channel; label: string; icon: React.ComponentType<{classNa
 const CH = Object.fromEntries(CHANNELS.map((c) => [c.key, c])) as Record<Channel, (typeof CHANNELS)[number]>;
 
 // ── metric extraction (interim: read from each channel's existing figures) ───────
-type Metric = 'revenue' | 'orders' | 'aov' | 'units';
-const METRICS: {key: Metric; label: string; money?: boolean}[] = [
+type Metric = 'revenue' | 'orders' | 'aov' | 'units' | 'adSpend' | 'roas';
+const METRICS: {key: Metric; label: string; money?: boolean; ratio?: boolean}[] = [
   {key: 'revenue', label: 'Revenue', money: true},
   {key: 'orders', label: 'Orders'},
   {key: 'aov', label: 'AOV', money: true},
   {key: 'units', label: 'Units'},
+  {key: 'adSpend', label: 'Ad spend', money: true},
+  {key: 'roas', label: 'ROAS', ratio: true},
 ];
 
 function figVal(figs: DigestFigure[] | undefined, re: RegExp, exclude?: RegExp): number | null {
@@ -46,21 +48,35 @@ function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics |
   const sh = d.shopee?.sales?.figures;
   const lz = d.lazada?.sales?.figures;
   const wb = d.sales?.figures;
+  // Ad spend / ROAS: Shopee has them (from the Ads export → shopee.ads figures).
+  // Lazada ads (Sponsored Solutions API) and Website ads (Meta) aren't wired yet.
+  const shAds = d.shopee?.ads?.figures;
   return {
     shopee: d.shopee?.sales
-      ? {revenue: figVal(sh, /^sales php/i), orders: figVal(sh, /buyers/i), aov: figVal(sh, /per buyer/i), units: null}
+      ? {
+          revenue: figVal(sh, /^sales php/i),
+          orders: figVal(sh, /buyers/i),
+          aov: figVal(sh, /per buyer/i),
+          units: null,
+          adSpend: figVal(shAds, /ad spend/i),
+          roas: figVal(shAds, /^roas$/i, /direct/i),
+        }
       : null,
     lazada: d.lazada?.sales
-      ? {revenue: figVal(lz, /net revenue/i), orders: figVal(lz, /net orders/i), aov: figVal(lz, /aov/i), units: figVal(lz, /units/i)}
+      ? {revenue: figVal(lz, /net revenue/i), orders: figVal(lz, /net orders/i), aov: figVal(lz, /aov/i), units: figVal(lz, /units/i), adSpend: null, roas: null}
       : null,
     website: d.sales
-      ? {revenue: figVal(wb, /net revenue/i), orders: figVal(wb, /orders/i, /trend|%/i), aov: figVal(wb, /aov/i), units: figVal(wb, /units/i)}
+      ? {revenue: figVal(wb, /net revenue/i), orders: figVal(wb, /orders/i, /trend|%/i), aov: figVal(wb, /aov/i), units: figVal(wb, /units/i), adSpend: null, roas: null}
       : null,
   };
 }
 
 const money = (n: number) => `₱${n.toLocaleString(undefined, {maximumFractionDigits: n < 100 ? 2 : 0})}`;
-const fmt = (m: Metric, n: number) => (METRICS.find((x) => x.key === m)?.money ? money(n) : n.toLocaleString());
+const fmt = (m: Metric, n: number) => {
+  const meta = METRICS.find((x) => x.key === m);
+  if (meta?.ratio) return `${n.toFixed(2)}×`;
+  return meta?.money ? money(n) : n.toLocaleString();
+};
 
 // ── comparison chart ─────────────────────────────────────────────────────────────
 function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]; metric: Metric; setMetric: (m: Metric) => void}) {
@@ -74,13 +90,16 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
       <CardContent className="p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Compare channels</div>
-          <div className="relative grid grid-cols-4 rounded-xl border border-border bg-muted/40 p-1">
+          <div
+            className="relative grid rounded-xl border border-border bg-muted/40 p-1"
+            style={{gridTemplateColumns: `repeat(${METRICS.length}, minmax(0, 1fr))`}}
+          >
             {/* liquid-glass sliding indicator — springs to the active metric */}
             <span
               aria-hidden
               className="pointer-events-none absolute inset-y-1 left-1 rounded-lg bg-primary shadow-sm"
               style={{
-                width: 'calc((100% - 0.5rem) / 4)',
+                width: `calc((100% - 0.5rem) / ${METRICS.length})`,
                 transform: `translateX(${Math.max(0, METRICS.findIndex((m) => m.key === metric)) * 100}%)`,
                 transition: 'transform 600ms cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
@@ -90,7 +109,7 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
                 key={m.key}
                 onClick={() => setMetric(m.key)}
                 className={cn(
-                  'relative z-10 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors duration-300',
+                  'relative z-10 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-colors duration-300',
                   metric === m.key ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -141,9 +160,16 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           </div>
           </>
         )}
-        {channels.includes('shopee') && metric === 'units' && (
-          <p className="mt-3 text-[11px] text-muted-foreground">Shopee doesn’t report units in its sales export, so it’s omitted here.</p>
-        )}
+        {(() => {
+          const omitted = channels.filter((c) => !rows.some((r) => r.c === c));
+          if (!omitted.length) return null;
+          const names = omitted.map((c) => CH[c].label).join(', ');
+          let why = `no ${METRICS.find((m) => m.key === metric)?.label.toLowerCase()} data for ${names} in this window.`;
+          if (metric === 'units') why = `Shopee doesn’t report units in its sales export, so it’s omitted here.`;
+          if (metric === 'adSpend' || metric === 'roas')
+            why = `Ad spend is only wired for Shopee so far — ${names} not in the feed yet (Lazada Sponsored Solutions API pending, Meta not connected).`;
+          return <p className="mt-3 text-[11px] text-muted-foreground">{why}</p>;
+        })()}
       </CardContent>
     </Card>
   );
@@ -194,6 +220,8 @@ const METRIC_KEYWORDS: Record<Metric, RegExp> = {
   orders: /order|conversion|convert|checkout|cart|placed|click-to-order|visit-to-placed|bounce|funnel|abandon/i,
   aov: /basket|sales-?per-?buyer|per buyer|aov|order value|bundle|voucher|upsell|cross-?sell|add-?on|minimum spend/i,
   units: /unit|stock|inventory|quantity|sku|restock|out of stock|sell-?through/i,
+  adSpend: /ad|ads|spend|budget|campaign|acos|cpc|cpm|bid|keyword|sponsored/i,
+  roas: /roas|acos|return on ad|ad spend|ads|campaign|bid|budget|margin/i,
 };
 
 /** Stable-sort recs so those matching the active metric come first (channel-agnostic). */
