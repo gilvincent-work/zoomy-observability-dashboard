@@ -74,14 +74,24 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
       <CardContent className="p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Compare channels</div>
-          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+          <div className="relative grid grid-cols-4 rounded-xl border border-border bg-muted/40 p-1">
+            {/* liquid-glass sliding indicator — springs to the active metric */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-1 left-1 rounded-lg bg-primary shadow-sm"
+              style={{
+                width: 'calc((100% - 0.5rem) / 4)',
+                transform: `translateX(${Math.max(0, METRICS.findIndex((m) => m.key === metric)) * 100}%)`,
+                transition: 'transform 600ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}
+            />
             {METRICS.map((m) => (
               <button
                 key={m.key}
                 onClick={() => setMetric(m.key)}
                 className={cn(
-                  'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
-                  metric === m.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  'relative z-10 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors duration-300',
+                  metric === m.key ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
                 {m.label}
