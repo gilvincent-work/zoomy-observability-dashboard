@@ -21,7 +21,7 @@ import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, Conversati
 export type Channel = 'shopee' | 'lazada' | 'website';
 const CHANNELS: {key: Channel; label: string; icon: React.ComponentType<{className?: string; style?: React.CSSProperties}>; accent: string}[] = [
   {key: 'shopee', label: 'Shopee', icon: ShopeeIcon, accent: '#ee4d2d'},
-  {key: 'lazada', label: 'Lazada', icon: LazadaIcon, accent: '#f57224'},
+  {key: 'lazada', label: 'Lazada', icon: LazadaIcon, accent: '#2f6bd4'},
   {key: 'website', label: 'Website', icon: Globe, accent: 'var(--primary)'},
 ];
 const CH = Object.fromEntries(CHANNELS.map((c) => [c.key, c])) as Record<Channel, (typeof CHANNELS)[number]>;
