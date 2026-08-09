@@ -337,7 +337,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         </h1>
 
         <div className="flex flex-wrap items-center gap-2">
-          {CHANNELS.map((c) => {
+          {CHANNELS.map((c, i) => {
             const on = selected.includes(c.key);
             const Icon = c.icon;
             return (
@@ -345,8 +345,9 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
                 key={c.key}
                 onClick={() => toggle(c.key)}
                 aria-pressed={on}
+                style={{animationDelay: `${1.7 + i * 0.18}s`}}
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all',
+                  'coop-chip-hint inline-flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-95',
                   on
                     ? 'border-primary bg-primary/[0.1] text-foreground shadow-sm'
                     : 'border-border bg-card text-muted-foreground opacity-70 hover:opacity-100',
