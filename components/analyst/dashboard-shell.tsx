@@ -98,10 +98,14 @@ export function DashboardShell({
                   <div className="max-h-72 overflow-y-auto pb-1">
                     {digests.map((d) => {
                       const active = d.window_from === currentWeek;
+                      // Preserve the current view's params (e.g. ?channel=) — only swap the week,
+                      // so changing period reloads the same view instead of bouncing home.
+                      const params = new URLSearchParams(searchParams.toString());
+                      params.set('week', d.window_from);
                       return (
                         <Link
                           key={d.window_from}
-                          href={`${pathname}?week=${encodeURIComponent(d.window_from)}`}
+                          href={`${pathname}?${params.toString()}`}
                           onClick={() => setPeriodOpen(false)}
                           className={cn(
                             'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
