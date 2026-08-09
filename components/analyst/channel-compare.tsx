@@ -71,8 +71,8 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
 
   return (
     <Card>
-      <CardContent className="p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <CardContent className="p-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Compare channels</div>
           <div className="relative grid grid-cols-4 rounded-xl border border-border bg-muted/40 p-1">
             {/* liquid-glass sliding indicator — springs to the active metric */}
@@ -103,21 +103,21 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
         ) : (
           <>
-          <div className="flex items-end justify-center gap-8 border-b border-border pt-2 sm:gap-12" style={{height: 240}}>
+          <div className="flex items-end justify-center gap-8 border-b border-border pt-1 sm:gap-12" style={{height: 168}}>
             {rows.map(({c, value}) => {
               const meta = CH[c];
               return (
-                <div key={c} className="flex flex-col items-center justify-end gap-2">
+                <div key={c} className="flex flex-col items-center justify-end gap-1.5">
                   <div className="text-[15px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
                   <div
                     className="w-20 rounded-t-xl transition-all sm:w-24 lg:w-28"
-                    style={{height: Math.max(6, (value / max) * 185), backgroundColor: meta.accent}}
+                    style={{height: Math.max(6, (value / max) * 130), backgroundColor: meta.accent}}
                   />
                 </div>
               );
             })}
           </div>
-          <div className="flex justify-center gap-8 pt-3 sm:gap-12">
+          <div className="flex justify-center gap-8 pt-2.5 sm:gap-12">
             {rows.map(({c}) => {
               const meta = CH[c];
               const Icon = meta.icon;
