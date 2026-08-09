@@ -5,7 +5,7 @@
 // (channel-tagged) recommendations. Single-channel selection drills into that
 // channel's full detail. Comparison numbers are read from each channel's existing
 // figures (label-matched) — interim until the batch emits a normalized summary.
-import {useMemo, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import Link from 'next/link';
 import {ArrowLeft, Check, Globe, Search} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
@@ -253,10 +253,28 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; initialChannels: Channel[]}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
   const [metric, setMetric] = useState<Metric>('revenue');
+  // Auto-cycle the chart metric every 3s so users notice the toggles are clickable;
+  // stops permanently once they pick a metric themselves.
+  const [autoCycle, setAutoCycle] = useState(true);
   const metrics = useMemo(() => channelMetrics(row), [row]);
   // Merged recs, reordered so those relevant to the metric on the chart come first.
   const recs = useMemo(() => orderRecsByMetric(collectRecs(row, selected), metric), [row, selected, metric]);
   const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
+
+  const comparing = selected.length >= 2;
+  useEffect(() => {
+    if (!autoCycle || !comparing) return;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const order: Metric[] = ['revenue', 'orders', 'aov', 'units'];
+    const id = setInterval(() => setMetric((m) => order[(order.indexOf(m) + 1) % order.length]), 3000);
+    return () => clearInterval(id);
+  }, [autoCycle, comparing]);
+
+  // A manual pick stops the auto-cycle for good.
+  const pickMetric = (m: Metric) => {
+    setAutoCycle(false);
+    setMetric(m);
+  };
 
   if (row.digest.degraded) {
     return <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 text-muted-foreground">No data for this window — check the batch job.</div>;
@@ -359,7 +377,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
           </section>
 
           <main className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={setMetric} />
+            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={pickMetric} />
           </main>
         </div>
       )}
