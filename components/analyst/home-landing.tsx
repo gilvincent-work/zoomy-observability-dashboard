@@ -96,38 +96,50 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
 
           <div className="h-px w-full bg-border" />
 
-          {/* channel columns — clicking any opens the unified 3-channel comparison */}
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {MODULES.map((m) => {
-              const Icon = m.icon;
-              return (
-                <Link
-                  key={m.key}
-                  href={`/?channel=all${week ? `&week=${encodeURIComponent(week)}` : ''}`}
-                  style={{backgroundColor: 'var(--card-warm)'}}
-                  className="group flex flex-col rounded-xl border border-border p-4 transition-all hover:border-foreground/20 hover:shadow-sm"
-                >
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="flex size-7 items-center justify-center rounded-lg bg-muted">
-                      <Icon className="size-4" style={{color: m.accent}} />
-                    </span>
-                    <span className="text-[15px] font-semibold text-foreground">{m.label}</span>
-                    <span className="text-xs text-muted-foreground">{m.tag}</span>
-                  </div>
-                  <ul className="space-y-2">
-                    {m.tasks.map((t) => (
-                      <li key={t} className="flex items-center gap-2 text-sm text-foreground/80">
-                        <Check className="size-3.5 shrink-0 text-primary" />
-                        {t}
-                      </li>
-                    ))}
-                  </ul>
-                  <span className="mt-4 inline-flex items-center gap-1 text-[13px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                    View analytics <ArrowRight className="size-3.5" />
+          {/* one merged "Sales" box — opens the unified cross-channel comparison */}
+          <div className="mt-5">
+            <Link
+              href={`/?channel=all${week ? `&week=${encodeURIComponent(week)}` : ''}`}
+              style={{backgroundColor: 'var(--card-warm)'}}
+              className="group flex flex-col gap-5 rounded-xl border border-border p-5 transition-all hover:border-foreground/20 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
+                  <span className="flex items-center -space-x-1.5">
+                    {MODULES.map((m) => {
+                      const Icon = m.icon;
+                      return (
+                        <span
+                          key={m.key}
+                          className="flex size-7 items-center justify-center rounded-lg bg-muted ring-2"
+                          style={{'--tw-ring-color': 'var(--card-warm)'} as React.CSSProperties}
+                        >
+                          <Icon className="size-4" style={{color: m.accent}} />
+                        </span>
+                      );
+                    })}
                   </span>
-                </Link>
-              );
-            })}
+                  <span className="text-[16px] font-semibold text-foreground">Sales</span>
+                  <span className="text-xs text-muted-foreground">Shopee · Lazada · Website</span>
+                </div>
+                <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                  {[
+                    'Compare revenue, orders & AOV across channels',
+                    'Diagnose the funnel & flag ROAS / ACOS',
+                    'Rank top products & spot at-risk customers',
+                    'Recommend prioritized actions',
+                  ].map((t) => (
+                    <li key={t} className="flex items-center gap-2 text-sm text-foreground/80">
+                      <Check className="size-3.5 shrink-0 text-primary" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <span className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors group-hover:bg-primary/90 sm:self-center">
+                View <ArrowRight className="size-4" />
+              </span>
+            </Link>
           </div>
         </CardContent>
       </Card>
