@@ -272,15 +272,16 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
 
   return (
     <div className="w-full px-6 py-8 md:px-10 lg:px-12">
-      <Link href={backHref} className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-        <ArrowLeft className="size-3.5" /> Today
-      </Link>
+      {/* return link + Ask Coop hero search on one line to conserve space */}
+      <div className="mb-6 flex items-center gap-4">
+        <Link href={backHref} className="inline-flex shrink-0 items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft className="size-3.5" /> Today
+        </Link>
 
-      {/* Ask Coop — hero search on top (frontend only for now) */}
-      <form
-        onSubmit={(e) => e.preventDefault()}
-        className="mb-6 flex items-center gap-2 rounded-2xl border border-border bg-card p-1.5 pl-4 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:shadow-md"
-      >
+        <form
+          onSubmit={(e) => e.preventDefault()}
+          className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-card p-1.5 pl-4 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:shadow-md"
+        >
         <Search className="size-5 shrink-0 text-muted-foreground" />
         <input
           type="text"
@@ -294,7 +295,8 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         >
           ASK
         </button>
-      </form>
+        </form>
+      </div>
 
       {/* header — date range · channel filter (center) · compact KPIs (right) */}
       <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-4">
