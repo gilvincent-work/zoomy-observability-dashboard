@@ -415,15 +415,15 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
 
   return (
     <div className="w-full px-6 py-8 md:px-10 lg:px-12">
-      <Link
-        href={backHref}
-        className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" /> Today
-      </Link>
-
-      {/* header — date range · channel filter (center) · compact KPIs (right) */}
-      <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-4">
+      {/* header — back · date range · channel filter · compact KPIs (right) */}
+      <div className="mb-7 flex flex-wrap items-center gap-x-6 gap-y-4">
+        <Link
+          href={backHref}
+          aria-label="Back to Today"
+          className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+        >
+          <ArrowLeft className="size-5" />
+        </Link>
         <h1 className="font-serif text-[2.6rem] font-normal leading-[1.05] tracking-tight text-foreground">
           {fmtRange(row.window_from, row.window_to, row.digest.window.label)}
         </h1>
