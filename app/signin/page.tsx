@@ -8,14 +8,16 @@ export default async function SignIn({searchParams}: {searchParams: {callbackUrl
   if (session?.user) redirect(searchParams.callbackUrl || '/');
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-6">
-      <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
-        <div className="mb-1 select-none text-[26px] font-extrabold leading-none tracking-tight text-foreground">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
+      <div className="coop-intro-rise flex flex-col items-center text-center">
+        <span className="select-none font-sans text-[3.25rem] font-extrabold leading-none tracking-tight text-foreground">
           co<span style={{color: 'var(--primary)'}}>o</span>p
-        </div>
-        <p className="mb-6 text-[13px] text-muted-foreground">BrandOS — your store-ops intelligence</p>
+        </span>
+        <h1 className="mt-6 font-serif text-[2.5rem] font-normal leading-tight tracking-tight text-foreground">The Brand Operating System</h1>
+        <p className="mt-3 text-[15px] text-muted-foreground">A new way to run a brand.</p>
 
         <form
+          className="mt-10 w-full max-w-xs"
           action={async () => {
             'use server';
             await signIn('google', {redirectTo: searchParams.callbackUrl || '/'});
@@ -23,14 +25,12 @@ export default async function SignIn({searchParams}: {searchParams: {callbackUrl
         >
           <button
             type="submit"
-            className="inline-flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            className="inline-flex w-full items-center justify-center gap-2.5 rounded-full border border-border bg-card px-5 py-3 text-sm font-medium text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
           >
             <GoogleGlyph />
             Continue with Google
           </button>
         </form>
-
-        <p className="mt-5 text-[11px] leading-snug text-muted-foreground">Access is limited to authorized team members.</p>
       </div>
     </div>
   );
