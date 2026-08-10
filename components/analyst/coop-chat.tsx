@@ -141,10 +141,40 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   return (
     <CoopChatCtx.Provider value={{ask, open, scopeLabel}}>
       {children}
+      {!isOpen && <ScrollFab onOpen={open} />}
       {isOpen && (
         <CoopChatDrawer messages={messages} busy={busy} scopeLabel={scopeLabel} home={home} onClose={() => setOpen(false)} onAsk={ask} onNewChat={newChat} />
       )}
     </CoopChatCtx.Provider>
+  );
+}
+
+/** A floating "Ask coop" button, lower-left, that appears only once the user has
+ *  scrolled down (so the top-bar pill is out of view) and hides at the top. */
+function ScrollFab({onOpen}: {onOpen: () => void}) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const el = document.getElementById('coop-scroll');
+    const check = () => setShow(((el?.scrollTop ?? 0) || window.scrollY || 0) > 160);
+    check();
+    el?.addEventListener('scroll', check, {passive: true});
+    window.addEventListener('scroll', check, {passive: true});
+    return () => {
+      el?.removeEventListener('scroll', check);
+      window.removeEventListener('scroll', check);
+    };
+  }, []);
+  if (!show) return null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="Ask coop"
+      className="fixed bottom-5 left-5 z-[70] inline-flex items-center gap-2 overflow-hidden rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2 hover:-translate-y-0.5 hover:shadow-xl md:left-20"
+    >
+      <span className="coop-shine" aria-hidden />
+      <Sparkles className="size-4" /> Ask coop
+    </button>
   );
 }
 
@@ -168,10 +198,9 @@ export function AskCoopPill() {
     >
       <span className="coop-shine" aria-hidden />
       <Sparkles className="size-4 text-primary" />
-      <span className="hidden sm:inline">
+      <span>
         Ask <CoopWord />
       </span>
-      <kbd className="ml-1 hidden rounded border border-primary/30 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">⌘K</kbd>
     </button>
   );
 }

@@ -172,7 +172,7 @@ export function DashboardShell({
           })}
         </nav>
 
-        <main className="coop-app-in min-w-0 flex-1 overflow-y-auto">
+        <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-y-auto">
           {children}
         </main>
       </div>
