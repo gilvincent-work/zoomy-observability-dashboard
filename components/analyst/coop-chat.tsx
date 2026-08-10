@@ -154,23 +154,24 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
 function ScrollFab({onOpen}: {onOpen: () => void}) {
   const [show, setShow] = useState(false);
   useEffect(() => {
-    const el = document.getElementById('coop-scroll');
-    const check = () => {
-      const y = Math.max(
-        window.scrollY || 0,
-        document.documentElement?.scrollTop || 0,
-        document.body?.scrollTop || 0,
-        el?.scrollTop || 0,
-      );
-      setShow(y > 160);
+    // Watch a sentinel at the very top of the content — when it scrolls out of
+    // view (window OR inner-container scroll), reveal the FAB. Retry until the
+    // sentinel is mounted.
+    let observer: IntersectionObserver | null = null;
+    let raf = 0;
+    const attach = () => {
+      const sentinel = document.getElementById('coop-top-sentinel');
+      if (!sentinel) {
+        raf = requestAnimationFrame(attach);
+        return;
+      }
+      observer = new IntersectionObserver(([entry]) => setShow(!entry.isIntersecting), {rootMargin: '-120px 0px 0px 0px'});
+      observer.observe(sentinel);
     };
-    check();
-    // Capture catches a scroll on ANY element (window or an inner container).
-    document.addEventListener('scroll', check, {capture: true, passive: true});
-    window.addEventListener('resize', check, {passive: true});
+    attach();
     return () => {
-      document.removeEventListener('scroll', check, {capture: true} as EventListenerOptions);
-      window.removeEventListener('resize', check);
+      observer?.disconnect();
+      cancelAnimationFrame(raf);
     };
   }, []);
   if (!show) return null;
