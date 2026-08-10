@@ -155,13 +155,22 @@ function ScrollFab({onOpen}: {onOpen: () => void}) {
   const [show, setShow] = useState(false);
   useEffect(() => {
     const el = document.getElementById('coop-scroll');
-    const check = () => setShow(((el?.scrollTop ?? 0) || window.scrollY || 0) > 160);
+    const check = () => {
+      const y = Math.max(
+        window.scrollY || 0,
+        document.documentElement?.scrollTop || 0,
+        document.body?.scrollTop || 0,
+        el?.scrollTop || 0,
+      );
+      setShow(y > 160);
+    };
     check();
-    el?.addEventListener('scroll', check, {passive: true});
-    window.addEventListener('scroll', check, {passive: true});
+    // Capture catches a scroll on ANY element (window or an inner container).
+    document.addEventListener('scroll', check, {capture: true, passive: true});
+    window.addEventListener('resize', check, {passive: true});
     return () => {
-      el?.removeEventListener('scroll', check);
-      window.removeEventListener('scroll', check);
+      document.removeEventListener('scroll', check, {capture: true} as EventListenerOptions);
+      window.removeEventListener('resize', check);
     };
   }, []);
   if (!show) return null;
@@ -170,10 +179,10 @@ function ScrollFab({onOpen}: {onOpen: () => void}) {
       type="button"
       onClick={onOpen}
       aria-label="Ask coop"
-      className="fixed bottom-5 left-5 z-[70] inline-flex items-center gap-2 overflow-hidden rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2 hover:-translate-y-0.5 hover:shadow-xl md:left-20"
+      title="Ask coop"
+      className="fixed bottom-4 left-3 z-[70] flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-all animate-in fade-in zoom-in-75 hover:-translate-y-0.5 hover:shadow-xl"
     >
-      <span className="coop-shine" aria-hidden />
-      <Sparkles className="size-4" /> Ask coop
+      <Sparkles className="size-4" />
     </button>
   );
 }
