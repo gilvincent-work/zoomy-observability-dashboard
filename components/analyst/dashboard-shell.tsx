@@ -3,7 +3,8 @@
 import {useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
-import {Activity, ChevronDown, Home, Mail, Package, Settings, Users} from 'lucide-react';
+import {signOut} from 'next-auth/react';
+import {Activity, ChevronDown, Home, LogOut, Mail, Package, Settings, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -33,13 +34,22 @@ function CoopMark() {
 
 export function DashboardShell({
   digests,
+  user,
   children,
 }: {
   digests: DigestArchiveRow[];
   usingMock?: boolean;
+  user?: {name?: string | null; email?: string | null; image?: string | null};
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || '/';
+  const [accountOpen, setAccountOpen] = useState(false);
+  const initials = (user?.name || user?.email || 'ZY')
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase())
+    .join('');
   const searchParams = useSearchParams();
   const currentWeek = searchParams.get('week') ?? digests[0]?.window_from ?? '';
   const withWeek = (href: string) => (currentWeek ? `${href}?week=${encodeURIComponent(currentWeek)}` : href);
@@ -136,13 +146,35 @@ export function DashboardShell({
         <div className="ml-auto flex items-center gap-2">
           <AskCoopPill />
           <ThemeToggle />
-          <span
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-primary-foreground"
-            style={{backgroundColor: 'var(--primary)'}}
-            title="Account"
-          >
-            ZY
-          </span>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setAccountOpen((o) => !o)}
+              aria-label="Account"
+              aria-expanded={accountOpen}
+              className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              style={{backgroundColor: 'var(--primary)'}}
+            >
+              {initials || 'ZY'}
+            </button>
+            {accountOpen && (
+              <>
+                <button className="fixed inset-0 z-10 cursor-default" aria-hidden onClick={() => setAccountOpen(false)} />
+                <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+                  <div className="border-b border-border px-3 py-2.5">
+                    <div className="truncate text-[13px] font-medium text-foreground">{user?.name || 'Signed in'}</div>
+                    {user?.email && <div className="truncate text-[11px] text-muted-foreground">{user.email}</div>}
+                  </div>
+                  <button
+                    onClick={() => signOut({callbackUrl: '/signin'})}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted"
+                  >
+                    <LogOut className="size-3.5 text-muted-foreground" /> Sign out
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
