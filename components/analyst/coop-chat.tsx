@@ -157,75 +157,22 @@ function CoopWord() {
   );
 }
 
-const HINT_KEY = 'coop-pill-hint-seen';
-
-/** The compact top-bar entry point, with a one-time coach-mark to drive first use. */
+/** The compact top-bar entry point — a shine sweep glides across to draw the eye. */
 export function AskCoopPill() {
   const {open} = useCoopChat();
-  const [hint, setHint] = useState(false);
-
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem(HINT_KEY)) setHint(true);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-  const dismissHint = useCallback(() => {
-    setHint(false);
-    try {
-      localStorage.setItem(HINT_KEY, '1');
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => {
-          open();
-          dismissHint();
-        }}
-        className="coop-pill-glow inline-flex items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
-      >
-        <Sparkles className="size-4 animate-pulse text-primary" />
-        <span className="hidden sm:inline">
-          Ask <CoopWord />
-        </span>
-        <kbd className="ml-1 hidden rounded border border-primary/30 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">⌘K</kbd>
-      </button>
-
-      {hint && (
-        <>
-          <button aria-hidden className="fixed inset-0 z-40 cursor-default" onClick={dismissHint} />
-          <div className="absolute right-0 top-full z-50 mt-2.5 w-64 rounded-xl border border-primary/30 bg-popover p-3.5 shadow-lg animate-in fade-in slide-in-from-top-1">
-            <span className="absolute -top-1 right-8 size-2 rotate-45 border-l border-t border-primary/30 bg-popover" aria-hidden />
-            <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground">
-              <Sparkles className="size-3.5 text-primary" /> Meet <CoopWord />
-            </div>
-            <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
-              Ask anything about your store — sales, ads, ROAS, top products, or what to do next.
-            </p>
-            <div className="mt-2.5 flex gap-2">
-              <button
-                onClick={() => {
-                  open();
-                  dismissHint();
-                }}
-                className="rounded-lg bg-primary px-2.5 py-1 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                Try it
-              </button>
-              <button onClick={dismissHint} className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-                Maybe later
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={open}
+      className="relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-primary/50 bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
+    >
+      <span className="coop-shine" aria-hidden />
+      <Sparkles className="size-4 text-primary" />
+      <span className="hidden sm:inline">
+        Ask <CoopWord />
+      </span>
+      <kbd className="ml-1 hidden rounded border border-primary/30 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">⌘K</kbd>
+    </button>
   );
 }
 
@@ -285,6 +232,28 @@ function CoopChatDrawer({
   };
 
   const lastIdx = messages.length - 1;
+  const empty = messages.length === 0;
+
+  const composer = (
+    <form onSubmit={submit} className="flex items-center gap-2">
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={empty ? 'Ask coop anything…' : 'Ask a follow-up…'}
+        aria-label="Message Coop"
+        autoFocus
+        className="min-w-0 flex-1 rounded-full border border-border bg-card px-4 py-2.5 text-[14px] text-foreground outline-none transition-colors focus:border-primary/50"
+      />
+      <button
+        type="submit"
+        disabled={busy || !draft.trim()}
+        aria-label="Send"
+        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+      >
+        <ArrowUp className="size-4" />
+      </button>
+    </form>
+  );
 
   return (
     <div className="fixed inset-0 z-[80]">
@@ -316,68 +285,56 @@ function CoopChatDrawer({
           </button>
         </header>
 
-        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
-          {messages.length === 0 && (
-            <div className="space-y-3 pt-2">
-              <p className="text-[13px] text-muted-foreground">
-                {home ? 'New here? Ask Coop what you can do, or where to start. Try:' : 'Ask Coop about your sales, ads, products, or what to do next. Try:'}
-              </p>
-              <div className="flex flex-col gap-2">
-                {(home ? HOME_SUGGESTIONS : SUGGESTIONS).map((s) => (
-                  <button key={s} onClick={() => onAsk(s)} className="rounded-xl border border-border bg-card px-3 py-2 text-left text-[13px] text-foreground transition-colors hover:border-primary/50 hover:bg-muted">
-                    {s}
-                  </button>
-                ))}
-              </div>
+        {empty ? (
+          // Session start: greeting + suggestions + composer, vertically centered.
+          <div className="flex flex-1 flex-col justify-center gap-5 overflow-y-auto p-5">
+            <p className="text-center text-[13px] text-muted-foreground">
+              {home ? 'New here? Ask coop what you can do, or where to start.' : 'Ask coop about your sales, ads, products, or what to do next.'}
+            </p>
+            {composer}
+            <div className="flex flex-col gap-2">
+              {(home ? HOME_SUGGESTIONS : SUGGESTIONS).map((s) => (
+                <button key={s} onClick={() => onAsk(s)} className="rounded-xl border border-border bg-card px-3 py-2 text-left text-[13px] text-foreground transition-colors hover:border-primary/50 hover:bg-muted">
+                  {s}
+                </button>
+              ))}
             </div>
-          )}
-          {messages.map((m, i) => {
-            if (m.role === 'user') {
-              return (
-                <div key={i} className="flex justify-end">
-                  <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-primary px-3.5 py-2 text-[13.5px] leading-relaxed text-primary-foreground">{m.content}</div>
-                </div>
-              );
-            }
-            const {text, suggestions} = parseAssistant(m.content);
-            const streamingThis = busy && i === lastIdx;
-            return (
-              <div key={i} className="flex flex-col items-start">
-                <div className="max-w-[90%] rounded-2xl border border-border bg-card px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4">
-                  {text ? <Markdown>{text}</Markdown> : streamingThis ? <span className="text-muted-foreground">Coop is thinking…</span> : null}
-                </div>
-                {!streamingThis && text && <CopyButton text={text} />}
-                {!streamingThis && suggestions.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {suggestions.map((s) => (
-                      <button key={s} onClick={() => onAsk(s)} className="rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[12px] text-primary transition-colors hover:bg-primary/10">
-                        {s}
-                      </button>
-                    ))}
+          </div>
+        ) : (
+          <>
+            <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+              {messages.map((m, i) => {
+                if (m.role === 'user') {
+                  return (
+                    <div key={i} className="flex justify-end">
+                      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-primary px-3.5 py-2 text-[13.5px] leading-relaxed text-primary-foreground">{m.content}</div>
+                    </div>
+                  );
+                }
+                const {text, suggestions} = parseAssistant(m.content);
+                const streamingThis = busy && i === lastIdx;
+                return (
+                  <div key={i} className="flex flex-col items-start">
+                    <div className="max-w-[90%] rounded-2xl border border-border bg-card px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4">
+                      {text ? <Markdown>{text}</Markdown> : streamingThis ? <span className="text-muted-foreground">Coop is thinking…</span> : null}
+                    </div>
+                    {!streamingThis && text && <CopyButton text={text} />}
+                    {!streamingThis && suggestions.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {suggestions.map((s) => (
+                          <button key={s} onClick={() => onAsk(s)} className="rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[12px] text-primary transition-colors hover:bg-primary/10">
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <form onSubmit={submit} className="flex items-center gap-2 border-t border-border p-3">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Ask a follow-up…"
-            aria-label="Message Coop"
-            className="min-w-0 flex-1 rounded-full border border-border bg-card px-4 py-2 text-[14px] text-foreground outline-none transition-colors focus:border-primary/50"
-          />
-          <button
-            type="submit"
-            disabled={busy || !draft.trim()}
-            aria-label="Send"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-          >
-            <ArrowUp className="size-4" />
-          </button>
-        </form>
+                );
+              })}
+            </div>
+            <div className="border-t border-border p-3">{composer}</div>
+          </>
+        )}
       </aside>
     </div>
   );
