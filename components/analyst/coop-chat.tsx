@@ -148,24 +148,84 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   );
 }
 
-/** The compact top-bar entry point. */
+/** The coop wordmark (lowercase, green second "o") — matches the top-left logo. */
+function CoopWord() {
+  return (
+    <span className="font-extrabold tracking-tight">
+      co<span style={{color: 'var(--primary)'}}>o</span>p
+    </span>
+  );
+}
+
+const HINT_KEY = 'coop-pill-hint-seen';
+
+/** The compact top-bar entry point, with a one-time coach-mark to drive first use. */
 export function AskCoopPill() {
   const {open} = useCoopChat();
+  const [hint, setHint] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(HINT_KEY)) setHint(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const dismissHint = useCallback(() => {
+    setHint(false);
+    try {
+      localStorage.setItem(HINT_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   return (
-    <button
-      type="button"
-      onClick={open}
-      className="coop-pill-glow inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
-    >
-      <Sparkles className="size-4 animate-pulse text-primary" />
-      <span className="hidden sm:inline">
-        Ask{' '}
-        <span className="font-extrabold tracking-tight">
-          co<span style={{color: 'var(--primary)'}}>o</span>p
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => {
+          open();
+          dismissHint();
+        }}
+        className="coop-pill-glow inline-flex items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
+      >
+        <Sparkles className="size-4 animate-pulse text-primary" />
+        <span className="hidden sm:inline">
+          Ask <CoopWord />
         </span>
-      </span>
-      <kbd className="ml-1 hidden rounded border border-primary/30 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">⌘K</kbd>
-    </button>
+        <kbd className="ml-1 hidden rounded border border-primary/30 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">⌘K</kbd>
+      </button>
+
+      {hint && (
+        <>
+          <button aria-hidden className="fixed inset-0 z-40 cursor-default" onClick={dismissHint} />
+          <div className="absolute right-0 top-full z-50 mt-2.5 w-64 rounded-xl border border-primary/30 bg-popover p-3.5 shadow-lg animate-in fade-in slide-in-from-top-1">
+            <span className="absolute -top-1 right-8 size-2 rotate-45 border-l border-t border-primary/30 bg-popover" aria-hidden />
+            <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground">
+              <Sparkles className="size-3.5 text-primary" /> Meet <CoopWord />
+            </div>
+            <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
+              Ask anything about your store — sales, ads, ROAS, top products, or what to do next.
+            </p>
+            <div className="mt-2.5 flex gap-2">
+              <button
+                onClick={() => {
+                  open();
+                  dismissHint();
+                }}
+                className="rounded-lg bg-primary px-2.5 py-1 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Try it
+              </button>
+              <button onClick={dismissHint} className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+                Maybe later
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -239,7 +299,9 @@ function CoopChatDrawer({
             <Sparkles className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-semibold text-foreground">Chat with Coop</div>
+            <div className="text-[14px] font-semibold text-foreground">
+              Chat with <CoopWord />
+            </div>
             <div className="truncate text-[11px] text-muted-foreground">
               {home ? 'Getting started — ask what you can do here' : scopeLabel ? `Answering about ${scopeLabel}` : 'Answers grounded in your store data'}
             </div>
