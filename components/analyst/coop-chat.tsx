@@ -8,7 +8,8 @@ import {cn} from '@/lib/utils';
 
 type Msg = {role: 'user' | 'assistant'; content: string};
 
-const CoopChatCtx = createContext<{ask: (q: string) => void; open: () => void; scopeLabel?: string}>({
+type Side = 'left' | 'right';
+const CoopChatCtx = createContext<{ask: (q: string) => void; open: (side?: Side) => void; scopeLabel?: string}>({
   ask: () => {},
   open: () => {},
 });
@@ -43,6 +44,7 @@ function parseAssistant(raw: string): {text: string; suggestions: string[]} {
 
 export function CoopChatProvider({children, scopeLabel}: {children: React.ReactNode; scopeLabel?: string}) {
   const [isOpen, setOpen] = useState(false);
+  const [side, setSide] = useState<Side>('right');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const searchParams = useSearchParams();
@@ -115,7 +117,10 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
     [busy, send],
   );
 
-  const open = useCallback(() => setOpen(true), []);
+  const open = useCallback((s: Side = 'right') => {
+    setSide(s);
+    setOpen(true);
+  }, []);
 
   // ⌘K / Ctrl+K opens Coop.
   useEffect(() => {
@@ -141,47 +146,24 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   return (
     <CoopChatCtx.Provider value={{ask, open, scopeLabel}}>
       {children}
-      {!isOpen && <ScrollFab onOpen={open} />}
+      {!isOpen && <CoopFab onOpen={() => open('left')} />}
       {isOpen && (
-        <CoopChatDrawer messages={messages} busy={busy} scopeLabel={scopeLabel} home={home} onClose={() => setOpen(false)} onAsk={ask} onNewChat={newChat} />
+        <CoopChatDrawer messages={messages} busy={busy} side={side} scopeLabel={scopeLabel} home={home} onClose={() => setOpen(false)} onAsk={ask} onNewChat={newChat} />
       )}
     </CoopChatCtx.Provider>
   );
 }
 
-/** A floating "Ask coop" button, lower-left, that appears only once the user has
- *  scrolled down (so the top-bar pill is out of view) and hides at the top. */
-function ScrollFab({onOpen}: {onOpen: () => void}) {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    // Watch a sentinel at the very top of the content — when it scrolls out of
-    // view (window OR inner-container scroll), reveal the FAB. Retry until the
-    // sentinel is mounted.
-    let observer: IntersectionObserver | null = null;
-    let raf = 0;
-    const attach = () => {
-      const sentinel = document.getElementById('coop-top-sentinel');
-      if (!sentinel) {
-        raf = requestAnimationFrame(attach);
-        return;
-      }
-      observer = new IntersectionObserver(([entry]) => setShow(!entry.isIntersecting), {rootMargin: '-120px 0px 0px 0px'});
-      observer.observe(sentinel);
-    };
-    attach();
-    return () => {
-      observer?.disconnect();
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-  if (!show) return null;
+/** Always-visible floating "Ask coop" button, pinned bottom-left in the nav rail.
+ *  Opens the chat on the LEFT so it doesn't cover right-side dashboard content. */
+function CoopFab({onOpen}: {onOpen: () => void}) {
   return (
     <button
       type="button"
       onClick={onOpen}
       aria-label="Ask coop"
       title="Ask coop"
-      className="fixed bottom-4 left-3 z-[70] flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-all animate-in fade-in zoom-in-75 hover:-translate-y-0.5 hover:shadow-xl"
+      className="fixed bottom-4 left-3 z-[70] flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl"
     >
       <Sparkles className="size-4" />
     </button>
@@ -203,7 +185,7 @@ export function AskCoopPill() {
   return (
     <button
       type="button"
-      onClick={open}
+      onClick={() => open('right')}
       className="relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-primary/50 bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
     >
       <span className="coop-shine" aria-hidden />
@@ -237,6 +219,7 @@ function CopyButton({text}: {text: string}) {
 function CoopChatDrawer({
   messages,
   busy,
+  side,
   scopeLabel,
   home,
   onClose,
@@ -245,6 +228,7 @@ function CoopChatDrawer({
 }: {
   messages: Msg[];
   busy: boolean;
+  side: Side;
   scopeLabel?: string;
   home?: boolean;
   onClose: () => void;
@@ -300,7 +284,10 @@ function CoopChatDrawer({
       <aside
         role="dialog"
         aria-label="Chat with Coop"
-        className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-border bg-background shadow-2xl animate-in slide-in-from-right duration-300"
+        className={cn(
+          'absolute top-0 flex h-full w-full max-w-md flex-col bg-background shadow-2xl animate-in duration-300',
+          side === 'left' ? 'left-0 border-r border-border slide-in-from-left' : 'right-0 border-l border-border slide-in-from-right',
+        )}
       >
         <header className="flex items-center gap-2.5 border-b border-border p-4">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
