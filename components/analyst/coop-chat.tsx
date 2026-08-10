@@ -144,11 +144,11 @@ export function AskCoopPill() {
     <button
       type="button"
       onClick={open}
-      className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="coop-pill-glow inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
     >
-      <Sparkles className="size-3.5 text-primary" />
+      <Sparkles className="size-4 animate-pulse text-primary" />
       <span className="hidden sm:inline">Ask Coop</span>
-      <kbd className="ml-1 hidden rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] md:inline">⌘K</kbd>
+      <kbd className="ml-1 hidden rounded border border-primary/30 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">⌘K</kbd>
     </button>
   );
 }
