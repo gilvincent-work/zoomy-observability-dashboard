@@ -173,6 +173,7 @@ export function DashboardShell({
         </nav>
 
         <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-y-auto">
+          <div id="coop-top-sentinel" aria-hidden className="h-px w-full" />
           {children}
         </main>
       </div>
