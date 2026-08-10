@@ -7,7 +7,7 @@
 // figures (label-matched) — interim until the batch emits a normalized summary.
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, Check, Globe, Search} from 'lucide-react';
+import {ArrowLeft, Check, Globe} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
 import type {AnalystBrief} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
@@ -15,7 +15,6 @@ import {Card, CardContent} from '@/components/ui/card';
 import {Sparkles} from 'lucide-react';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {usePlaybook, usePlaybookProgress, recAction, recSteps} from './playbook';
-import {useCoopChat} from './coop-chat';
 import {fmtRange} from '../../src/week';
 import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, ConversationsSection} from './sections';
 
@@ -397,8 +396,6 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; initialChannels: Channel[]}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
   const [metric, setMetric] = useState<Metric>('adSpend');
-  const {ask: askCoop} = useCoopChat();
-  const [chatQ, setChatQ] = useState('');
   const metrics = useMemo(() => channelMetrics(row), [row]);
   // Merged recs, reordered so those relevant to the metric on the chart come first.
   const recs = useMemo(() => orderRecsByMetric(collectRecs(row, selected), metric), [row, selected, metric]);
@@ -418,42 +415,12 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
 
   return (
     <div className="w-full px-6 py-8 md:px-10 lg:px-12">
-      {/* return link + Ask Coop hero search on one line to conserve space */}
-      <div className="mb-6 flex items-center gap-4">
-        <Link
-          href={backHref}
-          aria-label="Back to Today"
-          className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-        >
-          <ArrowLeft className="size-5" />
-        </Link>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!chatQ.trim()) return;
-            askCoop(chatQ);
-            setChatQ('');
-          }}
-          className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-card p-1.5 pl-4 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:shadow-md"
-        >
-        <Search className="size-5 shrink-0 text-muted-foreground" />
-        <input
-          type="text"
-          value={chatQ}
-          onChange={(e) => setChatQ(e.target.value)}
-          placeholder="Chat with Coop!"
-          aria-label="Chat with Coop"
-          className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
-        />
-        <button
-          type="submit"
-          className="shrink-0 rounded-xl bg-primary px-6 py-2 text-sm font-semibold tracking-wide text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          ASK
-        </button>
-        </form>
-      </div>
+      <Link
+        href={backHref}
+        className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" /> Today
+      </Link>
 
       {/* header — date range · channel filter (center) · compact KPIs (right) */}
       <div className="mb-7 flex flex-wrap items-center gap-x-8 gap-y-4">

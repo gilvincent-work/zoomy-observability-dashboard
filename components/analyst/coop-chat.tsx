@@ -2,14 +2,19 @@
 
 import {createContext, useCallback, useContext, useEffect, useRef, useState} from 'react';
 import {useSearchParams} from 'next/navigation';
-import {Sparkles, X, ArrowUp} from 'lucide-react';
+import Markdown from 'react-markdown';
+import {Sparkles, X, ArrowUp, Plus, Copy, Check} from 'lucide-react';
 import {cn} from '@/lib/utils';
 
 type Msg = {role: 'user' | 'assistant'; content: string};
 
-const CoopChatCtx = createContext<{ask: (q: string) => void; open: () => void}>({ask: () => {}, open: () => {}});
+const CoopChatCtx = createContext<{ask: (q: string) => void; open: () => void; scopeLabel?: string}>({
+  ask: () => {},
+  open: () => {},
+});
 export const useCoopChat = () => useContext(CoopChatCtx);
 
+const STORE_KEY = 'coop-chat-v1';
 const SUGGESTIONS = [
   'Which channel has the best ROAS?',
   'What should I prioritize this week?',
@@ -17,11 +22,40 @@ const SUGGESTIONS = [
   'Which products are driving revenue?',
 ];
 
-export function CoopChatProvider({children}: {children: React.ReactNode}) {
+/** Split a raw assistant message into visible text + follow-up suggestions,
+ *  tolerating a partially-streamed <suggest> tag. */
+function parseAssistant(raw: string): {text: string; suggestions: string[]} {
+  const m = raw.match(/<suggest>([\s\S]*?)<\/suggest>/);
+  const suggestions = m ? m[1].split('|').map((s) => s.trim()).filter(Boolean).slice(0, 3) : [];
+  const text = raw
+    .replace(/<suggest>[\s\S]*?<\/suggest>/g, '')
+    .replace(/<suggest[\s\S]*$/, '') // dangling partial while streaming
+    .trim();
+  return {text, suggestions};
+}
+
+export function CoopChatProvider({children, scopeLabel}: {children: React.ReactNode; scopeLabel?: string}) {
   const [isOpen, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const week = useSearchParams().get('week') ?? undefined;
+
+  // Persist the conversation across reloads.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) setMessages(JSON.parse(raw));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(messages));
+    } catch {
+      /* ignore */
+    }
+  }, [messages]);
 
   const send = useCallback(
     async (history: Msg[]) => {
@@ -70,15 +104,89 @@ export function CoopChatProvider({children}: {children: React.ReactNode}) {
     [busy, send],
   );
 
+  const open = useCallback(() => setOpen(true), []);
+
+  // ⌘K / Ctrl+K opens Coop.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const newChat = useCallback(() => {
+    setMessages([]);
+    try {
+      localStorage.removeItem(STORE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   return (
-    <CoopChatCtx.Provider value={{ask, open: () => setOpen(true)}}>
+    <CoopChatCtx.Provider value={{ask, open, scopeLabel}}>
       {children}
-      {isOpen && <CoopChatDrawer messages={messages} busy={busy} onClose={() => setOpen(false)} onAsk={ask} />}
+      {isOpen && (
+        <CoopChatDrawer messages={messages} busy={busy} scopeLabel={scopeLabel} onClose={() => setOpen(false)} onAsk={ask} onNewChat={newChat} />
+      )}
     </CoopChatCtx.Provider>
   );
 }
 
-function CoopChatDrawer({messages, busy, onClose, onAsk}: {messages: Msg[]; busy: boolean; onClose: () => void; onAsk: (q: string) => void}) {
+/** The compact top-bar entry point. */
+export function AskCoopPill() {
+  const {open} = useCoopChat();
+  return (
+    <button
+      type="button"
+      onClick={open}
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <Sparkles className="size-3.5 text-primary" />
+      <span className="hidden sm:inline">Ask Coop</span>
+      <kbd className="ml-1 hidden rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] md:inline">⌘K</kbd>
+    </button>
+  );
+}
+
+function CopyButton({text}: {text: string}) {
+  const [done, setDone] = useState(false);
+  if (!text) return null;
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard?.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1400);
+        });
+      }}
+      aria-label="Copy"
+      className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground/70 transition-colors hover:text-foreground"
+    >
+      {done ? <Check className="size-3" /> : <Copy className="size-3" />} {done ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+function CoopChatDrawer({
+  messages,
+  busy,
+  scopeLabel,
+  onClose,
+  onAsk,
+  onNewChat,
+}: {
+  messages: Msg[];
+  busy: boolean;
+  scopeLabel?: string;
+  onClose: () => void;
+  onAsk: (q: string) => void;
+  onNewChat: () => void;
+}) {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -98,6 +206,8 @@ function CoopChatDrawer({messages, busy, onClose, onAsk}: {messages: Msg[]; busy
     setDraft('');
   };
 
+  const lastIdx = messages.length - 1;
+
   return (
     <div className="fixed inset-0 z-[80]">
       <button aria-label="Close chat" onClick={onClose} className="absolute inset-0 bg-foreground/20 animate-in fade-in" />
@@ -112,8 +222,15 @@ function CoopChatDrawer({messages, busy, onClose, onAsk}: {messages: Msg[]; busy
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-semibold text-foreground">Chat with Coop</div>
-            <div className="text-[11px] text-muted-foreground">Answers grounded in your store data</div>
+            <div className="truncate text-[11px] text-muted-foreground">
+              {scopeLabel ? `Answering about ${scopeLabel}` : 'Answers grounded in your store data'}
+            </div>
           </div>
+          {messages.length > 0 && (
+            <button onClick={onNewChat} aria-label="New chat" title="New chat" className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <Plus className="size-4" />
+            </button>
+          )}
           <button onClick={onClose} aria-label="Close" className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             <X className="size-4" />
           </button>
@@ -132,18 +249,34 @@ function CoopChatDrawer({messages, busy, onClose, onAsk}: {messages: Msg[]; busy
               </div>
             </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
-              <div
-                className={cn(
-                  'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-[13.5px] leading-relaxed',
-                  m.role === 'user' ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-foreground',
+          {messages.map((m, i) => {
+            if (m.role === 'user') {
+              return (
+                <div key={i} className="flex justify-end">
+                  <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-primary px-3.5 py-2 text-[13.5px] leading-relaxed text-primary-foreground">{m.content}</div>
+                </div>
+              );
+            }
+            const {text, suggestions} = parseAssistant(m.content);
+            const streamingThis = busy && i === lastIdx;
+            return (
+              <div key={i} className="flex flex-col items-start">
+                <div className="max-w-[90%] rounded-2xl border border-border bg-card px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4">
+                  {text ? <Markdown>{text}</Markdown> : streamingThis ? <span className="text-muted-foreground">Coop is thinking…</span> : null}
+                </div>
+                {!streamingThis && text && <CopyButton text={text} />}
+                {!streamingThis && suggestions.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {suggestions.map((s) => (
+                      <button key={s} onClick={() => onAsk(s)} className="rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[12px] text-primary transition-colors hover:bg-primary/10">
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              >
-                {m.content || (busy && i === messages.length - 1 ? <span className="text-muted-foreground">Coop is thinking…</span> : null)}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <form onSubmit={submit} className="flex items-center gap-2 border-t border-border p-3">

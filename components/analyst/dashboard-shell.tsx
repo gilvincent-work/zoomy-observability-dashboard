@@ -9,7 +9,7 @@ import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {PlaybookProvider} from './playbook';
-import {CoopChatProvider} from './coop-chat';
+import {CoopChatProvider, AskCoopPill} from './coop-chat';
 
 // The left icon rail — Coop's thin nav. Each tab is an icon with a green active pill.
 const TABS = [
@@ -57,7 +57,7 @@ export function DashboardShell({
 
   return (
     <PlaybookProvider>
-    <CoopChatProvider>
+    <CoopChatProvider scopeLabel={currentRange || undefined}>
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur-sm">
@@ -132,8 +132,9 @@ export function DashboardShell({
           </div>
         )}
 
-        {/* Right cluster: theme · avatar (the in-page "Chat with Coop" box is the ask entry point) */}
+        {/* Right cluster: Ask Coop · theme · avatar */}
         <div className="ml-auto flex items-center gap-2">
+          <AskCoopPill />
           <ThemeToggle />
           <span
             className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-primary-foreground"

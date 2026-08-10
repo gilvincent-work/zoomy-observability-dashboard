@@ -18,4 +18,10 @@ export const COOP_CHAT = {
   ].join('\n'),
   refusal:
     "I can only help with your Zoomy store performance — sales, ads/ROAS, products, customers, and what to do next across Shopee, Lazada, and the website. Ask me about any of those and I'm on it.",
+  // Format guidance. Markdown is rendered; the hidden <suggest> line drives the
+  // tappable follow-up chips (stripped before display, never spoken aloud).
+  output: [
+    'Format answers in light markdown: **bold** for key numbers/verdicts and "- " bullet lists where it helps. Keep it tight.',
+    'At the VERY END of every answer, add ONE hidden line of up to 3 natural follow-up questions the user might ask next, formatted exactly as: <suggest>Question one? | Question two? | Question three?</suggest>. It is stripped before display — NEVER mention it, never put anything after it, and do not include it in your visible prose.',
+  ].join('\n'),
 } as const;
