@@ -147,7 +147,12 @@ export function AskCoopPill() {
       className="coop-pill-glow inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
     >
       <Sparkles className="size-4 animate-pulse text-primary" />
-      <span className="hidden sm:inline">Ask Coop</span>
+      <span className="hidden sm:inline">
+        Ask{' '}
+        <span className="font-extrabold tracking-tight">
+          co<span style={{color: 'var(--primary)'}}>o</span>p
+        </span>
+      </span>
       <kbd className="ml-1 hidden rounded border border-primary/30 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">⌘K</kbd>
     </button>
   );
