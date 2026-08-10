@@ -1,7 +1,7 @@
 'use client';
 
 import {createContext, useCallback, useContext, useEffect, useRef, useState} from 'react';
-import {useSearchParams} from 'next/navigation';
+import {useSearchParams, usePathname} from 'next/navigation';
 import Markdown from 'react-markdown';
 import {Sparkles, X, ArrowUp, Plus, Copy, Check} from 'lucide-react';
 import {cn} from '@/lib/utils';
@@ -21,6 +21,13 @@ const SUGGESTIONS = [
   'Compare Shopee and Lazada ad spend.',
   'Which products are driving revenue?',
 ];
+// Home screen: no period loaded yet, so orient the user instead.
+const HOME_SUGGESTIONS = [
+  'What can you help me with?',
+  'How do I compare my channels?',
+  'Where do I see ad spend and ROAS?',
+  'What should I look at first?',
+];
 
 /** Split a raw assistant message into visible text + follow-up suggestions,
  *  tolerating a partially-streamed <suggest> tag. */
@@ -38,7 +45,11 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   const [isOpen, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
-  const week = useSearchParams().get('week') ?? undefined;
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const week = searchParams.get('week') ?? undefined;
+  // Home = the landing brief (no channel opened) → generic getting-started mode.
+  const home = pathname === '/' && !searchParams.get('channel');
 
   // Persist the conversation across reloads.
   useEffect(() => {
@@ -65,7 +76,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {'content-type': 'application/json'},
-          body: JSON.stringify({messages: history, week}),
+          body: JSON.stringify({messages: history, week, home}),
         });
         if (!res.ok || !res.body) {
           const text = (await res.text().catch(() => '')) || 'Coop is unavailable right now.';
@@ -87,7 +98,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         setBusy(false);
       }
     },
-    [week],
+    [week, home],
   );
 
   const ask = useCallback(
@@ -131,7 +142,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
     <CoopChatCtx.Provider value={{ask, open, scopeLabel}}>
       {children}
       {isOpen && (
-        <CoopChatDrawer messages={messages} busy={busy} scopeLabel={scopeLabel} onClose={() => setOpen(false)} onAsk={ask} onNewChat={newChat} />
+        <CoopChatDrawer messages={messages} busy={busy} scopeLabel={scopeLabel} home={home} onClose={() => setOpen(false)} onAsk={ask} onNewChat={newChat} />
       )}
     </CoopChatCtx.Provider>
   );
@@ -147,7 +158,12 @@ export function AskCoopPill() {
       className="coop-pill-glow inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3.5 py-1.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
     >
       <Sparkles className="size-4 animate-pulse text-primary" />
-      <span className="hidden sm:inline">Ask Coop</span>
+      <span className="hidden sm:inline">
+        Ask{' '}
+        <span className="font-extrabold tracking-tight">
+          co<span style={{color: 'var(--primary)'}}>o</span>p
+        </span>
+      </span>
       <kbd className="ml-1 hidden rounded border border-primary/30 bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">⌘K</kbd>
     </button>
   );
@@ -176,6 +192,7 @@ function CoopChatDrawer({
   messages,
   busy,
   scopeLabel,
+  home,
   onClose,
   onAsk,
   onNewChat,
@@ -183,6 +200,7 @@ function CoopChatDrawer({
   messages: Msg[];
   busy: boolean;
   scopeLabel?: string;
+  home?: boolean;
   onClose: () => void;
   onAsk: (q: string) => void;
   onNewChat: () => void;
@@ -223,7 +241,7 @@ function CoopChatDrawer({
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-semibold text-foreground">Chat with Coop</div>
             <div className="truncate text-[11px] text-muted-foreground">
-              {scopeLabel ? `Answering about ${scopeLabel}` : 'Answers grounded in your store data'}
+              {home ? 'Getting started — ask what you can do here' : scopeLabel ? `Answering about ${scopeLabel}` : 'Answers grounded in your store data'}
             </div>
           </div>
           {messages.length > 0 && (
@@ -239,9 +257,11 @@ function CoopChatDrawer({
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
           {messages.length === 0 && (
             <div className="space-y-3 pt-2">
-              <p className="text-[13px] text-muted-foreground">Ask Coop about your sales, ads, products, or what to do next. Try:</p>
+              <p className="text-[13px] text-muted-foreground">
+                {home ? 'New here? Ask Coop what you can do, or where to start. Try:' : 'Ask Coop about your sales, ads, products, or what to do next. Try:'}
+              </p>
               <div className="flex flex-col gap-2">
-                {SUGGESTIONS.map((s) => (
+                {(home ? HOME_SUGGESTIONS : SUGGESTIONS).map((s) => (
                   <button key={s} onClick={() => onAsk(s)} className="rounded-xl border border-border bg-card px-3 py-2 text-left text-[13px] text-foreground transition-colors hover:border-primary/50 hover:bg-muted">
                     {s}
                   </button>
