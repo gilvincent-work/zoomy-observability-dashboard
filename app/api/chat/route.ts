@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
   if (rateLimited(ip, Date.now())) return new Response('Too many requests — give Coop a moment.', {status: 429});
 
-  let body: {messages?: InMsg[]; week?: string};
+  let body: {messages?: InMsg[]; week?: string; home?: boolean};
   try {
     body = await req.json();
   } catch {
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   }
 
   const rows = await getDigests(); // PII-masked server-side
-  const system = buildCoopSystemPrompt(rows, body.week);
+  const system = buildCoopSystemPrompt(rows, body.week, {home: body.home === true});
 
   const anthropic = new Anthropic({apiKey: key});
   const encoder = new TextEncoder();
