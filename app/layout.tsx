@@ -6,6 +6,7 @@ import {cn} from '@/lib/utils';
 import {getDigests, usingMock} from '@/src/data';
 import {DashboardShell} from '@/components/analyst/dashboard-shell';
 import {IntroSplash} from '@/components/analyst/intro-splash';
+import {auth} from '@/auth';
 import './globals.css';
 
 // Coop identity: Inter for UI/data, Newsreader for the editorial serif display.
@@ -18,10 +19,13 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({children}: {children: ReactNode}) {
+  // Only authenticated views get the shell + data; the sign-in page renders bare.
+  const session = await auth();
+  const authed = Boolean(session?.user);
   // The shell (header + week sidebar + tab nav) is shared across all tab routes,
   // so it fetches the week list once here; getDigests() is React-cached so the
   // page doesn't re-fetch. useSearchParams inside the shell needs a Suspense boundary.
-  const digests = await getDigests();
+  const digests = authed ? await getDigests() : [];
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -35,12 +39,18 @@ export default async function RootLayout({children}: {children: ReactNode}) {
         />
       </head>
       <body className={cn(sans.variable, serif.variable, 'font-sans antialiased')}>
-        <IntroSplash />
-        <Suspense>
-          <DashboardShell digests={digests} usingMock={usingMock()}>
-            {children}
-          </DashboardShell>
-        </Suspense>
+        {authed ? (
+          <>
+            <IntroSplash />
+            <Suspense>
+              <DashboardShell digests={digests} usingMock={usingMock()} user={{name: session!.user?.name, email: session!.user?.email, image: session!.user?.image}}>
+                {children}
+              </DashboardShell>
+            </Suspense>
+          </>
+        ) : (
+          children
+        )}
       </body>
     </html>
   );
