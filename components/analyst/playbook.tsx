@@ -4,6 +4,7 @@ import {createContext, useCallback, useContext, useEffect, useState} from 'react
 import {Check, ListChecks, X} from 'lucide-react';
 import type {DigestRec} from '../../src/types';
 import {cn} from '@/lib/utils';
+import {InfoTip} from './info-tip';
 
 export function recAction(r: DigestRec): string {
   return typeof r === 'string' ? r : r.action;
@@ -46,6 +47,11 @@ function readDoneCount(action: string): number {
   }
 }
 
+/** True when a playbook has steps and every one is checked (for list-level filters). */
+export function recIsComplete(action: string, total: number): boolean {
+  return total > 0 && readDoneCount(action) >= total;
+}
+
 /** The home "Actions" stat, made progress-aware: shows fully-completed vs total,
  *  updating live as playbook checklists are ticked. */
 export function ActionsStat({actions}: {actions: {action: string; total: number}[]}) {
@@ -63,7 +69,9 @@ export function ActionsStat({actions}: {actions: {action: string; total: number}
   const total = actions.length;
   return (
     <div className="text-right">
-      <div className="text-[10.5px] font-medium uppercase tracking-[0.09em] text-muted-foreground">Actions</div>
+      <div className="flex items-center justify-end gap-1 text-[10.5px] font-medium uppercase tracking-[0.09em] text-muted-foreground">
+        Actions <InfoTip text="Recommended actions across all channels this period. Shows completed / total once you start ticking playbook steps." />
+      </div>
       <div className="font-serif text-2xl font-normal tabular-nums text-foreground">
         {done > 0 ? (
           <>

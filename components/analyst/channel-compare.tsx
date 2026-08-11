@@ -7,14 +7,15 @@
 // figures (label-matched) — interim until the batch emits a normalized summary.
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, Check, Globe} from 'lucide-react';
+import {ArrowLeft, Check, Globe, Search} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
 import type {AnalystBrief} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Sparkles} from 'lucide-react';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
-import {usePlaybook, usePlaybookProgress, recAction, recSteps} from './playbook';
+import {usePlaybook, usePlaybookProgress, recAction, recSteps, recIsComplete} from './playbook';
+import {InfoTip} from './info-tip';
 import {fmtRange} from '../../src/week';
 import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, ConversationsSection} from './sections';
 
@@ -36,6 +37,15 @@ const METRICS: {key: Metric; label: string; money?: boolean; ratio?: boolean}[] 
   {key: 'aov', label: 'AOV', money: true},
   {key: 'units', label: 'Units'},
 ];
+// Per-metric "where this comes from" copy for the ⓘ tooltip.
+const METRIC_HINTS: Record<Metric, string> = {
+  adSpend: 'Ad spend per channel. Shopee & Lazada from their on-platform ad reports; Website (Meta) isn’t connected, so it reads 0.',
+  roas: 'Return on ad spend = ad revenue ÷ ad spend. Higher is better; channels with no ad spend show 0.',
+  revenue: 'Net revenue per channel for this period (excludes cancellations/returns).',
+  orders: 'Orders per channel for this period.',
+  aov: 'Average order value = each channel’s revenue ÷ its orders.',
+  units: 'Units sold per channel. Shopee doesn’t report units in its sales export, so it’s omitted.',
+};
 
 function figVal(figs: DigestFigure[] | undefined, re: RegExp, exclude?: RegExp): number | null {
   const f = (figs ?? []).find((x) => re.test(x.label) && (!exclude || !exclude.test(x.label)));
@@ -49,8 +59,20 @@ function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics |
   // label matching). Falls back to figure label-matching for pre-stamp archives.
   const c = d.comparison;
   if (c) {
+    // Derive AOV = revenue ÷ orders from the SAME figures we display, so a
+    // channel's AOV always reconciles with its revenue and orders (and the
+    // blended KPI is their weighted blend) — never a divergent stamped basis.
     const pick = (m?: {revenue: number | null; orders: number | null; aov: number | null; units: number | null; adSpend: number | null; roas: number | null}) =>
-      m ? {revenue: m.revenue, orders: m.orders, aov: m.aov, units: m.units, adSpend: m.adSpend, roas: m.roas} : null;
+      m
+        ? {
+            revenue: m.revenue,
+            orders: m.orders,
+            aov: m.revenue != null && m.orders ? Math.round((m.revenue / m.orders) * 100) / 100 : m.aov,
+            units: m.units,
+            adSpend: m.adSpend,
+            roas: m.roas,
+          }
+        : null;
     return {shopee: pick(c.shopee), lazada: pick(c.lazada), website: pick(c.website)};
   }
   const sh = d.shopee?.sales?.figures;
@@ -94,7 +116,9 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
     <Card>
       <CardContent className="p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Compare channels</div>
+          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
+            Compare channels <InfoTip text={METRIC_HINTS[metric]} />
+          </div>
           <div
             className="relative grid rounded-xl border border-border bg-muted/40 p-1"
             style={{gridTemplateColumns: `repeat(${METRICS.length}, minmax(0, 1fr))`}}
@@ -181,22 +205,62 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
 }
 
 // ── combined KPIs (for selected channels) ────────────────────────────────────────
-function CombinedKpis({metrics, channels}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]}) {
-  const sum = (m: Metric) => channels.reduce((a, c) => a + (metrics[c]?.[m] ?? 0), 0);
-  const revenue = sum('revenue');
-  const orders = sum('orders');
+function KpiDelta({cur, prior, range}: {cur: number; prior: number | null; range: string | null}) {
+  if (prior == null || prior === 0 || !Number.isFinite(cur)) return null;
+  const pct = ((cur - prior) / prior) * 100;
+  if (!Number.isFinite(pct)) return null;
+  const flat = Math.abs(pct) < 0.5;
+  const up = pct > 0;
+  const color = flat ? 'var(--muted-foreground)' : up ? 'var(--status-good)' : 'var(--status-crit)';
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-[11px] font-semibold tabular-nums"
+      style={{color}}
+      title={range ? `vs ${range}` : 'vs previous period'}
+    >
+      {flat ? '±' : up ? '▲' : '▼'} {Math.abs(pct).toFixed(0)}%
+    </span>
+  );
+}
+
+function CombinedKpis({
+  metrics,
+  priorMetrics,
+  priorRange,
+  channels,
+}: {
+  metrics: Record<Channel, ChannelMetrics | null>;
+  priorMetrics?: Record<Channel, ChannelMetrics | null> | null;
+  priorRange?: string | null;
+  channels: Channel[];
+}) {
+  const sumOf = (src: Record<Channel, ChannelMetrics | null> | null | undefined, m: Metric) =>
+    src ? channels.reduce((a, c) => a + (src[c]?.[m] ?? 0), 0) : 0;
+  const revenue = sumOf(metrics, 'revenue');
+  const orders = sumOf(metrics, 'orders');
   const aov = orders ? revenue / orders : 0;
+
+  const pRevenue = priorMetrics ? sumOf(priorMetrics, 'revenue') : null;
+  const pOrders = priorMetrics ? sumOf(priorMetrics, 'orders') : null;
+  const pAov = priorMetrics && pOrders ? (pRevenue as number) / pOrders : null;
+
   const tiles = [
-    {label: 'Total revenue', value: money(revenue)},
-    {label: 'Total orders', value: orders.toLocaleString()},
-    {label: 'Blended AOV', value: money(aov)},
+    {label: 'Total revenue', value: money(revenue), cur: revenue, prior: pRevenue, hint: 'Sum of net revenue across the selected channels for this period.'},
+    {label: 'Total orders', value: orders.toLocaleString(), cur: orders, prior: pOrders, hint: 'Sum of orders across the selected channels for this period.'},
+    // Weighted blend — total revenue ÷ total orders — NOT the average of per-channel AOVs.
+    {label: 'Blended AOV', value: money(aov), cur: aov, prior: pAov, hint: 'Total revenue ÷ total orders (a weighted blend — not the simple average of each channel’s AOV).'},
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-7 gap-y-3 sm:gap-x-9">
       {tiles.map((t, i) => (
         <div key={t.label} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
-          <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">{t.label}</span>
-          <span className="font-serif text-[23px] font-normal leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
+          <span className="flex items-center gap-1 text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">
+            {t.label} <InfoTip text={t.hint} />
+          </span>
+          <span className="flex items-baseline gap-2">
+            <span className="font-serif text-[23px] font-normal leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
+            <KpiDelta cur={t.cur} prior={t.prior} range={priorRange ?? null} />
+          </span>
         </div>
       ))}
     </div>
@@ -318,7 +382,9 @@ function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[
     <Card className="py-0">
       <CardContent className="p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Top products by revenue</div>
+          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
+            Top products by revenue <InfoTip text="Best-selling SKUs by revenue for the selected channel this period. Per-SKU data comes from each channel's product export/API." />
+          </div>
           {sources.length > 1 && (
             <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
               {sources.map((s) => {
@@ -393,12 +459,28 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 }
 
 // ── the unified overview ─────────────────────────────────────────────────────────
-export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; initialChannels: Channel[]}) {
+export function ChannelOverview({row, priorRow, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; priorRow?: DigestArchiveRow | null; initialChannels: Channel[]}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
   const [metric, setMetric] = useState<Metric>('adSpend');
   const metrics = useMemo(() => channelMetrics(row), [row]);
+  const priorMetrics = useMemo(() => (priorRow ? channelMetrics(priorRow) : null), [priorRow]);
+  const priorRange = priorRow ? fmtRange(priorRow.window_from, priorRow.window_to, priorRow.digest.window?.label) : null;
   // Merged recs, reordered so those relevant to the metric on the chart come first.
   const recs = useMemo(() => orderRecsByMetric(collectRecs(row, selected), metric), [row, selected, metric]);
+  // Action toolbar: text filter · channel narrow · hide-completed.
+  const [recQuery, setRecQuery] = useState('');
+  const [recChannel, setRecChannel] = useState<Channel | 'all'>('all');
+  const [hideDone, setHideDone] = useState(false);
+  const filteredRecs = useMemo(() => {
+    const q = recQuery.trim().toLowerCase();
+    const chanFilter = recChannel !== 'all' && selected.includes(recChannel) ? recChannel : null;
+    return recs.filter(({channel, rec}) => {
+      if (chanFilter && channel !== chanFilter) return false;
+      if (q && !recAction(rec).toLowerCase().includes(q)) return false;
+      if (hideDone && recIsComplete(recAction(rec), recSteps(rec).length)) return false;
+      return true;
+    });
+  }, [recs, recQuery, recChannel, hideDone, selected]);
   const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
 
   if (row.digest.degraded) {
@@ -458,7 +540,7 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         </div>
 
         <div className="ml-auto">
-          <CombinedKpis metrics={metrics} channels={selected} />
+          <CombinedKpis metrics={metrics} priorMetrics={priorMetrics} priorRange={priorRange} channels={selected} />
         </div>
       </div>
 
@@ -469,15 +551,58 @@ export function ChannelOverview({row, initialChannels}: {brief: AnalystBrief; ro
         /* comparing 2+ channels — merged recs (2-col) beside the comparison chart */
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
           <section className="flex min-w-0 flex-col lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
-            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
+            <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
               <Sparkles className="size-3.5 text-primary" /> Recommended actions
+              <InfoTip text="AI-generated actions from this period's digest, grounded in the numbers. Reordered so those relevant to the chart metric come first." />
               <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first</span>
-              <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{recs.length}</span>
+              <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{filteredRecs.length}</span>
             </div>
+
+            {/* filter toolbar */}
+            <div className="mb-2.5 flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[140px] flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={recQuery}
+                  onChange={(e) => setRecQuery(e.target.value)}
+                  placeholder="Filter actions…"
+                  aria-label="Filter actions"
+                  className="w-full rounded-full border border-border bg-card py-1.5 pl-8 pr-3 text-[12.5px] text-foreground outline-none transition-colors focus:border-primary/50"
+                />
+              </div>
+              {selected.length > 1 && (
+                <div className="inline-flex rounded-full border border-border bg-muted/40 p-0.5">
+                  {(['all', ...selected] as const).map((c) => {
+                    const on = recChannel === c;
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => setRecChannel(c)}
+                        className={cn('rounded-full px-2.5 py-1 text-[11.5px] font-medium capitalize transition-colors', on ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                      >
+                        {c === 'all' ? 'All' : CH[c].label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                onClick={() => setHideDone((v) => !v)}
+                aria-pressed={hideDone}
+                className={cn('rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-colors', hideDone ? 'border-primary/40 bg-primary/[0.1] text-primary' : 'border-border bg-card text-muted-foreground hover:text-foreground')}
+              >
+                Hide done
+              </button>
+            </div>
+
             {/* fills the column height and scrolls; px/py + matching -mx give the
                 card borders, shadows and hover-lift room so overflow doesn't crop them */}
             <div className="lg:-mx-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-2 lg:py-1.5">
-              <MergedActions items={recs} />
+              {filteredRecs.length ? (
+                <MergedActions items={filteredRecs} />
+              ) : (
+                <p className="px-1 py-6 text-center text-[13px] text-muted-foreground">No actions match your filter.</p>
+              )}
             </div>
           </section>
 

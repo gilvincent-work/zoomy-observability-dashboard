@@ -5,6 +5,7 @@ import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {ActionsStat} from './playbook';
+import {InfoTip} from './info-tip';
 
 // The Coop "daily brief" home — a calm landing that mirrors the video's
 // "What should we do today?" screen, tailored to Zoomy's real channels. Each
@@ -54,10 +55,12 @@ function collectActions(row: DigestArchiveRow): {action: string; total: number}[
   return out;
 }
 
-function Stat({label, value}: {label: string; value: string}) {
+function Stat({label, value, hint}: {label: string; value: string; hint?: string}) {
   return (
     <div className="text-right">
-      <div className="text-[10.5px] font-medium uppercase tracking-[0.09em] text-muted-foreground">{label}</div>
+      <div className="flex items-center justify-end gap-1 text-[10.5px] font-medium uppercase tracking-[0.09em] text-muted-foreground">
+        {label} {hint && <InfoTip text={hint} />}
+      </div>
       <div className="font-serif text-2xl font-normal tabular-nums text-foreground">{value}</div>
     </div>
   );
@@ -88,9 +91,9 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
               </div>
             </div>
             <div className="flex items-center gap-8">
-              <Stat label="Channels" value={String(present)} />
+              <Stat label="Channels" value={String(present)} hint="How many of Shopee, Lazada and the website have data in this period's digest." />
               <ActionsStat actions={actions} />
-              <Stat label="Sources" value="Live" />
+              <Stat label="Sources" value="Live" hint="Data is read live from the latest archived digest (not a static sample)." />
             </div>
           </div>
 
