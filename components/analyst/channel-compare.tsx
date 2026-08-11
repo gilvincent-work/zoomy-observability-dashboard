@@ -49,8 +49,20 @@ function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics |
   // label matching). Falls back to figure label-matching for pre-stamp archives.
   const c = d.comparison;
   if (c) {
+    // Derive AOV = revenue ÷ orders from the SAME figures we display, so a
+    // channel's AOV always reconciles with its revenue and orders (and the
+    // blended KPI is their weighted blend) — never a divergent stamped basis.
     const pick = (m?: {revenue: number | null; orders: number | null; aov: number | null; units: number | null; adSpend: number | null; roas: number | null}) =>
-      m ? {revenue: m.revenue, orders: m.orders, aov: m.aov, units: m.units, adSpend: m.adSpend, roas: m.roas} : null;
+      m
+        ? {
+            revenue: m.revenue,
+            orders: m.orders,
+            aov: m.revenue != null && m.orders ? Math.round((m.revenue / m.orders) * 100) / 100 : m.aov,
+            units: m.units,
+            adSpend: m.adSpend,
+            roas: m.roas,
+          }
+        : null;
     return {shopee: pick(c.shopee), lazada: pick(c.lazada), website: pick(c.website)};
   }
   const sh = d.shopee?.sales?.figures;
@@ -187,14 +199,15 @@ function CombinedKpis({metrics, channels}: {metrics: Record<Channel, ChannelMetr
   const orders = sum('orders');
   const aov = orders ? revenue / orders : 0;
   const tiles = [
-    {label: 'Total revenue', value: money(revenue)},
-    {label: 'Total orders', value: orders.toLocaleString()},
-    {label: 'Blended AOV', value: money(aov)},
+    {label: 'Total revenue', value: money(revenue), hint: 'Sum of revenue across the selected channels'},
+    {label: 'Total orders', value: orders.toLocaleString(), hint: 'Sum of orders across the selected channels'},
+    // Weighted blend — total revenue ÷ total orders — NOT the average of per-channel AOVs.
+    {label: 'Blended AOV', value: money(aov), hint: 'Total revenue ÷ total orders (weighted, not a simple average of channel AOVs)'},
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-7 gap-y-3 sm:gap-x-9">
       {tiles.map((t, i) => (
-        <div key={t.label} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
+        <div key={t.label} title={t.hint} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
           <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">{t.label}</span>
           <span className="font-serif text-[23px] font-normal leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
         </div>
