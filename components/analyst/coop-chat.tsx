@@ -1,12 +1,14 @@
 'use client';
 
 import {createContext, useCallback, useContext, useEffect, useRef, useState} from 'react';
-import {useSearchParams, usePathname} from 'next/navigation';
+import {useSearchParams, usePathname, useRouter} from 'next/navigation';
 import Markdown from 'react-markdown';
-import {Sparkles, X, ArrowUp, Plus, Copy, Check} from 'lucide-react';
+import remarkGfm from 'remark-gfm';
+import {Sparkles, X, ArrowUp, Plus, Copy, Check, Square, RotateCcw, ArrowRight, AlertCircle} from 'lucide-react';
 import {cn} from '@/lib/utils';
 
-type Msg = {role: 'user' | 'assistant'; content: string};
+type Msg = {role: 'user' | 'assistant'; content: string; error?: boolean};
+type NavAction = {label: string; path: string};
 
 type Side = 'left' | 'right';
 const CoopChatCtx = createContext<{ask: (q: string) => void; open: (side?: Side) => void; scopeLabel?: string}>({
@@ -30,16 +32,35 @@ const HOME_SUGGESTIONS = [
   'What should I look at first?',
 ];
 
-/** Split a raw assistant message into visible text + follow-up suggestions,
- *  tolerating a partially-streamed <suggest> tag. */
-function parseAssistant(raw: string): {text: string; suggestions: string[]} {
-  const m = raw.match(/<suggest>([\s\S]*?)<\/suggest>/);
-  const suggestions = m ? m[1].split('|').map((s) => s.trim()).filter(Boolean).slice(0, 3) : [];
+const APP_PATHS = new Set(['/', '/?channel=all', '/?channel=shopee', '/?channel=lazada', '/?channel=website', '/customers', '/inventory', '/traffic']);
+
+/** Split a raw assistant message into visible text + follow-up suggestions + nav
+ *  actions, tolerating partially-streamed hidden tags. */
+function parseAssistant(raw: string): {text: string; suggestions: string[]; actions: NavAction[]} {
+  const sm = raw.match(/<suggest>([\s\S]*?)<\/suggest>/);
+  const suggestions = sm ? sm[1].split('|').map((s) => s.trim()).filter(Boolean).slice(0, 3) : [];
+
+  const gm = raw.match(/<go>([\s\S]*?)<\/go>/);
+  const actions: NavAction[] = gm
+    ? gm[1]
+        .split('||')
+        .map((entry) => {
+          const i = entry.indexOf('|');
+          if (i < 0) return null;
+          const label = entry.slice(0, i).trim();
+          const path = entry.slice(i + 1).trim();
+          return label && APP_PATHS.has(path) ? {label, path} : null;
+        })
+        .filter((a): a is NavAction => a !== null)
+        .slice(0, 3)
+    : [];
+
   const text = raw
     .replace(/<suggest>[\s\S]*?<\/suggest>/g, '')
-    .replace(/<suggest[\s\S]*$/, '') // dangling partial while streaming
+    .replace(/<go>[\s\S]*?<\/go>/g, '')
+    .replace(/<(?:suggest|go)[\s\S]*$/, '') // dangling partial while streaming
     .trim();
-  return {text, suggestions};
+  return {text, suggestions, actions};
 }
 
 export function CoopChatProvider({children, scopeLabel}: {children: React.ReactNode; scopeLabel?: string}) {
@@ -47,6 +68,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   const [side, setSide] = useState<Side>('right');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const week = searchParams.get('week') ?? undefined;
@@ -72,6 +94,8 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
 
   const send = useCallback(
     async (history: Msg[]) => {
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
       setBusy(true);
       setMessages([...history, {role: 'assistant', content: ''}]);
       try {
@@ -79,10 +103,20 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
           method: 'POST',
           headers: {'content-type': 'application/json'},
           body: JSON.stringify({messages: history, week, home}),
+          signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {
-          const text = (await res.text().catch(() => '')) || 'Coop is unavailable right now.';
-          setMessages([...history, {role: 'assistant', content: text}]);
+          // Friendly copy per status; the raw body is the server's message.
+          const raw = (await res.text().catch(() => '')) || '';
+          const msg =
+            res.status === 401
+              ? 'Your session expired. Please refresh the page and sign in again.'
+              : res.status === 429
+                ? 'Coop is getting a lot of questions right now — give it a few seconds and try again.'
+                : res.status === 503
+                  ? 'Coop isn’t configured yet (missing API key). Ping your admin.'
+                  : raw || 'Coop is unavailable right now. Please try again.';
+          setMessages([...history, {role: 'assistant', content: msg, error: true}]);
           return;
         }
         const reader = res.body.getReader();
@@ -95,13 +129,31 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
           setMessages([...history, {role: 'assistant', content: acc}]);
         }
       } catch (e) {
-        setMessages([...history, {role: 'assistant', content: `⚠️ ${(e as Error).message}`}]);
+        // A user-initiated stop keeps the partial answer; other errors show a bubble.
+        if ((e as Error).name === 'AbortError') return;
+        setMessages([...history, {role: 'assistant', content: `Something went wrong: ${(e as Error).message}`, error: true}]);
       } finally {
         setBusy(false);
+        abortRef.current = null;
       }
     },
     [week, home],
   );
+
+  const stop = useCallback(() => abortRef.current?.abort(), []);
+
+  const regenerate = useCallback(() => {
+    if (busy) return;
+    setMessages((prev) => {
+      // Drop the trailing assistant reply and re-send from the last user turn.
+      let end = prev.length;
+      while (end > 0 && prev[end - 1].role === 'assistant') end--;
+      const history = prev.slice(0, end);
+      if (!history.length || history[history.length - 1].role !== 'user') return prev;
+      void send(history);
+      return history;
+    });
+  }, [busy, send]);
 
   const ask = useCallback(
     (q: string) => {
@@ -148,7 +200,18 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
       {children}
       {!isOpen && <CoopFab onOpen={() => open('left')} />}
       {isOpen && (
-        <CoopChatDrawer messages={messages} busy={busy} side={side} scopeLabel={scopeLabel} home={home} onClose={() => setOpen(false)} onAsk={ask} onNewChat={newChat} />
+        <CoopChatDrawer
+          messages={messages}
+          busy={busy}
+          side={side}
+          scopeLabel={scopeLabel}
+          home={home}
+          onClose={() => setOpen(false)}
+          onAsk={ask}
+          onNewChat={newChat}
+          onStop={stop}
+          onRegenerate={regenerate}
+        />
       )}
     </CoopChatCtx.Provider>
   );
@@ -226,6 +289,8 @@ function CoopChatDrawer({
   onClose,
   onAsk,
   onNewChat,
+  onStop,
+  onRegenerate,
 }: {
   messages: Msg[];
   busy: boolean;
@@ -235,9 +300,12 @@ function CoopChatDrawer({
   onClose: () => void;
   onAsk: (q: string) => void;
   onNewChat: () => void;
+  onStop: () => void;
+  onRegenerate: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     scrollRef.current?.scrollTo({top: scrollRef.current.scrollHeight, behavior: 'smooth'});
@@ -268,14 +336,26 @@ function CoopChatDrawer({
         autoFocus
         className="min-w-0 flex-1 rounded-full border border-border bg-card px-4 py-2.5 text-[14px] text-foreground outline-none transition-colors focus:border-primary/50"
       />
-      <button
-        type="submit"
-        disabled={busy || !draft.trim()}
-        aria-label="Send"
-        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-      >
-        <ArrowUp className="size-4" />
-      </button>
+      {busy ? (
+        <button
+          type="button"
+          onClick={onStop}
+          aria-label="Stop"
+          title="Stop"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          <Square className="size-3.5 fill-current" />
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={!draft.trim()}
+          aria-label="Send"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+        >
+          <ArrowUp className="size-4" />
+        </button>
+      )}
     </form>
   );
 
@@ -338,14 +418,48 @@ function CoopChatDrawer({
                     </div>
                   );
                 }
-                const {text, suggestions} = parseAssistant(m.content);
+                const {text, suggestions, actions} = parseAssistant(m.content);
                 const streamingThis = busy && i === lastIdx;
+                if (m.error) {
+                  return (
+                    <div key={i} className="flex items-start gap-2 rounded-2xl border border-[color-mix(in_oklab,var(--status-crit)_35%,transparent)] bg-[color-mix(in_oklab,var(--status-crit)_8%,transparent)] px-3.5 py-2.5 text-[13px] leading-relaxed text-foreground">
+                      <AlertCircle className="mt-0.5 size-4 shrink-0" style={{color: 'var(--status-crit)'}} />
+                      <span>{m.content}</span>
+                    </div>
+                  );
+                }
+                const isLastAssistant = i === lastIdx;
                 return (
                   <div key={i} className="flex flex-col items-start">
-                    <div className="max-w-[90%] rounded-2xl border border-border bg-card px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4">
-                      {text ? <Markdown>{text}</Markdown> : streamingThis ? <span className="text-muted-foreground">Coop is thinking…</span> : null}
+                    <div className="max-w-[90%] overflow-hidden rounded-2xl border border-border bg-card px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_strong]:font-semibold [&_table]:my-1.5 [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4">
+                      {text ? <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown> : streamingThis ? <span className="text-muted-foreground">Coop is thinking…</span> : null}
                     </div>
-                    {!streamingThis && text && <CopyButton text={text} />}
+
+                    {!streamingThis && actions.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {actions.map((a) => (
+                          <button
+                            key={a.path + a.label}
+                            onClick={() => router.push(a.path)}
+                            className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                          >
+                            {a.label} <ArrowRight className="size-3" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {!streamingThis && text && (
+                      <div className="mt-1 flex items-center gap-3">
+                        <CopyButton text={text} />
+                        {isLastAssistant && (
+                          <button onClick={onRegenerate} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/70 transition-colors hover:text-foreground">
+                            <RotateCcw className="size-3" /> Regenerate
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {!streamingThis && suggestions.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {suggestions.map((s) => (
