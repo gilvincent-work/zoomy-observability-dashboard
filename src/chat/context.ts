@@ -2,6 +2,16 @@ import 'server-only';
 import type {DigestArchiveRow} from '../types';
 import {pickIndex, fmtRange} from '../week';
 import {COOP_CHAT} from './config';
+import {COOP_KNOWLEDGE} from './knowledge';
+
+// Reference facts (brand, glossary, ad products, policies) — appended to every
+// prompt. Explicitly framed as background, NOT a source of live figures.
+const KNOWLEDGE_BLOCK = [
+  '',
+  '## Brand knowledge base (reference — NOT live data)',
+  'Use this to interpret the numbers and answer brand/definitional questions. Period figures still come ONLY from the digest above/below; never quote a metric from here.',
+  COOP_KNOWLEDGE,
+].join('\n');
 
 // Compact per-period trend row (numbers only) so Coop can answer "vs last month"
 // without stuffing every full digest into context.
@@ -42,6 +52,7 @@ function buildHomePrompt(): string {
     '- Use the **reporting-period picker** in the top bar to choose a timeframe.',
     '- **Marketing** (AI content studio) is coming soon.',
     'If they ask for specific numbers (e.g. "which channel has the best ROAS?"), tell them to open Sales (or pick a period) where the figures live, and offer to dig into it there — never fabricate numbers. Keep replies warm and brief.',
+    KNOWLEDGE_BLOCK,
   ].join('\n');
 }
 
@@ -82,5 +93,6 @@ export function buildCoopSystemPrompt(rows: DigestArchiveRow[], week?: string, o
       ...prior.map(trendRow),
     );
   }
+  lines.push(KNOWLEDGE_BLOCK);
   return lines.join('\n');
 }
