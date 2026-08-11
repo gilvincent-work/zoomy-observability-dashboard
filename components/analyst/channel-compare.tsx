@@ -15,6 +15,7 @@ import {Card, CardContent} from '@/components/ui/card';
 import {Sparkles} from 'lucide-react';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {usePlaybook, usePlaybookProgress, recAction, recSteps} from './playbook';
+import {InfoTip} from './info-tip';
 import {fmtRange} from '../../src/week';
 import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, ConversationsSection} from './sections';
 
@@ -36,6 +37,15 @@ const METRICS: {key: Metric; label: string; money?: boolean; ratio?: boolean}[] 
   {key: 'aov', label: 'AOV', money: true},
   {key: 'units', label: 'Units'},
 ];
+// Per-metric "where this comes from" copy for the ⓘ tooltip.
+const METRIC_HINTS: Record<Metric, string> = {
+  adSpend: 'Ad spend per channel. Shopee & Lazada from their on-platform ad reports; Website (Meta) isn’t connected, so it reads 0.',
+  roas: 'Return on ad spend = ad revenue ÷ ad spend. Higher is better; channels with no ad spend show 0.',
+  revenue: 'Net revenue per channel for this period (excludes cancellations/returns).',
+  orders: 'Orders per channel for this period.',
+  aov: 'Average order value = each channel’s revenue ÷ its orders.',
+  units: 'Units sold per channel. Shopee doesn’t report units in its sales export, so it’s omitted.',
+};
 
 function figVal(figs: DigestFigure[] | undefined, re: RegExp, exclude?: RegExp): number | null {
   const f = (figs ?? []).find((x) => re.test(x.label) && (!exclude || !exclude.test(x.label)));
@@ -106,7 +116,9 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
     <Card>
       <CardContent className="p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-foreground/80">Compare channels</div>
+          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
+            Compare channels <InfoTip text={METRIC_HINTS[metric]} />
+          </div>
           <div
             className="relative grid rounded-xl border border-border bg-muted/40 p-1"
             style={{gridTemplateColumns: `repeat(${METRICS.length}, minmax(0, 1fr))`}}
@@ -199,16 +211,18 @@ function CombinedKpis({metrics, channels}: {metrics: Record<Channel, ChannelMetr
   const orders = sum('orders');
   const aov = orders ? revenue / orders : 0;
   const tiles = [
-    {label: 'Total revenue', value: money(revenue), hint: 'Sum of revenue across the selected channels'},
-    {label: 'Total orders', value: orders.toLocaleString(), hint: 'Sum of orders across the selected channels'},
+    {label: 'Total revenue', value: money(revenue), hint: 'Sum of net revenue across the selected channels for this period.'},
+    {label: 'Total orders', value: orders.toLocaleString(), hint: 'Sum of orders across the selected channels for this period.'},
     // Weighted blend — total revenue ÷ total orders — NOT the average of per-channel AOVs.
-    {label: 'Blended AOV', value: money(aov), hint: 'Total revenue ÷ total orders (weighted, not a simple average of channel AOVs)'},
+    {label: 'Blended AOV', value: money(aov), hint: 'Total revenue ÷ total orders (a weighted blend — not the simple average of each channel’s AOV).'},
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-7 gap-y-3 sm:gap-x-9">
       {tiles.map((t, i) => (
-        <div key={t.label} title={t.hint} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
-          <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">{t.label}</span>
+        <div key={t.label} className={cn('flex flex-col', i > 0 && 'sm:border-l sm:border-border/70 sm:pl-7 md:pl-9')}>
+          <span className="flex items-center gap-1 text-[9.5px] font-semibold uppercase tracking-[0.09em] text-foreground/80">
+            {t.label} <InfoTip text={t.hint} />
+          </span>
           <span className="font-serif text-[23px] font-normal leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
         </div>
       ))}
