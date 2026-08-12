@@ -1,26 +1,55 @@
 'use client';
 
+import {useCallback, useRef, useState} from 'react';
+import {createPortal} from 'react-dom';
 import {Info} from 'lucide-react';
 import {cn} from '@/lib/utils';
 
-/** A small ⓘ trigger that reveals a styled tooltip on hover/focus, explaining
- *  where a figure comes from. Keyboard-accessible; dark bubble on any theme. */
+const TIP_W = 220;
+
+/** A small ⓘ trigger that reveals an explanatory tooltip on hover/focus. The
+ *  bubble is portaled to <body> with fixed positioning + viewport clamping, so
+ *  it is never cropped by an ancestor's overflow or the screen edge. */
 export function InfoTip({text, className}: {text: string; className?: string}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{top: number; left: number} | null>(null);
+
+  const show = useCallback(() => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    // Center under the icon, but clamp so the bubble stays fully on screen.
+    const half = TIP_W / 2;
+    const left = Math.min(Math.max(r.left + r.width / 2, half + 8), window.innerWidth - half - 8);
+    setPos({top: r.bottom + 7, left});
+  }, []);
+  const hide = useCallback(() => setPos(null), []);
+
   return (
-    <span className={cn('group/tip relative inline-flex align-middle', className)}>
+    <span className={cn('inline-flex align-middle', className)}>
       <button
+        ref={ref}
         type="button"
         aria-label={text}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
         className="inline-flex items-center rounded-full text-muted-foreground/55 outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
       >
         <Info className="size-[13px]" />
       </button>
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-max max-w-[220px] -translate-x-1/2 rounded-lg bg-foreground px-2.5 py-1.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-background opacity-0 shadow-lg transition-opacity duration-150 group-hover/tip:opacity-100 group-focus-within/tip:opacity-100"
-      >
-        {text}
-      </span>
+      {pos &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <span
+            role="tooltip"
+            style={{position: 'fixed', top: pos.top, left: pos.left, width: 'max-content', maxWidth: TIP_W, transform: 'translateX(-50%)'}}
+            className="pointer-events-none z-[200] rounded-lg bg-foreground px-2.5 py-1.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-background shadow-lg"
+          >
+            {text}
+          </span>,
+          document.body,
+        )}
     </span>
   );
 }
