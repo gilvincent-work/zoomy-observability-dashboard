@@ -14,14 +14,19 @@ const fmtQrr = (q: number | null) => (q == null ? 'N/A' : q >= 100 ? q.toLocaleS
 const CHANNEL_LABEL: Record<string, string> = {shopee: 'Shopee', lazada: 'Lazada', website: 'Website'};
 const CHANNEL_ACCENT: Record<string, string> = {shopee: '#EE4D2D', lazada: '#2F6BD4', website: '#2E7D5B'};
 
+/** Short focus-guide captions (what each field is asking for). */
+const FIELD_HELP: Record<string, string> = {
+  cogs: 'COGS — cost to make + ship the product, as a % of revenue.',
+  platformFee: 'Platform Fee — the marketplace’s cut, as a % of revenue.',
+  promos: 'Promos — total ₱ spent on discounts & bundles this window.',
+  acqCost: 'Acq. cost — total ₱ spent acquiring website customers (organic/ops).',
+};
+
 /** A bold, highlighted section label (QRR / LTV / CAC). */
-function SectionLabel({children, hint, accent}: {children: React.ReactNode; hint?: string; accent?: string}) {
+function SectionLabel({children, hint}: {children: React.ReactNode; hint?: string}) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="inline-flex items-center gap-1 rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-foreground">
-        {accent && <span className="size-1.5 rounded-full" style={{backgroundColor: accent}} />}
-        {children}
-      </span>
+      <span className="rounded-md bg-foreground/[0.07] px-2 py-0.5 text-xs font-bold uppercase tracking-[0.09em] text-foreground">{children}</span>
       {hint && <InfoTip text={hint} />}
     </span>
   );
@@ -37,17 +42,26 @@ function Val({children, hint}: {children: React.ReactNode; hint?: string}) {
   );
 }
 
-/** Editable variable inline in an equation. Owns its own text buffer so the field
- *  can be cleared and typed freely; emits a parsed number to the parent. */
-function EditVal({initial, onChange, suffix, accent, disabled}: {initial: string; onChange: (n: number) => void; suffix: string; accent?: string; disabled?: boolean}) {
+/** A labelled, editable variable chip. The label lives inside the chip so it's
+ *  always clear what the field is; focus lights it up and shows a guide caption. */
+function Knob({label, helpKey, initial, suffix, accent, disabled, onChange, setHelp}: {
+  label: string; helpKey: string; initial: string; suffix: string; accent: string; disabled?: boolean;
+  onChange: (n: number) => void; setHelp: (s: string | null) => void;
+}) {
   const [text, setText] = useState(initial);
   return (
-    <span className="inline-flex items-center">
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-lg border-2 bg-background px-2 py-1 transition-colors ${disabled ? 'border-border opacity-60' : 'border-border focus-within:bg-background'}`}
+      style={disabled ? undefined : {borderColor: 'var(--knob-border)', ['--knob-border' as string]: accent + '55'}}
+    >
+      <span className="text-[10.5px] font-bold uppercase tracking-wide text-foreground/70">{label}</span>
       <input
         type="text"
         inputMode="decimal"
         disabled={disabled}
         value={text}
+        onFocus={() => setHelp(FIELD_HELP[helpKey] ?? null)}
+        onBlur={() => setHelp(null)}
         onChange={(e) => {
           const v = e.target.value;
           if (!/^\d*\.?\d*$/.test(v)) return;
@@ -55,19 +69,19 @@ function EditVal({initial, onChange, suffix, accent, disabled}: {initial: string
           const n = parseFloat(v);
           onChange(Number.isFinite(n) ? n : 0);
         }}
-        style={disabled ? undefined : {borderColor: accent, boxShadow: `inset 0 0 0 1px ${accent}22`}}
-        className="w-14 rounded-md border bg-background px-1.5 py-0.5 text-center text-sm font-bold tabular-nums text-foreground outline-none transition-shadow focus:ring-2 focus:ring-primary/30 disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+        className="w-16 bg-transparent text-center text-base font-bold tabular-nums text-foreground outline-none disabled:text-muted-foreground"
       />
-      <span className="ml-0.5 text-muted-foreground">{suffix}</span>
+      <span className="text-sm font-medium text-muted-foreground">{suffix}</span>
     </span>
   );
 }
 
-const op = (s: string) => <span className="mx-1 text-muted-foreground/70">{s}</span>;
+const op = (s: string) => <span className="mx-1.5 font-medium text-foreground/45">{s}</span>;
 
 function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFacts; knobs: Knobs; target: number; nonce: number; onChange: (k: Knobs) => void}) {
   const h = computeChannelHealth(facts, knobs);
   const accent = CHANNEL_ACCENT[facts.channel];
+  const [help, setHelp] = useState<string | null>(null);
   const naQrr = h.qrr == null;
   const onTrack = !naQrr && h.qrr! >= target;
   const qrrColor = naQrr ? 'text-muted-foreground' : onTrack ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400';
@@ -75,91 +89,91 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
 
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
-      <div className="h-1" style={{backgroundColor: accent}} />
-      <div className="flex flex-1 flex-col p-5">
-        <div className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
-          <span className="size-2.5 rounded-full" style={{backgroundColor: accent}} />
+      <div className="h-1.5" style={{backgroundColor: accent}} />
+      <div className="flex flex-1 flex-col gap-4 p-6">
+        <div className="flex items-center gap-2 text-base font-bold text-foreground">
+          <span className="size-3 rounded-full" style={{backgroundColor: accent}} />
           {CHANNEL_LABEL[facts.channel]} <InfoTip text={HEALTH_HINTS[`ch_${facts.channel}`]} />
         </div>
 
         {/* QRR hero */}
-        <div className="mt-4">
+        <div>
           <SectionLabel hint={HEALTH_HINTS.qrr}>QRR</SectionLabel>
-          <div className="mt-1.5 flex items-baseline gap-2">
-            <span className={`text-5xl font-bold leading-none tabular-nums ${qrrColor}`}>{fmtQrr(h.qrr)}</span>
-            <span className="text-sm text-muted-foreground">/ target {target}</span>
+          <div className="mt-2 flex items-baseline gap-2.5">
+            <span className={`text-[54px] font-bold leading-none tabular-nums ${qrrColor}`}>{fmtQrr(h.qrr)}</span>
+            <span className="text-sm font-medium text-muted-foreground">/ target {target}</span>
           </div>
-          <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
             <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{width: naQrr ? '0%' : `${Math.min(100, (h.qrr! / target) * 100)}%`}} />
           </div>
-          <div className="mt-2 text-[12.5px] text-muted-foreground">
-            LTV {peso(h.ltv)}{op('÷')}CAC {peso(h.cac)}{op('=')}<span className="font-semibold text-foreground">{fmtQrr(h.qrr)}</span>
+          <div className="mt-2.5 text-sm text-foreground/75">
+            LTV <span className="font-semibold text-foreground">{peso(h.ltv)}</span>{op('÷')}CAC <span className="font-semibold text-foreground">{peso(h.cac)}</span>{op('=')}<span className="font-bold text-foreground">{fmtQrr(h.qrr)}</span>
           </div>
         </div>
 
         {/* LTV */}
-        <div className="mt-4 rounded-xl border border-border bg-background/40 p-3.5">
+        <div className="rounded-xl border border-border bg-muted/25 p-4">
           <div className="flex items-center justify-between">
             <SectionLabel hint={HEALTH_HINTS.ltv}>LTV</SectionLabel>
-            <span className="text-xl font-bold tabular-nums text-foreground">{peso(h.ltv)}</span>
+            <span className="text-[22px] font-bold tabular-nums text-foreground">{peso(h.ltv)}</span>
           </div>
-          <div className="mt-2 flex flex-wrap items-center text-[13px] text-foreground/80">
-            <span className="text-muted-foreground">AOV</span>&nbsp;<Val hint={HEALTH_HINTS.aov}>{peso(h.aov)}</Val>
-            {op('×')}<span className="text-muted-foreground">Repeat</span>&nbsp;<Val hint={HEALTH_HINTS.repeat}>{h.repeat}×</Val>
-            {op('×')}<span className="text-muted-foreground">Margin</span>&nbsp;<Val hint={HEALTH_HINTS.margin}>{pct(h.margin)}</Val>
+          <div className="mt-2.5 flex flex-wrap items-center text-[15px] text-foreground/85">
+            <span className="text-foreground/60">AOV</span>&nbsp;<Val hint={HEALTH_HINTS.aov}>{peso(h.aov)}</Val>
+            {op('×')}<span className="text-foreground/60">Repeat</span>&nbsp;<Val hint={HEALTH_HINTS.repeat}>{h.repeat}×</Val>
+            {op('×')}<span className="text-foreground/60">Margin</span>&nbsp;<Val hint={HEALTH_HINTS.margin}>{pct(h.margin)}</Val>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-y-1.5 text-[13px] text-foreground/80">
-            <span className="text-muted-foreground">Margin{op('=')}1</span>
-            {op('−')}<span className="text-muted-foreground">COGS</span>&nbsp;
-            <EditVal initial={String(Math.round(knobs.cogsPct * 100))} suffix="%" accent={accent} onChange={(n) => onChange({...knobs, cogsPct: n / 100})} />
-            {op('−')}<span className="text-muted-foreground">Fee</span>&nbsp;
-            <EditVal initial={String(Math.round(knobs.platformFeePct * 100))} suffix="%" accent={accent} disabled={!facts.platformFeeApplies} onChange={(n) => onChange({...knobs, platformFeePct: n / 100})} />
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
+            <span className="text-foreground/60">Margin{op('=')}1</span>
+            {op('−')}
+            <Knob label="COGS" helpKey="cogs" initial={String(Math.round(knobs.cogsPct * 100))} suffix="%" accent={accent} setHelp={setHelp} onChange={(n) => onChange({...knobs, cogsPct: n / 100})} />
+            {op('−')}
+            <Knob label="Platform Fee" helpKey="platformFee" initial={String(Math.round(knobs.platformFeePct * 100))} suffix="%" accent={accent} disabled={!facts.platformFeeApplies} setHelp={setHelp} onChange={(n) => onChange({...knobs, platformFeePct: n / 100})} />
           </div>
         </div>
 
         {/* CAC */}
-        <div className="mt-3 rounded-xl border border-border bg-background/40 p-3.5">
+        <div className="rounded-xl border border-border bg-muted/25 p-4">
           <div className="flex items-center justify-between">
             <SectionLabel hint={HEALTH_HINTS.cac}>CAC</SectionLabel>
-            <span className="text-xl font-bold tabular-nums text-foreground">{peso2(h.cac)}</span>
+            <span className="text-[22px] font-bold tabular-nums text-foreground">{peso2(h.cac)}</span>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-y-1.5 text-[13px] text-foreground/80">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
             {h.roas != null ? (
-              <>
-                <span className="text-muted-foreground">(AOV</span>&nbsp;<Val>{peso(h.aov)}</Val>{op('÷')}<span className="text-muted-foreground">ROAS</span>&nbsp;<Val hint={HEALTH_HINTS.roas}>{h.roas}×</Val><span className="text-muted-foreground">)</span>
-              </>
+              <span className="inline-flex items-center">
+                <span className="text-foreground/60">(AOV</span>&nbsp;<Val>{peso(h.aov)}</Val>{op('÷')}<span className="text-foreground/60">ROAS</span>&nbsp;<Val hint={HEALTH_HINTS.roas}>{h.roas}×</Val><span className="text-foreground/60">)</span>
+              </span>
             ) : (
-              <>
-                <span className="text-muted-foreground">(Acq. cost</span>&nbsp;
-                <EditVal initial={String(knobs.acqCost)} suffix="₱" accent={accent} onChange={(n) => onChange({...knobs, acqCost: n})} />
-                {op('÷')}<Val>{facts.orders.toLocaleString()}</Val>&nbsp;<span className="text-muted-foreground">orders)</span>
-                <InfoTip text={HEALTH_HINTS.acqCost} />
-              </>
+              <Knob label="Acq. cost" helpKey="acqCost" initial={String(knobs.acqCost)} suffix="₱" accent={accent} setHelp={setHelp} onChange={(n) => onChange({...knobs, acqCost: n})} />
             )}
+            {h.roas == null && <span className="text-foreground/60">÷ {facts.orders.toLocaleString()} orders</span>}
             {op('+')}
-            <span className="text-muted-foreground">(Promos</span>&nbsp;
-            <EditVal initial={String(knobs.promos)} suffix="₱" accent={accent} onChange={(n) => onChange({...knobs, promos: n})} />
-            {op('÷')}<Val>{facts.orders.toLocaleString()}</Val>&nbsp;<span className="text-muted-foreground">orders)</span>
+            <Knob label="Promos" helpKey="promos" initial={String(knobs.promos)} suffix="₱" accent={accent} setHelp={setHelp} onChange={(n) => onChange({...knobs, promos: n})} />
+            <span className="text-foreground/60">÷ {facts.orders.toLocaleString()} orders</span>
           </div>
-          <div className="mt-2 text-[12.5px] text-muted-foreground">
+          <div className="mt-3 text-sm text-foreground/60">
             = {peso2(h.marketingPerOrder)}/order {h.roas != null ? 'marketing' : 'acquisition'} + {peso2(h.promosPerOrder)}/order promo
           </div>
           {naQrr && (
-            <div className="mt-2 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-[12px] text-amber-700 dark:text-amber-400">
-              No acquisition cost yet — enter an Acq. cost or Promos above to compute QRR.
+            <div className="mt-3 rounded-md bg-amber-500/10 px-3 py-2 text-[13px] font-medium text-amber-700 dark:text-amber-400">
+              No acquisition cost yet — enter an Acq. cost or Promos to compute QRR.
             </div>
           )}
         </div>
 
+        {/* Focus guide */}
+        <div className={`min-h-[1.25rem] text-[13px] font-medium transition-colors ${help ? 'text-foreground/80' : 'text-transparent'}`}>
+          {help ?? 'placeholder'}
+        </div>
+
         {/* Facts footer */}
-        <div className="mt-auto pt-3.5">
-          <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-muted-foreground">
+        <div className="mt-auto border-t border-border pt-3.5">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-foreground/70">
             <span className="inline-flex items-center gap-1">{facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.orders} /></span>
             <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
             <span>{peso(facts.revenue)} revenue</span>
           </div>
           {facts.channel === 'website' && (
-            <p className="mt-2 text-[11.5px] italic leading-snug text-muted-foreground">
+            <p className="mt-2 text-xs italic leading-snug text-foreground/55">
               Note: CRM order history starts 17 Apr 2026 — earlier website orders aren’t synced, so volume is expected to be lower.
             </p>
           )}
@@ -180,28 +194,28 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
+    <div className="mx-auto max-w-[1560px] space-y-6 px-6 py-6">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
         <div>
-          <h1 className="text-[26px] font-bold tracking-tight text-foreground">Business Health</h1>
-          <p className="mt-0.5 flex items-center gap-1 text-sm text-muted-foreground">
+          <h1 className="text-[28px] font-bold tracking-tight text-foreground">Business Health</h1>
+          <p className="mt-1 flex items-center gap-1 text-sm text-foreground/65">
             Per-channel Quality Revenue Ratio · {snapshot.window.label} <InfoTip text={HEALTH_HINTS.window} />
           </p>
         </div>
-        <button onClick={reset} className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground">
+        <button onClick={reset} className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground/70 transition-colors hover:border-foreground/25 hover:text-foreground">
           Reset assumptions
         </button>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {snapshot.perChannel.map((c) => (
           <ChannelCard key={`${c.channel}-${nonce}`} facts={c} knobs={knobs[c.channel]} target={snapshot.target} nonce={nonce} onChange={(k) => setKnobs((prev) => ({...prev, [c.channel]: k}))} />
         ))}
       </div>
 
-      <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-xs leading-relaxed text-muted-foreground">
+      <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
         <p>
-          Each channel stands alone (no blending). The <strong className="text-foreground/80">outlined</strong> fields — COGS%, Platform Fee%, Promos, and (for Website) Acq. cost — are editable; everything else is measured from your data. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ad data, so enter an Acq. cost (organic/ops spend) to give it a real CAC. Edits reset on reload. Shopee ads cover Mar–Jul. Trailing window {snapshot.window.label}.
+          Each channel stands alone (no blending). The <strong className="text-foreground">outlined</strong> fields — COGS%, Platform Fee%, Promos, and (for Website) Acq. cost — are editable; everything else is measured from your data. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ad data, so enter an Acq. cost (organic/ops spend) to give it a real CAC. Edits reset on reload. Shopee ads cover Mar–Jul. Trailing window {snapshot.window.label}.
         </p>
       </footer>
     </div>
