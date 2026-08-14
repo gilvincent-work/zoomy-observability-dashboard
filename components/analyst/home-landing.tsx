@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import {ArrowRight, Check, Globe, Megaphone, Sparkles} from 'lucide-react';
+import {Activity, ArrowRight, Check, Globe, Megaphone, Sparkles} from 'lucide-react';
 import type {DigestArchiveRow, DigestRec} from '../../src/types';
 import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
@@ -99,8 +99,39 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
 
           <div className="h-px w-full bg-border" />
 
-          {/* module cards — Sales (live) + Marketing (placeholder) */}
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {/* module cards — Business Health (live) + Sales (live) + Marketing (placeholder) */}
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            {/* Business Health — opens the QRR view */}
+            <Link
+              href="/health"
+              style={{backgroundColor: 'var(--card-warm)'}}
+              className="group flex flex-col rounded-xl border border-border p-5 transition-all hover:border-foreground/20 hover:shadow-sm"
+            >
+              <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-muted">
+                  <Activity className="size-4 text-primary" />
+                </span>
+                <span className="text-[16px] font-semibold text-foreground">Business Health</span>
+                <span className="text-xs text-muted-foreground">Quality Revenue Ratio</span>
+              </div>
+              <ul className="space-y-2">
+                {[
+                  'Track QRR against the target of 3',
+                  'See the levers: repeat × margin × ROAS',
+                  'Blended LTV & CAC across channels',
+                  '6-month view of every channel',
+                ].map((t) => (
+                  <li key={t} className="flex items-center gap-2 text-sm text-foreground/80">
+                    <Check className="size-3.5 shrink-0 text-primary" />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+              <span className="mt-5 inline-flex items-center gap-1.5 self-start rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors group-hover:bg-primary/90">
+                View <ArrowRight className="size-4" />
+              </span>
+            </Link>
+
             {/* Sales — opens the unified cross-channel comparison */}
             <Link
               href={`/?channel=all${week ? `&week=${encodeURIComponent(week)}` : ''}`}
