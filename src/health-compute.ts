@@ -13,7 +13,9 @@ export function computeChannelHealth(f: ChannelFacts, k: Knobs): ChannelHealth {
   const roas = f.adSpend ? r3(div(f.adRevenue ?? 0, f.adSpend)) : null;
   const margin = r3(1 - k.cogsPct - k.platformFeePct);
   const ltv = r2(aov * repeat * margin);
-  const marketingPerOrder = roas ? r2(div(aov, roas)) : 0; // Website: no ads → 0
+  // Marketing per order: ad-derived (AOV/ROAS) where there are ads, else the
+  // user-supplied acquisition spend per order (Website has no ROAS to derive from).
+  const marketingPerOrder = roas ? r2(div(aov, roas)) : r2(div(k.acqCost ?? 0, f.orders));
   const promosPerOrder = r2(div(k.promos, f.orders));
   const cac = r2(marketingPerOrder + promosPerOrder);
   const qrr = cac > 0 ? r3(div(ltv, cac)) : null;

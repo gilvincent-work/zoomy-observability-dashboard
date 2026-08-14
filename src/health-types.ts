@@ -5,6 +5,7 @@ export interface Knobs {
   cogsPct: number; // fraction, e.g. 0.35
   platformFeePct: number; // fraction; 0 for Website
   promos: number; // total ₱ for the window
+  acqCost: number; // total ₱ acquisition spend — used when a channel has no ROAS (Website)
 }
 export interface ChannelFacts {
   channel: 'shopee' | 'lazada' | 'website';
