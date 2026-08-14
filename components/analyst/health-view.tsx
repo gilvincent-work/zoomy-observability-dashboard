@@ -109,6 +109,11 @@ function ChannelCard({facts, knobs, target, onChange}: {facts: ChannelFacts; kno
         <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
         <span>{peso(facts.revenue)} revenue</span>
       </div>
+      {facts.channel === 'website' && (
+        <p className="mt-2 text-[11px] italic text-muted-foreground">
+          Note: CRM order history starts 17 Apr 2026 — earlier website orders aren’t synced, so this channel’s volume is expected to be lower.
+        </p>
+      )}
     </div>
   );
 }

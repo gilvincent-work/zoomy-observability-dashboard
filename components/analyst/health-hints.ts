@@ -16,5 +16,5 @@ export const HEALTH_HINTS: Record<string, string> = {
   window: 'A trailing 6-month window, computed fresh from each channel’s source.',
   ch_shopee: 'Distinct buyers are exact — deduped by the order export’s Username (Buyer). Revenue = order Grand Total. Ads are the real Mar–Jul figures.',
   ch_lazada: 'Distinct buyers are a proxy (~1.3% over) — masked but stable name + address + city. Conservative. Ads pulled from the API for the full window.',
-  ch_website: 'Distinct buyers are exact — real CRM customer identity. No ad data (Meta deferred), so ROAS and marketing cost are N/A; CAC comes from promos only.',
+  ch_website: 'Distinct buyers are exact — real CRM customer identity. CRM order history starts 17 Apr 2026 (earlier orders not synced). No ad data (Meta deferred), so ROAS and marketing cost are N/A; CAC comes from promos only.',
 };
