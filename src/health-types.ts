@@ -1,27 +1,35 @@
-// Mirror of BusinessHealthSnapshot produced by zoomy-observability
-// (src/observability/business-health.js). Read-only in the dashboard.
-export interface HealthChannel {
+// Mirror of the facts snapshot produced by zoomy-observability
+// (src/observability/business-health.js). The dashboard computes LTV/CAC/QRR from
+// these facts + editable knobs (see health-compute.ts).
+export interface Knobs {
+  cogsPct: number; // fraction, e.g. 0.35
+  platformFeePct: number; // fraction; 0 for Website
+  promos: number; // total ₱ for the window
+}
+export interface ChannelFacts {
   channel: 'shopee' | 'lazada' | 'website';
   orders: number;
   buyers: number;
   revenue: number;
   adSpend: number | null;
   adRevenue: number | null;
-  roas: number | null;
-  buyerMethod: string;
+  platformFeeApplies: boolean;
+  defaults: Knobs;
 }
 export interface BusinessHealthSnapshot {
   window: {from: string; to: string; label: string};
-  margin: number;
   target: number;
-  qrr: number;
-  ltv: number;
-  cac: number;
-  blendedAov: number;
-  repeatFactor: number;
-  blendedRoas: number;
-  totals: {orders: number; buyers: number; revenue: number};
-  ads: {spend: number; revenue: number};
-  perChannel: HealthChannel[];
+  perChannel: ChannelFacts[];
   computedAt: string;
+}
+export interface ChannelHealth {
+  aov: number;
+  repeat: number;
+  roas: number | null;
+  margin: number;
+  ltv: number;
+  marketingPerOrder: number;
+  promosPerOrder: number;
+  cac: number;
+  qrr: number | null; // null = N/A (no acquisition cost)
 }
