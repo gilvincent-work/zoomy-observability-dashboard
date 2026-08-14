@@ -11,6 +11,7 @@ export const HEALTH_HINTS: Record<string, string> = {
   cogs: 'Cost of goods sold — manufacturing + shipping — as a % of revenue. Editable; default 35%.',
   platformFee: 'Marketplace fee as a % of revenue. Editable; default 25% for Shopee & Lazada, 0% for Website.',
   promos: 'Total promo spend (discounts, bundles) for the window, in ₱. Added to CAC as Promos ÷ orders. Editable; default ₱0.',
+  acqCost: 'Total acquisition spend for the window, in ₱ — for channels with no ads (Website), this is your organic/ops cost to win customers. Divided by orders to give a per-order CAC. Editable; default ₱0.',
   buyers: 'Distinct buyers over the window (whole-window dedup).',
   orders: 'Orders over the window (confirmed / non-cancelled).',
   window: 'A trailing 6-month window, computed fresh from each channel’s source.',
