@@ -1,6 +1,6 @@
 'use client';
 
-import {useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import type {BusinessHealthSnapshot, ChannelFacts, Knobs} from '@/src/health-types';
 import {computeChannelHealth} from '@/src/health-compute';
 import {HEALTH_HINTS} from './health-hints';
@@ -27,6 +27,43 @@ function SectionLabel({children, hint}: {children: React.ReactNode; hint?: strin
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className="rounded-md bg-foreground/[0.07] px-2 py-0.5 text-xs font-bold uppercase tracking-[0.09em] text-foreground">{children}</span>
+      {hint && <InfoTip text={hint} />}
+    </span>
+  );
+}
+
+/** Wraps a computed value and replays a "pop" animation whenever `value` changes
+ *  (skips the initial render). Respects prefers-reduced-motion via CSS. */
+function Pop({value, className, children}: {value: number | string | null; className?: string; children: React.ReactNode}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const el = ref.current;
+    if (!el) return;
+    el.classList.remove('health-pop');
+    void el.offsetWidth; // force reflow so the animation replays
+    el.classList.add('health-pop');
+  }, [value]);
+  return (
+    <span ref={ref} className={`inline-block ${className ?? ''}`}>
+      {children}
+    </span>
+  );
+}
+
+/** Orders ÷ Distinct-buyers shown as a stacked fraction (the repeat rate). */
+function Fraction({num, den, hint}: {num: string; den: string; hint?: string}) {
+  return (
+    <span className="inline-flex items-center gap-1 align-middle">
+      <span className="inline-flex flex-col items-center leading-tight">
+        <span className="px-1 text-[12.5px] font-semibold tabular-nums text-foreground">{num}</span>
+        <span className="my-0.5 h-px w-full bg-foreground/40" />
+        <span className="px-1 text-[12.5px] font-semibold tabular-nums text-foreground">{den}</span>
+      </span>
       {hint && <InfoTip text={hint} />}
     </span>
   );
@@ -100,7 +137,7 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
         <div>
           <SectionLabel hint={HEALTH_HINTS.qrr}>QRR</SectionLabel>
           <div className="mt-2 flex items-baseline gap-2.5">
-            <span className={`text-[54px] font-bold leading-none tabular-nums ${qrrColor}`}>{fmtQrr(h.qrr)}</span>
+            <Pop value={h.qrr} className={`text-[54px] font-bold leading-none tabular-nums ${qrrColor}`}>{fmtQrr(h.qrr)}</Pop>
             <span className="text-sm font-medium text-muted-foreground">/ target {target}</span>
           </div>
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -115,12 +152,16 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
         <div className="rounded-xl border border-border bg-muted/25 p-4">
           <div className="flex items-center justify-between">
             <SectionLabel hint={HEALTH_HINTS.ltv}>LTV</SectionLabel>
-            <span className="text-[22px] font-bold tabular-nums text-foreground">{peso(h.ltv)}</span>
+            <Pop value={h.ltv} className="text-[22px] font-bold tabular-nums text-foreground">{peso(h.ltv)}</Pop>
           </div>
           <div className="mt-2.5 flex flex-wrap items-center text-[15px] text-foreground/85">
             <span className="text-foreground/60">AOV</span>&nbsp;<Val hint={HEALTH_HINTS.aov}>{peso(h.aov)}</Val>
-            {op('×')}<span className="text-foreground/60">Repeat</span>&nbsp;<Val hint={HEALTH_HINTS.repeat}>{h.repeat}×</Val>
-            {op('×')}<span className="text-foreground/60">Margin</span>&nbsp;<Val hint={HEALTH_HINTS.margin}>{pct(h.margin)}</Val>
+            {op('×')}<Fraction num={`${facts.orders.toLocaleString()} orders`} den={`${facts.buyers.toLocaleString()} buyers`} hint={HEALTH_HINTS.repeat} />
+            {op('×')}<span className="text-foreground/60">Margin</span>&nbsp;
+            <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-foreground">
+              <Pop value={h.margin}>{pct(h.margin)}</Pop>
+              <InfoTip text={HEALTH_HINTS.margin} />
+            </span>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
             <span className="text-foreground/60">Margin{op('=')}1</span>
@@ -135,7 +176,7 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
         <div className="rounded-xl border border-border bg-muted/25 p-4">
           <div className="flex items-center justify-between">
             <SectionLabel hint={HEALTH_HINTS.cac}>CAC</SectionLabel>
-            <span className="text-[22px] font-bold tabular-nums text-foreground">{peso2(h.cac)}</span>
+            <Pop value={h.cac} className="text-[22px] font-bold tabular-nums text-foreground">{peso2(h.cac)}</Pop>
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
             {h.roas != null ? (
@@ -195,6 +236,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
 
   return (
     <div className="mx-auto max-w-[1560px] space-y-6 px-6 py-6">
+      <style>{`@keyframes healthPop{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}.health-pop{animation:healthPop .4s ease-out}@media (prefers-reduced-motion: reduce){.health-pop{animation:none}}`}</style>
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
         <div>
           <h1 className="text-[28px] font-bold tracking-tight text-foreground">Business Health</h1>
