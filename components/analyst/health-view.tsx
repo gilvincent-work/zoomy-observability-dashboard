@@ -106,7 +106,8 @@ function Knob({label, helpKey, initial, suffix, accent, disabled, onChange, setH
           const n = parseFloat(v);
           onChange(Number.isFinite(n) ? n : 0);
         }}
-        className="w-16 bg-transparent text-center text-base font-bold tabular-nums text-foreground outline-none disabled:text-muted-foreground"
+        style={{width: `${Math.max(3, text.length + 1)}ch`}}
+        className="bg-transparent text-center text-base font-bold tabular-nums text-foreground outline-none transition-[width] duration-150 ease-out disabled:text-muted-foreground"
       />
       <span className="text-sm font-medium text-muted-foreground">{suffix}</span>
     </span>
@@ -186,10 +187,10 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
             ) : (
               <Knob label="Acq. cost" helpKey="acqCost" initial={String(knobs.acqCost)} suffix="₱" accent={accent} setHelp={setHelp} onChange={(n) => onChange({...knobs, acqCost: n})} />
             )}
-            {h.roas == null && <span className="text-foreground/60">÷ {facts.orders.toLocaleString()} orders</span>}
+            {h.roas == null && <span className="inline-flex items-center gap-1 text-foreground/60">÷ {facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.perOrder} /></span>}
             {op('+')}
             <Knob label="Promos" helpKey="promos" initial={String(knobs.promos)} suffix="₱" accent={accent} setHelp={setHelp} onChange={(n) => onChange({...knobs, promos: n})} />
-            <span className="text-foreground/60">÷ {facts.orders.toLocaleString()} orders</span>
+            <span className="inline-flex items-center gap-1 text-foreground/60">÷ {facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.perOrder} /></span>
           </div>
           <div className="mt-3 text-sm text-foreground/60">
             = {peso2(h.marketingPerOrder)}/order {h.roas != null ? 'marketing' : 'acquisition'} + {peso2(h.promosPerOrder)}/order promo
@@ -226,7 +227,20 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
 }
 
 export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
-  const defaults = () => Object.fromEntries(snapshot.perChannel.map((c) => [c.channel, {...c.defaults}]));
+  // Normalise so a snapshot saved before a knob existed (e.g. acqCost) never
+  // yields undefined in an input.
+  const defaults = () =>
+    Object.fromEntries(
+      snapshot.perChannel.map((c) => [
+        c.channel,
+        {
+          cogsPct: c.defaults.cogsPct ?? 0.35,
+          platformFeePct: c.defaults.platformFeePct ?? (c.platformFeeApplies ? 0.25 : 0),
+          promos: c.defaults.promos ?? 0,
+          acqCost: c.defaults.acqCost ?? 0,
+        } as Knobs,
+      ]),
+    );
   const [knobs, setKnobs] = useState<Record<string, Knobs>>(defaults);
   const [nonce, setNonce] = useState(0);
   const reset = () => {

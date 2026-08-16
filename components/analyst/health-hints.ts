@@ -17,6 +17,7 @@ export const HEALTH_HINTS: Record<string, string> = {
   cogs: 'Cost of Goods Sold — what it costs to make and ship the product — as a % of revenue. Editable (default 35%).',
   platformFee: 'The marketplace’s commission and fees, as a % of revenue. Editable (default 25%). The Website has no marketplace fee, so it stays 0.',
   promos: 'Total spent on discounts and bundles this period, in ₱. It’s spread across orders and added to CAC. Editable (default ₱0).',
+  perOrder: 'CAC is a cost per order, not a lump sum — so the total ₱ is divided by the number of orders. That puts it on the same per-order footing as the marketing cost, so LTV (per customer) ÷ CAC (per order) is a fair ratio.',
   acqCost: 'Total spent acquiring customers this period, in ₱ — e.g. organic, content, or ops cost. Used for the Website (which has no ads). Spread across orders to form its CAC. Editable (default ₱0).',
 
   // Volume facts
