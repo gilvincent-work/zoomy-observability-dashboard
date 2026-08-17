@@ -17,10 +17,24 @@ export interface ChannelFacts {
   platformFeeApplies: boolean;
   defaults: Knobs;
 }
+export interface MonthlyChannel {
+  channel: 'shopee' | 'lazada' | 'website';
+  orders: number;
+  buyers: number;
+  revenue: number;
+  adSpend: number | null;
+  adRevenue: number | null;
+}
+export interface MonthlyPoint {
+  month: string; // YYYY-MM
+  label: string; // e.g. "Feb"
+  perChannel: MonthlyChannel[];
+}
 export interface BusinessHealthSnapshot {
   window: {from: string; to: string; label: string};
   target: number;
   perChannel: ChannelFacts[];
+  monthly?: MonthlyPoint[];
   computedAt: string;
 }
 export interface ChannelHealth {
