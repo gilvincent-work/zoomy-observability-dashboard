@@ -10,6 +10,10 @@ const peso = (n: number) => '₱' + Math.round(n).toLocaleString();
 const peso2 = (n: number) => '₱' + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 const fmtQrr = (q: number | null) => (q == null ? 'N/A' : q >= 100 ? q.toLocaleString(undefined, {maximumFractionDigits: 0}) : q.toFixed(2));
+const fmtRange = (from: string, to: string) => {
+  const md = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+  return `${md(from)} – ${md(to)}, ${new Date(`${to}T00:00:00Z`).getUTCFullYear()}`;
+};
 
 const CHANNEL_LABEL: Record<string, string> = {shopee: 'Shopee', lazada: 'Lazada', website: 'Website'};
 const CHANNEL_ACCENT: Record<string, string> = {shopee: '#EE4D2D', lazada: '#2F6BD4', website: '#2E7D5B'};
@@ -254,8 +258,11 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
         <div>
           <h1 className="text-[28px] font-bold tracking-tight text-foreground">Business Health</h1>
-          <p className="mt-1 flex items-center gap-1 text-sm text-foreground/65">
-            Per-channel Quality Revenue Ratio · {snapshot.window.label} <InfoTip text={HEALTH_HINTS.window} />
+          <p className="mt-1 text-sm text-foreground/65">Per-channel Quality Revenue Ratio</p>
+          <p className="mt-1.5 flex items-center gap-1.5 text-sm">
+            <span className="text-foreground/60">Reporting period</span>
+            <span className="rounded-md bg-foreground/[0.06] px-2 py-0.5 font-bold text-foreground">{fmtRange(snapshot.window.from, snapshot.window.to)}</span>
+            <InfoTip text={HEALTH_HINTS.window} />
           </p>
         </div>
         <button onClick={reset} className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground/70 transition-colors hover:border-foreground/25 hover:text-foreground">
