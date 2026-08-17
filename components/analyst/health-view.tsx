@@ -1,6 +1,7 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
+import {Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import type {BusinessHealthSnapshot, ChannelFacts, Knobs} from '@/src/health-types';
 import {computeChannelHealth} from '@/src/health-compute';
 import {HEALTH_HINTS} from './health-hints';
@@ -230,6 +231,79 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
   );
 }
 
+const CHANNELS = [
+  {key: 'shopee' as const, label: 'Shopee'},
+  {key: 'lazada' as const, label: 'Lazada'},
+  {key: 'website' as const, label: 'Website'},
+];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function TrendTooltip({active, payload, label}: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <div className="mb-1 font-semibold text-foreground">{label}</div>
+      {payload.map((p: {dataKey: string; name: string; value: number; color: string}) => (
+        <div key={p.dataKey} className="flex items-center gap-2">
+          <span className="size-2 rounded-full" style={{background: p.color}} />
+          <span className="text-muted-foreground">{p.name}</span>
+          <span className="ml-auto font-semibold tabular-nums text-foreground">{p.value == null ? 'N/A' : Number(p.value).toFixed(2)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: Record<string, Knobs>}) {
+  const totalOrders: Record<string, number> = Object.fromEntries(snapshot.perChannel.map((c) => [c.channel, c.orders]));
+  // Recompute each month's QRR with the current knobs; window-total promos/acq are
+  // spread across months in proportion to that month's share of the channel's orders.
+  const data = (snapshot.monthly ?? []).map((mo) => {
+    const row: Record<string, number | string | null> = {label: mo.label};
+    for (const c of CHANNELS) {
+      const f = mo.perChannel.find((x) => x.channel === c.key);
+      const k = knobs[c.key];
+      if (!f || !k) {
+        row[c.key] = null;
+        continue;
+      }
+      const share = totalOrders[c.key] ? f.orders / totalOrders[c.key] : 0;
+      const h = computeChannelHealth(
+        {...f, platformFeeApplies: c.key !== 'website', defaults: k},
+        {cogsPct: k.cogsPct, platformFeePct: k.platformFeePct, promos: k.promos * share, acqCost: k.acqCost * share},
+      );
+      row[c.key] = h.qrr;
+    }
+    return row;
+  });
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="mb-4 flex items-center gap-1 text-sm font-semibold text-foreground">
+        QRR by month <InfoTip text="Each channel's Quality Revenue Ratio per month, using your current assumptions. Bars below the dashed line are under the target of 3." />
+      </div>
+      <div className="text-muted-foreground">
+        <ResponsiveContainer width="100%" height={420}>
+          <BarChart data={data} margin={{top: 8, right: 16, bottom: 4, left: 0}} barGap={2} barCategoryGap="22%">
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
+            <YAxis tickLine={false} axisLine={false} width={34} tick={{fill: 'currentColor', fontSize: 12}} />
+            <Tooltip cursor={{fill: 'currentColor', fillOpacity: 0.05}} content={<TrendTooltip />} />
+            <Legend wrapperStyle={{fontSize: 13, paddingTop: 8}} iconType="circle" />
+            <ReferenceLine y={snapshot.target} stroke="currentColor" strokeOpacity={0.45} strokeDasharray="5 4" label={{value: `target ${snapshot.target}`, position: 'insideTopRight', fontSize: 11, fill: 'currentColor'}} />
+            {CHANNELS.map((c) => (
+              <Bar key={c.key} dataKey={c.key} name={c.label} fill={CHANNEL_ACCENT[c.key]} radius={[3, 3, 0, 0]} maxBarSize={40} />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="mt-3 text-xs leading-relaxed text-foreground/60">
+        Uses your current assumptions (promos &amp; acq. cost are spread across months by order volume). Shopee starts in March (ads began then, so earlier months have no CAC to divide by). Website appears once you set an Acq. cost.
+      </p>
+    </div>
+  );
+}
+
 export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   // Normalise so a snapshot saved before a knob existed (e.g. acqCost) never
   // yields undefined in an input.
@@ -247,10 +321,14 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
     );
   const [knobs, setKnobs] = useState<Record<string, Knobs>>(defaults);
   const [nonce, setNonce] = useState(0);
+  const [view, setView] = useState<'cards' | 'trend'>('cards');
+  const hasMonthly = (snapshot.monthly?.length ?? 0) > 0;
   const reset = () => {
     setKnobs(defaults());
     setNonce((n) => n + 1);
   };
+  const seg = (active: boolean) =>
+    `rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`;
 
   return (
     <div className="mx-auto max-w-[1560px] space-y-6 px-6 py-6">
@@ -265,16 +343,28 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
             <InfoTip text={HEALTH_HINTS.window} />
           </p>
         </div>
-        <button onClick={reset} className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground/70 transition-colors hover:border-foreground/25 hover:text-foreground">
-          Reset assumptions
-        </button>
+        <div className="flex items-center gap-2">
+          {hasMonthly && (
+            <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+              <button onClick={() => setView('cards')} className={seg(view === 'cards')}>Cards</button>
+              <button onClick={() => setView('trend')} className={seg(view === 'trend')}>Trend</button>
+            </div>
+          )}
+          <button onClick={reset} className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground/70 transition-colors hover:border-foreground/25 hover:text-foreground">
+            Reset assumptions
+          </button>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {snapshot.perChannel.map((c) => (
-          <ChannelCard key={`${c.channel}-${nonce}`} facts={c} knobs={knobs[c.channel]} target={snapshot.target} nonce={nonce} onChange={(k) => setKnobs((prev) => ({...prev, [c.channel]: k}))} />
-        ))}
-      </div>
+      {view === 'trend' && hasMonthly ? (
+        <TrendView snapshot={snapshot} knobs={knobs} />
+      ) : (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {snapshot.perChannel.map((c) => (
+            <ChannelCard key={`${c.channel}-${nonce}`} facts={c} knobs={knobs[c.channel]} target={snapshot.target} nonce={nonce} onChange={(k) => setKnobs((prev) => ({...prev, [c.channel]: k}))} />
+          ))}
+        </div>
+      )}
 
       <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
         <p>
