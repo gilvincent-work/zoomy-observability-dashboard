@@ -58,10 +58,11 @@ export function DashboardShell({
   const currentRange = current ? fmtRange(current.window_from, current.window_to, current.digest.window.label) : '';
 
   // The reporting-period picker only makes sense in period-scoped analytics views —
-  // hide it on the home brief ("/" with no channel) and on Settings.
+  // hide it on the home brief ("/" with no channel), Settings, and Business Health
+  // (which uses its own fixed trailing-6-month window shown on the page).
   const channel = searchParams.get('channel');
   const isHome = pathname === '/' && !channel;
-  const showPeriod = Boolean(current) && !isHome && !pathname.startsWith('/settings');
+  const showPeriod = Boolean(current) && !isHome && !pathname.startsWith('/settings') && !pathname.startsWith('/health');
 
   const [periodOpen, setPeriodOpen] = useState(false);
 
