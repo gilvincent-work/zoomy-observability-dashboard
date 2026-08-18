@@ -45,6 +45,7 @@ export interface BusinessHealthSnapshot {
   perChannel: ChannelFacts[];
   monthly?: MonthlyPoint[];
   cohorts?: Record<'shopee' | 'lazada' | 'website', CohortMatrix>;
+  buyerMix?: Record<'shopee' | 'lazada' | 'website', Array<{month: string; newBuyers: number; returning: number}>>;
   computedAt: string;
 }
 // The measured values a user can override to model a target scenario.
