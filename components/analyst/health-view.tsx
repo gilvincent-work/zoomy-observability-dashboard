@@ -3,7 +3,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import type {BusinessHealthSnapshot, ChannelActuals, ChannelFacts, Knobs} from '@/src/health-types';
-import {computeChannelHealth, computeHealth, factsToActuals} from '@/src/health-compute';
+import {computeChannelHealth, computeHealth, computeOverallHealth, factsToActuals} from '@/src/health-compute';
 import {HEALTH_HINTS} from './health-hints';
 import {InfoTip} from './info-tip';
 
@@ -143,6 +143,45 @@ function Knob({label, helpKey, initial, suffix, accent, disabled, onChange, setH
 }
 
 const op = (s: string) => <span className="mx-1.5 font-medium text-foreground/45">{s}</span>;
+
+/** The whole business as one number, beside the page title (Cards tab only). */
+function OverallQrrPill({channels, target}: {
+  channels: {channel: string; actuals: ChannelActuals; knobs: Knobs}[]; target: number;
+}) {
+  const o = computeOverallHealth(channels);
+  const na = o.qrr == null;
+  const onTrack = !na && o.qrr! >= target;
+  const tone = na
+    ? 'border-border bg-muted/40 text-muted-foreground'
+    : onTrack
+      ? 'border-emerald-500/45 bg-emerald-500/[0.09] text-emerald-700 dark:text-emerald-400'
+      : 'border-amber-500/45 bg-amber-500/[0.09] text-amber-700 dark:text-amber-400';
+  const names = (list: string[]) => list.map((c) => CHANNEL_LABEL[c] ?? c).join(' + ');
+
+  return (
+    <div className={`rounded-xl border px-4 py-2.5 ${tone}`}>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-foreground/60">Overall QRR</span>
+        <InfoTip text={HEALTH_HINTS.overallQrr} />
+      </div>
+      <div className="mt-0.5 flex items-baseline gap-2">
+        <Pop value={o.qrr} className="text-[30px] font-bold leading-none tabular-nums">{fmtQrr(o.qrr)}</Pop>
+        <span className="text-xs font-medium text-muted-foreground">/ target {target}</span>
+      </div>
+      {!na && (
+        <div className="mt-1.5 text-[11px] text-foreground/70">
+          LTV <span className="font-semibold text-foreground">{peso2(o.ltv)}</span>{op('÷')}CAC{' '}
+          <span className="font-semibold text-foreground">{peso2(o.cac)}</span>
+        </div>
+      )}
+      <div className="mt-1 text-[11px] text-foreground/55">
+        {na
+          ? 'No channel has an acquisition cost yet'
+          : `${names(o.included)}${o.excluded.length ? ` · ${names(o.excluded)} excluded (no CAC)` : ''}`}
+      </div>
+    </div>
+  );
+}
 
 function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onActual, onKnob}: {
   facts: ChannelFacts; actuals: ChannelActuals; knobs: Knobs; target: number; nonce: number;
@@ -530,7 +569,8 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
     <div className="mx-auto max-w-[1560px] space-y-6 px-6 py-6">
       <style>{`@keyframes healthPop{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}.health-pop{animation:healthPop .4s ease-out}@media (prefers-reduced-motion: reduce){.health-pop{animation:none}}`}</style>
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
-        <div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div>
           <h1 className="text-[28px] font-bold tracking-tight text-foreground">Business Health</h1>
           <p className="mt-1 text-sm text-foreground/65">Per-channel Quality Revenue Ratio</p>
           <p className="mt-1.5 flex items-center gap-1.5 text-sm">
@@ -538,6 +578,13 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
             <span className="rounded-md bg-foreground/[0.06] px-2 py-0.5 font-bold text-foreground">{fmtRange(snapshot.window.from, snapshot.window.to)}</span>
             <InfoTip text={HEALTH_HINTS.window} />
           </p>
+          </div>
+          {view === 'cards' && (
+            <OverallQrrPill
+              channels={snapshot.perChannel.map((c) => ({channel: c.channel, actuals: actuals[c.channel], knobs: knobs[c.channel]}))}
+              target={snapshot.target}
+            />
+          )}
         </div>
         <div className="flex items-center gap-2">
           {(hasMonthly || hasCohorts) && (
@@ -598,7 +645,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           </p>
         ) : (
           <p>
-            Each channel stands alone (no blending). <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads — enter an Acq. cost to give it a CAC. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
+            Each channel stands alone (no blending); the <strong className="text-foreground">Overall QRR</strong> beside the title is the one exception — the business as one blended customer, over only the channels that have a CAC. LTV is buyer-weighted and CAC order-weighted (each pooled in its own unit before dividing), so it always lands between the channel QRRs. A channel with no acquisition cost is excluded from both sides (its profit against ₱0 would inflate the ratio); give it an Acq. cost and it joins in. <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads — enter an Acq. cost to give it a CAC. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
           </p>
         )}
       </footer>

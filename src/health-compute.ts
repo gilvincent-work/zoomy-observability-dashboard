@@ -1,7 +1,7 @@
 // Per-channel QRR math — mirror of computeChannelHealth in zoomy-observability
 // (src/observability/business-health.js). Kept in sync by necessity (cross-repo).
 // Pure + client-safe so the dashboard recomputes live as the knobs change.
-import type {ChannelFacts, ChannelActuals, Knobs, ChannelHealth} from './health-types';
+import type {ChannelFacts, ChannelActuals, Knobs, ChannelHealth, OverallHealth} from './health-types';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -31,6 +31,56 @@ export function computeHealth(a: ChannelActuals, k: Knobs): ChannelHealth {
   const cac = r2(marketingPerOrder + promosPerOrder);
   const qrr = cac > 0 ? r3(div(ltv, cac)) : null;
   return {aov, repeat, roas, margin, ltv, marketingPerOrder, promosPerOrder, cac, qrr};
+}
+
+/**
+ * Portfolio QRR across channels — the business as one blended customer.
+ *
+ * LTV is a per-BUYER figure and CAC a per-ORDER one, so each side is pooled in
+ * its own unit before dividing (pooling profit ÷ cost directly would skew the
+ * result by orders÷buyers and can even land outside every channel's QRR):
+ *
+ *   LTV = Σ (LTV_c × buyers_c) ÷ Σ buyers_c     — buyer-weighted
+ *   CAC = Σ (CAC_c × orders_c) ÷ Σ orders_c     — order-weighted
+ *   QRR = LTV ÷ CAC
+ *
+ * Channels with no CAC (Website, until an Acq. cost is entered) are EXCLUDED
+ * from both sides: counting their profit against a ₱0 cost would inflate the
+ * ratio for free. With a single qualifying channel this reduces exactly to that
+ * channel's LTV ÷ CAC, so it stays consistent with the per-channel model.
+ */
+export function computeOverallHealth(
+  channels: {channel: string; actuals: ChannelActuals; knobs: Knobs}[],
+): OverallHealth {
+  const included: string[] = [];
+  const excluded: string[] = [];
+  let profit = 0; // Σ LTV × buyers
+  let cost = 0; // Σ CAC × orders
+  let buyers = 0;
+  let orders = 0;
+  for (const c of channels) {
+    const h = computeHealth(c.actuals, c.knobs);
+    if (h.cac > 0) {
+      included.push(c.channel);
+      profit += h.ltv * c.actuals.buyers;
+      cost += h.cac * c.actuals.orders;
+      buyers += c.actuals.buyers;
+      orders += c.actuals.orders;
+    } else {
+      excluded.push(c.channel);
+    }
+  }
+  const ltv = r2(div(profit, buyers));
+  const cac = r2(div(cost, orders));
+  return {
+    qrr: cac > 0 ? r3(div(ltv, cac)) : null,
+    ltv,
+    cac,
+    profit: r2(profit),
+    cost: r2(cost),
+    included,
+    excluded,
+  };
 }
 
 export function computeChannelHealth(f: ChannelFacts, k: Knobs): ChannelHealth {
