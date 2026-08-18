@@ -66,3 +66,13 @@ export interface ChannelHealth {
   cac: number;
   qrr: number | null; // null = N/A (no acquisition cost)
 }
+/** Portfolio QRR across the channels that have a CAC (see computeOverallHealth). */
+export interface OverallHealth {
+  qrr: number | null; // null = N/A (no channel has an acquisition cost)
+  ltv: number; // buyer-weighted LTV across included channels
+  cac: number; // order-weighted CAC across included channels
+  profit: number; // Σ LTV × buyers over included channels
+  cost: number; // Σ CAC × orders over included channels
+  included: string[];
+  excluded: string[]; // channels sat out for having no CAC
+}

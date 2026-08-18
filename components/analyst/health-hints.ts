@@ -4,6 +4,8 @@
 export const HEALTH_HINTS: Record<string, string> = {
   // Headline metrics
   qrr: 'Quality Revenue Ratio = LTV ÷ CAC. Roughly, how many pesos of lifetime value each ₱1 spent to acquire a customer returns. Healthy at 3 or above. Shows N/A when there’s no acquisition cost to divide by.',
+  overallQrr:
+    'Overall QRR — the business as one blended customer, using your current assumptions. LTV is buyer-weighted (Σ LTV × buyers ÷ Σ buyers) and CAC order-weighted (Σ CAC × orders ÷ Σ orders), each pooled in its own unit, then divided. It always lands between the channel QRRs. Channels with no acquisition cost sit out entirely — counting their profit against ₱0 would inflate the ratio for free. Give such a channel an Acq. cost and it joins automatically.',
   ltv: 'Lifetime Value — what this channel’s average customer is worth over time. LTV = AOV × (orders ÷ buyers) × Margin.',
   cac: 'Customer Acquisition Cost per order — what it costs to win one order. CAC = marketing cost per order + promo cost per order.',
 
