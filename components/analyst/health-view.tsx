@@ -7,9 +7,10 @@ import {computeChannelHealth, computeHealth, factsToActuals} from '@/src/health-
 import {HEALTH_HINTS} from './health-hints';
 import {InfoTip} from './info-tip';
 
-const peso = (n: number) => '₱' + Math.round(n).toLocaleString();
 const peso2 = (n: number) => '₱' + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-const pct = (f: number) => `${Math.round(f * 100)}%`;
+// Percent with up to 2 decimals, trailing zeros trimmed (40% stays "40%",
+// 0.4167 → "41.67%") — so fractional COGS/Fee inputs aren't rounded away.
+const pct = (f: number) => `${(Math.round(f * 10000) / 100).toString()}%`;
 const fmtQrr = (q: number | null) => (q == null ? 'N/A' : q >= 100 ? q.toLocaleString(undefined, {maximumFractionDigits: 0}) : q.toFixed(2));
 const fmtRange = (from: string, to: string) => {
   const md = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
@@ -184,7 +185,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
             <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{width: naQrr ? '0%' : `${Math.min(100, (h.qrr! / target) * 100)}%`}} />
           </div>
           <div className="mt-2.5 text-sm text-foreground/75">
-            LTV <span className="font-semibold text-foreground">{peso(h.ltv)}</span>{op('÷')}CAC <span className="font-semibold text-foreground">{peso(h.cac)}</span>{op('=')}<span className="font-bold text-foreground">{fmtQrr(h.qrr)}</span>
+            LTV <span className="font-semibold text-foreground">{peso2(h.ltv)}</span>{op('÷')}CAC <span className="font-semibold text-foreground">{peso2(h.cac)}</span>{op('=')}<span className="font-bold text-foreground">{fmtQrr(h.qrr)}</span>
           </div>
         </div>
 
@@ -192,7 +193,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
         <div className="rounded-xl border border-border bg-muted/25 p-4">
           <div className="flex items-center justify-between">
             <SectionLabel hint={HEALTH_HINTS.ltv}>LTV</SectionLabel>
-            <Pop value={h.ltv} className="text-[22px] font-bold tabular-nums text-foreground">{peso(h.ltv)}</Pop>
+            <Pop value={h.ltv} className="text-[22px] font-bold tabular-nums text-foreground">{peso2(h.ltv)}</Pop>
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-y-2 text-[15px] text-foreground/85">
             <span className="text-foreground/60">AOV</span>&nbsp;
@@ -230,7 +231,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
           <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
             {h.roas != null ? (
               <span className="inline-flex items-center gap-1">
-                <span className="text-foreground/60">(AOV</span>&nbsp;<Val>{peso(h.aov)}</Val>{op('÷')}<span className="text-foreground/60">ROAS</span>
+                <span className="text-foreground/60">(AOV</span>&nbsp;<Val>{peso2(h.aov)}</Val>{op('÷')}<span className="text-foreground/60">ROAS</span>
                 <ActualField suffix="×" initial={String(actuals.roas ?? '')} baseline={base.roas ?? 0} helpKey="roas" setHelp={setHelp} onChange={(n) => onActual({...actuals, roas: n})} />
                 <span className="text-foreground/60">)</span>
               </span>
@@ -263,7 +264,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
             <span className="text-foreground/45">Measured</span>
             <span className="inline-flex items-center gap-1">{facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.orders} /></span>
             <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
-            <span>{peso(facts.revenue)} revenue</span>
+            <span>{peso2(facts.revenue)} revenue</span>
           </div>
           {facts.channel === 'website' && (
             <p className="mt-2 text-xs italic leading-snug text-foreground/55">

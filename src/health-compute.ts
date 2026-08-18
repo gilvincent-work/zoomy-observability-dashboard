@@ -23,7 +23,9 @@ export function computeHealth(a: ChannelActuals, k: Knobs): ChannelHealth {
   const repeat = r3(div(a.orders, a.buyers));
   const roas = a.roas != null ? r3(a.roas) : null;
   const margin = r3(1 - k.cogsPct - k.platformFeePct);
-  const ltv = r2(aov * repeat * margin);
+  // Use the exact orders÷buyers (not the display-rounded `repeat`) so LTV matches
+  // the fraction shown on the card.
+  const ltv = r2(aov * div(a.orders, a.buyers) * margin);
   const marketingPerOrder = roas ? r2(div(aov, roas)) : r2(div(k.acqCost ?? 0, a.orders));
   const promosPerOrder = r2(div(k.promos, a.orders));
   const cac = r2(marketingPerOrder + promosPerOrder);
@@ -36,7 +38,7 @@ export function computeChannelHealth(f: ChannelFacts, k: Knobs): ChannelHealth {
   const repeat = r3(div(f.orders, f.buyers));
   const roas = f.adSpend ? r3(div(f.adRevenue ?? 0, f.adSpend)) : null;
   const margin = r3(1 - k.cogsPct - k.platformFeePct);
-  const ltv = r2(aov * repeat * margin);
+  const ltv = r2(aov * div(f.orders, f.buyers) * margin);
   // Marketing per order: ad-derived (AOV/ROAS) where there are ads, else the
   // user-supplied acquisition spend per order (Website has no ROAS to derive from).
   const marketingPerOrder = roas ? r2(div(aov, roas)) : r2(div(k.acqCost ?? 0, f.orders));
