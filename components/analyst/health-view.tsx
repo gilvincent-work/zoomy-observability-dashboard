@@ -351,6 +351,93 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
   );
 }
 
+const shortMonth = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-US', {month: 'short', timeZone: 'UTC'});
+const hexToRgb = (hex: string) => {
+  const h = hex.replace('#', '');
+  return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`;
+};
+
+function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
+  const [ch, setCh] = useState<'shopee' | 'lazada' | 'website'>('shopee');
+  const seg = (active: boolean) =>
+    `rounded-md px-3 py-1 text-sm font-semibold transition-colors ${active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`;
+  const matrix = snapshot.cohorts?.[ch];
+  const rows = (matrix?.rows ?? []).filter((r) => r.size > 0);
+  const nCols = matrix?.months.length ?? 0;
+  const rgb = hexToRgb(CHANNEL_ACCENT[ch]);
+  const cell = (v: number) => ({background: `rgba(${rgb},${(0.08 + 0.85 * v).toFixed(3)})`, color: v > 0.5 ? '#fff' : undefined});
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1 text-sm font-semibold text-foreground">
+          Cohort Retention
+          <InfoTip text="Each row is a cohort — buyers whose FIRST purchase was that month. Each column M0, M1… is months later. A cell is the % of that cohort who ordered again that month (M0 = 100%). Darker = more retained." />
+        </div>
+        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+          {CHANNELS.map((c) => (
+            <button key={c.key} onClick={() => setCh(c.key)} className={seg(ch === c.key)}>{c.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">No cohort data for {CHANNEL_LABEL[ch]} in this window.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-separate text-sm" style={{borderSpacing: 3}}>
+            <thead>
+              <tr className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <th className="px-2 py-1 text-left">Cohort</th>
+                <th className="px-2 py-1 text-right">Buyers</th>
+                {Array.from({length: nCols}, (_, k) => (
+                  <th key={k} className="px-2 py-1 text-center" title={`${k} month${k === 1 ? '' : 's'} after first purchase`}>M{k}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.cohort}>
+                  <td className="whitespace-nowrap px-2 py-1 font-semibold text-foreground">{shortMonth(r.cohort)} ’{r.cohort.slice(2, 4)}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">{r.size.toLocaleString()}</td>
+                  {Array.from({length: nCols}, (_, k) => {
+                    if (k >= r.retention.length) return <td key={k} className="px-2 py-1" />;
+                    const v = r.retention[k];
+                    const active = Math.round(v * r.size);
+                    return (
+                      <td
+                        key={k}
+                        className="rounded-md px-2 py-1.5 text-center text-[13px] font-semibold tabular-nums"
+                        style={cell(v)}
+                        title={`${shortMonth(r.cohort)} cohort · M${k}: ${Math.round(v * 100)}% retained (${active} of ${r.size})`}
+                      >
+                        {Math.round(v * 100)}%
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* legend */}
+      <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Retention</span>
+        <span className="text-[11px]">0%</span>
+        <span className="inline-flex h-3 w-40 overflow-hidden rounded">
+          {Array.from({length: 20}, (_, i) => (
+            <span key={i} className="h-full flex-1" style={{background: `rgba(${rgb},${(0.08 + 0.85 * (i / 19)).toFixed(3)})`}} />
+          ))}
+        </span>
+        <span className="text-[11px]">100%</span>
+        <span className="ml-3">M0 is the acquisition month (always 100%); later columns show the monthly repeat rate.</span>
+      </div>
+    </div>
+  );
+}
+
 export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   // Normalise so a snapshot saved before a knob existed (e.g. acqCost) never
   // yields undefined in an input.
@@ -370,8 +457,9 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const [knobs, setKnobs] = useState<Record<string, Knobs>>(defaults);
   const [actuals, setActuals] = useState<Record<string, ChannelActuals>>(actualDefaults);
   const [nonces, setNonces] = useState<Record<string, number>>({});
-  const [view, setView] = useState<'cards' | 'trend'>('cards');
+  const [view, setView] = useState<'cards' | 'trend' | 'heatmap'>('cards');
   const hasMonthly = (snapshot.monthly?.length ?? 0) > 0;
+  const hasCohorts = Boolean(snapshot.cohorts);
 
   const baseKnobs = defaults();
   const baseActuals = actualDefaults();
@@ -399,10 +487,11 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {hasMonthly && (
+          {(hasMonthly || hasCohorts) && (
             <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
               <button onClick={() => setView('cards')} className={seg(view === 'cards')}>Cards</button>
-              <button onClick={() => setView('trend')} className={seg(view === 'trend')}>Trend</button>
+              {hasMonthly && <button onClick={() => setView('trend')} className={seg(view === 'trend')}>Trend</button>}
+              {hasCohorts && <button onClick={() => setView('heatmap')} className={seg(view === 'heatmap')}>Heatmap</button>}
             </div>
           )}
         </div>
@@ -424,6 +513,8 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
 
       {view === 'trend' && hasMonthly ? (
         <TrendView snapshot={snapshot} knobs={knobs} />
+      ) : view === 'heatmap' && hasCohorts ? (
+        <HeatmapView snapshot={snapshot} />
       ) : (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           {snapshot.perChannel.map((c) => (
