@@ -30,11 +30,21 @@ export interface MonthlyPoint {
   label: string; // e.g. "Feb"
   perChannel: MonthlyChannel[];
 }
+export interface CohortRow {
+  cohort: string; // YYYY-MM (month of first purchase)
+  size: number; // buyers in the cohort
+  retention: number[]; // retention[k] = share active in month cohort+k (M0 = 1)
+}
+export interface CohortMatrix {
+  months: string[]; // YYYY-MM window
+  rows: CohortRow[];
+}
 export interface BusinessHealthSnapshot {
   window: {from: string; to: string; label: string};
   target: number;
   perChannel: ChannelFacts[];
   monthly?: MonthlyPoint[];
+  cohorts?: Record<'shopee' | 'lazada' | 'website', CohortMatrix>;
   computedAt: string;
 }
 // The measured values a user can override to model a target scenario.
