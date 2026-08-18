@@ -3,6 +3,10 @@
 // Pure + client-safe so the dashboard recomputes live as the knobs change.
 import type {ChannelFacts, ChannelActuals, Knobs, ChannelHealth, OverallHealth} from './health-types';
 
+/** Placeholder acquisition spend for ad-less channels (Website) so they open
+ *  with a CAC instead of N/A. Mirrors DEFAULT_WEBSITE_ACQ_COST in the batch. */
+export const DEFAULT_WEBSITE_ACQ_COST = 5000;
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const div = (a: number, b: number) => (b ? a / b : 0);

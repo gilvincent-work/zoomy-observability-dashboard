@@ -3,7 +3,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import type {BusinessHealthSnapshot, ChannelActuals, ChannelFacts, Knobs} from '@/src/health-types';
-import {computeChannelHealth, computeHealth, computeOverallHealth, factsToActuals} from '@/src/health-compute';
+import {DEFAULT_WEBSITE_ACQ_COST, computeChannelHealth, computeHealth, computeOverallHealth, factsToActuals} from '@/src/health-compute';
 import {HEALTH_HINTS} from './health-hints';
 import {InfoTip} from './info-tip';
 
@@ -25,7 +25,7 @@ const FIELD_HELP: Record<string, string> = {
   cogs: 'COGS — cost to make + ship the product, as a % of revenue.',
   platformFee: 'Platform Fee — the marketplace’s cut, as a % of revenue.',
   promos: 'Promos — total ₱ spent on discounts & bundles this window.',
-  acqCost: 'Acq. cost — total ₱ spent acquiring website customers (organic/ops).',
+  acqCost: 'Acq. cost — total ₱ spent acquiring website customers (organic/ops). Seeded at ₱5,000 as a placeholder — edit it.',
   aov: 'AOV — average order value (measured). Edit to model a target.',
   orders: 'Orders (measured). Edit to model a target scenario.',
   buyers: 'Distinct buyers (measured). Edit to model a target scenario.',
@@ -726,7 +726,11 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           cogsPct: c.defaults.cogsPct ?? 0.35,
           platformFeePct: c.defaults.platformFeePct ?? (c.platformFeeApplies ? 0.25 : 0),
           promos: c.defaults.promos ?? 0,
-          acqCost: c.defaults.acqCost ?? 0,
+          // Ad-less channels open with the placeholder spend so they show a QRR
+          // rather than N/A. `||` (not `??`) on purpose: snapshots saved before
+          // the batch seeded this carry a literal 0, which needs the same
+          // treatment as a missing value. Still fully editable on the card.
+          acqCost: c.defaults.acqCost || (c.platformFeeApplies ? 0 : DEFAULT_WEBSITE_ACQ_COST),
         } as Knobs,
       ]),
     );
@@ -846,7 +850,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
         {view === 'trend' ? (
           <p>
-            <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">horizontal dashed line</strong> is the target of {snapshot.target}, and bars below it are under target. The <strong className="text-foreground">dark dotted line with markers</strong> is the <strong className="text-foreground">Overall QRR</strong> for each month — the same blend as the header pill (LTV pooled over buyers, CAC over orders), so a month where a channel had no acquisition cost leaves that channel out of the blend. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website appears once you set an Acq. cost. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
+            <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">horizontal dashed line</strong> is the target of {snapshot.target}, and bars below it are under target. The <strong className="text-foreground">dark dotted line with markers</strong> is the <strong className="text-foreground">Overall QRR</strong> for each month — the same blend as the header pill (LTV pooled over buyers, CAC over orders), so a month where a channel had no acquisition cost leaves that channel out of the blend. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website is seeded with a placeholder Acq. cost of ₱5,000, so it appears from its first month of orders — edit that on the Cards tab to reflect real spend. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
           </p>
         ) : view === 'heatmap' ? (
           <p>
@@ -854,7 +858,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           </p>
         ) : (
           <p>
-            Each channel stands alone (no blending); the <strong className="text-foreground">Overall QRR</strong> beside the title is the one exception — the business as one blended customer, over only the channels that have a CAC. LTV is buyer-weighted and CAC order-weighted (each pooled in its own unit before dividing), so it always lands between the channel QRRs. A channel with no acquisition cost is excluded from both sides (its profit against ₱0 would inflate the ratio); give it an Acq. cost and it joins in. <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads — enter an Acq. cost to give it a CAC. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
+            Each channel stands alone (no blending); the <strong className="text-foreground">Overall QRR</strong> beside the title is the one exception — the business as one blended customer, over only the channels that have a CAC. LTV is buyer-weighted and CAC order-weighted (each pooled in its own unit before dividing), so it always lands between the channel QRRs. A channel with no acquisition cost is excluded from both sides (its profit against ₱0 would inflate the ratio); give it an Acq. cost and it joins in. <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads, so its CAC comes from Acq. cost — seeded with a ₱5,000 placeholder for the window, which you should replace with real organic/ops spend. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
           </p>
         )}
       </footer>

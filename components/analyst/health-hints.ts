@@ -20,7 +20,7 @@ export const HEALTH_HINTS: Record<string, string> = {
   platformFee: 'The marketplace’s commission and fees, as a % of revenue. Editable (default 25%). The Website has no marketplace fee, so it stays 0.',
   promos: 'Total spent on discounts and bundles this period, in ₱. It’s spread across orders and added to CAC. Editable (default ₱0).',
   perOrder: 'CAC is a cost per order, not a lump sum — so the total ₱ is divided by the number of orders. That puts it on the same per-order footing as the marketing cost, so LTV (per customer) ÷ CAC (per order) is a fair ratio.',
-  acqCost: 'Total spent acquiring customers this period, in ₱ — e.g. organic, content, or ops cost. Used for the Website (which has no ads). Spread across orders to form its CAC. Editable (default ₱0).',
+  acqCost: 'Total spent acquiring customers this period, in ₱ — e.g. organic, content, or ops cost. Used for the Website (which has no ads). Spread across orders to form its CAC. Editable — seeded at ₱5,000 for the Website as a placeholder, not a measured figure, so replace it with real spend.',
 
   // Volume facts
   buyers: 'Distinct customers who placed an order on this channel during the period (each counted once).',
@@ -30,5 +30,5 @@ export const HEALTH_HINTS: Record<string, string> = {
   // Per-channel methodology (shown on the channel name)
   ch_shopee: 'Buyers are exact — deduped by the order export’s buyer username. Revenue is the order Grand Total. Ad figures are the real Mar–Jul data.',
   ch_lazada: 'Buyers are an estimate, ~1.3% high (a stable name + address + city match) — deliberately conservative. Ad figures come from the Lazada API for the full period.',
-  ch_website: 'Buyers are exact (real customer IDs). There’s no ad data, so ROAS is N/A — enter an Acq. cost to give CAC a value. CRM order history starts 17 Apr 2026, so volume here is lower.',
+  ch_website: 'Buyers are exact (real customer IDs). There’s no ad data, so ROAS is N/A and CAC comes from the Acq. cost — seeded at ₱5,000 as a placeholder, so treat this channel’s QRR as provisional until you enter real spend. CRM order history starts 17 Apr 2026, so volume here is lower.',
 };
