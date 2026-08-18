@@ -184,7 +184,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
             <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{width: naQrr ? '0%' : `${Math.min(100, (h.qrr! / target) * 100)}%`}} />
           </div>
           <div className="mt-2.5 text-sm text-foreground/75">
-            LTV <span className="font-semibold text-foreground">{peso(h.ltv)}</span>{op('÷')}CAC <span className="font-semibold text-foreground">{peso(h.cac)}</span>{op('=')}<span className="font-bold text-foreground">{fmtQrr(h.qrr)}</span>
+            LTV <span className="font-semibold text-foreground">{peso2(h.ltv)}</span>{op('÷')}CAC <span className="font-semibold text-foreground">{peso2(h.cac)}</span>{op('=')}<span className="font-bold text-foreground">{fmtQrr(h.qrr)}</span>
           </div>
         </div>
 
@@ -192,7 +192,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
         <div className="rounded-xl border border-border bg-muted/25 p-4">
           <div className="flex items-center justify-between">
             <SectionLabel hint={HEALTH_HINTS.ltv}>LTV</SectionLabel>
-            <Pop value={h.ltv} className="text-[22px] font-bold tabular-nums text-foreground">{peso(h.ltv)}</Pop>
+            <Pop value={h.ltv} className="text-[22px] font-bold tabular-nums text-foreground">{peso2(h.ltv)}</Pop>
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-y-2 text-[15px] text-foreground/85">
             <span className="text-foreground/60">AOV</span>&nbsp;
@@ -230,7 +230,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
           <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
             {h.roas != null ? (
               <span className="inline-flex items-center gap-1">
-                <span className="text-foreground/60">(AOV</span>&nbsp;<Val>{peso(h.aov)}</Val>{op('÷')}<span className="text-foreground/60">ROAS</span>
+                <span className="text-foreground/60">(AOV</span>&nbsp;<Val>{peso2(h.aov)}</Val>{op('÷')}<span className="text-foreground/60">ROAS</span>
                 <ActualField suffix="×" initial={String(actuals.roas ?? '')} baseline={base.roas ?? 0} helpKey="roas" setHelp={setHelp} onChange={(n) => onActual({...actuals, roas: n})} />
                 <span className="text-foreground/60">)</span>
               </span>
