@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
-import {Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
+import {Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import type {BusinessHealthSnapshot, ChannelActuals, ChannelFacts, Knobs} from '@/src/health-types';
 import {computeChannelHealth, computeHealth, computeOverallHealth, factsToActuals} from '@/src/health-compute';
 import {HEALTH_HINTS} from './health-hints';
@@ -429,13 +429,26 @@ function TrendTooltip({active, payload, label}: any) {
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-md">
       <div className="mb-1 font-semibold text-foreground">{label}</div>
-      {payload.map((p: {dataKey: string; name: string; value: number; color: string}) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="size-2 rounded-full" style={{background: p.color}} />
-          <span className="text-muted-foreground">{p.name}</span>
-          <span className="ml-auto font-semibold tabular-nums text-foreground">{p.value == null ? 'N/A' : Number(p.value).toFixed(2)}</span>
-        </div>
-      ))}
+      {/* Channels first, then the blend set apart below a rule — it summarises
+          the rows above it rather than sitting alongside them. */}
+      {payload
+        .filter((p: {dataKey: string}) => p.dataKey !== 'overall')
+        .map((p: {dataKey: string; name: string; value: number; color: string}) => (
+          <div key={p.dataKey} className="flex items-center gap-2">
+            <span className="size-2 rounded-full" style={{background: p.color}} />
+            <span className="text-muted-foreground">{p.name}</span>
+            <span className="ml-auto font-semibold tabular-nums text-foreground">{p.value == null ? 'N/A' : Number(p.value).toFixed(2)}</span>
+          </div>
+        ))}
+      {payload
+        .filter((p: {dataKey: string}) => p.dataKey === 'overall')
+        .map((p: {dataKey: string; value: number}) => (
+          <div key={p.dataKey} className="mt-1 flex items-center gap-2 border-t border-border pt-1">
+            <span className="h-0 w-2.5 border-t-2 border-dashed border-foreground" />
+            <span className="text-muted-foreground">Overall</span>
+            <span className="ml-auto font-bold tabular-nums text-foreground">{p.value == null ? 'N/A' : Number(p.value).toFixed(2)}</span>
+          </div>
+        ))}
     </div>
   );
 }
@@ -446,6 +459,9 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
   // spread across months in proportion to that month's share of the channel's orders.
   const data = (snapshot.monthly ?? []).map((mo) => {
     const row: Record<string, number | string | null> = {label: mo.label};
+    // Collected per month so the blended line uses exactly the same inputs as
+    // the bars above it (same knobs, same promo/acq spread).
+    const forOverall: {channel: string; actuals: ChannelActuals; knobs: Knobs}[] = [];
     for (const c of CHANNELS) {
       const f = mo.perChannel.find((x) => x.channel === c.key);
       const k = knobs[c.key];
@@ -454,23 +470,26 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
         continue;
       }
       const share = totalOrders[c.key] ? f.orders / totalOrders[c.key] : 0;
-      const h = computeChannelHealth(
-        {...f, platformFeeApplies: c.key !== 'website', defaults: k},
-        {cogsPct: k.cogsPct, platformFeePct: k.platformFeePct, promos: k.promos * share, acqCost: k.acqCost * share},
-      );
+      const monthKnobs = {cogsPct: k.cogsPct, platformFeePct: k.platformFeePct, promos: k.promos * share, acqCost: k.acqCost * share};
+      const facts = {...f, platformFeeApplies: c.key !== 'website', defaults: k};
+      const h = computeChannelHealth(facts, monthKnobs);
       row[c.key] = h.qrr;
+      if (f.orders > 0) forOverall.push({channel: c.key, actuals: factsToActuals(facts), knobs: monthKnobs});
     }
+    // Same weighted pooling as the header pill: LTV over buyers, CAC over
+    // orders, channels without a CAC that month sit out.
+    row.overall = computeOverallHealth(forOverall).qrr;
     return row;
   });
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="mb-4 flex items-center gap-1 text-sm font-semibold text-foreground">
-        QRR by month <InfoTip text="Each channel's Quality Revenue Ratio per month, using your current assumptions. Bars below the dashed line are under the target of 3." />
+        QRR by month <InfoTip text="Each channel's Quality Revenue Ratio per month, using your current assumptions. The dashed line is the blended Overall QRR for that month. Bars below the target line are under the target of 3." />
       </div>
       <div className="text-muted-foreground">
         <ResponsiveContainer width="100%" height={420}>
-          <BarChart data={data} margin={{top: 8, right: 16, bottom: 4, left: 0}} barGap={2} barCategoryGap="22%">
+          <ComposedChart data={data} margin={{top: 8, right: 16, bottom: 4, left: 0}} barGap={2} barCategoryGap="22%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
             <YAxis tickLine={false} axisLine={false} width={34} tick={{fill: 'currentColor', fontSize: 12}} />
@@ -480,7 +499,20 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
             {CHANNELS.map((c) => (
               <Bar key={c.key} dataKey={c.key} name={c.label} fill={CHANNEL_ACCENT[c.key]} radius={[3, 3, 0, 0]} maxBarSize={40} />
             ))}
-          </BarChart>
+            {/* Blended QRR rides over the bars — neutral ink so it reads as a
+                summary of the channels rather than another channel. */}
+            <Line
+              type="monotone"
+              dataKey="overall"
+              name="Overall"
+              stroke="var(--foreground)"
+              strokeWidth={2.25}
+              strokeDasharray="7 4"
+              connectNulls
+              dot={{r: 4, fill: 'var(--foreground)', stroke: 'var(--card)', strokeWidth: 2}}
+              activeDot={{r: 6, fill: 'var(--foreground)', stroke: 'var(--card)', strokeWidth: 2}}
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </div>
@@ -763,7 +795,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
         {view === 'trend' ? (
           <p>
-            <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">dashed line</strong> is the target of {snapshot.target}. Bars below it are under target. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website appears once you set an Acq. cost. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
+            <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">horizontal dashed line</strong> is the target of {snapshot.target}, and bars below it are under target. The <strong className="text-foreground">dark dotted line with markers</strong> is the <strong className="text-foreground">Overall QRR</strong> for each month — the same blend as the header pill (LTV pooled over buyers, CAC over orders), so a month where a channel had no acquisition cost leaves that channel out of the blend. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website appears once you set an Acq. cost. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
           </p>
         ) : view === 'heatmap' ? (
           <p>
