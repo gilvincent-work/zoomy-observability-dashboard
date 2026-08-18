@@ -344,9 +344,6 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <p className="mt-3 text-xs leading-relaxed text-foreground/60">
-        Uses your current assumptions (promos &amp; acq. cost are spread across months by order volume). Shopee starts in March (ads began then, so earlier months have no CAC to divide by). Website appears once you set an Acq. cost.
-      </p>
     </div>
   );
 }
@@ -363,7 +360,6 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
     `rounded-md px-3 py-1 text-sm font-semibold transition-colors ${active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`;
   const matrix = snapshot.cohorts?.[ch];
   const rows = (matrix?.rows ?? []).filter((r) => r.size > 0);
-  const nCols = matrix?.months.length ?? 0;
   const rgb = hexToRgb(CHANNEL_ACCENT[ch]);
   const cell = (v: number) => ({background: `rgba(${rgb},${(0.08 + 0.85 * v).toFixed(3)})`, color: v > 0.5 ? '#fff' : undefined});
 
@@ -390,33 +386,36 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
               <tr className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <th className="px-2 py-1 text-left">Cohort</th>
                 <th className="px-2 py-1 text-right">Buyers</th>
-                {Array.from({length: nCols}, (_, k) => (
-                  <th key={k} className="px-2 py-1 text-center" title={`${k} month${k === 1 ? '' : 's'} after first purchase`}>M{k}</th>
+                {(matrix?.months ?? []).map((m) => (
+                  <th key={m} className="px-2 py-1 text-center">{shortMonth(m)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.cohort}>
-                  <td className="whitespace-nowrap px-2 py-1 font-semibold text-foreground">{shortMonth(r.cohort)} ’{r.cohort.slice(2, 4)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">{r.size.toLocaleString()}</td>
-                  {Array.from({length: nCols}, (_, k) => {
-                    if (k >= r.retention.length) return <td key={k} className="px-2 py-1" />;
-                    const v = r.retention[k];
-                    const active = Math.round(v * r.size);
-                    return (
-                      <td
-                        key={k}
-                        className="rounded-md px-2 py-1.5 text-center text-[13px] font-semibold tabular-nums"
-                        style={cell(v)}
-                        title={`${shortMonth(r.cohort)} cohort · M${k}: ${Math.round(v * 100)}% retained (${active} of ${r.size})`}
-                      >
-                        {Math.round(v * 100)}%
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const ci = (matrix?.months ?? []).indexOf(r.cohort);
+                return (
+                  <tr key={r.cohort}>
+                    <td className="whitespace-nowrap px-2 py-1 font-semibold text-foreground">{shortMonth(r.cohort)} ’{r.cohort.slice(2, 4)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">{r.size.toLocaleString()}</td>
+                    {(matrix?.months ?? []).map((m, mj) => {
+                      if (mj < ci) return <td key={m} className="px-2 py-1" />; // before this cohort existed
+                      const v = r.retention[mj - ci];
+                      const active = Math.round(v * r.size);
+                      return (
+                        <td
+                          key={m}
+                          className="rounded-md px-2 py-1.5 text-center text-[13px] font-semibold tabular-nums"
+                          style={cell(v)}
+                          title={`${shortMonth(r.cohort)} cohort in ${shortMonth(m)}: ${Math.round(v * 100)}% retained (${active} of ${r.size})`}
+                        >
+                          {Math.round(v * 100)}%
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -432,7 +431,7 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           ))}
         </span>
         <span className="text-[11px]">100%</span>
-        <span className="ml-3">M0 is the acquisition month (always 100%); later columns show the monthly repeat rate.</span>
+        <span className="ml-3">A cohort’s own month is 100%; cells to the right are later months’ repeat rates.</span>
       </div>
     </div>
   );
@@ -535,9 +534,19 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       )}
 
       <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
-        <p>
-          Each channel stands alone (no blending). <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads — enter an Acq. cost to give it a CAC. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
-        </p>
+        {view === 'trend' ? (
+          <p>
+            <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">dashed line</strong> is the target of {snapshot.target}. Bars below it are under target. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website appears once you set an Acq. cost. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
+          </p>
+        ) : view === 'heatmap' ? (
+          <p>
+            <strong className="text-foreground">Cohort Retention</strong> groups buyers by the month of their <strong className="text-foreground">first purchase</strong> (each row). Reading left→right, a cell is the <strong className="text-foreground">% of that cohort who ordered again</strong> in that later month — a cohort’s own month is always 100%, and <strong className="text-foreground">darker cells mean more customers came back</strong>. Use the selector to switch channels (buyers aren’t deduped across channels). This is the repeat-purchase behaviour that drives the Repeat factor in LTV — strong retention lifts QRR. Website cohorts start in April (CRM history). Trailing window {snapshot.window.label}.
+          </p>
+        ) : (
+          <p>
+            Each channel stands alone (no blending). <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads — enter an Acq. cost to give it a CAC. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
+          </p>
+        )}
       </footer>
     </div>
   );
