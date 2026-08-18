@@ -37,6 +37,13 @@ export interface BusinessHealthSnapshot {
   monthly?: MonthlyPoint[];
   computedAt: string;
 }
+// The measured values a user can override to model a target scenario.
+export interface ChannelActuals {
+  aov: number;
+  orders: number;
+  buyers: number;
+  roas: number | null; // null = no ads (Website)
+}
 export interface ChannelHealth {
   aov: number;
   repeat: number;
