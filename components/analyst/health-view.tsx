@@ -405,11 +405,11 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
                       return (
                         <td
                           key={m}
-                          className="rounded-md px-2 py-1.5 text-center text-[13px] font-semibold tabular-nums"
+                          className="whitespace-nowrap rounded-md px-2 py-1.5 text-center text-[13px] font-semibold tabular-nums"
                           style={cell(v)}
-                          title={`${shortMonth(r.cohort)} cohort in ${shortMonth(m)}: ${Math.round(v * 100)}% retained (${active} of ${r.size})`}
+                          title={`${shortMonth(r.cohort)} cohort in ${shortMonth(m)}: ${active} of ${r.size} retained (${Math.round(v * 100)}%)`}
                         >
-                          {Math.round(v * 100)}%
+                          {active} ({Math.round(v * 100)}%)
                         </td>
                       );
                     })}
