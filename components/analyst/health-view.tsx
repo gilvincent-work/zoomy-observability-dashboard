@@ -354,6 +354,28 @@ const hexToRgb = (hex: string) => {
   return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function MixTooltip({active, payload, label}: any) {
+  if (!active || !payload?.length) return null;
+  const total = payload.reduce((s: number, p: {value: number}) => s + (p.value || 0), 0);
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <div className="mb-1 font-semibold text-foreground">{label}</div>
+      {payload.slice().reverse().map((p: {dataKey: string; name: string; value: number; color: string}) => (
+        <div key={p.dataKey} className="flex items-center gap-2">
+          <span className="size-2 rounded-full" style={{background: p.color}} />
+          <span className="text-muted-foreground">{p.name}</span>
+          <span className="ml-auto font-semibold tabular-nums text-foreground">{p.value}</span>
+        </div>
+      ))}
+      <div className="mt-1 flex items-center gap-2 border-t border-border pt-1">
+        <span className="text-muted-foreground">Total buyers</span>
+        <span className="ml-auto font-bold tabular-nums text-foreground">{total}</span>
+      </div>
+    </div>
+  );
+}
+
 function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const [ch, setCh] = useState<'shopee' | 'lazada' | 'website'>('shopee');
   const seg = (active: boolean) =>
@@ -362,8 +384,11 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const rows = (matrix?.rows ?? []).filter((r) => r.size > 0);
   const rgb = hexToRgb(CHANNEL_ACCENT[ch]);
   const cell = (v: number) => ({background: `rgba(${rgb},${(0.08 + 0.85 * v).toFixed(3)})`, color: v > 0.5 ? '#fff' : undefined});
+  const mixData = (snapshot.buyerMix?.[ch] ?? []).map((m) => ({label: shortMonth(m.month), newBuyers: m.newBuyers, returning: m.returning}));
+  const hasMix = mixData.some((m) => m.newBuyers + m.returning > 0);
 
   return (
+    <div className="space-y-5">
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 text-sm font-semibold text-foreground">
@@ -433,6 +458,30 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
         <span className="text-[11px]">100%</span>
         <span className="ml-3">A cohort’s own month is 100%; cells to the right are later months’ repeat rates.</span>
       </div>
+    </div>
+
+    {/* New vs Returning buyers — follows the same channel selector */}
+    {hasMix && (
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center gap-1 text-sm font-semibold text-foreground">
+          New vs Returning Buyers · {CHANNEL_LABEL[ch]}
+          <InfoTip text="Distinct buyers each month, split into New (first-ever purchase that month) and Returning (also ordered in an earlier month). The full bar is the buyers active that month." />
+        </div>
+        <div className="text-muted-foreground">
+          <ResponsiveContainer width="100%" height={340}>
+            <BarChart data={mixData} margin={{top: 8, right: 16, bottom: 4, left: 0}} barCategoryGap="28%">
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
+              <YAxis tickLine={false} axisLine={false} width={34} tick={{fill: 'currentColor', fontSize: 12}} allowDecimals={false} />
+              <Tooltip cursor={{fill: 'currentColor', fillOpacity: 0.05}} content={<MixTooltip />} />
+              <Legend wrapperStyle={{fontSize: 13, paddingTop: 8}} iconType="circle" />
+              <Bar dataKey="returning" name="Returning" stackId="mix" fill={`rgba(${rgb},0.4)`} maxBarSize={56} />
+              <Bar dataKey="newBuyers" name="New" stackId="mix" fill={CHANNEL_ACCENT[ch]} radius={[3, 3, 0, 0]} maxBarSize={56} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    )}
     </div>
   );
 }
