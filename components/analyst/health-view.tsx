@@ -388,19 +388,22 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const hasMix = mixData.some((m) => m.newBuyers + m.returning > 0);
 
   return (
-    <div className="space-y-5">
-    <div className="rounded-2xl border border-border bg-card p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1 text-sm font-semibold text-foreground">
-          Cohort Retention
-          <InfoTip text="Each row is a cohort — buyers whose FIRST purchase was that month. Each column M0, M1… is months later. A cell is the % of that cohort who ordered again that month (M0 = 100%). Darker = more retained." />
-        </div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="mr-auto text-sm font-semibold text-foreground">Retention &amp; buyer mix · counts distinct buyers (unique customers, not orders)</span>
         <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
           {CHANNELS.map((c) => (
             <button key={c.key} onClick={() => setCh(c.key)} className={seg(ch === c.key)}>{c.label}</button>
           ))}
         </div>
       </div>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <div className="mb-0.5 flex items-center gap-1 text-sm font-semibold text-foreground">
+          Cohort Retention · {CHANNEL_LABEL[ch]}
+          <InfoTip text="Each row is a cohort — buyers whose FIRST purchase was that month. Reading across, a cell is the % of that cohort's BUYERS who ordered again in that later month (own month = 100%). Distinct buyers, not orders." />
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">% of each month’s new buyers who came back in later months.</p>
 
       {rows.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">No cohort data for {CHANNEL_LABEL[ch]} in this window.</p>
@@ -460,28 +463,30 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       </div>
     </div>
 
-    {/* New vs Returning buyers — follows the same channel selector */}
-    {hasMix && (
-      <div className="rounded-2xl border border-border bg-card p-5">
-        <div className="mb-4 flex items-center gap-1 text-sm font-semibold text-foreground">
-          New vs Returning Buyers · {CHANNEL_LABEL[ch]}
-          <InfoTip text="Distinct buyers each month, split into New (first-ever purchase that month) and Returning (also ordered in an earlier month). The full bar is the buyers active that month." />
+      {/* New vs Returning buyers — follows the same channel selector */}
+      {hasMix && (
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="mb-0.5 flex items-center gap-1 text-sm font-semibold text-foreground">
+            New vs Returning Buyers · {CHANNEL_LABEL[ch]}
+            <InfoTip text="Distinct buyers each month, split into New (first-ever purchase that month) and Returning (also bought in an earlier month). The full bar is the unique buyers active that month — not order count." />
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">Unique buyers per month (not orders) — new vs returning.</p>
+          <div className="text-muted-foreground">
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={mixData} margin={{top: 8, right: 12, bottom: 4, left: 0}} barCategoryGap="26%">
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
+                <YAxis tickLine={false} axisLine={false} width={30} tick={{fill: 'currentColor', fontSize: 12}} allowDecimals={false} />
+                <Tooltip cursor={{fill: 'currentColor', fillOpacity: 0.05}} content={<MixTooltip />} />
+                <Legend wrapperStyle={{fontSize: 13, paddingTop: 6}} iconType="circle" />
+                <Bar dataKey="returning" name="Returning" stackId="mix" fill={`rgba(${rgb},0.4)`} maxBarSize={52} />
+                <Bar dataKey="newBuyers" name="New" stackId="mix" fill={CHANNEL_ACCENT[ch]} radius={[3, 3, 0, 0]} maxBarSize={52} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div className="text-muted-foreground">
-          <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={mixData} margin={{top: 8, right: 16, bottom: 4, left: 0}} barCategoryGap="28%">
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
-              <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
-              <YAxis tickLine={false} axisLine={false} width={34} tick={{fill: 'currentColor', fontSize: 12}} allowDecimals={false} />
-              <Tooltip cursor={{fill: 'currentColor', fillOpacity: 0.05}} content={<MixTooltip />} />
-              <Legend wrapperStyle={{fontSize: 13, paddingTop: 8}} iconType="circle" />
-              <Bar dataKey="returning" name="Returning" stackId="mix" fill={`rgba(${rgb},0.4)`} maxBarSize={56} />
-              <Bar dataKey="newBuyers" name="New" stackId="mix" fill={CHANNEL_ACCENT[ch]} radius={[3, 3, 0, 0]} maxBarSize={56} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      )}
       </div>
-    )}
     </div>
   );
 }
