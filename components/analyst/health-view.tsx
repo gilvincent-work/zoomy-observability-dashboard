@@ -2,8 +2,8 @@
 
 import {useEffect, useRef, useState} from 'react';
 import {Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
-import type {BusinessHealthSnapshot, ChannelFacts, Knobs} from '@/src/health-types';
-import {computeChannelHealth} from '@/src/health-compute';
+import type {BusinessHealthSnapshot, ChannelActuals, ChannelFacts, Knobs} from '@/src/health-types';
+import {computeChannelHealth, computeHealth, factsToActuals} from '@/src/health-compute';
 import {HEALTH_HINTS} from './health-hints';
 import {InfoTip} from './info-tip';
 
@@ -25,6 +25,10 @@ const FIELD_HELP: Record<string, string> = {
   platformFee: 'Platform Fee — the marketplace’s cut, as a % of revenue.',
   promos: 'Promos — total ₱ spent on discounts & bundles this window.',
   acqCost: 'Acq. cost — total ₱ spent acquiring website customers (organic/ops).',
+  aov: 'AOV — average order value (measured). Edit to model a target.',
+  orders: 'Orders (measured). Edit to model a target scenario.',
+  buyers: 'Distinct buyers (measured). Edit to model a target scenario.',
+  roas: 'ROAS — return on ad spend (measured). Edit to model a target.',
 };
 
 /** A bold, highlighted section label (QRR / LTV / CAC). */
@@ -60,16 +64,34 @@ function Pop({value, className, children}: {value: number | string | null; class
   );
 }
 
-/** Orders ÷ Distinct-buyers shown as a stacked fraction (the repeat rate). */
-function Fraction({num, den, hint}: {num: string; den: string; hint?: string}) {
+/** An editable MEASURED value (AOV / Orders / Buyers / ROAS) — dashed neutral
+ *  outline to distinguish it from the solid-accent assumption chips. Turns amber
+ *  when overridden away from the measured actual, signalling a hypothetical. */
+function ActualField({initial, baseline, onChange, prefix, suffix, helpKey, setHelp}: {
+  initial: string; baseline: number; onChange: (n: number) => void; prefix?: string; suffix?: string; helpKey: string; setHelp: (s: string | null) => void;
+}) {
+  const [text, setText] = useState(initial);
+  const changed = (parseFloat(text) || 0) !== baseline;
   return (
-    <span className="inline-flex items-center gap-1 align-middle">
-      <span className="inline-flex flex-col items-center leading-tight">
-        <span className="px-1 text-[12.5px] font-semibold tabular-nums text-foreground">{num}</span>
-        <span className="my-0.5 h-px w-full bg-foreground/40" />
-        <span className="px-1 text-[12.5px] font-semibold tabular-nums text-foreground">{den}</span>
-      </span>
-      {hint && <InfoTip text={hint} />}
+    <span className={`inline-flex items-center gap-0.5 rounded-md border border-dashed px-1.5 py-0.5 align-middle transition-colors ${changed ? 'border-amber-500 bg-amber-500/[0.07]' : 'border-foreground/30 bg-background hover:border-foreground/55'}`}>
+      {prefix && <span className="text-[13px] text-muted-foreground">{prefix}</span>}
+      <input
+        type="text"
+        inputMode="decimal"
+        value={text}
+        onFocus={() => setHelp(FIELD_HELP[helpKey] ?? null)}
+        onBlur={() => setHelp(null)}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (!/^\d*\.?\d*$/.test(v)) return;
+          setText(v);
+          const n = parseFloat(v);
+          onChange(Number.isFinite(n) ? n : 0);
+        }}
+        style={{width: `${Math.max(2, text.length + 1)}ch`}}
+        className={`bg-transparent text-center text-[15px] font-bold tabular-nums outline-none transition-[width] duration-150 ease-out ${changed ? 'text-amber-700 dark:text-amber-400' : 'text-foreground'}`}
+      />
+      {suffix && <span className="text-[13px] text-muted-foreground">{suffix}</span>}
     </span>
   );
 }
@@ -121,8 +143,12 @@ function Knob({label, helpKey, initial, suffix, accent, disabled, onChange, setH
 
 const op = (s: string) => <span className="mx-1.5 font-medium text-foreground/45">{s}</span>;
 
-function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFacts; knobs: Knobs; target: number; nonce: number; onChange: (k: Knobs) => void}) {
-  const h = computeChannelHealth(facts, knobs);
+function ChannelCard({facts, actuals, knobs, target, nonce, onActual, onKnob}: {
+  facts: ChannelFacts; actuals: ChannelActuals; knobs: Knobs; target: number; nonce: number;
+  onActual: (a: ChannelActuals) => void; onKnob: (k: Knobs) => void;
+}) {
+  const base = factsToActuals(facts); // measured baselines (for the overridden highlight)
+  const h = computeHealth(actuals, knobs);
   const accent = CHANNEL_ACCENT[facts.channel];
   const [help, setHelp] = useState<string | null>(null);
   const naQrr = h.qrr == null;
@@ -160,9 +186,18 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
             <SectionLabel hint={HEALTH_HINTS.ltv}>LTV</SectionLabel>
             <Pop value={h.ltv} className="text-[22px] font-bold tabular-nums text-foreground">{peso(h.ltv)}</Pop>
           </div>
-          <div className="mt-2.5 flex flex-wrap items-center text-[15px] text-foreground/85">
-            <span className="text-foreground/60">AOV</span>&nbsp;<Val hint={HEALTH_HINTS.aov}>{peso(h.aov)}</Val>
-            {op('×')}<Fraction num={`${facts.orders.toLocaleString()} orders`} den={`${facts.buyers.toLocaleString()} buyers`} hint={HEALTH_HINTS.repeat} />
+          <div className="mt-2.5 flex flex-wrap items-center gap-y-2 text-[15px] text-foreground/85">
+            <span className="text-foreground/60">AOV</span>&nbsp;
+            <ActualField prefix="₱" initial={String(actuals.aov)} baseline={base.aov} helpKey="aov" setHelp={setHelp} onChange={(n) => onActual({...actuals, aov: n})} />
+            {op('×')}
+            <span className="inline-flex items-center gap-1 align-middle">
+              <span className="inline-flex flex-col items-center gap-1">
+                <ActualField suffix="orders" initial={String(actuals.orders)} baseline={base.orders} helpKey="orders" setHelp={setHelp} onChange={(n) => onActual({...actuals, orders: n})} />
+                <span className="h-px w-full bg-foreground/40" />
+                <ActualField suffix="buyers" initial={String(actuals.buyers)} baseline={base.buyers} helpKey="buyers" setHelp={setHelp} onChange={(n) => onActual({...actuals, buyers: n})} />
+              </span>
+              <InfoTip text={HEALTH_HINTS.repeat} />
+            </span>
             {op('×')}<span className="text-foreground/60">Margin</span>&nbsp;
             <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-foreground">
               <Pop value={h.margin}>{pct(h.margin)}</Pop>
@@ -172,9 +207,9 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
             <span className="text-foreground/60">Margin{op('=')}1</span>
             {op('−')}
-            <Knob label="COGS" helpKey="cogs" initial={String(Math.round(knobs.cogsPct * 100))} suffix="%" accent={accent} setHelp={setHelp} onChange={(n) => onChange({...knobs, cogsPct: n / 100})} />
+            <Knob label="COGS" helpKey="cogs" initial={String(Math.round(knobs.cogsPct * 100))} suffix="%" accent={accent} setHelp={setHelp} onChange={(n) => onKnob({...knobs, cogsPct: n / 100})} />
             {op('−')}
-            <Knob label="Platform Fee" helpKey="platformFee" initial={String(Math.round(knobs.platformFeePct * 100))} suffix="%" accent={accent} disabled={!facts.platformFeeApplies} setHelp={setHelp} onChange={(n) => onChange({...knobs, platformFeePct: n / 100})} />
+            <Knob label="Platform Fee" helpKey="platformFee" initial={String(Math.round(knobs.platformFeePct * 100))} suffix="%" accent={accent} disabled={!facts.platformFeeApplies} setHelp={setHelp} onChange={(n) => onKnob({...knobs, platformFeePct: n / 100})} />
           </div>
         </div>
 
@@ -186,16 +221,18 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
             {h.roas != null ? (
-              <span className="inline-flex items-center">
-                <span className="text-foreground/60">(AOV</span>&nbsp;<Val>{peso(h.aov)}</Val>{op('÷')}<span className="text-foreground/60">ROAS</span>&nbsp;<Val hint={HEALTH_HINTS.roas}>{h.roas}×</Val><span className="text-foreground/60">)</span>
+              <span className="inline-flex items-center gap-1">
+                <span className="text-foreground/60">(AOV</span>&nbsp;<Val>{peso(h.aov)}</Val>{op('÷')}<span className="text-foreground/60">ROAS</span>
+                <ActualField suffix="×" initial={String(actuals.roas ?? '')} baseline={base.roas ?? 0} helpKey="roas" setHelp={setHelp} onChange={(n) => onActual({...actuals, roas: n})} />
+                <span className="text-foreground/60">)</span>
               </span>
             ) : (
-              <Knob label="Acq. cost" helpKey="acqCost" initial={String(knobs.acqCost)} suffix="₱" accent={accent} setHelp={setHelp} onChange={(n) => onChange({...knobs, acqCost: n})} />
+              <Knob label="Acq. cost" helpKey="acqCost" initial={String(knobs.acqCost)} suffix="₱" accent={accent} setHelp={setHelp} onChange={(n) => onKnob({...knobs, acqCost: n})} />
             )}
-            {h.roas == null && <span className="inline-flex items-center gap-1 text-foreground/60">÷ {facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.perOrder} /></span>}
+            {h.roas == null && <span className="inline-flex items-center gap-1 text-foreground/60">÷ {actuals.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.perOrder} /></span>}
             {op('+')}
-            <Knob label="Promos" helpKey="promos" initial={String(knobs.promos)} suffix="₱" accent={accent} setHelp={setHelp} onChange={(n) => onChange({...knobs, promos: n})} />
-            <span className="inline-flex items-center gap-1 text-foreground/60">÷ {facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.perOrder} /></span>
+            <Knob label="Promos" helpKey="promos" initial={String(knobs.promos)} suffix="₱" accent={accent} setHelp={setHelp} onChange={(n) => onKnob({...knobs, promos: n})} />
+            <span className="inline-flex items-center gap-1 text-foreground/60">÷ {actuals.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.perOrder} /></span>
           </div>
           <div className="mt-3 text-sm text-foreground/60">
             = {peso2(h.marketingPerOrder)}/order {h.roas != null ? 'marketing' : 'acquisition'} + {peso2(h.promosPerOrder)}/order promo
@@ -212,9 +249,10 @@ function ChannelCard({facts, knobs, target, nonce, onChange}: {facts: ChannelFac
           {help ?? 'placeholder'}
         </div>
 
-        {/* Facts footer */}
+        {/* Measured-data footer (source of truth for the editable fields above) */}
         <div className="mt-auto border-t border-border pt-3.5">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-foreground/70">
+            <span className="text-foreground/45">Measured</span>
             <span className="inline-flex items-center gap-1">{facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.orders} /></span>
             <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
             <span>{peso(facts.revenue)} revenue</span>
@@ -319,12 +357,15 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
         } as Knobs,
       ]),
     );
+  const actualDefaults = () => Object.fromEntries(snapshot.perChannel.map((c) => [c.channel, factsToActuals(c)]));
   const [knobs, setKnobs] = useState<Record<string, Knobs>>(defaults);
+  const [actuals, setActuals] = useState<Record<string, ChannelActuals>>(actualDefaults);
   const [nonce, setNonce] = useState(0);
   const [view, setView] = useState<'cards' | 'trend'>('cards');
   const hasMonthly = (snapshot.monthly?.length ?? 0) > 0;
   const reset = () => {
     setKnobs(defaults());
+    setActuals(actualDefaults());
     setNonce((n) => n + 1);
   };
   const seg = (active: boolean) =>
@@ -351,24 +392,47 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
             </div>
           )}
           <button onClick={reset} className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground/70 transition-colors hover:border-foreground/25 hover:text-foreground">
-            Reset assumptions
+            Reset all
           </button>
         </div>
       </header>
+
+      {view === 'cards' && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-foreground/70">
+          <span className="font-semibold uppercase tracking-wide text-foreground/50">Every field is editable — model a target:</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block size-3.5 rounded border-2" style={{borderColor: '#2F6BD4'}} />
+            Cost assumptions (COGS, Platform Fee, Promos, Acq. cost)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block size-3.5 rounded border border-dashed border-foreground/45" />
+            Actuals — AOV, orders, buyers, ROAS (amber when overridden)
+          </span>
+        </div>
+      )}
 
       {view === 'trend' && hasMonthly ? (
         <TrendView snapshot={snapshot} knobs={knobs} />
       ) : (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           {snapshot.perChannel.map((c) => (
-            <ChannelCard key={`${c.channel}-${nonce}`} facts={c} knobs={knobs[c.channel]} target={snapshot.target} nonce={nonce} onChange={(k) => setKnobs((prev) => ({...prev, [c.channel]: k}))} />
+            <ChannelCard
+              key={`${c.channel}-${nonce}`}
+              facts={c}
+              actuals={actuals[c.channel]}
+              knobs={knobs[c.channel]}
+              target={snapshot.target}
+              nonce={nonce}
+              onActual={(a) => setActuals((prev) => ({...prev, [c.channel]: a}))}
+              onKnob={(k) => setKnobs((prev) => ({...prev, [c.channel]: k}))}
+            />
           ))}
         </div>
       )}
 
       <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
         <p>
-          Each channel stands alone (no blending). The <strong className="text-foreground">outlined</strong> fields — COGS%, Platform Fee%, Promos, and (for Website) Acq. cost — are editable; everything else is measured from your data. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ad data, so enter an Acq. cost (organic/ops spend) to give it a real CAC. Edits reset on reload. Shopee ads cover Mar–Jul. Trailing window {snapshot.window.label}.
+          Each channel stands alone (no blending). <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads — enter an Acq. cost to give it a CAC. “Measured” under each card is the source data; “Reset all” restores it. Edits reset on reload. Trailing window {snapshot.window.label}.
         </p>
       </footer>
     </div>
