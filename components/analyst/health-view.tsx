@@ -143,9 +143,9 @@ function Knob({label, helpKey, initial, suffix, accent, disabled, onChange, setH
 
 const op = (s: string) => <span className="mx-1.5 font-medium text-foreground/45">{s}</span>;
 
-function ChannelCard({facts, actuals, knobs, target, nonce, onActual, onKnob}: {
+function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onActual, onKnob}: {
   facts: ChannelFacts; actuals: ChannelActuals; knobs: Knobs; target: number; nonce: number;
-  onActual: (a: ChannelActuals) => void; onKnob: (k: Knobs) => void;
+  dirty: boolean; onReset: () => void; onActual: (a: ChannelActuals) => void; onKnob: (k: Knobs) => void;
 }) {
   const base = factsToActuals(facts); // measured baselines (for the overridden highlight)
   const h = computeHealth(actuals, knobs);
@@ -163,6 +163,14 @@ function ChannelCard({facts, actuals, knobs, target, nonce, onActual, onKnob}: {
         <div className="flex items-center gap-2 text-base font-bold text-foreground">
           <span className="size-3 rounded-full" style={{backgroundColor: accent}} />
           {CHANNEL_LABEL[facts.channel]} <InfoTip text={HEALTH_HINTS[`ch_${facts.channel}`]} />
+          {dirty && (
+            <button
+              onClick={onReset}
+              className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700 shadow-sm transition-colors hover:bg-amber-500/25 dark:text-amber-300"
+            >
+              <span className="text-[13px] leading-none">↺</span> Reset
+            </button>
+          )}
         </div>
 
         {/* QRR hero */}
@@ -360,13 +368,18 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const actualDefaults = () => Object.fromEntries(snapshot.perChannel.map((c) => [c.channel, factsToActuals(c)]));
   const [knobs, setKnobs] = useState<Record<string, Knobs>>(defaults);
   const [actuals, setActuals] = useState<Record<string, ChannelActuals>>(actualDefaults);
-  const [nonce, setNonce] = useState(0);
+  const [nonces, setNonces] = useState<Record<string, number>>({});
   const [view, setView] = useState<'cards' | 'trend'>('cards');
   const hasMonthly = (snapshot.monthly?.length ?? 0) > 0;
-  const reset = () => {
-    setKnobs(defaults());
-    setActuals(actualDefaults());
-    setNonce((n) => n + 1);
+
+  const baseKnobs = defaults();
+  const baseActuals = actualDefaults();
+  const isDirty = (ch: string) =>
+    JSON.stringify(actuals[ch]) !== JSON.stringify(baseActuals[ch]) || JSON.stringify(knobs[ch]) !== JSON.stringify(baseKnobs[ch]);
+  const resetChannel = (ch: string) => {
+    setActuals((prev) => ({...prev, [ch]: baseActuals[ch]}));
+    setKnobs((prev) => ({...prev, [ch]: baseKnobs[ch]}));
+    setNonces((prev) => ({...prev, [ch]: (prev[ch] ?? 0) + 1})); // remount that card's inputs
   };
   const seg = (active: boolean) =>
     `rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`;
@@ -391,9 +404,6 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
               <button onClick={() => setView('trend')} className={seg(view === 'trend')}>Trend</button>
             </div>
           )}
-          <button onClick={reset} className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground/70 transition-colors hover:border-foreground/25 hover:text-foreground">
-            Reset all
-          </button>
         </div>
       </header>
 
@@ -417,12 +427,14 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           {snapshot.perChannel.map((c) => (
             <ChannelCard
-              key={`${c.channel}-${nonce}`}
+              key={`${c.channel}-${nonces[c.channel] ?? 0}`}
               facts={c}
               actuals={actuals[c.channel]}
               knobs={knobs[c.channel]}
               target={snapshot.target}
-              nonce={nonce}
+              nonce={nonces[c.channel] ?? 0}
+              dirty={isDirty(c.channel)}
+              onReset={() => resetChannel(c.channel)}
               onActual={(a) => setActuals((prev) => ({...prev, [c.channel]: a}))}
               onKnob={(k) => setKnobs((prev) => ({...prev, [c.channel]: k}))}
             />
@@ -432,7 +444,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
 
       <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
         <p>
-          Each channel stands alone (no blending). <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads — enter an Acq. cost to give it a CAC. “Measured” under each card is the source data; “Reset all” restores it. Edits reset on reload. Trailing window {snapshot.window.label}.
+          Each channel stands alone (no blending). <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads — enter an Acq. cost to give it a CAC. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
         </p>
       </footer>
     </div>
