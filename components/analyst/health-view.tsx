@@ -74,7 +74,7 @@ function ActualField({initial, baseline, onChange, prefix, suffix, helpKey, setH
   const [text, setText] = useState(initial);
   const changed = (parseFloat(text) || 0) !== baseline;
   return (
-    <span className={`inline-flex items-center gap-0.5 rounded-md border border-dashed px-1.5 py-0.5 align-middle transition-colors ${changed ? 'border-amber-500 bg-amber-500/[0.07]' : 'border-foreground/30 bg-background hover:border-foreground/55'}`}>
+    <span className={`inline-flex items-center gap-0.5 rounded-md border border-dashed px-1.5 py-0.5 align-middle transition-colors focus-within:ring-2 focus-within:ring-foreground/40 ${changed ? 'border-amber-500 bg-amber-500/[0.07]' : 'border-foreground/30 bg-background hover:border-foreground/55'}`}>
       {prefix && <span className="text-[13px] text-muted-foreground">{prefix}</span>}
       <input
         type="text"
@@ -116,7 +116,7 @@ function Knob({label, helpKey, initial, suffix, accent, disabled, onChange, setH
   const [text, setText] = useState(initial);
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-lg border-2 bg-background px-2 py-1 transition-colors ${disabled ? 'border-border opacity-60' : 'border-border focus-within:bg-background'}`}
+      className={`inline-flex items-center gap-1.5 rounded-lg border-2 bg-background px-2 py-1 transition-colors focus-within:ring-2 focus-within:ring-foreground/40 ${disabled ? 'border-border opacity-60' : 'border-border focus-within:bg-background'}`}
       style={disabled ? undefined : {borderColor: 'var(--knob-border)', ['--knob-border' as string]: accent + '55'}}
     >
       <span className="text-[10.5px] font-bold uppercase tracking-wide text-foreground/70">{label}</span>
@@ -144,6 +144,99 @@ function Knob({label, helpKey, initial, suffix, accent, disabled, onChange, setH
 
 const op = (s: string) => <span className="mx-1.5 font-medium text-foreground/45">{s}</span>;
 
+/** iOS-style segmented control: a single glass thumb slides between segments.
+ *  Arrow keys / Home / End move the selection (role=tablist), and the slide is
+ *  dropped entirely under prefers-reduced-motion. */
+function SegmentedControl<T extends string>({options, value, onChange, accentFor, ariaLabel}: {
+  options: {key: T; label: string}[];
+  value: T;
+  onChange: (v: T) => void;
+  accentFor?: (v: T) => string;
+  ariaLabel: string;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [thumb, setThumb] = useState<{x: number; w: number} | null>(null);
+  const [ready, setReady] = useState(false); // no slide-in from 0 on first paint
+
+  useEffect(() => {
+    const measure = () => {
+      const el = btnRefs.current[value];
+      if (!el) return;
+      setThumb({x: el.offsetLeft, w: el.offsetWidth});
+    };
+    measure();
+    const raf = requestAnimationFrame(() => setReady(true));
+    const ro = new ResizeObserver(measure);
+    if (wrapRef.current) ro.observe(wrapRef.current);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [value, options.length]);
+
+  const accent = accentFor ? accentFor(value) : '#059669';
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const i = options.findIndex((o) => o.key === value);
+    let n = -1;
+    if (e.key === 'ArrowRight') n = (i + 1) % options.length;
+    else if (e.key === 'ArrowLeft') n = (i - 1 + options.length) % options.length;
+    else if (e.key === 'Home') n = 0;
+    else if (e.key === 'End') n = options.length - 1;
+    if (n < 0) return;
+    e.preventDefault();
+    onChange(options[n].key);
+    btnRefs.current[options[n].key]?.focus();
+  };
+
+  return (
+    <div
+      ref={wrapRef}
+      role="tablist"
+      aria-label={ariaLabel}
+      onKeyDown={onKeyDown}
+      className="relative inline-flex rounded-xl border border-border bg-muted/50 p-1"
+    >
+      {thumb && (
+        <span
+          aria-hidden
+          className={`absolute inset-y-1 left-0 rounded-lg ${ready ? 'motion-safe:transition-[transform,width] motion-safe:duration-[380ms]' : ''}`}
+          style={{
+            transform: `translateX(${thumb.x}px)`,
+            width: thumb.w,
+            backgroundColor: accent,
+            // iOS segmented-control curve: settles with a slight overshoot.
+            transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.28), 0 1px 3px rgba(0,0,0,0.20)',
+            backdropFilter: 'blur(6px)',
+          }}
+        />
+      )}
+      {options.map((o) => {
+        const active = o.key === value;
+        return (
+          <button
+            key={o.key}
+            ref={(el) => {
+              btnRefs.current[o.key] = el;
+            }}
+            role="tab"
+            aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(o.key)}
+            className={`relative z-10 rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/45 focus-visible:ring-offset-1 focus-visible:ring-offset-background ${
+              active ? 'text-white' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The whole business as one number, beside the page title (Cards tab only). */
 function OverallQrrPill({channels, target}: {
   channels: {channel: string; actuals: ChannelActuals; knobs: Knobs}[]; target: number;
@@ -167,6 +260,13 @@ function OverallQrrPill({channels, target}: {
       <div className="mt-0.5 flex items-baseline gap-2">
         <Pop value={o.qrr} className="text-[30px] font-bold leading-none tabular-nums">{fmtQrr(o.qrr)}</Pop>
         <span className="text-xs font-medium text-muted-foreground">/ target {target}</span>
+      </div>
+      {/* Same progress-to-target read as the channel cards, so the two match. */}
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.09]">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${onTrack ? 'bg-emerald-500' : 'bg-amber-500'}`}
+          style={{width: na ? '0%' : `${Math.min(100, (o.qrr! / target) * 100)}%`}}
+        />
       </div>
       {!na && (
         <div className="mt-1.5 text-[11px] text-foreground/70">
@@ -206,7 +306,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
           {dirty && (
             <button
               onClick={onReset}
-              className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700 shadow-sm transition-colors hover:bg-amber-500/25 dark:text-amber-300"
+              className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700 shadow-sm transition-colors hover:bg-amber-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:text-amber-300"
             >
               <span className="text-[13px] leading-none">↺</span> Reset
             </button>
@@ -417,8 +517,6 @@ function MixTooltip({active, payload, label}: any) {
 
 function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const [ch, setCh] = useState<'shopee' | 'lazada' | 'website'>('shopee');
-  const seg = (active: boolean) =>
-    `rounded-md px-3 py-1 text-sm font-semibold transition-colors ${active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`;
   const matrix = snapshot.cohorts?.[ch];
   const rows = (matrix?.rows ?? []).filter((r) => r.size > 0);
   const rgb = hexToRgb(CHANNEL_ACCENT[ch]);
@@ -430,11 +528,15 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <span className="mr-auto text-sm font-semibold text-foreground">Retention &amp; buyer mix · counts distinct buyers (unique customers, not orders)</span>
-        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
-          {CHANNELS.map((c) => (
-            <button key={c.key} onClick={() => setCh(c.key)} className={seg(ch === c.key)}>{c.label}</button>
-          ))}
-        </div>
+        {/* Channel switcher carries each channel's own accent — the colour
+            vocabulary already used by the cards, bars and heatmap cells. */}
+        <SegmentedControl
+          ariaLabel="Channel"
+          options={CHANNELS.map((c) => ({key: c.key, label: c.label}))}
+          value={ch}
+          onChange={setCh}
+          accentFor={(k) => CHANNEL_ACCENT[k]}
+        />
       </div>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
       <div className="rounded-2xl border border-border bg-card p-5">
@@ -562,22 +664,48 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
     setKnobs((prev) => ({...prev, [ch]: baseKnobs[ch]}));
     setNonces((prev) => ({...prev, [ch]: (prev[ch] ?? 0) + 1})); // remount that card's inputs
   };
-  const seg = (active: boolean) =>
-    `rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`;
+  // Condense the header once the cards start scrolling under it. The scroll
+  // container is the shell's <main id="coop-scroll">, not the window.
+  const [condensed, setCondensed] = useState(false);
+  useEffect(() => {
+    const el = document.getElementById('coop-scroll');
+    if (!el) return;
+    const onScroll = () => setCondensed(el.scrollTop > 40);
+    onScroll();
+    el.addEventListener('scroll', onScroll, {passive: true});
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const views: {key: 'cards' | 'trend' | 'heatmap'; label: string}[] = [
+    {key: 'cards', label: 'Cards'},
+    ...(hasMonthly ? ([{key: 'trend', label: 'Trend'}] as const) : []),
+    ...(hasCohorts ? ([{key: 'heatmap', label: 'Heatmap'}] as const) : []),
+  ];
 
   return (
-    <div className="mx-auto max-w-[1560px] space-y-6 px-6 py-6">
+    <div className="mx-auto max-w-[1560px] space-y-6 px-6 pb-6">
       <style>{`@keyframes healthPop{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}.health-pop{animation:healthPop .4s ease-out}@media (prefers-reduced-motion: reduce){.health-pop{animation:none}}`}</style>
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
+      <header
+        className={`sticky top-0 z-20 -mx-6 flex flex-wrap items-end justify-between gap-3 border-b px-6 pb-4 transition-[padding,background-color,border-color] duration-300 ${
+          condensed ? 'border-border bg-background/85 pt-3 backdrop-blur-md' : 'border-border bg-background pt-6'
+        }`}
+      >
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
           <div>
-          <h1 className="text-[28px] font-bold tracking-tight text-foreground">Business Health</h1>
-          <p className="mt-1 text-sm text-foreground/65">Per-channel Quality Revenue Ratio</p>
-          <p className="mt-1.5 flex items-center gap-1.5 text-sm">
-            <span className="text-foreground/60">Reporting period</span>
-            <span className="rounded-md bg-foreground/[0.06] px-2 py-0.5 font-bold text-foreground">{fmtRange(snapshot.window.from, snapshot.window.to)}</span>
-            <InfoTip text={HEALTH_HINTS.window} />
-          </p>
+            <h1 className={`font-bold tracking-tight text-foreground transition-[font-size] duration-300 ${condensed ? 'text-[21px]' : 'text-[28px]'}`}>
+              Business Health
+            </h1>
+            {/* Subtitle + period collapse away on scroll so the pill and tabs stay put. */}
+            <div className={`grid transition-all duration-300 ${condensed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}>
+              <div className="overflow-hidden">
+                <p className="mt-1 text-sm text-foreground/65">Per-channel Quality Revenue Ratio</p>
+                <p className="mt-1.5 flex items-center gap-1.5 text-sm">
+                  <span className="text-foreground/60">Reporting period</span>
+                  <span className="rounded-md bg-foreground/[0.06] px-2 py-0.5 font-bold text-foreground">{fmtRange(snapshot.window.from, snapshot.window.to)}</span>
+                  <InfoTip text={HEALTH_HINTS.window} />
+                </p>
+              </div>
+            </div>
           </div>
           {view === 'cards' && (
             <OverallQrrPill
@@ -587,12 +715,8 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {(hasMonthly || hasCohorts) && (
-            <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
-              <button onClick={() => setView('cards')} className={seg(view === 'cards')}>Cards</button>
-              {hasMonthly && <button onClick={() => setView('trend')} className={seg(view === 'trend')}>Trend</button>}
-              {hasCohorts && <button onClick={() => setView('heatmap')} className={seg(view === 'heatmap')}>Heatmap</button>}
-            </div>
+          {views.length > 1 && (
+            <SegmentedControl ariaLabel="Health view" options={views} value={view} onChange={setView} />
           )}
         </div>
       </header>
@@ -611,6 +735,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
         </div>
       )}
 
+      <div role="tabpanel" aria-label={views.find((v) => v.key === view)?.label ?? 'Cards'}>
       {view === 'trend' && hasMonthly ? (
         <TrendView snapshot={snapshot} knobs={knobs} />
       ) : view === 'heatmap' && hasCohorts ? (
@@ -633,6 +758,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           ))}
         </div>
       )}
+      </div>
 
       <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
         {view === 'trend' ? (
