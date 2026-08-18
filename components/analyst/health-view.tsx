@@ -423,6 +423,36 @@ const CHANNELS = [
   {key: 'website' as const, label: 'Website'},
 ];
 
+/** Channels in card order, blend last with a dashed swatch that matches the
+ *  line — recharts' own legend would sort them and draw a circle. */
+function TrendLegend() {
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[13px] text-muted-foreground">
+      {CHANNELS.map((c) => (
+        <span key={c.key} className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full" style={{background: CHANNEL_ACCENT[c.key]}} />
+          {c.label}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+        <span className="h-0 w-4 border-t-2 border-dashed border-foreground" />
+        Overall
+      </span>
+    </div>
+  );
+}
+
+/** A tight y-axis: round the peak up to the next round step rather than letting
+ *  recharts pick a domain twice the data's height. Aims for 4–6 gridlines. */
+function niceScale(peak: number) {
+  const headroom = Math.max(peak, 0.5) * 1.02; // just enough to clear the tallest bar
+  const step = [0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 50, 100].find((s) => headroom / s <= 6) ?? 200;
+  const max = Math.ceil(headroom / step) * step;
+  const ticks: number[] = [];
+  for (let v = 0; v <= max + 1e-9; v += step) ticks.push(Math.round(v * 100) / 100);
+  return {max, ticks};
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function TrendTooltip({active, payload, label}: any) {
   if (!active || !payload?.length) return null;
@@ -482,6 +512,16 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
     return row;
   });
 
+  // Scale to the data (plus the target line, which must stay visible).
+  const peak = data.reduce((m, r) => {
+    for (const k of [...CHANNELS.map((c) => c.key), 'overall']) {
+      const v = r[k];
+      if (typeof v === 'number' && v > m) m = v;
+    }
+    return m;
+  }, snapshot.target);
+  const {max: yMax, ticks: yTicks} = niceScale(peak);
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="mb-4 flex items-center gap-1 text-sm font-semibold text-foreground">
@@ -492,9 +532,17 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
           <ComposedChart data={data} margin={{top: 8, right: 16, bottom: 4, left: 0}} barGap={2} barCategoryGap="22%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
-            <YAxis tickLine={false} axisLine={false} width={34} tick={{fill: 'currentColor', fontSize: 12}} />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              width={34}
+              tick={{fill: 'currentColor', fontSize: 12}}
+              domain={[0, yMax]}
+              ticks={yTicks}
+              allowDecimals
+            />
             <Tooltip cursor={{fill: 'currentColor', fillOpacity: 0.05}} content={<TrendTooltip />} />
-            <Legend wrapperStyle={{fontSize: 13, paddingTop: 8}} iconType="circle" />
+            <Legend content={<TrendLegend />} wrapperStyle={{paddingTop: 8}} />
             <ReferenceLine y={snapshot.target} stroke="currentColor" strokeOpacity={0.45} strokeDasharray="5 4" label={{value: `target ${snapshot.target}`, position: 'insideTopRight', fontSize: 11, fill: 'currentColor'}} />
             {CHANNELS.map((c) => (
               <Bar key={c.key} dataKey={c.key} name={c.label} fill={CHANNEL_ACCENT[c.key]} radius={[3, 3, 0, 0]} maxBarSize={40} />
@@ -506,11 +554,14 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
               dataKey="overall"
               name="Overall"
               stroke="var(--foreground)"
-              strokeWidth={2.25}
+              strokeWidth={2}
               strokeDasharray="7 4"
+              strokeLinecap="round"
               connectNulls
-              dot={{r: 4, fill: 'var(--foreground)', stroke: 'var(--card)', strokeWidth: 2}}
-              activeDot={{r: 6, fill: 'var(--foreground)', stroke: 'var(--card)', strokeWidth: 2}}
+              // Hollow markers: the card colour punches a clean disc out of
+              // whatever bar sits behind, so the ring stays crisp either way.
+              dot={{r: 3.5, fill: 'var(--card)', stroke: 'var(--foreground)', strokeWidth: 2}}
+              activeDot={{r: 5, fill: 'var(--foreground)', stroke: 'var(--card)', strokeWidth: 2.5}}
             />
           </ComposedChart>
         </ResponsiveContainer>
