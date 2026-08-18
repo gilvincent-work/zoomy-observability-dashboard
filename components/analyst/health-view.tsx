@@ -7,9 +7,10 @@ import {computeChannelHealth, computeHealth, factsToActuals} from '@/src/health-
 import {HEALTH_HINTS} from './health-hints';
 import {InfoTip} from './info-tip';
 
-const peso = (n: number) => '₱' + Math.round(n).toLocaleString();
 const peso2 = (n: number) => '₱' + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-const pct = (f: number) => `${Math.round(f * 100)}%`;
+// Percent with up to 2 decimals, trailing zeros trimmed (40% stays "40%",
+// 0.4167 → "41.67%") — so fractional COGS/Fee inputs aren't rounded away.
+const pct = (f: number) => `${(Math.round(f * 10000) / 100).toString()}%`;
 const fmtQrr = (q: number | null) => (q == null ? 'N/A' : q >= 100 ? q.toLocaleString(undefined, {maximumFractionDigits: 0}) : q.toFixed(2));
 const fmtRange = (from: string, to: string) => {
   const md = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
@@ -263,7 +264,7 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
             <span className="text-foreground/45">Measured</span>
             <span className="inline-flex items-center gap-1">{facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.orders} /></span>
             <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
-            <span>{peso(facts.revenue)} revenue</span>
+            <span>{peso2(facts.revenue)} revenue</span>
           </div>
           {facts.channel === 'website' && (
             <p className="mt-2 text-xs italic leading-snug text-foreground/55">
