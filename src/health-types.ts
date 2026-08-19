@@ -1,5 +1,5 @@
 // Mirror of the facts snapshot produced by zoomy-observability
-// (src/observability/business-health.js). The dashboard computes LTV/CAC/QRR from
+// (src/observability/business-health.js). The dashboard computes Contribution/CAC/QRR from
 // these facts + editable knobs (see health-compute.ts).
 export interface Knobs {
   cogsPct: number; // fraction, e.g. 0.35
@@ -60,19 +60,19 @@ export interface ChannelHealth {
   repeat: number;
   roas: number | null;
   margin: number;
-  ltv: number;
+  contribution: number; // gross margin per order = AOV × margin
   marketingPerOrder: number;
   promosPerOrder: number;
   cac: number;
   qrr: number | null; // null = N/A (no acquisition cost)
 }
-/** Portfolio QRR across the channels that have a CAC (see computeOverallHealth). */
+/** Volume-weighted pooled QRR across channels that have a CAC (computeOverallHealth). */
 export interface OverallHealth {
   qrr: number | null; // null = N/A (no channel has an acquisition cost)
-  ltv: number; // buyer-weighted LTV across included channels
+  contribution: number; // order-weighted contribution across included channels
   cac: number; // order-weighted CAC across included channels
-  profit: number; // Σ LTV × buyers over included channels
-  cost: number; // Σ CAC × orders over included channels
+  profit: number; // Σ contribution × orders — total gross margin
+  cost: number; // Σ CAC × orders — total marketing + promo spend
   included: string[];
   excluded: string[]; // channels sat out for having no CAC
 }

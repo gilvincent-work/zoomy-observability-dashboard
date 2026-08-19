@@ -32,7 +32,7 @@ const FIELD_HELP: Record<string, string> = {
   roas: 'ROAS — return on ad spend (measured). Edit to model a target.',
 };
 
-/** A bold, highlighted section label (QRR / LTV / CAC). */
+/** A bold, highlighted section label (QRR / Contribution / CAC). */
 function SectionLabel({children, hint}: {children: React.ReactNode; hint?: string}) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -270,7 +270,7 @@ function OverallQrrPill({channels, target}: {
       </div>
       {!na && (
         <div className="mt-1.5 text-[11px] text-foreground/70">
-          LTV <span className="font-semibold text-foreground">{peso2(o.ltv)}</span>{op('÷')}CAC{' '}
+          Contribution <span className="font-semibold text-foreground">{peso2(o.contribution)}</span>{op('÷')}CAC{' '}
           <span className="font-semibold text-foreground">{peso2(o.cac)}</span>
         </div>
       )}
@@ -324,28 +324,19 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
             <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{width: naQrr ? '0%' : `${Math.min(100, (h.qrr! / target) * 100)}%`}} />
           </div>
           <div className="mt-2.5 text-sm text-foreground/75">
-            LTV <span className="font-semibold text-foreground">{peso2(h.ltv)}</span>{op('÷')}CAC <span className="font-semibold text-foreground">{peso2(h.cac)}</span>{op('=')}<span className="font-bold text-foreground">{fmtQrr(h.qrr)}</span>
+            Contribution <span className="font-semibold text-foreground">{peso2(h.contribution)}</span>{op('÷')}CAC <span className="font-semibold text-foreground">{peso2(h.cac)}</span>{op('=')}<span className="font-bold text-foreground">{fmtQrr(h.qrr)}</span>
           </div>
         </div>
 
-        {/* LTV */}
+        {/* Contribution per order */}
         <div className="rounded-xl border border-border bg-muted/25 p-4">
           <div className="flex items-center justify-between">
-            <SectionLabel hint={HEALTH_HINTS.ltv}>LTV</SectionLabel>
-            <Pop value={h.ltv} className="text-[22px] font-bold tabular-nums text-foreground">{peso2(h.ltv)}</Pop>
+            <SectionLabel hint={HEALTH_HINTS.contribution}>Contribution / order</SectionLabel>
+            <Pop value={h.contribution} className="text-[22px] font-bold tabular-nums text-foreground">{peso2(h.contribution)}</Pop>
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-y-2 text-[15px] text-foreground/85">
             <span className="text-foreground/60">AOV</span>&nbsp;
             <ActualField prefix="₱" initial={String(actuals.aov)} baseline={base.aov} helpKey="aov" setHelp={setHelp} onChange={(n) => onActual({...actuals, aov: n})} />
-            {op('×')}
-            <span className="inline-flex items-center gap-1 align-middle">
-              <span className="inline-flex flex-col items-center gap-1">
-                <ActualField suffix="orders" initial={String(actuals.orders)} baseline={base.orders} helpKey="orders" setHelp={setHelp} onChange={(n) => onActual({...actuals, orders: n})} />
-                <span className="h-px w-full bg-foreground/40" />
-                <ActualField suffix="buyers" initial={String(actuals.buyers)} baseline={base.buyers} helpKey="buyers" setHelp={setHelp} onChange={(n) => onActual({...actuals, buyers: n})} />
-              </span>
-              <InfoTip text={HEALTH_HINTS.repeat} />
-            </span>
             {op('×')}<span className="text-foreground/60">Margin</span>&nbsp;
             <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-foreground">
               <Pop value={h.margin}>{pct(h.margin)}</Pop>
@@ -390,6 +381,25 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
               No acquisition cost yet — enter an Acq. cost or Promos to compute QRR.
             </div>
           )}
+        </div>
+
+        {/* Repeat rate — tracked, but deliberately outside the ratio. Orders
+            still drives CAC (and the blend's weighting), so both stay editable. */}
+        <div className="rounded-xl border border-dashed border-border bg-muted/15 p-4">
+          <div className="flex items-center justify-between">
+            <SectionLabel hint={HEALTH_HINTS.repeat}>Repeat rate</SectionLabel>
+            <Pop value={h.repeat} className="text-[22px] font-bold tabular-nums text-foreground">{h.repeat.toFixed(2)}×</Pop>
+          </div>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[15px] text-foreground/85">
+            <span className="inline-flex flex-col items-center gap-1">
+              <ActualField suffix="orders" initial={String(actuals.orders)} baseline={base.orders} helpKey="orders" setHelp={setHelp} onChange={(n) => onActual({...actuals, orders: n})} />
+              <span className="h-px w-full bg-foreground/40" />
+              <ActualField suffix="buyers" initial={String(actuals.buyers)} baseline={base.buyers} helpKey="buyers" setHelp={setHelp} onChange={(n) => onActual({...actuals, buyers: n})} />
+            </span>
+            <span className="text-[13px] leading-snug text-foreground/55">
+              Orders per buyer. A separate signal — <span className="font-semibold">not</span> part of QRR.
+            </span>
+          </div>
         </div>
 
         {/* Focus guide */}
@@ -506,8 +516,8 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
       row[c.key] = h.qrr;
       if (f.orders > 0) forOverall.push({channel: c.key, actuals: factsToActuals(facts), knobs: monthKnobs});
     }
-    // Same weighted pooling as the header pill: LTV over buyers, CAC over
-    // orders, channels without a CAC that month sit out.
+    // Same volume-weighted pooling as the header pill: total gross margin over
+    // total spend; channels without a CAC that month sit out.
     row.overall = computeOverallHealth(forOverall).qrr;
     return row;
   });
@@ -850,15 +860,15 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
         {view === 'trend' ? (
           <p>
-            <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">horizontal dashed line</strong> is the target of {snapshot.target}, and bars below it are under target. The <strong className="text-foreground">dark dotted line with markers</strong> is the <strong className="text-foreground">Overall QRR</strong> for each month — the same blend as the header pill (LTV pooled over buyers, CAC over orders), so a month where a channel had no acquisition cost leaves that channel out of the blend. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website is seeded with a placeholder Acq. cost of ₱5,000, so it appears from its first month of orders — edit that on the Cards tab to reflect real spend. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
+            <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">horizontal dashed line</strong> is the target of {snapshot.target}, and bars below it are under target. The <strong className="text-foreground">dark dotted line with markers</strong> is the <strong className="text-foreground">Overall QRR</strong> for each month — the same blend as the header pill (total gross margin ÷ total spend for that month), so a month where a channel had no acquisition cost leaves that channel out of the blend. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website is seeded with a placeholder Acq. cost of ₱5,000, so it appears from its first month of orders — edit that on the Cards tab to reflect real spend. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
           </p>
         ) : view === 'heatmap' ? (
           <p>
-            <strong className="text-foreground">Cohort Retention</strong> groups buyers by the month of their <strong className="text-foreground">first purchase</strong> (each row). Reading left→right, a cell is the <strong className="text-foreground">% of that cohort who ordered again</strong> in that later month — a cohort’s own month is always 100%, and <strong className="text-foreground">darker cells mean more customers came back</strong>. Use the selector to switch channels (buyers aren’t deduped across channels). This is the repeat-purchase behaviour that drives the Repeat factor in LTV — strong retention lifts QRR. Website cohorts start in April (CRM history). Trailing window {snapshot.window.label}.
+            <strong className="text-foreground">Cohort Retention</strong> groups buyers by the month of their <strong className="text-foreground">first purchase</strong> (each row). Reading left→right, a cell is the <strong className="text-foreground">% of that cohort who ordered again</strong> in that later month — a cohort’s own month is always 100%, and <strong className="text-foreground">darker cells mean more customers came back</strong>. Use the selector to switch channels (buyers aren’t deduped across channels). This is the repeat-purchase behaviour behind each channel’s <strong className="text-foreground">Repeat rate</strong> KPI — a real signal for revenue, though deliberately kept out of QRR, which measures per-order efficiency. Website cohorts start in April (CRM history). Trailing window {snapshot.window.label}.
           </p>
         ) : (
           <p>
-            Each channel stands alone (no blending); the <strong className="text-foreground">Overall QRR</strong> beside the title is the one exception — the business as one blended customer, over only the channels that have a CAC. LTV is buyer-weighted and CAC order-weighted (each pooled in its own unit before dividing), so it always lands between the channel QRRs. A channel with no acquisition cost is excluded from both sides (its profit against ₱0 would inflate the ratio); give it an Acq. cost and it joins in. <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. CAC is a per-order cost: (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target}. Website has no ads, so its CAC comes from Acq. cost — seeded with a ₱5,000 placeholder for the window, which you should replace with real organic/ops spend. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
+            Each channel stands alone (no blending); the <strong className="text-foreground">Overall QRR</strong> beside the title is the one exception — the whole business pooled by volume, over only the channels that have a CAC: total gross margin ÷ total marketing + promo spend, so every order counts once and the figure sits near the highest-volume channel. A channel with no acquisition cost is excluded from both sides (its profit against ₱0 would inflate the ratio); give it an Acq. cost and it joins in. <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. Both sides of the ratio are <strong className="text-foreground">per order</strong>: Contribution = AOV × Margin, and CAC = (marketing or acquisition) + (Promos ÷ orders). QRR = Contribution ÷ CAC, target {snapshot.target} — with promos at ₱0 this is simply Margin × ROAS. <strong className="text-foreground">Repeat rate</strong> (orders ÷ buyers) is shown per channel as its own KPI and is deliberately not folded into QRR. Website has no ads, so its CAC comes from Acq. cost — seeded with a ₱5,000 placeholder for the window, which you should replace with real organic/ops spend. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
           </p>
         )}
       </footer>
