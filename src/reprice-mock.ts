@@ -1,4 +1,4 @@
-import type {LastChangeSummary, RepriceRun} from './reprice-types';
+import type {RepricedVariant, RepriceRun} from './reprice-types';
 
 // Representative mock run so the Repricer page renders sensibly with no
 // Supabase env configured — one row per interesting outcome, not a full 48-row
@@ -203,10 +203,28 @@ export const MOCK_REPRICE_RUN: RepriceRun = {
   ],
 };
 
-// A prior run (earlier than MOCK_REPRICE_RUN) that actually applied a price
-// change — mirrors the "point at the last run that did something" fallback
-// used when the latest run was a no-op.
-export const MOCK_LAST_CHANGE: LastChangeSummary = {
-  ranAt: '2026-08-17T05:50:00.000Z',
-  count: 1,
-};
+// Variants the repricer has actually applied a price to, in prior runs
+// (earlier than MOCK_REPRICE_RUN, which is a no-op dry run). Newest first —
+// mirrors what getRepricedVariants() returns from Supabase.
+export const MOCK_REPRICED_VARIANTS: RepricedVariant[] = [
+  {
+    shopifyVariantId: 'gid://shopify/ProductVariant/1001',
+    shopifyTitle: 'Freeze Dried Superfood Munchies for Dogs and Cats Chicken & Cranberry',
+    marketplaceTitle: 'Freeze Dried Superfood Munchies for Dogs and Cats Chicken & Cranberry',
+    marketplaceSku: 'ZMY-AG243008',
+    referencePrice: 169,
+    newPrice: 135,
+    discountPct: 20,
+    ranAt: '2026-08-17T05:50:00.000Z',
+  },
+  {
+    shopifyVariantId: 'gid://shopify/ProductVariant/1002',
+    shopifyTitle: 'Grain Free Salmon Cat Food 1.5kg',
+    marketplaceTitle: 'Grain Free Salmon Cat Food 1.5kg',
+    marketplaceSku: 'ZMY-AG108812',
+    referencePrice: 599,
+    newPrice: 479,
+    discountPct: 20,
+    ranAt: '2026-08-10T03:20:00.000Z',
+  },
+];

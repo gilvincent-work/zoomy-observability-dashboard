@@ -2,8 +2,9 @@ import 'server-only';
 import {cache} from 'react';
 import {unstable_noStore as noStore} from 'next/cache';
 import {createClient} from '@supabase/supabase-js';
-import type {LastChangeSummary, RepriceRow, RepriceRun} from './reprice-types';
-import {MOCK_LAST_CHANGE, MOCK_REPRICE_RUN} from './reprice-mock';
+import type {RepricedVariant, RepriceRow, RepriceRun} from './reprice-types';
+import {discountPct} from './reprice-labels';
+import {MOCK_REPRICE_RUN, MOCK_REPRICED_VARIANTS} from './reprice-mock';
 
 // SERVER-ONLY, READ-ONLY. Reads the newest run of marketplace_price_changes
 // from the archive project with the same service-role posture as
@@ -93,30 +94,40 @@ export const getLatestRepriceRun = cache(async (): Promise<RepriceRun> => {
   };
 });
 
-// The most recent run that actually applied a price change, and how many
-// rows it applied — used to point a viewer at "the interesting run" when the
-// latest run was a no-op dry run. Null when no price has ever been applied.
-export const getLastChangeSummary = cache(async (): Promise<LastChangeSummary | null> => {
+// Every distinct Shopify variant the repricer has ever applied a price to —
+// the most recent applied row for that variant, newest-first. This is the
+// "state of the store" the page leads with, as distinct from "what the
+// latest run did." Empty array when nothing has ever been applied.
+export const getRepricedVariants = cache(async (): Promise<RepricedVariant[]> => {
   noStore();
-  if (!url || !serviceKey) return MOCK_LAST_CHANGE;
+  if (!url || !serviceKey) return MOCK_REPRICED_VARIANTS;
   const supabase = createClient(url, serviceKey, {auth: {persistSession: false}});
 
-  const {data: latestApplied, error: latestError} = await supabase
+  const {data, error} = await supabase
     .from('marketplace_price_changes')
-    .select('run_id,ran_at')
+    .select('*')
     .eq('applied', true)
-    .order('ran_at', {ascending: false})
-    .limit(1);
-  if (latestError) throw new Error(`marketplace_price_changes last-change read failed: ${latestError.message}`);
-  const head = latestApplied?.[0];
-  if (!head) return null;
+    .not('shopify_variant_id', 'is', null)
+    .order('ran_at', {ascending: false});
+  if (error) throw new Error(`marketplace_price_changes applied read failed: ${error.message}`);
 
-  const {count, error: countError} = await supabase
-    .from('marketplace_price_changes')
-    .select('id', {count: 'exact', head: true})
-    .eq('run_id', head.run_id)
-    .eq('applied', true);
-  if (countError) throw new Error(`marketplace_price_changes last-change count failed: ${countError.message}`);
-
-  return {ranAt: head.ran_at as string, count: count ?? 0};
+  const seen = new Set<string>();
+  const result: RepricedVariant[] = [];
+  for (const raw of (data ?? []) as RawRow[]) {
+    const variantId = raw.shopify_variant_id;
+    if (!variantId || seen.has(variantId)) continue;
+    seen.add(variantId);
+    const row = toCamel(raw);
+    result.push({
+      shopifyVariantId: variantId,
+      shopifyTitle: row.shopifyTitle,
+      marketplaceTitle: row.marketplaceTitle,
+      marketplaceSku: row.marketplaceSku,
+      referencePrice: row.referencePrice,
+      newPrice: row.newPrice,
+      discountPct: discountPct(row),
+      ranAt: row.ranAt,
+    });
+  }
+  return result;
 });

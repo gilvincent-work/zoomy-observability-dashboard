@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {discountPct, guardrailLabel, nextAction, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
+import {averagePct, badgeText, discountPct, guardrailLabel, nextAction, pluraliseCount, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
 import type {RepriceRow} from '../src/reprice-types';
 
 function row(overrides: Partial<RepriceRow>): RepriceRow {
@@ -100,5 +100,37 @@ describe('discountPct', () => {
   });
   it('returns null when the reference price is missing', () => {
     expect(discountPct(row({referencePrice: null, newPrice: 135}))).toBeNull();
+  });
+});
+
+describe('pluraliseCount', () => {
+  it('uses the singular for exactly 1', () => {
+    expect(pluraliseCount(1, 'price')).toBe('1 price');
+  });
+  it('uses the plural for 0 and >1', () => {
+    expect(pluraliseCount(0, 'price')).toBe('0 prices');
+    expect(pluraliseCount(3, 'price')).toBe('3 prices');
+  });
+  it('accepts an irregular plural', () => {
+    expect(pluraliseCount(2, 'child', 'children')).toBe('2 children');
+  });
+});
+
+describe('badgeText', () => {
+  it('describes a dry run as writing nothing, regardless of count', () => {
+    expect(badgeText(true, 0)).toBe('PREVIEW ONLY — this run wrote nothing');
+  });
+  it('describes an applied run with the exact, correctly-pluralised count', () => {
+    expect(badgeText(false, 1)).toBe('APPLIED — this run wrote 1 price');
+    expect(badgeText(false, 3)).toBe('APPLIED — this run wrote 3 prices');
+  });
+});
+
+describe('averagePct', () => {
+  it('rounds the mean of the given percentages', () => {
+    expect(averagePct([20, 21])).toBe(21);
+  });
+  it('returns null for an empty list', () => {
+    expect(averagePct([])).toBeNull();
   });
 });
