@@ -101,3 +101,23 @@ export function discountPct(row: RepriceRow): number | null {
   if (price == null || row.referencePrice == null || row.referencePrice === 0) return null;
   return Math.round((1 - price / row.referencePrice) * 100);
 }
+
+/** "1 price" / "3 prices" — pluralises a plain noun for a count. */
+export function pluraliseCount(n: number, singular: string, plural: string = `${singular}s`): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/** The run badge's exact wording. Describes what THIS RUN did (wrote nothing
+ *  vs. wrote N prices) — never a claim about the store's current state, which
+ *  is what confused users when a later no-op dry run implied prices had never
+ *  changed at all. */
+export function badgeText(dryRun: boolean, appliedCount: number): string {
+  return dryRun ? 'PREVIEW ONLY — this run wrote nothing' : `APPLIED — this run wrote ${pluraliseCount(appliedCount, 'price')}`;
+}
+
+/** Mean of a list of percentages, rounded to the nearest whole percent. Null
+ *  when the list is empty (no repriced variants to average). */
+export function averagePct(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+}

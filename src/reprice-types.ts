@@ -32,9 +32,17 @@ export interface RepriceRun {
   rows: RepriceRow[];
 }
 
-// Summary of the most recent run that actually applied a price change —
-// used to surface "the interesting run" when the latest run did nothing.
-export interface LastChangeSummary {
+// One row per distinct Shopify variant that the repricer has ever applied a
+// price to — the MOST RECENT applied row for that variant. This describes
+// what the repricer last SET, not what Shopify holds now: someone could have
+// edited the price by hand afterwards. Newest-first.
+export interface RepricedVariant {
+  shopifyVariantId: string;
+  shopifyTitle: string | null;
+  marketplaceTitle: string;
+  marketplaceSku: string;
+  referencePrice: number | null;
+  newPrice: number | null;
+  discountPct: number | null;
   ranAt: string;
-  count: number;
 }

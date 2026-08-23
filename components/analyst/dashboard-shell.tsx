@@ -63,7 +63,7 @@ export function DashboardShell({
   // (which uses its own fixed trailing-6-month window shown on the page).
   const channel = searchParams.get('channel');
   const isHome = pathname === '/' && !channel;
-  const showPeriod = Boolean(current) && !isHome && !pathname.startsWith('/settings') && !pathname.startsWith('/health');
+  const showPeriod = Boolean(current) && !isHome && !pathname.startsWith('/settings') && !pathname.startsWith('/health') && !pathname.startsWith('/repricer');
 
   const [periodOpen, setPeriodOpen] = useState(false);
 
