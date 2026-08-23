@@ -62,7 +62,12 @@ function CurrentlyRepricedTable({variants}: {variants: RepricedVariant[]}) {
         <thead>
           <tr className="border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <th className="px-4 py-3 text-left">Product</th>
-            <th className="px-4 py-3 text-left">Lazada reference</th>
+            <th className="px-4 py-3 text-right">
+              <span className="inline-flex items-center justify-end gap-1">
+                Lazada price
+                <InfoTip text="The Lazada price this variant was priced against. The discount column is how far the written price sits below it." />
+              </span>
+            </th>
             <th className="px-4 py-3 text-right">
               <span className="inline-flex items-center gap-1 justify-end">
                 Price set by repricer
@@ -76,8 +81,16 @@ function CurrentlyRepricedTable({variants}: {variants: RepricedVariant[]}) {
         <tbody>
           {variants.map((v) => (
             <tr key={v.shopifyVariantId} className="border-b border-border/60 last:border-0">
-              <td className="px-4 py-3 font-medium text-foreground">{v.shopifyTitle ?? v.marketplaceTitle}</td>
-              <td className="px-4 py-3 text-foreground/70">{v.marketplaceSku}</td>
+              {/* SKU rides under the product name; the "Lazada price" column
+                  must carry the reference PRICE, otherwise the discount has
+                  nothing on screen to be a discount from. */}
+              <td className="px-4 py-3">
+                <div className="font-medium text-foreground">{v.shopifyTitle ?? v.marketplaceTitle}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">{v.marketplaceSku}</div>
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-foreground/70">
+                {v.referencePrice != null ? peso0(v.referencePrice) : '—'}
+              </td>
               <td className="px-4 py-3 text-right tabular-nums font-semibold text-foreground">
                 {v.newPrice != null ? peso0(v.newPrice) : '—'}
               </td>
