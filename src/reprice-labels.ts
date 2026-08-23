@@ -115,6 +115,22 @@ export function badgeText(dryRun: boolean, appliedCount: number): string {
   return dryRun ? 'PREVIEW ONLY — this run wrote nothing' : `APPLIED — this run wrote ${pluraliseCount(appliedCount, 'price')}`;
 }
 
+/** The change from oldPrice to newPrice: amount and % moved, plus direction.
+ *  Null when either input is missing — there's nothing to compare. */
+export interface PriceDelta {
+  amount: number;
+  pct: number;
+  direction: 'down' | 'up' | 'same';
+}
+
+export function priceDelta(oldPrice: number | null, newPrice: number | null): PriceDelta | null {
+  if (oldPrice == null || newPrice == null) return null;
+  const amount = Math.abs(Math.round(newPrice - oldPrice));
+  const pct = oldPrice === 0 ? 0 : Math.round((Math.abs(newPrice - oldPrice) / oldPrice) * 100);
+  const direction: PriceDelta['direction'] = newPrice === oldPrice ? 'same' : newPrice < oldPrice ? 'down' : 'up';
+  return {amount, pct, direction};
+}
+
 /** Mean of a list of percentages, rounded to the nearest whole percent. Null
  *  when the list is empty (no repriced variants to average). */
 export function averagePct(values: number[]): number | null {
