@@ -1,6 +1,6 @@
 'use client';
 
-import type {RepriceRow, RepriceRun} from '@/src/reprice-types';
+import type {LastChangeSummary, RepriceRow, RepriceRun} from '@/src/reprice-types';
 import {discountPct, reasonFor, summarise} from '@/src/reprice-labels';
 import {InfoTip} from './info-tip';
 
@@ -58,10 +58,11 @@ function ChangedTable({rows}: {rows: RepriceRow[]}) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {rows.map((r, i) => {
             const pct = discountPct(r);
+            const key = r.shopifyVariantId ?? r.marketplaceSku ?? String(i);
             return (
-              <tr key={r.id} className="border-b border-border/60 last:border-0">
+              <tr key={key} className="border-b border-border/60 last:border-0">
                 <td className="px-4 py-3 font-medium text-foreground">{r.shopifyTitle ?? r.marketplaceTitle}</td>
                 <td className="px-4 py-3 text-right tabular-nums text-foreground/80">
                   {r.referencePrice != null ? peso0(r.referencePrice) : '—'}
@@ -83,7 +84,7 @@ function ChangedTable({rows}: {rows: RepriceRow[]}) {
   );
 }
 
-export function RepricerView({run}: {run: RepriceRun}) {
+export function RepricerView({run, lastChange}: {run: RepriceRun; lastChange?: LastChangeSummary | null}) {
   const summary = summarise(run.rows);
   const changedRows = run.rows.filter((r) => r.newPrice != null);
   const discounts = changedRows.map(discountPct).filter((d): d is number => d != null);
@@ -130,7 +131,15 @@ export function RepricerView({run}: {run: RepriceRun}) {
           <ChangedTable rows={changedRows} />
         ) : (
           <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-sm text-foreground/70">
-            No website prices {run.dryRun ? 'would have changed' : 'changed'} this run. The most common reason: <span className="font-semibold text-foreground">{topSkipReason}</span>.
+            <p>
+              No website prices {run.dryRun ? 'would have changed' : 'changed'} this run. The most common reason: <span className="font-semibold text-foreground">{topSkipReason}</span>.
+            </p>
+            {lastChange && (
+              <p className="mt-2">
+                Last actual price change: <span className="font-semibold text-foreground">{lastChange.count}</span> price{lastChange.count === 1 ? '' : 's'} updated on{' '}
+                <span className="font-semibold text-foreground">{fmtRanAt(lastChange.ranAt)}</span>.
+              </p>
+            )}
           </div>
         )}
       </section>

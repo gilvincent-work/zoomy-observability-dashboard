@@ -1,4 +1,4 @@
-import type {RepriceRun} from './reprice-types';
+import type {LastChangeSummary, RepriceRun} from './reprice-types';
 
 // Representative mock run so the Repricer page renders sensibly with no
 // Supabase env configured — one row per interesting outcome, not a full 48-row
@@ -201,4 +201,12 @@ export const MOCK_REPRICE_RUN: RepriceRun = {
       skipReason: 'unmatched',
     },
   ],
+};
+
+// A prior run (earlier than MOCK_REPRICE_RUN) that actually applied a price
+// change — mirrors the "point at the last run that did something" fallback
+// used when the latest run was a no-op.
+export const MOCK_LAST_CHANGE: LastChangeSummary = {
+  ranAt: '2026-08-17T05:50:00.000Z',
+  count: 1,
 };

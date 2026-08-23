@@ -31,3 +31,10 @@ export interface RepriceRun {
   dryRun: boolean;
   rows: RepriceRow[];
 }
+
+// Summary of the most recent run that actually applied a price change —
+// used to surface "the interesting run" when the latest run did nothing.
+export interface LastChangeSummary {
+  ranAt: string;
+  count: number;
+}

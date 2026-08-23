@@ -2,8 +2,8 @@ import 'server-only';
 import {cache} from 'react';
 import {unstable_noStore as noStore} from 'next/cache';
 import {createClient} from '@supabase/supabase-js';
-import type {RepriceRow, RepriceRun} from './reprice-types';
-import {MOCK_REPRICE_RUN} from './reprice-mock';
+import type {LastChangeSummary, RepriceRow, RepriceRun} from './reprice-types';
+import {MOCK_LAST_CHANGE, MOCK_REPRICE_RUN} from './reprice-mock';
 
 // SERVER-ONLY, READ-ONLY. Reads the newest run of marketplace_price_changes
 // from the archive project with the same service-role posture as
@@ -91,4 +91,32 @@ export const getLatestRepriceRun = cache(async (): Promise<RepriceRun> => {
     dryRun: head.dry_run as boolean,
     rows: ((rows ?? []) as RawRow[]).map(toCamel),
   };
+});
+
+// The most recent run that actually applied a price change, and how many
+// rows it applied — used to point a viewer at "the interesting run" when the
+// latest run was a no-op dry run. Null when no price has ever been applied.
+export const getLastChangeSummary = cache(async (): Promise<LastChangeSummary | null> => {
+  noStore();
+  if (!url || !serviceKey) return MOCK_LAST_CHANGE;
+  const supabase = createClient(url, serviceKey, {auth: {persistSession: false}});
+
+  const {data: latestApplied, error: latestError} = await supabase
+    .from('marketplace_price_changes')
+    .select('run_id,ran_at')
+    .eq('applied', true)
+    .order('ran_at', {ascending: false})
+    .limit(1);
+  if (latestError) throw new Error(`marketplace_price_changes last-change read failed: ${latestError.message}`);
+  const head = latestApplied?.[0];
+  if (!head) return null;
+
+  const {count, error: countError} = await supabase
+    .from('marketplace_price_changes')
+    .select('id', {count: 'exact', head: true})
+    .eq('run_id', head.run_id)
+    .eq('applied', true);
+  if (countError) throw new Error(`marketplace_price_changes last-change count failed: ${countError.message}`);
+
+  return {ranAt: head.ran_at as string, count: count ?? 0};
 });
