@@ -4,7 +4,7 @@ import {useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, ChevronDown, Home, LogOut, Mail, Package, Settings, Users} from 'lucide-react';
+import {Activity, ChevronDown, Home, LogOut, Mail, Package, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -18,6 +18,7 @@ const TABS = [
   {href: '/inventory', label: 'Inventory', icon: Package},
   {href: '/customers', label: 'Customers', icon: Users},
   {href: '/traffic', label: 'Traffic', icon: Activity},
+  {href: '/repricer', label: 'Repricer', icon: Tag},
   {href: '/settings', label: 'Settings', icon: Settings},
 ] as const;
 
