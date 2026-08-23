@@ -42,6 +42,7 @@ export interface RepricedVariant {
   marketplaceTitle: string;
   marketplaceSku: string;
   referencePrice: number | null;
+  oldPrice: number | null;
   newPrice: number | null;
   discountPct: number | null;
   ranAt: string;

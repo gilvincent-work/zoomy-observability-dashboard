@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {averagePct, badgeText, discountPct, guardrailLabel, nextAction, pluraliseCount, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
+import {averagePct, badgeText, discountPct, guardrailLabel, nextAction, pluraliseCount, priceDelta, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
 import type {RepriceRow} from '../src/reprice-types';
 
 function row(overrides: Partial<RepriceRow>): RepriceRow {
@@ -123,6 +123,22 @@ describe('badgeText', () => {
   it('describes an applied run with the exact, correctly-pluralised count', () => {
     expect(badgeText(false, 1)).toBe('APPLIED — this run wrote 1 price');
     expect(badgeText(false, 3)).toBe('APPLIED — this run wrote 3 prices');
+  });
+});
+
+describe('priceDelta', () => {
+  it('computes a downward move', () => {
+    expect(priceDelta(149, 135)).toEqual({amount: 14, pct: 9, direction: 'down'});
+  });
+  it('computes an upward move', () => {
+    expect(priceDelta(135, 149)).toEqual({amount: 14, pct: 10, direction: 'up'});
+  });
+  it('treats equal values as same', () => {
+    expect(priceDelta(149, 149)).toEqual({amount: 0, pct: 0, direction: 'same'});
+  });
+  it('returns null when either input is missing', () => {
+    expect(priceDelta(null, 135)).toBeNull();
+    expect(priceDelta(149, null)).toBeNull();
   });
 });
 

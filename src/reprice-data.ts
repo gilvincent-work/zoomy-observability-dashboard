@@ -124,6 +124,7 @@ export const getRepricedVariants = cache(async (): Promise<RepricedVariant[]> =>
       marketplaceTitle: row.marketplaceTitle,
       marketplaceSku: row.marketplaceSku,
       referencePrice: row.referencePrice,
+      oldPrice: row.oldPrice,
       newPrice: row.newPrice,
       discountPct: discountPct(row),
       ranAt: row.ranAt,
