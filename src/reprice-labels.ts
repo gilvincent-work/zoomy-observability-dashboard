@@ -1,7 +1,7 @@
 // Pure, presentation-free translation of the repricer's audit vocabulary into
 // plain English. No React, no data-layer imports — safe to unit test in
 // isolation and reuse anywhere the shape of a RepriceRow is known.
-import type {RepriceRow} from './reprice-types';
+import type {ReadyCandidate, RepriceRow} from './reprice-types';
 
 export function guardrailLabel(g: RepriceRow['guardrail']): string {
   switch (g) {
@@ -129,6 +129,46 @@ export function priceDelta(oldPrice: number | null, newPrice: number | null): Pr
   const pct = oldPrice === 0 ? 0 : Math.round((Math.abs(newPrice - oldPrice) / oldPrice) * 100);
   const direction: PriceDelta['direction'] = newPrice === oldPrice ? 'same' : newPrice < oldPrice ? 'down' : 'up';
   return {amount, pct, direction};
+}
+
+/** Rows that are fully matched and priced by the job, blocked only on a
+ *  missing floor price — the actionable "ready to reprice" set. For each we
+ *  simulate what the FIRST run would actually write, applying the same
+ *  max-change rule the batch job uses, so we never promise a bigger jump
+ *  than the guardrail allows. Rows where the simulated write would be a
+ *  no-op (firstRunPrice === oldPrice) are excluded — listing those as
+ *  "ready" would be misleading, since setting a floor would change nothing.
+ *  Sorted by the size of the price drop, largest first. */
+export function readyToReprice(rows: RepriceRow[], opts?: {maxChangePct?: number}): ReadyCandidate[] {
+  const maxChangePct = opts?.maxChangePct ?? 10;
+  const candidates: ReadyCandidate[] = [];
+
+  for (const row of rows) {
+    if (row.guardrail !== 'no-floor' || row.targetPrice == null || row.oldPrice == null) continue;
+
+    const oldPrice = row.oldPrice;
+    const targetPrice = row.targetPrice;
+    const lowerBound = Math.floor(oldPrice * (1 - maxChangePct / 100));
+    const upperBound = Math.floor(oldPrice * (1 + maxChangePct / 100));
+    const firstRunPrice = targetPrice < lowerBound ? lowerBound : targetPrice > upperBound ? upperBound : targetPrice;
+    const capped = firstRunPrice !== targetPrice;
+
+    if (firstRunPrice === oldPrice) continue;
+
+    candidates.push({
+      shopifyTitle: row.shopifyTitle,
+      marketplaceTitle: row.marketplaceTitle,
+      marketplaceSku: row.marketplaceSku,
+      referencePrice: row.referencePrice,
+      oldPrice,
+      targetPrice,
+      firstRunPrice,
+      capped,
+      savingPct: Math.round(((oldPrice - firstRunPrice) / oldPrice) * 100),
+    });
+  }
+
+  return candidates.sort((a, b) => (b.oldPrice - b.firstRunPrice) - (a.oldPrice - a.firstRunPrice));
 }
 
 /** Mean of a list of percentages, rounded to the nearest whole percent. Null

@@ -1,7 +1,7 @@
 'use client';
 
-import type {RepricedVariant, RepriceRow, RepriceRun} from '@/src/reprice-types';
-import {averagePct, badgeText, discountPct, pluraliseCount, priceDelta, reasonFor, summarise} from '@/src/reprice-labels';
+import type {ReadyCandidate, RepricedVariant, RepriceRow, RepriceRun} from '@/src/reprice-types';
+import {averagePct, badgeText, discountPct, pluraliseCount, priceDelta, readyToReprice, reasonFor, summarise} from '@/src/reprice-labels';
 import {InfoTip} from './info-tip';
 
 // Shared money formatter — every peso figure on this page goes through this,
@@ -202,6 +202,54 @@ function ChangedTable({rows}: {rows: RepriceRow[]}) {
   );
 }
 
+/** The actionable "what could be repriced next" set: fully matched and priced
+ *  by the job, blocked only on a missing floor price in Shopify. This was
+ *  previously buried inside the collapsed "Not changed" list — surfacing it
+ *  as its own table is the point of this section. */
+function ReadyToRepriceTable({candidates}: {candidates: ReadyCandidate[]}) {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <th scope="col" className="px-4 py-3 text-left">Product</th>
+            <th scope="col" className="px-4 py-3 text-right">Lazada price</th>
+            <th scope="col" className="px-4 py-3 text-right">Shopify price now</th>
+            <th scope="col" className="px-4 py-3 text-right">
+              <span className="inline-flex items-center justify-end gap-1">
+                Would become
+                <InfoTip text="What the next run would write if a floor price were set. Prices never move more than 10% in one run, so a bigger target is reached over several runs. If the floor you set is higher than this figure, the floor wins." />
+              </span>
+            </th>
+            <th scope="col" className="px-4 py-3 text-left">What&apos;s needed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {candidates.map((c) => (
+            <tr key={c.marketplaceSku} className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/25">
+              <td className="px-4 py-3">
+                <div className="font-medium text-foreground">{c.shopifyTitle ?? c.marketplaceTitle}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">{c.marketplaceSku}</div>
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-foreground/70">
+                {c.referencePrice != null ? peso0(c.referencePrice) : '—'}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-foreground/70">{peso0(c.oldPrice)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">
+                <div className="font-semibold text-foreground">{peso0(c.firstRunPrice)}</div>
+                {c.capped && (
+                  <div className="mt-0.5 text-xs text-foreground/50">10% cap — full target {peso0(c.targetPrice)} over two runs</div>
+                )}
+              </td>
+              <td className="px-4 py-3 text-foreground/70">Set a floor price</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function EmptyState({children}: {children: React.ReactNode}) {
   return (
     <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-10 text-center text-sm text-foreground/65">
@@ -219,6 +267,9 @@ export function RepricerView({run, repriced}: {run: RepriceRun; repriced: Repric
   const avgDiscount = averagePct(repriced.map((v) => v.discountPct).filter((d): d is number => d != null));
   const lastChangeAt = repriced[0]?.ranAt ?? null;
   const topSkipReason = summary.skipped[0]?.reason ?? 'no eligible price changes this run';
+
+  const readyCandidates = readyToReprice(run.rows);
+  const needsMatchCheckCount = run.rows.filter((r) => r.skipReason === 'needs-review' || r.skipReason === 'ambiguous').length;
 
   // Example product names per "not changed" group, for inspectable counts
   // rather than an abstract number — up to 5 per group, newest-considered order.
@@ -285,8 +336,30 @@ export function RepricerView({run, repriced}: {run: RepriceRun; repriced: Repric
         />
       </div>
 
-      {/* ── Latest run — what the most recent job execution did ── */}
+      {/* ── Ready to reprice — the actionable set: matched and priced, just
+          missing a floor price. Sits above the run detail because it is the
+          thing an admin can actually act on today. ── */}
       <section className="reprice-reveal space-y-3 motion-safe:[animation-delay:180ms]">
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Ready to reprice ({readyCandidates.length})</h2>
+          <p className="text-sm text-foreground/65">Matched and priced — waiting only on a floor price in Shopify.</p>
+        </div>
+        {readyCandidates.length > 0 ? (
+          <ReadyToRepriceTable candidates={readyCandidates} />
+        ) : (
+          <EmptyState>
+            <p>Nothing is waiting on a floor price right now.</p>
+          </EmptyState>
+        )}
+        {needsMatchCheckCount > 0 && (
+          <p className="text-xs text-foreground/55">
+            {pluraliseCount(needsMatchCheckCount, 'more product')} need a match check before they can be priced — see Not changed below.
+          </p>
+        )}
+      </section>
+
+      {/* ── Latest run — what the most recent job execution did ── */}
+      <section className="reprice-reveal space-y-3 motion-safe:[animation-delay:240ms]">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-bold text-foreground">Latest run</h2>
           <span className="flex items-center gap-1.5 text-sm">
@@ -313,7 +386,7 @@ export function RepricerView({run, repriced}: {run: RepriceRun; repriced: Repric
         </p>
       </section>
 
-      <section className="reprice-reveal motion-safe:[animation-delay:240ms]">
+      <section className="reprice-reveal motion-safe:[animation-delay:300ms]">
         <details className="group rounded-2xl border border-border bg-card open:pb-2">
           <summary
             className="flex cursor-pointer list-none items-center justify-between rounded-2xl px-5 py-4 text-sm font-bold text-foreground outline-none transition-colors hover:bg-muted/25 focus-visible:ring-2 focus-visible:ring-primary/40 group-open:rounded-b-none"
@@ -353,7 +426,7 @@ export function RepricerView({run, repriced}: {run: RepriceRun; repriced: Repric
         </details>
       </section>
 
-      <footer className="reprice-reveal rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65 motion-safe:[animation-delay:300ms]">
+      <footer className="reprice-reveal rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65 motion-safe:[animation-delay:360ms]">
         The repricer is run manually from a terminal command — it does not run on its own schedule. By default it runs as a{' '}
         <strong className="text-foreground">preview (dry run)</strong>, meaning it decides what prices would change but writes nothing to Shopify;
         someone has to explicitly apply the results. A variant with no <strong className="text-foreground">floor price</strong> set in Shopify

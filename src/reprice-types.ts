@@ -36,6 +36,21 @@ export interface RepriceRun {
 // price to — the MOST RECENT applied row for that variant. This describes
 // what the repricer last SET, not what Shopify holds now: someone could have
 // edited the price by hand afterwards. Newest-first.
+// A row that is fully matched and priced by the job but blocked only by a
+// missing floor price in Shopify — the actionable "what could be repriced
+// next" set, as opposed to what has already been repriced.
+export interface ReadyCandidate {
+  shopifyTitle: string | null;
+  marketplaceTitle: string;
+  marketplaceSku: string;
+  referencePrice: number | null;
+  oldPrice: number;
+  targetPrice: number;
+  firstRunPrice: number;
+  capped: boolean;
+  savingPct: number;
+}
+
 export interface RepricedVariant {
   shopifyVariantId: string;
   shopifyTitle: string | null;
