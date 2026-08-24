@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {averagePct, badgeText, discountPct, guardrailLabel, nextAction, pluraliseCount, priceDelta, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
+import {averagePct, badgeText, discountPct, guardrailLabel, nextAction, pluraliseCount, priceDelta, readyToReprice, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
 import type {RepriceRow} from '../src/reprice-types';
 
 function row(overrides: Partial<RepriceRow>): RepriceRow {
@@ -139,6 +139,45 @@ describe('priceDelta', () => {
   it('returns null when either input is missing', () => {
     expect(priceDelta(null, 135)).toBeNull();
     expect(priceDelta(149, null)).toBeNull();
+  });
+});
+
+describe('readyToReprice', () => {
+  it('applies the 10% max-change cap to the target price', () => {
+    const result = readyToReprice([row({guardrail: 'no-floor', oldPrice: 139, targetPrice: 119, referencePrice: 149})]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({firstRunPrice: 125, capped: true});
+  });
+
+  it('leaves an uncapped target unchanged', () => {
+    const result = readyToReprice([row({guardrail: 'no-floor', oldPrice: 149, targetPrice: 135})]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({firstRunPrice: 135, capped: false});
+  });
+
+  it('excludes a row whose target already equals its current price', () => {
+    const result = readyToReprice([row({guardrail: 'no-floor', oldPrice: 279, targetPrice: 279})]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('excludes rows with any other guardrail or a null target', () => {
+    const result = readyToReprice([
+      row({guardrail: 'floor-clamp', oldPrice: 100, targetPrice: 90}),
+      row({guardrail: 'max-change-clamp', oldPrice: 100, targetPrice: 90}),
+      row({guardrail: 'no-op', oldPrice: 100, targetPrice: 90}),
+      row({guardrail: null, oldPrice: 100, targetPrice: 90}),
+      row({guardrail: 'no-floor', oldPrice: 100, targetPrice: null}),
+      row({guardrail: 'no-floor', oldPrice: null, targetPrice: 90}),
+    ]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('sorts by the size of the price drop, largest first', () => {
+    const result = readyToReprice([
+      row({guardrail: 'no-floor', oldPrice: 139, targetPrice: 119, marketplaceSku: 'SMALL-DROP'}),
+      row({guardrail: 'no-floor', oldPrice: 500, targetPrice: 420, marketplaceSku: 'BIG-DROP'}),
+    ]);
+    expect(result.map((r) => r.marketplaceSku)).toEqual(['BIG-DROP', 'SMALL-DROP']);
   });
 });
 
