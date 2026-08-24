@@ -111,7 +111,12 @@ function CurrentlyRepricedTable({variants}: {variants: RepricedVariant[]}) {
                 <InfoTip text="The last price the repricer wrote for this variant. If someone edited the price in Shopify afterwards, this will be out of date — this page does not read live Shopify prices." />
               </span>
             </th>
-            <th scope="col" className="px-4 py-3 text-right">Discount</th>
+            <th scope="col" className="px-4 py-3 text-right">
+              <span className="inline-flex items-center justify-end gap-1">
+                Discount
+                <InfoTip text="How far below the Lazada price this variant is currently priced. The target is 20%." />
+              </span>
+            </th>
             <th scope="col" className="px-4 py-3 text-left">When</th>
           </tr>
         </thead>
@@ -218,7 +223,13 @@ function ReadyToRepriceTable({candidates}: {candidates: ReadyCandidate[]}) {
             <th scope="col" className="px-4 py-3 text-right">
               <span className="inline-flex items-center justify-end gap-1">
                 Would become
-                <InfoTip text="What the next run would write if a floor price were set. Prices never move more than 10% in one run, so a bigger target is reached over several runs. If the floor you set is higher than this figure, the floor wins." />
+                <InfoTip text="What the next run would write if a floor price were set. If the floor you set is higher than this figure, the floor wins." />
+              </span>
+            </th>
+            <th scope="col" className="px-4 py-3 text-right">
+              <span className="inline-flex items-center justify-end gap-1">
+                Discount
+                <InfoTip text="How much the website price would come down from where it is today." />
               </span>
             </th>
             <th scope="col" className="px-4 py-3 text-left">What&apos;s needed</th>
@@ -235,11 +246,19 @@ function ReadyToRepriceTable({candidates}: {candidates: ReadyCandidate[]}) {
                 {c.referencePrice != null ? peso0(c.referencePrice) : '—'}
               </td>
               <td className="px-4 py-3 text-right tabular-nums text-foreground/70">{peso0(c.oldPrice)}</td>
-              <td className="px-4 py-3 text-right tabular-nums">
-                <div className="font-semibold text-foreground">{peso0(c.firstRunPrice)}</div>
-                {c.capped && (
-                  <div className="mt-0.5 text-xs text-foreground/50">10% cap — full target {peso0(c.targetPrice)} over two runs</div>
-                )}
+              <td className="px-4 py-3 text-right tabular-nums font-semibold text-foreground">{peso0(c.firstRunPrice)}</td>
+              {/* A capped row's discount is exactly the 10% ceiling, which looks
+                  arbitrary without explanation — so those rows carry their own
+                  tooltip naming the eventual price. Uncapped rows need none. */}
+              <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
+                <span className="inline-flex items-center justify-end gap-1">
+                  −{c.savingPct}%
+                  {c.capped && (
+                    <InfoTip
+                      text={`A price never moves more than 10% at once, so this run takes it to ${peso0(c.firstRunPrice)}. Run the repricer again and it reaches ${peso0(c.targetPrice)}, the full 20% below Lazada.`}
+                    />
+                  )}
+                </span>
               </td>
               <td className="px-4 py-3 text-foreground/70">Set a floor price</td>
             </tr>
