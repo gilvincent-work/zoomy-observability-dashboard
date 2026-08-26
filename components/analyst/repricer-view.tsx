@@ -406,7 +406,14 @@ export function RepricerView({
   const notChangedRows = run.rows.filter((r) => r.newPrice == null);
   const appliedCount = run.rows.filter((r) => r.applied).length;
 
-  const avgDiscount = averagePct(repriced.map((v) => v.discountPct).filter((d): d is number => d != null));
+  // Must use the SAME drift-aware discount the table shows. Averaging the
+  // stored discountPct instead reads off the last RECORDED price, so the stat
+  // card contradicted the rows beside it whenever a variant had drifted.
+  const avgDiscount = averagePct(
+    repriced
+      .map((v) => currentDiscountPct({currentPrice: v.currentPrice, referencePrice: v.referencePrice, fallbackDiscountPct: v.discountPct}))
+      .filter((d): d is number => d != null),
+  );
   const lastChangeAt = repriced[0]?.ranAt ?? null;
   const topSkipReason = summary.skipped[0]?.reason ?? 'no eligible price changes this run';
 
