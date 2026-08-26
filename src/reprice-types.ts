@@ -85,4 +85,8 @@ export interface RepriceHistoryEvent {
   guardrail: RepriceRow['guardrail'];
   skipReason: RepriceRow['skipReason'];
   matchBand: RepriceRow['matchBand'];
+  // Set only on rows reconstructed after the fact (e.g. an audit write that
+  // was rejected at the time but whose Shopify-side change is known). Null
+  // for normal, first-hand recorded rows.
+  note: string | null;
 }

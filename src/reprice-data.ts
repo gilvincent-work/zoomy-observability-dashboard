@@ -37,6 +37,7 @@ interface RawRow {
   new_price: number | null;
   guardrail: RepriceRow['guardrail'];
   skip_reason: RepriceRow['skipReason'];
+  note: string | null;
 }
 
 function toCamel(r: RawRow): RepriceRow {
@@ -181,6 +182,7 @@ export const getVariantHistory = cache(async (variantIds: string[]): Promise<Rec
       guardrail: row.guardrail,
       skipReason: row.skipReason,
       matchBand: row.matchBand,
+      note: raw.note,
     });
   }
   return result;
