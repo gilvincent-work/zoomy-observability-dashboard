@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
-import {UNDERCUT_PCT,averagePct, badgeText, currentDiscountPct, discountPct, guardrailLabel, isDrifted, nextAction, pluraliseCount, priceDelta, readyToReprice, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
-import type {RepriceRow} from '../src/reprice-types';
+import {UNDERCUT_PCT,appliedChanges, averagePct, badgeText, currentDiscountPct, discountPct, guardrailLabel, isDrifted, nextAction, pluraliseCount, priceDelta, readyToReprice, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
+import type {RepriceHistoryEvent, RepriceRow} from '../src/reprice-types';
 
 function row(overrides: Partial<RepriceRow>): RepriceRow {
   return {
@@ -206,6 +206,56 @@ describe('readyToReprice', () => {
       row({guardrail: 'no-floor', oldPrice: 500, targetPrice: 420, marketplaceSku: 'BIG-DROP'}),
     ]);
     expect(result.map((r) => r.marketplaceSku)).toEqual(['BIG-DROP', 'SMALL-DROP']);
+  });
+});
+
+function historyEvent(overrides: Partial<RepriceHistoryEvent>): RepriceHistoryEvent {
+  return {
+    ranAt: '2026-08-18T00:00:00.000Z',
+    dryRun: false,
+    applied: true,
+    referencePrice: 169,
+    targetPrice: 135,
+    oldPrice: 149,
+    newPrice: 135,
+    guardrail: null,
+    skipReason: null,
+    matchBand: 'auto',
+    ...overrides,
+  };
+}
+
+describe('appliedChanges', () => {
+  it('filters out dry-run previews', () => {
+    const result = appliedChanges([historyEvent({dryRun: true, applied: false})]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('filters out applied rows where the price did not change', () => {
+    const result = appliedChanges([historyEvent({applied: true, oldPrice: 149, newPrice: 149})]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('filters out rows with no new price', () => {
+    const result = appliedChanges([historyEvent({applied: true, newPrice: null})]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('keeps applied rows where the price actually changed', () => {
+    const e = historyEvent({applied: true, oldPrice: 149, newPrice: 135});
+    expect(appliedChanges([e])).toEqual([e]);
+  });
+
+  it('preserves newest-first ordering across mixed events', () => {
+    const newest = historyEvent({ranAt: '2026-08-18T00:00:00.000Z', oldPrice: 149, newPrice: 135});
+    const preview = historyEvent({ranAt: '2026-08-17T00:00:00.000Z', dryRun: true, applied: false});
+    const oldest = historyEvent({ranAt: '2026-08-05T00:00:00.000Z', oldPrice: 165, newPrice: 149});
+    const result = appliedChanges([newest, preview, oldest]);
+    expect(result).toEqual([newest, oldest]);
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(appliedChanges([])).toEqual([]);
   });
 });
 

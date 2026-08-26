@@ -1,7 +1,7 @@
 // Pure, presentation-free translation of the repricer's audit vocabulary into
 // plain English. No React, no data-layer imports — safe to unit test in
 // isolation and reuse anywhere the shape of a RepriceRow is known.
-import type {ReadyCandidate, RepriceRow} from './reprice-types';
+import type {ReadyCandidate, RepriceHistoryEvent, RepriceRow} from './reprice-types';
 
 /** The undercut target the repricer aims for, as a percentage. Mirrors
  *  REPRICE_UNDERCUT_PCT in the batch job — this is display copy only, it never
@@ -200,6 +200,15 @@ export function readyToReprice(rows: RepriceRow[], opts?: {maxChangePct?: number
   }
 
   return candidates.sort((a, b) => (b.oldPrice - b.firstRunPrice) - (a.oldPrice - a.firstRunPrice));
+}
+
+/** Events where a price actually changed on Shopify: applied, with a new
+ *  price recorded, and that price differs from the old one. Excludes dry-run
+ *  previews and applied-but-no-op rows (e.g. guardrail 'no-op'), which are
+ *  noise in a "what actually changed" timeline. Preserves the input's
+ *  newest-first ordering. */
+export function appliedChanges(events: RepriceHistoryEvent[]): RepriceHistoryEvent[] {
+  return events.filter((e) => e.applied === true && e.newPrice != null && e.newPrice !== e.oldPrice);
 }
 
 /** Mean of a list of percentages, rounded to the nearest whole percent. Null

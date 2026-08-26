@@ -4,12 +4,12 @@ import React, {useState} from 'react';
 import type {ReadyCandidate, RepricedVariant, RepriceHistoryEvent, RepriceRow, RepriceRun} from '@/src/reprice-types';
 import {
   UNDERCUT_PCT,
+  appliedChanges,
   averagePct,
   badgeText,
   currentDiscountPct,
   discountPct,
   pluraliseCount,
-  priceDelta,
   reasonFor,
   readyToReprice,
   summarise,
@@ -95,60 +95,58 @@ function StatCard({label, value, hint, sub, size = 'lg', tone = 'default'}: {
   );
 }
 
-/** Compact badge for a history event's run type — mirrors RunBadge's
- *  vocabulary but small enough to sit inline in a timeline row. */
-function RunTypeBadge({dryRun}: {dryRun: boolean}) {
-  return dryRun ? (
-    <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-foreground/50">
-      Preview
-    </span>
-  ) : (
-    <span className="inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-      Applied
-    </span>
-  );
-}
-
-/** Expanded panel under a "Currently repriced" row: the variant's full
- *  price-change timeline, newest-first. Applied events are the significant
- *  ones — a real write happened — so preview/dry-run rows get a muted
- *  treatment to keep the real changes visually prominent. */
-function VariantHistoryPanel({events}: {events: RepriceHistoryEvent[]}) {
-  if (events.length === 0) {
-    return <p className="px-4 py-4 text-sm text-foreground/55">No audit history found for this variant.</p>;
-  }
+/** Expanded panel under a "Currently repriced" row: the variant's timeline of
+ *  ACTUAL price changes only — dry-run previews and applied-but-no-op runs
+ *  are filtered out (see appliedChanges), since they aren't changes at all
+ *  and just added noise. When the variant is drifted, a caution notice sits
+ *  above the table naming the gap: the store shows a price this audit trail
+ *  never recorded, most likely a run whose audit write failed. */
+function VariantHistoryPanel({events, currentPrice, drifted}: {events: RepriceHistoryEvent[]; currentPrice: number | null; drifted: boolean}) {
+  const changes = appliedChanges(events);
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-border/60 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            <th scope="col" className="px-4 py-2 text-left">When</th>
-            <th scope="col" className="px-4 py-2 text-left">Run</th>
-            <th scope="col" className="px-4 py-2 text-right">Lazada ref</th>
-            <th scope="col" className="px-4 py-2 text-right">Old → New</th>
-            <th scope="col" className="px-4 py-2 text-left">Outcome</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((e, i) => (
-            <tr
-              key={i}
-              className={`border-b border-border/40 last:border-0 ${e.applied ? '' : 'text-foreground/45'}`}
-            >
-              <td className="px-4 py-2 tabular-nums">{fmtRanAt(e.ranAt)}</td>
-              <td className="px-4 py-2">
-                <RunTypeBadge dryRun={e.dryRun} />
-              </td>
-              <td className="px-4 py-2 text-right tabular-nums">{e.referencePrice != null ? peso0(e.referencePrice) : '—'}</td>
-              <td className="px-4 py-2 text-right tabular-nums">
-                {e.oldPrice != null && <span className="line-through">{peso0(e.oldPrice)}</span>} →{' '}
-                <span className={e.applied ? 'font-semibold text-foreground' : ''}>{e.newPrice != null ? peso0(e.newPrice) : '—'}</span>
-              </td>
-              <td className="px-4 py-2">{reasonFor({newPrice: e.newPrice, targetPrice: e.targetPrice, guardrail: e.guardrail, skipReason: e.skipReason} as RepriceRow)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      {drifted && currentPrice != null && (
+        <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          <span className="text-sm leading-none">⚠</span>
+          <span>
+            Shopify shows {peso0(currentPrice)}, which is not the result of any recorded change. A price change here was not recorded — most
+            likely a run whose audit write failed.
+          </span>
+        </div>
+      )}
+      {changes.length === 0 ? (
+        <p className="px-4 py-4 text-sm text-foreground/55">No recorded price changes yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border/60 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th scope="col" className="px-4 py-2 text-left">When</th>
+                <th scope="col" className="px-4 py-2 text-right">Lazada Reference</th>
+                <th scope="col" className="px-4 py-2 text-right">Old</th>
+                <th scope="col" className="px-4 py-2 text-right">Discount %</th>
+                <th scope="col" className="px-4 py-2 text-right">New</th>
+              </tr>
+            </thead>
+            <tbody>
+              {changes.map((e, i) => {
+                const pct = discountPct({newPrice: e.newPrice, targetPrice: e.targetPrice, referencePrice: e.referencePrice} as RepriceRow);
+                return (
+                  <tr key={i} className="border-b border-border/40 last:border-0">
+                    <td className="px-4 py-2">{fmtRanAt(e.ranAt)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{e.referencePrice != null ? peso0(e.referencePrice) : '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-foreground/60 line-through">{e.oldPrice != null ? peso0(e.oldPrice) : '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
+                      {pct != null ? `${pct}%` : '—'}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-foreground">{e.newPrice != null ? peso0(e.newPrice) : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -202,12 +200,6 @@ function CurrentlyRepricedTable({variants, history}: {variants: RepricedVariant[
                 </span>
               </th>
               <th scope="col" className="px-4 py-3 text-right">
-                <span className="inline-flex items-center gap-1 justify-end">
-                  Last set by repricer
-                  <InfoTip text="The last price the repricer recorded writing for this variant. If this disagrees with Shopify now, either that write's audit row never landed or someone edited the price in Shopify directly." />
-                </span>
-              </th>
-              <th scope="col" className="px-4 py-3 text-right">
                 <span className="inline-flex items-center justify-end gap-1">
                   Discount
                   <InfoTip text={`How far below the Lazada price this variant sits today. Uses the Shopify-now price when known, else the last recorded write. The target is ${UNDERCUT_PCT}%.`} />
@@ -218,10 +210,11 @@ function CurrentlyRepricedTable({variants, history}: {variants: RepricedVariant[
           </thead>
           <tbody>
             {variants.map((v) => {
-              const delta = priceDelta(v.oldPrice, v.newPrice);
               const pct = currentDiscountPct({currentPrice: v.currentPrice, referencePrice: v.referencePrice, fallbackDiscountPct: v.discountPct});
               const isOpen = expanded.has(v.shopifyVariantId);
               const events = history[v.shopifyVariantId] ?? [];
+              const changes = appliedChanges(events);
+              const lastChangeAt = changes[0]?.ranAt ?? null;
               return (
                 <React.Fragment key={v.shopifyVariantId}>
                   <tr
@@ -252,9 +245,6 @@ function CurrentlyRepricedTable({variants, history}: {variants: RepricedVariant[
                     <td className="px-4 py-3 text-right tabular-nums text-foreground/70">
                       {v.referencePrice != null ? peso0(v.referencePrice) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-foreground">
-                      {v.currentPrice != null ? peso0(v.currentPrice) : '—'}
-                    </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       <div className="flex items-center justify-end gap-1.5">
                         {v.drifted && (
@@ -263,31 +253,20 @@ function CurrentlyRepricedTable({variants, history}: {variants: RepricedVariant[
                             text="The store price has changed since the repricer last recorded setting it. Either a run's audit write failed, or someone edited this price in Shopify directly."
                           />
                         )}
-                        <span className={`font-medium ${v.drifted ? 'text-amber-700 dark:text-amber-400' : 'text-foreground/70'}`}>
-                          {v.newPrice != null ? peso0(v.newPrice) : '—'}
+                        <span className={`font-semibold ${v.drifted ? 'text-amber-700 dark:text-amber-400' : 'text-foreground'}`}>
+                          {v.currentPrice != null ? peso0(v.currentPrice) : '—'}
                         </span>
                       </div>
-                      {delta && delta.direction !== 'same' && (
-                        <div
-                          className={`mt-0.5 text-xs font-medium ${
-                            delta.direction === 'down' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
-                          }`}
-                        >
-                          {delta.direction === 'down' ? '−' : '+'}
-                          {peso0(delta.amount)} ({delta.direction === 'down' ? '−' : '+'}
-                          {delta.pct}%)
-                        </div>
-                      )}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
                       {pct != null ? `${pct}%` : '—'}
                     </td>
-                    <td className="px-4 py-3 tabular-nums text-foreground/70">{fmtRanAt(v.ranAt)}</td>
+                    <td className="px-4 py-3 tabular-nums text-foreground/70">{lastChangeAt ? fmtRanAt(lastChangeAt) : '—'}</td>
                   </tr>
                   {isOpen && (
                     <tr key={`${v.shopifyVariantId}-history`} className="border-b border-border/60 bg-muted/10 last:border-0">
-                      <td colSpan={7} className="p-0">
-                        <VariantHistoryPanel events={events} />
+                      <td colSpan={6} className="p-0">
+                        <VariantHistoryPanel events={events} currentPrice={v.currentPrice} drifted={v.drifted} />
                       </td>
                     </tr>
                   )}

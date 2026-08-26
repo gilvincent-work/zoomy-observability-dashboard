@@ -209,8 +209,10 @@ export const MOCK_REPRICE_RUN: RepriceRun = {
 // Variant 1001 demonstrates the exact incident this feature exists to catch:
 // the repricer's audit trail says it last set ₱135, but the latest run's
 // old_price read of Shopify shows ₱143 — a write that never actually landed
-// (or was hand-edited afterwards). Variant 1002 is the healthy, non-drifted
-// case for contrast.
+// (or was hand-edited afterwards), so the history panel has to name that gap.
+// Variant 1002 is the healthy case: one recorded change, no drift. Variant
+// 1003 has never had a qualifying change recorded at all — its history panel
+// must say so plainly rather than look broken.
 export const MOCK_REPRICED_VARIANTS: RepricedVariant[] = [
   {
     shopifyVariantId: 'gid://shopify/ProductVariant/1001',
@@ -238,14 +240,30 @@ export const MOCK_REPRICED_VARIANTS: RepricedVariant[] = [
     currentPrice: 479,
     drifted: false,
   },
+  {
+    shopifyVariantId: 'gid://shopify/ProductVariant/1003',
+    shopifyTitle: 'Cat Litter Clumping Bentonite 10L',
+    marketplaceTitle: 'Cat Litter Clumping Bentonite 10L',
+    marketplaceSku: 'ZMY-AG551190',
+    referencePrice: 399,
+    oldPrice: 319,
+    newPrice: 319,
+    discountPct: 20,
+    ranAt: '2026-08-04T03:20:00.000Z',
+    currentPrice: 319,
+    drifted: false,
+  },
 ];
 
-// Price-change timelines for the two "Currently repriced" variants above,
-// newest-first. Variant 1001's history shows the incident directly: the most
-// recent applied write recorded ₱135, but nothing since then explains the
-// ₱143 Shopify actually holds now — that's the schema-bug write that was
-// silently rejected by the database. Variant 1002 has an unremarkable,
-// undrifted history for contrast.
+// Price-change timelines for the "Currently repriced" variants above,
+// newest-first. Variant 1001 mixes a preview, the applied change it recorded
+// (₱135), and an older no-op run — appliedChanges() keeps only the one real
+// change, and the panel's drift notice separately explains the ₱143 Shopify
+// actually holds now (a write whose audit row was never recorded). Variant
+// 1002 has exactly one recorded change, undrifted, for the unremarkable
+// case. Variant 1003 has rows in the audit trail, but none of them are a
+// real applied change (a preview and a no-op) — appliedChanges() filters
+// down to nothing, demonstrating the "no recorded price changes yet" state.
 export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
   'gid://shopify/ProductVariant/1001': [
     {
@@ -274,25 +292,13 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
     },
     {
       ranAt: '2026-08-12T05:50:00.000Z',
-      dryRun: true,
-      applied: false,
-      referencePrice: 172,
-      targetPrice: 146,
-      oldPrice: 149,
-      newPrice: 146,
-      guardrail: null,
-      skipReason: null,
-      matchBand: 'auto',
-    },
-    {
-      ranAt: '2026-08-05T05:50:00.000Z',
       dryRun: false,
       applied: true,
-      referencePrice: 175,
+      referencePrice: 172,
       targetPrice: 149,
-      oldPrice: 165,
+      oldPrice: 149,
       newPrice: 149,
-      guardrail: null,
+      guardrail: 'no-op',
       skipReason: null,
       matchBand: 'auto',
     },
@@ -318,6 +324,32 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
       targetPrice: 520,
       oldPrice: 520,
       newPrice: 520,
+      guardrail: 'no-op',
+      skipReason: null,
+      matchBand: 'exact',
+    },
+  ],
+  'gid://shopify/ProductVariant/1003': [
+    {
+      ranAt: '2026-08-04T03:20:00.000Z',
+      dryRun: true,
+      applied: false,
+      referencePrice: 399,
+      targetPrice: 319,
+      oldPrice: 319,
+      newPrice: 319,
+      guardrail: null,
+      skipReason: null,
+      matchBand: 'exact',
+    },
+    {
+      ranAt: '2026-07-28T03:20:00.000Z',
+      dryRun: false,
+      applied: true,
+      referencePrice: 399,
+      targetPrice: 319,
+      oldPrice: 319,
+      newPrice: 319,
       guardrail: 'no-op',
       skipReason: null,
       matchBand: 'exact',
