@@ -2,9 +2,9 @@ import 'server-only';
 import {cache} from 'react';
 import {unstable_noStore as noStore} from 'next/cache';
 import {createClient} from '@supabase/supabase-js';
-import type {RepricedVariant, RepriceRow, RepriceRun} from './reprice-types';
-import {discountPct} from './reprice-labels';
-import {MOCK_REPRICE_RUN, MOCK_REPRICED_VARIANTS} from './reprice-mock';
+import type {RepricedVariant, RepriceHistoryEvent, RepriceRow, RepriceRun} from './reprice-types';
+import {discountPct, isDrifted} from './reprice-labels';
+import {MOCK_REPRICE_RUN, MOCK_REPRICED_VARIANTS, MOCK_VARIANT_HISTORY} from './reprice-mock';
 
 // SERVER-ONLY, READ-ONLY. Reads the newest run of marketplace_price_changes
 // from the archive project with the same service-role posture as
@@ -111,6 +111,16 @@ export const getRepricedVariants = cache(async (): Promise<RepricedVariant[]> =>
     .order('ran_at', {ascending: false});
   if (error) throw new Error(`marketplace_price_changes applied read failed: ${error.message}`);
 
+  // The latest run's rows carry old_price = what Shopify held when THAT run
+  // read it, i.e. the freshest known truth about the store. Joined in-memory
+  // on shopify_variant_id rather than a second query, since getLatestRepriceRun
+  // is itself `cache()`-memoized per request.
+  const latestRun = await getLatestRepriceRun();
+  const currentPriceByVariant = new Map<string, number | null>();
+  for (const r of latestRun.rows) {
+    if (r.shopifyVariantId) currentPriceByVariant.set(r.shopifyVariantId, r.oldPrice);
+  }
+
   const seen = new Set<string>();
   const result: RepricedVariant[] = [];
   for (const raw of (data ?? []) as RawRow[]) {
@@ -118,6 +128,7 @@ export const getRepricedVariants = cache(async (): Promise<RepricedVariant[]> =>
     if (!variantId || seen.has(variantId)) continue;
     seen.add(variantId);
     const row = toCamel(raw);
+    const currentPrice = currentPriceByVariant.get(variantId) ?? null;
     result.push({
       shopifyVariantId: variantId,
       shopifyTitle: row.shopifyTitle,
@@ -128,6 +139,48 @@ export const getRepricedVariants = cache(async (): Promise<RepricedVariant[]> =>
       newPrice: row.newPrice,
       discountPct: discountPct(row),
       ranAt: row.ranAt,
+      currentPrice,
+      drifted: isDrifted(currentPrice, row.newPrice),
+    });
+  }
+  return result;
+});
+
+// Per-variant price-change timeline for the variants shown in "Currently
+// repriced" — newest-first, capped at 20 events per variant. Cheap: there are
+// only a handful of currently-repriced variants, and this is a single
+// `in()` query rather than one round trip per variant.
+export const getVariantHistory = cache(async (variantIds: string[]): Promise<Record<string, RepriceHistoryEvent[]>> => {
+  noStore();
+  if (variantIds.length === 0) return {};
+  if (!url || !serviceKey) return MOCK_VARIANT_HISTORY;
+  const supabase = createClient(url, serviceKey, {auth: {persistSession: false}});
+
+  const {data, error} = await supabase
+    .from('marketplace_price_changes')
+    .select('*')
+    .in('shopify_variant_id', variantIds)
+    .order('ran_at', {ascending: false});
+  if (error) throw new Error(`marketplace_price_changes history read failed: ${error.message}`);
+
+  const result: Record<string, RepriceHistoryEvent[]> = {};
+  for (const raw of (data ?? []) as RawRow[]) {
+    const variantId = raw.shopify_variant_id;
+    if (!variantId) continue;
+    const list = result[variantId] ?? (result[variantId] = []);
+    if (list.length >= 20) continue;
+    const row = toCamel(raw);
+    list.push({
+      ranAt: row.ranAt,
+      dryRun: row.dryRun,
+      applied: row.applied,
+      referencePrice: row.referencePrice,
+      targetPrice: row.targetPrice,
+      oldPrice: row.oldPrice,
+      newPrice: row.newPrice,
+      guardrail: row.guardrail,
+      skipReason: row.skipReason,
+      matchBand: row.matchBand,
     });
   }
   return result;

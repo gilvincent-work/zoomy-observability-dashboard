@@ -61,4 +61,28 @@ export interface RepricedVariant {
   newPrice: number | null;
   discountPct: number | null;
   ranAt: string;
+  // The CURRENT Shopify price — old_price from the LATEST run's row for this
+  // variant, i.e. what the store reads today, independent of whether the
+  // repricer's own audit trail recorded a successful write. Null when the
+  // latest run has no row for this variant.
+  currentPrice: number | null;
+  // True when currentPrice disagrees with the last price the repricer
+  // recorded setting (newPrice): either an applied write's audit row never
+  // landed, or someone changed the price in Shopify directly.
+  drifted: boolean;
+}
+
+// One audit event in a variant's price-change timeline, newest-first, capped
+// at 20 events per variant by the caller.
+export interface RepriceHistoryEvent {
+  ranAt: string;
+  dryRun: boolean;
+  applied: boolean;
+  referencePrice: number | null;
+  targetPrice: number | null;
+  oldPrice: number | null;
+  newPrice: number | null;
+  guardrail: RepriceRow['guardrail'];
+  skipReason: RepriceRow['skipReason'];
+  matchBand: RepriceRow['matchBand'];
 }

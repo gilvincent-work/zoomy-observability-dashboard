@@ -1,4 +1,4 @@
-import type {RepricedVariant, RepriceRun} from './reprice-types';
+import type {RepricedVariant, RepriceHistoryEvent, RepriceRun} from './reprice-types';
 
 // Representative mock run so the Repricer page renders sensibly with no
 // Supabase env configured — one row per interesting outcome, not a full 48-row
@@ -27,7 +27,7 @@ export const MOCK_REPRICE_RUN: RepriceRun = {
       matchBand: 'auto',
       targetPrice: 135,
       floorPrice: 100,
-      oldPrice: 149,
+      oldPrice: 143,
       newPrice: 135,
       guardrail: null,
       skipReason: null,
@@ -206,6 +206,11 @@ export const MOCK_REPRICE_RUN: RepriceRun = {
 // Variants the repricer has actually applied a price to, in prior runs
 // (earlier than MOCK_REPRICE_RUN, which is a no-op dry run). Newest first —
 // mirrors what getRepricedVariants() returns from Supabase.
+// Variant 1001 demonstrates the exact incident this feature exists to catch:
+// the repricer's audit trail says it last set ₱135, but the latest run's
+// old_price read of Shopify shows ₱143 — a write that never actually landed
+// (or was hand-edited afterwards). Variant 1002 is the healthy, non-drifted
+// case for contrast.
 export const MOCK_REPRICED_VARIANTS: RepricedVariant[] = [
   {
     shopifyVariantId: 'gid://shopify/ProductVariant/1001',
@@ -217,6 +222,8 @@ export const MOCK_REPRICED_VARIANTS: RepricedVariant[] = [
     newPrice: 135,
     discountPct: 20,
     ranAt: '2026-08-17T05:50:00.000Z',
+    currentPrice: 143,
+    drifted: true,
   },
   {
     shopifyVariantId: 'gid://shopify/ProductVariant/1002',
@@ -228,5 +235,92 @@ export const MOCK_REPRICED_VARIANTS: RepricedVariant[] = [
     newPrice: 479,
     discountPct: 20,
     ranAt: '2026-08-10T03:20:00.000Z',
+    currentPrice: 479,
+    drifted: false,
   },
 ];
+
+// Price-change timelines for the two "Currently repriced" variants above,
+// newest-first. Variant 1001's history shows the incident directly: the most
+// recent applied write recorded ₱135, but nothing since then explains the
+// ₱143 Shopify actually holds now — that's the schema-bug write that was
+// silently rejected by the database. Variant 1002 has an unremarkable,
+// undrifted history for contrast.
+export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
+  'gid://shopify/ProductVariant/1001': [
+    {
+      ranAt: '2026-08-18T02:15:00.000Z',
+      dryRun: true,
+      applied: false,
+      referencePrice: 169,
+      targetPrice: 135,
+      oldPrice: 149,
+      newPrice: 135,
+      guardrail: null,
+      skipReason: null,
+      matchBand: 'auto',
+    },
+    {
+      ranAt: '2026-08-17T05:50:00.000Z',
+      dryRun: false,
+      applied: true,
+      referencePrice: 169,
+      targetPrice: 135,
+      oldPrice: 149,
+      newPrice: 135,
+      guardrail: null,
+      skipReason: null,
+      matchBand: 'auto',
+    },
+    {
+      ranAt: '2026-08-12T05:50:00.000Z',
+      dryRun: true,
+      applied: false,
+      referencePrice: 172,
+      targetPrice: 146,
+      oldPrice: 149,
+      newPrice: 146,
+      guardrail: null,
+      skipReason: null,
+      matchBand: 'auto',
+    },
+    {
+      ranAt: '2026-08-05T05:50:00.000Z',
+      dryRun: false,
+      applied: true,
+      referencePrice: 175,
+      targetPrice: 149,
+      oldPrice: 165,
+      newPrice: 149,
+      guardrail: null,
+      skipReason: null,
+      matchBand: 'auto',
+    },
+  ],
+  'gid://shopify/ProductVariant/1002': [
+    {
+      ranAt: '2026-08-10T03:20:00.000Z',
+      dryRun: false,
+      applied: true,
+      referencePrice: 599,
+      targetPrice: 479,
+      oldPrice: 520,
+      newPrice: 479,
+      guardrail: null,
+      skipReason: null,
+      matchBand: 'exact',
+    },
+    {
+      ranAt: '2026-08-03T03:20:00.000Z',
+      dryRun: true,
+      applied: false,
+      referencePrice: 610,
+      targetPrice: 520,
+      oldPrice: 520,
+      newPrice: 520,
+      guardrail: 'no-op',
+      skipReason: null,
+      matchBand: 'exact',
+    },
+  ],
+};
