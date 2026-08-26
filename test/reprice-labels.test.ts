@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {UNDERCUT_PCT,averagePct, badgeText, discountPct, guardrailLabel, nextAction, pluraliseCount, priceDelta, readyToReprice, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
+import {UNDERCUT_PCT,averagePct, badgeText, currentDiscountPct, discountPct, guardrailLabel, isDrifted, nextAction, pluraliseCount, priceDelta, readyToReprice, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
 import type {RepriceRow} from '../src/reprice-types';
 
 function row(overrides: Partial<RepriceRow>): RepriceRow {
@@ -100,6 +100,34 @@ describe('discountPct', () => {
   });
   it('returns null when the reference price is missing', () => {
     expect(discountPct(row({referencePrice: null, newPrice: 135}))).toBeNull();
+  });
+});
+
+describe('currentDiscountPct', () => {
+  it('uses the current Shopify price when available', () => {
+    expect(currentDiscountPct({currentPrice: 143, referencePrice: 169, fallbackDiscountPct: 20})).toBe(15);
+  });
+  it('falls back to the stored discount when current price is missing', () => {
+    expect(currentDiscountPct({currentPrice: null, referencePrice: 169, fallbackDiscountPct: 20})).toBe(20);
+  });
+  it('falls back when reference price is missing', () => {
+    expect(currentDiscountPct({currentPrice: 143, referencePrice: null, fallbackDiscountPct: 20})).toBe(20);
+  });
+  it('falls back when reference price is zero', () => {
+    expect(currentDiscountPct({currentPrice: 143, referencePrice: 0, fallbackDiscountPct: 20})).toBe(20);
+  });
+});
+
+describe('isDrifted', () => {
+  it('is true when current price differs from the recorded new price', () => {
+    expect(isDrifted(143, 135)).toBe(true);
+  });
+  it('is false when they match', () => {
+    expect(isDrifted(135, 135)).toBe(false);
+  });
+  it('is false when either side is missing', () => {
+    expect(isDrifted(null, 135)).toBe(false);
+    expect(isDrifted(143, null)).toBe(false);
   });
 });
 

@@ -1,7 +1,19 @@
 'use client';
 
-import type {ReadyCandidate, RepricedVariant, RepriceRow, RepriceRun} from '@/src/reprice-types';
-import {UNDERCUT_PCT, averagePct, badgeText, discountPct, pluraliseCount, priceDelta, readyToReprice, reasonFor, summarise} from '@/src/reprice-labels';
+import React, {useState} from 'react';
+import type {ReadyCandidate, RepricedVariant, RepriceHistoryEvent, RepriceRow, RepriceRun} from '@/src/reprice-types';
+import {
+  UNDERCUT_PCT,
+  averagePct,
+  badgeText,
+  currentDiscountPct,
+  discountPct,
+  pluraliseCount,
+  priceDelta,
+  reasonFor,
+  readyToReprice,
+  summarise,
+} from '@/src/reprice-labels';
 import {InfoTip} from './info-tip';
 
 // Shared money formatter — every peso figure on this page goes through this,
@@ -83,84 +95,208 @@ function StatCard({label, value, hint, sub, size = 'lg', tone = 'default'}: {
   );
 }
 
-/** The lead section: the state of the store, not the state of the latest job.
- *  Explicitly NOT a live Shopify read — the honesty caveat lives right next
- *  to the column it qualifies, via the InfoTip. */
-function CurrentlyRepricedTable({variants}: {variants: RepricedVariant[]}) {
+/** Compact badge for a history event's run type — mirrors RunBadge's
+ *  vocabulary but small enough to sit inline in a timeline row. */
+function RunTypeBadge({dryRun}: {dryRun: boolean}) {
+  return dryRun ? (
+    <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-foreground/50">
+      Preview
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+      Applied
+    </span>
+  );
+}
+
+/** Expanded panel under a "Currently repriced" row: the variant's full
+ *  price-change timeline, newest-first. Applied events are the significant
+ *  ones — a real write happened — so preview/dry-run rows get a muted
+ *  treatment to keep the real changes visually prominent. */
+function VariantHistoryPanel({events}: {events: RepriceHistoryEvent[]}) {
+  if (events.length === 0) {
+    return <p className="px-4 py-4 text-sm text-foreground/55">No audit history found for this variant.</p>;
+  }
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
         <thead>
-          <tr className="border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <th scope="col" className="px-4 py-3 text-left">Product</th>
-            <th scope="col" className="px-4 py-3 text-right">
-              <span className="inline-flex items-center justify-end gap-1">
-                Lazada price
-                <InfoTip text="The Lazada price this variant was priced against. The discount column is how far the written price sits below it." />
-              </span>
-            </th>
-            <th scope="col" className="px-4 py-3 text-right">
-              <span className="inline-flex items-center justify-end gap-1">
-                Shopify price
-                <InfoTip text="What this variant was priced at on the website before the repricer last changed it." />
-              </span>
-            </th>
-            <th scope="col" className="px-4 py-3 text-right">
-              <span className="inline-flex items-center gap-1 justify-end">
-                Price set by repricer
-                <InfoTip text="The last price the repricer wrote for this variant. If someone edited the price in Shopify afterwards, this will be out of date — this page does not read live Shopify prices." />
-              </span>
-            </th>
-            <th scope="col" className="px-4 py-3 text-right">
-              <span className="inline-flex items-center justify-end gap-1">
-                Discount
-                <InfoTip text={`How far below the Lazada price this variant is currently priced. The target is ${UNDERCUT_PCT}%.`} />
-              </span>
-            </th>
-            <th scope="col" className="px-4 py-3 text-left">When</th>
+          <tr className="border-b border-border/60 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <th scope="col" className="px-4 py-2 text-left">When</th>
+            <th scope="col" className="px-4 py-2 text-left">Run</th>
+            <th scope="col" className="px-4 py-2 text-right">Lazada ref</th>
+            <th scope="col" className="px-4 py-2 text-right">Old → New</th>
+            <th scope="col" className="px-4 py-2 text-left">Outcome</th>
           </tr>
         </thead>
         <tbody>
-          {variants.map((v) => {
-            const delta = priceDelta(v.oldPrice, v.newPrice);
-            return (
-              <tr key={v.shopifyVariantId} className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/25">
-                {/* SKU rides under the product name; the "Lazada price" column
-                    must carry the reference PRICE, otherwise the discount has
-                    nothing on screen to be a discount from. */}
-                <td className="px-4 py-3">
-                  <div className="font-medium text-foreground">{v.shopifyTitle ?? v.marketplaceTitle}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">{v.marketplaceSku}</div>
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-foreground/70">
-                  {v.referencePrice != null ? peso0(v.referencePrice) : '—'}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-foreground/45 line-through">
-                  {v.oldPrice != null ? peso0(v.oldPrice) : '—'}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  <div className="font-semibold text-foreground">{v.newPrice != null ? peso0(v.newPrice) : '—'}</div>
-                  {delta && delta.direction !== 'same' && (
-                    <div
-                      className={`mt-0.5 text-xs font-medium ${
-                        delta.direction === 'down' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
-                      }`}
-                    >
-                      {delta.direction === 'down' ? '−' : '+'}
-                      {peso0(delta.amount)} ({delta.direction === 'down' ? '−' : '+'}
-                      {delta.pct}%)
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
-                  {v.discountPct != null ? `${v.discountPct}%` : '—'}
-                </td>
-                <td className="px-4 py-3 tabular-nums text-foreground/70">{fmtRanAt(v.ranAt)}</td>
-              </tr>
-            );
-          })}
+          {events.map((e, i) => (
+            <tr
+              key={i}
+              className={`border-b border-border/40 last:border-0 ${e.applied ? '' : 'text-foreground/45'}`}
+            >
+              <td className="px-4 py-2 tabular-nums">{fmtRanAt(e.ranAt)}</td>
+              <td className="px-4 py-2">
+                <RunTypeBadge dryRun={e.dryRun} />
+              </td>
+              <td className="px-4 py-2 text-right tabular-nums">{e.referencePrice != null ? peso0(e.referencePrice) : '—'}</td>
+              <td className="px-4 py-2 text-right tabular-nums">
+                {e.oldPrice != null && <span className="line-through">{peso0(e.oldPrice)}</span>} →{' '}
+                <span className={e.applied ? 'font-semibold text-foreground' : ''}>{e.newPrice != null ? peso0(e.newPrice) : '—'}</span>
+              </td>
+              <td className="px-4 py-2">{reasonFor({newPrice: e.newPrice, targetPrice: e.targetPrice, guardrail: e.guardrail, skipReason: e.skipReason} as RepriceRow)}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** The lead section: the state of the store, not the state of the latest job.
+ *  Now leads with the CURRENT Shopify price (from the latest run's read of
+ *  the store) rather than only the last price the repricer recorded writing
+ *  — those two can disagree when an applied write's audit row silently
+ *  failed, or someone edited Shopify by hand. Each row expands into that
+ *  variant's full price-change history so a drifted row is inspectable, not
+ *  just flagged. */
+function CurrentlyRepricedTable({variants, history}: {variants: RepricedVariant[]; history: Record<string, RepriceHistoryEvent[]>}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const driftedCount = variants.filter((v) => v.drifted).length;
+
+  return (
+    <div className="space-y-3">
+      {driftedCount > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+          <span className="text-base leading-none">⚠</span>
+          <span>
+            {pluraliseCount(driftedCount, 'product')} show a store price different from the last recorded change — expand a row to see its
+            history.
+          </span>
+        </div>
+      )}
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <th scope="col" className="w-8 px-2 py-3" aria-hidden="true" />
+              <th scope="col" className="px-4 py-3 text-left">Product</th>
+              <th scope="col" className="px-4 py-3 text-right">
+                <span className="inline-flex items-center justify-end gap-1">
+                  Lazada price
+                  <InfoTip text="The Lazada price this variant was priced against. The discount column is how far the written price sits below it." />
+                </span>
+              </th>
+              <th scope="col" className="px-4 py-3 text-right">
+                <span className="inline-flex items-center justify-end gap-1">
+                  Shopify now
+                  <InfoTip text="What Shopify actually holds for this variant right now, read from the latest run. This is the source of truth about the store." />
+                </span>
+              </th>
+              <th scope="col" className="px-4 py-3 text-right">
+                <span className="inline-flex items-center gap-1 justify-end">
+                  Last set by repricer
+                  <InfoTip text="The last price the repricer recorded writing for this variant. If this disagrees with Shopify now, either that write's audit row never landed or someone edited the price in Shopify directly." />
+                </span>
+              </th>
+              <th scope="col" className="px-4 py-3 text-right">
+                <span className="inline-flex items-center justify-end gap-1">
+                  Discount
+                  <InfoTip text={`How far below the Lazada price this variant sits today. Uses the Shopify-now price when known, else the last recorded write. The target is ${UNDERCUT_PCT}%.`} />
+                </span>
+              </th>
+              <th scope="col" className="px-4 py-3 text-left">When</th>
+            </tr>
+          </thead>
+          <tbody>
+            {variants.map((v) => {
+              const delta = priceDelta(v.oldPrice, v.newPrice);
+              const pct = currentDiscountPct({currentPrice: v.currentPrice, referencePrice: v.referencePrice, fallbackDiscountPct: v.discountPct});
+              const isOpen = expanded.has(v.shopifyVariantId);
+              const events = history[v.shopifyVariantId] ?? [];
+              return (
+                <React.Fragment key={v.shopifyVariantId}>
+                  <tr
+                    onClick={() => toggle(v.shopifyVariantId)}
+                    className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-muted/25"
+                  >
+                    <td className="px-2 py-3">
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        aria-label={`${isOpen ? 'Hide' : 'Show'} price history for ${v.shopifyTitle ?? v.marketplaceTitle}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggle(v.shopifyVariantId);
+                        }}
+                        className="flex size-6 items-center justify-center rounded-md text-foreground/50 outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+                      >
+                        <span className={`inline-block text-xs transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+                      </button>
+                    </td>
+                    {/* SKU rides under the product name; the "Lazada price" column
+                        must carry the reference PRICE, otherwise the discount has
+                        nothing on screen to be a discount from. */}
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-foreground">{v.shopifyTitle ?? v.marketplaceTitle}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{v.marketplaceSku}</div>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/70">
+                      {v.referencePrice != null ? peso0(v.referencePrice) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-foreground">
+                      {v.currentPrice != null ? peso0(v.currentPrice) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {v.drifted && (
+                          <InfoTip
+                            className="order-first"
+                            text="The store price has changed since the repricer last recorded setting it. Either a run's audit write failed, or someone edited this price in Shopify directly."
+                          />
+                        )}
+                        <span className={`font-medium ${v.drifted ? 'text-amber-700 dark:text-amber-400' : 'text-foreground/70'}`}>
+                          {v.newPrice != null ? peso0(v.newPrice) : '—'}
+                        </span>
+                      </div>
+                      {delta && delta.direction !== 'same' && (
+                        <div
+                          className={`mt-0.5 text-xs font-medium ${
+                            delta.direction === 'down' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+                          }`}
+                        >
+                          {delta.direction === 'down' ? '−' : '+'}
+                          {peso0(delta.amount)} ({delta.direction === 'down' ? '−' : '+'}
+                          {delta.pct}%)
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
+                      {pct != null ? `${pct}%` : '—'}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums text-foreground/70">{fmtRanAt(v.ranAt)}</td>
+                  </tr>
+                  {isOpen && (
+                    <tr key={`${v.shopifyVariantId}-history`} className="border-b border-border/60 bg-muted/10 last:border-0">
+                      <td colSpan={7} className="p-0">
+                        <VariantHistoryPanel events={events} />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -277,7 +413,15 @@ function EmptyState({children}: {children: React.ReactNode}) {
   );
 }
 
-export function RepricerView({run, repriced}: {run: RepriceRun; repriced: RepricedVariant[]}) {
+export function RepricerView({
+  run,
+  repriced,
+  history,
+}: {
+  run: RepriceRun;
+  repriced: RepricedVariant[];
+  history: Record<string, RepriceHistoryEvent[]>;
+}) {
   const summary = summarise(run.rows);
   const changedRows = run.rows.filter((r) => r.newPrice != null);
   const notChangedRows = run.rows.filter((r) => r.newPrice == null);
@@ -320,7 +464,7 @@ export function RepricerView({run, repriced}: {run: RepriceRun; repriced: Repric
       <section className="reprice-reveal space-y-3 motion-safe:[animation-delay:60ms]">
         <h2 className="text-lg font-bold text-foreground">Currently repriced</h2>
         {repriced.length > 0 ? (
-          <CurrentlyRepricedTable variants={repriced} />
+          <CurrentlyRepricedTable variants={repriced} history={history} />
         ) : (
           <EmptyState>
             <p>The repricer hasn&apos;t changed any prices yet.</p>

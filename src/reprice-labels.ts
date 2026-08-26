@@ -107,6 +107,32 @@ export function discountPct(row: RepriceRow): number | null {
   return Math.round((1 - price / row.referencePrice) * 100);
 }
 
+/** The discount actually in effect today: prefers the CURRENT Shopify price
+ *  over the price the repricer last recorded setting, since the current
+ *  price is what a customer actually sees. Falls back to the recorded
+ *  discount (newPrice vs referencePrice) when the current price isn't known —
+ *  e.g. no run has read this variant yet. Null when there's nothing to
+ *  compare against either way. */
+export function currentDiscountPct(opts: {
+  currentPrice: number | null;
+  referencePrice: number | null;
+  fallbackDiscountPct: number | null;
+}): number | null {
+  const {currentPrice, referencePrice, fallbackDiscountPct} = opts;
+  if (currentPrice != null && referencePrice != null && referencePrice !== 0) {
+    return Math.round((1 - currentPrice / referencePrice) * 100);
+  }
+  return fallbackDiscountPct;
+}
+
+/** Whether the store's actual current price disagrees with the last price
+ *  the repricer recorded writing. True drift means either an applied run's
+ *  audit write silently failed, or someone edited the price in Shopify by
+ *  hand afterwards. */
+export function isDrifted(currentPrice: number | null, newPrice: number | null): boolean {
+  return currentPrice != null && newPrice != null && currentPrice !== newPrice;
+}
+
 /** "1 price" / "3 prices" — pluralises a plain noun for a count. */
 export function pluraliseCount(n: number, singular: string, plural: string = `${singular}s`): string {
   return `${n} ${n === 1 ? singular : plural}`;
