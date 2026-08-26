@@ -3,6 +3,11 @@
 // isolation and reuse anywhere the shape of a RepriceRow is known.
 import type {ReadyCandidate, RepriceRow} from './reprice-types';
 
+/** The undercut target the repricer aims for, as a percentage. Mirrors
+ *  REPRICE_UNDERCUT_PCT in the batch job — this is display copy only, it never
+ *  drives a calculation, but it must not drift from the job's actual policy. */
+export const UNDERCUT_PCT = 15;
+
 export function guardrailLabel(g: RepriceRow['guardrail']): string {
   switch (g) {
     case 'no-floor':
@@ -14,9 +19,9 @@ export function guardrailLabel(g: RepriceRow['guardrail']): string {
     case 'no-op':
       return 'Already at the target price';
     case null:
-      return 'Priced 20% under Lazada';
+      return `Priced ${UNDERCUT_PCT}% under the marketplace price`;
     default:
-      return 'Priced 20% under Lazada';
+      return `Priced ${UNDERCUT_PCT}% under the marketplace price`;
   }
 }
 

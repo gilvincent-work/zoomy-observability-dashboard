@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {averagePct, badgeText, discountPct, guardrailLabel, nextAction, pluraliseCount, priceDelta, readyToReprice, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
+import {UNDERCUT_PCT,averagePct, badgeText, discountPct, guardrailLabel, nextAction, pluraliseCount, priceDelta, readyToReprice, reasonFor, skipLabel, summarise} from '../src/reprice-labels';
 import type {RepriceRow} from '../src/reprice-types';
 
 function row(overrides: Partial<RepriceRow>): RepriceRow {
@@ -36,7 +36,7 @@ describe('guardrailLabel', () => {
     expect(guardrailLabel('floor-clamp')).toBe('Held at your floor price');
     expect(guardrailLabel('max-change-clamp')).toBe('Limited to a 10% move this run');
     expect(guardrailLabel('no-op')).toBe('Already at the target price');
-    expect(guardrailLabel(null)).toBe('Priced 20% under Lazada');
+    expect(guardrailLabel(null)).toBe(`Priced ${UNDERCUT_PCT}% under the marketplace price`);
   });
 });
 

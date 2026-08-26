@@ -1,7 +1,7 @@
 'use client';
 
 import type {ReadyCandidate, RepricedVariant, RepriceRow, RepriceRun} from '@/src/reprice-types';
-import {averagePct, badgeText, discountPct, pluraliseCount, priceDelta, readyToReprice, reasonFor, summarise} from '@/src/reprice-labels';
+import {UNDERCUT_PCT, averagePct, badgeText, discountPct, pluraliseCount, priceDelta, readyToReprice, reasonFor, summarise} from '@/src/reprice-labels';
 import {InfoTip} from './info-tip';
 
 // Shared money formatter — every peso figure on this page goes through this,
@@ -114,7 +114,7 @@ function CurrentlyRepricedTable({variants}: {variants: RepricedVariant[]}) {
             <th scope="col" className="px-4 py-3 text-right">
               <span className="inline-flex items-center justify-end gap-1">
                 Discount
-                <InfoTip text="How far below the Lazada price this variant is currently priced. The target is 20%." />
+                <InfoTip text={`How far below the Lazada price this variant is currently priced. The target is ${UNDERCUT_PCT}%.`} />
               </span>
             </th>
             <th scope="col" className="px-4 py-3 text-left">When</th>
@@ -255,7 +255,7 @@ function ReadyToRepriceTable({candidates}: {candidates: ReadyCandidate[]}) {
                   −{c.savingPct}%
                   {c.capped && (
                     <InfoTip
-                      text={`A price never moves more than 10% at once, so this run takes it to ${peso0(c.firstRunPrice)}. Run the repricer again and it reaches ${peso0(c.targetPrice)}, the full 20% below Lazada.`}
+                      text={`A price never moves more than 10% at once, so this run takes it to ${peso0(c.firstRunPrice)}. Run the repricer again and it reaches ${peso0(c.targetPrice)}, the full ${UNDERCUT_PCT}% below the marketplace price.`}
                     />
                   )}
                 </span>
@@ -338,7 +338,7 @@ export function RepricerView({run, repriced}: {run: RepriceRun; repriced: Repric
         <StatCard
           label="Average discount vs Lazada"
           value={avgDiscount != null ? `${avgDiscount}%` : 'N/A'}
-          hint="Across products the repricer has priced, how far below the Lazada reference price the last written price sits, on average. The target is 20%."
+          hint={`Across products the repricer has priced, how far below the marketplace reference price the last written price sits, on average. The target is ${UNDERCUT_PCT}%.`}
           tone="emerald"
         />
         <StatCard
