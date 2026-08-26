@@ -267,6 +267,19 @@ export const MOCK_REPRICED_VARIANTS: RepricedVariant[] = [
 export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
   'gid://shopify/ProductVariant/1001': [
     {
+      ranAt: '2026-08-26T11:36:25.000Z',
+      dryRun: false,
+      applied: true,
+      referencePrice: 126,
+      targetPrice: 126,
+      oldPrice: 120,
+      newPrice: 126,
+      guardrail: null,
+      skipReason: null,
+      matchBand: 'auto',
+      note: 'Reconstructed on 2026-08-26. This change reached Shopify but its audit write was rejected at the time due to a missing column; the price and timestamp below were read back from Shopify directly.',
+    },
+    {
       ranAt: '2026-08-18T02:15:00.000Z',
       dryRun: true,
       applied: false,
@@ -277,6 +290,7 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
       guardrail: null,
       skipReason: null,
       matchBand: 'auto',
+      note: null,
     },
     {
       ranAt: '2026-08-17T05:50:00.000Z',
@@ -289,6 +303,7 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
       guardrail: null,
       skipReason: null,
       matchBand: 'auto',
+      note: null,
     },
     {
       ranAt: '2026-08-12T05:50:00.000Z',
@@ -301,6 +316,7 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
       guardrail: 'no-op',
       skipReason: null,
       matchBand: 'auto',
+      note: null,
     },
   ],
   'gid://shopify/ProductVariant/1002': [
@@ -315,6 +331,7 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
       guardrail: null,
       skipReason: null,
       matchBand: 'exact',
+      note: null,
     },
     {
       ranAt: '2026-08-03T03:20:00.000Z',
@@ -327,6 +344,7 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
       guardrail: 'no-op',
       skipReason: null,
       matchBand: 'exact',
+      note: null,
     },
   ],
   'gid://shopify/ProductVariant/1003': [
@@ -341,6 +359,7 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
       guardrail: null,
       skipReason: null,
       matchBand: 'exact',
+      note: null,
     },
     {
       ranAt: '2026-07-28T03:20:00.000Z',
@@ -353,6 +372,7 @@ export const MOCK_VARIANT_HISTORY: Record<string, RepriceHistoryEvent[]> = {
       guardrail: 'no-op',
       skipReason: null,
       matchBand: 'exact',
+      note: null,
     },
   ],
 };

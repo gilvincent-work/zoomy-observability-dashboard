@@ -221,6 +221,7 @@ function historyEvent(overrides: Partial<RepriceHistoryEvent>): RepriceHistoryEv
     guardrail: null,
     skipReason: null,
     matchBand: 'auto',
+    note: null,
     ...overrides,
   };
 }

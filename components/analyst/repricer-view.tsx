@@ -133,7 +133,17 @@ function VariantHistoryPanel({events, currentPrice, drifted}: {events: RepriceHi
                 const pct = discountPct({newPrice: e.newPrice, targetPrice: e.targetPrice, referencePrice: e.referencePrice} as RepriceRow);
                 return (
                   <tr key={i} className="border-b border-border/40 last:border-0">
-                    <td className="px-4 py-2">{fmtRanAt(e.ranAt)}</td>
+                    <td className="px-4 py-2">
+                      <span className="inline-flex items-center gap-1.5">
+                        {fmtRanAt(e.ranAt)}
+                        {e.note && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/50 bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                            Reconstructed
+                            <InfoTip text={e.note} />
+                          </span>
+                        )}
+                      </span>
+                    </td>
                     <td className="px-4 py-2 text-right tabular-nums">{e.referencePrice != null ? peso0(e.referencePrice) : '—'}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-foreground/60 line-through">{e.oldPrice != null ? peso0(e.oldPrice) : '—'}</td>
                     <td className="px-4 py-2 text-right tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
