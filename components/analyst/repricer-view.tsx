@@ -261,7 +261,22 @@ function CurrentlyRepricedTable({variants, history}: {variants: RepricedVariant[
                     <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
                       {pct != null ? `${pct}%` : '—'}
                     </td>
-                    <td className="px-4 py-3 tabular-nums text-foreground/70">{lastChangeAt ? fmtRanAt(lastChangeAt) : '—'}</td>
+                    {/* A drifted row's price was never recorded, so we do NOT know
+                        when it was set — lastChangeAt belongs to the PREVIOUS,
+                        recorded price. Printing it next to the current price
+                        would assert a date for a change we have no record of. */}
+                    <td className="px-4 py-3 tabular-nums text-foreground/70">
+                      {v.drifted ? (
+                        <span className="inline-flex items-center gap-1 text-foreground/45">
+                          Not recorded
+                          <InfoTip text="The price now on Shopify was never recorded, so we cannot say when it was set. Expand this row for the last change we do have a record of." />
+                        </span>
+                      ) : lastChangeAt ? (
+                        fmtRanAt(lastChangeAt)
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                   </tr>
                   {isOpen && (
                     <tr key={`${v.shopifyVariantId}-history`} className="border-b border-border/60 bg-muted/10 last:border-0">
@@ -476,7 +491,7 @@ export function RepricerView({
           size="md"
           value={lastChangeAt ? fmtRanAtShort(lastChangeAt) : 'Never'}
           sub={lastChangeAt ? 'PH time' : undefined}
-          hint="When the repricer last actually wrote a new price to Shopify — as opposed to a preview run that only decided what it would do."
+          hint="The most recent price change the repricer has a RECORD of making. If a run wrote a price but its audit write failed, that change is not counted here — the affected rows are marked in the table above."
         />
         <StatCard
           label="Products considered"
