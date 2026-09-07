@@ -1,10 +1,10 @@
 'use client';
 
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, Boxes, ChevronDown, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
+import {Activity, Boxes, ChevronDown, ChevronLeft, ChevronRight, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -76,6 +76,24 @@ export function DashboardShell({
     !pathname.startsWith('/offline-sales');
 
   const [periodOpen, setPeriodOpen] = useState(false);
+
+  // Nav rail can expand to show labels beside the icons (8 icon-only tabs are
+  // hard to tell apart). Default collapsed to match SSR; restore the saved
+  // choice after mount to avoid a hydration mismatch, and persist changes.
+  const [navExpanded, setNavExpanded] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('coop-nav-expanded') === '1') setNavExpanded(true);
+    } catch {}
+  }, []);
+  const toggleNav = () =>
+    setNavExpanded((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('coop-nav-expanded', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
 
   return (
     <PlaybookProvider>
@@ -192,28 +210,46 @@ export function DashboardShell({
 
       {/* ── Body: icon rail + canvas ────────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-sidebar-border bg-sidebar py-4">
+        <nav
+          className={cn(
+            'relative flex shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar py-4 transition-[width] duration-200 ease-out',
+            navExpanded ? 'w-56 items-stretch px-3' : 'w-16 items-center',
+          )}
+        >
           {TABS.map((t) => {
             const active = isActive(pathname, t.href);
             return (
               <Link
                 key={t.href}
                 href={withWeek(t.href)}
-                title={t.label}
+                title={navExpanded ? undefined : t.label}
                 aria-label={t.label}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'relative flex size-10 items-center justify-center rounded-xl transition-colors',
+                  'relative flex h-10 items-center rounded-xl transition-colors',
+                  navExpanded ? 'w-full gap-3 px-3' : 'size-10 justify-center',
                   active
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
                 )}
               >
                 {active && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
-                <t.icon className="size-[18px]" />
+                <t.icon className="size-[18px] shrink-0" />
+                {navExpanded && <span className="truncate text-[13px] font-medium">{t.label}</span>}
               </Link>
             );
           })}
+
+          {/* Expand / collapse toggle — straddles the rail's right edge, vertically centered. */}
+          <button
+            type="button"
+            onClick={toggleNav}
+            aria-label={navExpanded ? 'Collapse navigation' : 'Expand navigation'}
+            aria-expanded={navExpanded}
+            className="absolute -right-3 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-sidebar-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+          >
+            {navExpanded ? <ChevronLeft className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          </button>
         </nav>
 
         <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-y-auto">
