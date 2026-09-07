@@ -4,7 +4,7 @@ import {useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, Boxes, ChevronDown, Home, LogOut, Mail, Package, Settings, Tag, Users} from 'lucide-react';
+import {Activity, Boxes, ChevronDown, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -16,6 +16,7 @@ import {CoopChatProvider, AskCoopPill} from './coop-chat';
 const TABS = [
   {href: '/', label: 'Overview', icon: Home},
   {href: '/products', label: 'Products', icon: Boxes},
+  {href: '/offline-sales', label: 'Offline Sales', icon: Receipt},
   {href: '/inventory', label: 'Inventory', icon: Package},
   {href: '/customers', label: 'Customers', icon: Users},
   {href: '/traffic', label: 'Traffic', icon: Activity},
@@ -71,7 +72,8 @@ export function DashboardShell({
     !pathname.startsWith('/settings') &&
     !pathname.startsWith('/health') &&
     !pathname.startsWith('/repricer') &&
-    !pathname.startsWith('/products');
+    !pathname.startsWith('/products') &&
+    !pathname.startsWith('/offline-sales');
 
   const [periodOpen, setPeriodOpen] = useState(false);
 
