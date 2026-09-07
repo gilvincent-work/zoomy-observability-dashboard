@@ -8,7 +8,7 @@ export interface Knobs {
   acqCost: number; // total ₱ acquisition spend — used when a channel has no ROAS (Website)
 }
 export interface ChannelFacts {
-  channel: 'shopee' | 'lazada' | 'website';
+  channel: 'shopee' | 'lazada' | 'website' | 'offline';
   orders: number;
   buyers: number;
   revenue: number;

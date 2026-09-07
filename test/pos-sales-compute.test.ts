@@ -3,6 +3,8 @@ import {
   computeKpis,
   filterOrdersByRange,
   isSalesRange,
+  offlineChannelFacts,
+  offlineCompareMetrics,
   rangeStart,
   salesByDay,
   stockAlerts,
@@ -106,6 +108,41 @@ describe('topProducts', () => {
       {product_id: 'A', name: 'Alpha', revenue: 300, units: 3},
     ].sort((a, b) => b.revenue - a.revenue));
     expect(topProducts(orders, 1)).toHaveLength(1);
+  });
+});
+
+describe('offlineChannelFacts', () => {
+  it('builds a Website-shaped offline channel (no ROAS, no platform fee, ₱0 event cost, 0 buyers)', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 540}),
+      order({id: '2', created_at: NOW.toISOString(), total: 300}),
+    ];
+    expect(offlineChannelFacts(orders)).toEqual({
+      channel: 'offline',
+      orders: 2,
+      buyers: 0,
+      revenue: 840,
+      adSpend: null,
+      adRevenue: null,
+      platformFeeApplies: false,
+      defaults: {cogsPct: 0.35, platformFeePct: 0, promos: 0, acqCost: 0},
+    });
+  });
+  it('returns null when there are no orders', () => {
+    expect(offlineChannelFacts([])).toBeNull();
+  });
+});
+
+describe('offlineCompareMetrics', () => {
+  it('builds compare-chart metrics with AOV, null adSpend/roas', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 400, items: [{product_id: 'A', name: 'A', qty: 2, unit_price: 200, line_total: 400}]}),
+      order({id: '2', created_at: NOW.toISOString(), total: 200, items: [{product_id: 'B', name: 'B', qty: 1, unit_price: 200, line_total: 200}]}),
+    ];
+    expect(offlineCompareMetrics(orders)).toEqual({revenue: 600, orders: 2, aov: 300, units: 3, adSpend: null, roas: null});
+  });
+  it('returns null when there are no orders', () => {
+    expect(offlineCompareMetrics([])).toBeNull();
   });
 });
 
