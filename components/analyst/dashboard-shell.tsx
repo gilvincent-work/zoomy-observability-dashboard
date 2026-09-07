@@ -212,7 +212,10 @@ export function DashboardShell({
       <div className="flex min-h-0 flex-1">
         <nav
           className={cn(
-            'relative flex shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar py-4 transition-[width] duration-200 ease-out',
+            // Pin the rail to the viewport (below the h-14 header) so its height
+            // is bounded — otherwise a tall page stretches it and the centered
+            // toggle drifts down into the empty space below the tabs.
+            'sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 flex-col gap-1 self-start border-r border-sidebar-border bg-sidebar py-4 transition-[width] duration-200 ease-out',
             navExpanded ? 'w-56 items-stretch px-3' : 'w-16 items-center',
           )}
         >
