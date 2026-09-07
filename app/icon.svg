@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Coop favicon: forest-green tile with a cream "c" monogram (the wordmark
+       "coop" is illegible at favicon sizes; the "c" is drawn as a stroked arc so
+       it's font-independent and crisp at every size). Brand: #3F6E56 / #F7F5EF. -->
+  <rect width="32" height="32" rx="7" fill="#3F6E56"/>
+  <path d="M21 10.4 A8 8 0 1 0 21 21.6"
+        fill="none" stroke="#F7F5EF" stroke-width="3.6" stroke-linecap="round"/>
+</svg>
