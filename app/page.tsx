@@ -10,11 +10,13 @@ import type {SalesKpis} from '@/src/pos-sales-types';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
-// All valid channels (for the ?channel= single-drill-down check). Offline is a
-// valid channel but is NOT part of the default "all" selection — it's opt-in via
-// its chip, so the default Compare Overview stays byte-identical to before.
+// All channels, including offline, are selected by default on the compare
+// Overview (PO decision 2026-09-07). Note: offline totals are all-time (offline
+// isn't tied to the digest's weekly window), so the headline totals mix bases;
+// the period-over-period trend arrows stay like-for-like (offline is excluded
+// from that comparison in CombinedKpis, since it has no prior-window data).
 const ALL_CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
-const DEFAULT_CHANNELS: Channel[] = ['shopee', 'lazada', 'website'];
+const DEFAULT_CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
 
 // Offline 30-day KPIs for the Overview home card. Isolated + fail-soft: an
 // offline data hiccup must never break the core (digest-driven) Overview — on
