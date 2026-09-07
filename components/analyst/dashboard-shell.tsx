@@ -107,12 +107,15 @@ export function DashboardShell({
       if (localStorage.getItem('coop-nav-expanded') === '1') setNavExpanded(true);
     } catch {}
   }, []);
+  // Flyout submenu for the collapsed rail's Overview group.
+  const [overviewFlyout, setOverviewFlyout] = useState(false);
   const toggleNav = () =>
     setNavExpanded((v) => {
       const next = !v;
       try {
         localStorage.setItem('coop-nav-expanded', next ? '1' : '0');
       } catch {}
+      setOverviewFlyout(false); // don't carry a collapsed-rail popover across modes
       return next;
     });
 
@@ -302,19 +305,52 @@ export function DashboardShell({
               )}
             </div>
           ) : (
-            <Link
-              href={withWeek('/')}
-              title="Overview"
-              aria-label="Overview"
-              aria-current={overviewGroupActive ? 'page' : undefined}
-              className={cn(
-                'relative flex size-10 items-center justify-center rounded-xl transition-colors',
-                overviewGroupActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+            <div className="relative">
+              {/* Collapsed: the Overview icon opens a flyout submenu with the
+                  group's children + labels (no room for inline labels here). */}
+              <button
+                type="button"
+                onClick={() => setOverviewFlyout((o) => !o)}
+                title="Overview"
+                aria-label="Overview"
+                aria-haspopup="menu"
+                aria-expanded={overviewFlyout}
+                aria-current={overviewGroupActive ? 'page' : undefined}
+                className={cn(
+                  'relative flex size-10 items-center justify-center rounded-xl transition-colors',
+                  overviewGroupActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+                )}
+              >
+                {overviewGroupActive && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
+                <OVERVIEW.icon className="size-[18px] shrink-0" />
+              </button>
+              {overviewFlyout && (
+                <>
+                  <button className="fixed inset-0 z-20 cursor-default" aria-hidden onClick={() => setOverviewFlyout(false)} />
+                  <div role="menu" className="absolute left-full top-0 z-30 ml-2 w-52 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lg">
+                    {[OVERVIEW, ...OVERVIEW_CHILDREN].map((item) => {
+                      const active = leafActive(item.href, pathname, channel);
+                      return (
+                        <Link
+                          key={item.label}
+                          href={withWeek(item.href)}
+                          role="menuitem"
+                          onClick={() => setOverviewFlyout(false)}
+                          aria-current={active ? 'page' : undefined}
+                          className={cn(
+                            'flex h-9 items-center gap-2.5 rounded-lg px-2.5 transition-colors',
+                            active ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted',
+                          )}
+                        >
+                          <item.icon className="size-4 shrink-0" />
+                          <span className="truncate text-[13px] font-medium">{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </>
               )}
-            >
-              {overviewGroupActive && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
-              <OVERVIEW.icon className="size-[18px] shrink-0" />
-            </Link>
+            </div>
           )}
 
           {FLAT_TABS.map((t) => {
