@@ -1,6 +1,8 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
+import {useRouter} from 'next/navigation';
+import {ArrowLeft} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import type {BusinessHealthSnapshot, ChannelActuals, ChannelFacts, Knobs} from '@/src/health-types';
 import {DEFAULT_WEBSITE_ACQ_COST, computeChannelHealth, computeHealth, computeOverallHealth, factsToActuals} from '@/src/health-compute';
@@ -777,6 +779,14 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const hasMonthly = (snapshot.monthly?.length ?? 0) > 0;
   const hasCohorts = Boolean(snapshot.cohorts);
 
+  // Back button: return to wherever the user came from, not a hardcoded route.
+  // Falls back to the Overview home when there's no in-app history to pop.
+  const router = useRouter();
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back();
+    else router.push('/');
+  };
+
   const baseKnobs = defaults();
   const baseActuals = actualDefaults();
   const isDirty = (ch: string) =>
@@ -813,6 +823,15 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
         }`}
       >
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={goBack}
+              aria-label="Go back"
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ArrowLeft className="size-4" />
+            </button>
           <div>
             <h1 className={`font-bold tracking-tight text-foreground transition-[font-size] duration-300 ${condensed ? 'text-[21px]' : 'text-[28px]'}`}>
               Business Health
@@ -828,6 +847,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
                 </p>
               </div>
             </div>
+          </div>
           </div>
           {view === 'cards' && (
             <OverallQrrPill
