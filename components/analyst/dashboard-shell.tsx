@@ -327,6 +327,17 @@ export function DashboardShell({
               >
                 {overviewGroupActive && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
                 <OVERVIEW.icon className="size-[18px] shrink-0" />
+                {/* Rest-state affordance: a small chevron badge marks this icon
+                    as a group with a submenu (the only one), so it reads as
+                    expandable before any click. Rotates when the flyout opens. */}
+                <ChevronRight
+                  aria-hidden
+                  className={cn(
+                    'absolute bottom-0.5 right-0.5 size-2.5 transition-transform',
+                    overviewFlyout ? 'rotate-90' : '',
+                    overviewGroupActive ? 'text-primary/70' : 'text-muted-foreground/60',
+                  )}
+                />
               </button>
               {overviewFlyout && (
                 <>
