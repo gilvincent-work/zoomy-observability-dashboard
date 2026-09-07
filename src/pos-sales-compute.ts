@@ -106,6 +106,32 @@ export function offlineChannelFacts(orders: PosOrder[]): ChannelFacts | null {
   };
 }
 
+/**
+ * Offline metrics shaped for the Overview "Compare Channels" chart: revenue,
+ * orders, aov, units — no adSpend/roas (bazaar sales have no ads, shown as N-A).
+ * Returns null when there are no orders. The shape mirrors the chart's per-channel
+ * metric record (keys: revenue, orders, aov, units, adSpend, roas).
+ */
+export function offlineCompareMetrics(orders: PosOrder[]): {
+  revenue: number;
+  orders: number;
+  aov: number;
+  units: number;
+  adSpend: number | null;
+  roas: number | null;
+} | null {
+  if (orders.length === 0) return null;
+  const {revenue, orders: count, units} = computeKpis(orders);
+  return {
+    revenue,
+    orders: count,
+    aov: count ? Math.round((revenue / count) * 100) / 100 : 0,
+    units,
+    adSpend: null,
+    roas: null,
+  };
+}
+
 // ── Stock alerts (Surface B) ──────────────────────────────────────────────
 export const LOW_STOCK_UNITS = 10;
 export const NEAR_EXPIRY_DAYS = 30;

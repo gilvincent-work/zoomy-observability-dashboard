@@ -7,7 +7,7 @@
 // figures (label-matched) — interim until the batch emits a normalized summary.
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, Check, Globe, Search} from 'lucide-react';
+import {ArrowLeft, Check, Globe, Search, Store} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
 import type {AnalystBrief} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
@@ -19,11 +19,12 @@ import {InfoTip} from './info-tip';
 import {fmtRange} from '../../src/week';
 import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, ConversationsSection} from './sections';
 
-export type Channel = 'shopee' | 'lazada' | 'website';
+export type Channel = 'shopee' | 'lazada' | 'website' | 'offline';
 const CHANNELS: {key: Channel; label: string; icon: React.ComponentType<{className?: string; style?: React.CSSProperties}>; accent: string}[] = [
   {key: 'shopee', label: 'Shopee', icon: ShopeeIcon, accent: '#ee4d2d'},
   {key: 'lazada', label: 'Lazada', icon: LazadaIcon, accent: '#2f6bd4'},
   {key: 'website', label: 'Website', icon: Globe, accent: 'var(--primary)'},
+  {key: 'offline', label: 'Offline', icon: Store, accent: '#c9873f'},
 ];
 const CH = Object.fromEntries(CHANNELS.map((c) => [c.key, c])) as Record<Channel, (typeof CHANNELS)[number]>;
 
@@ -73,7 +74,7 @@ function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics |
             roas: m.roas,
           }
         : null;
-    return {shopee: pick(c.shopee), lazada: pick(c.lazada), website: pick(c.website)};
+    return {shopee: pick(c.shopee), lazada: pick(c.lazada), website: pick(c.website), offline: null};
   }
   const sh = d.shopee?.sales?.figures;
   const lz = d.lazada?.sales?.figures;
@@ -89,6 +90,7 @@ function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics |
     website: d.sales
       ? {revenue: figVal(wb, /net revenue/i), orders: figVal(wb, /orders/i, /trend|%/i), aov: figVal(wb, /aov/i), units: figVal(wb, /units/i), adSpend: null, roas: null}
       : null,
+    offline: null, // filled from pos_orders (passed into ChannelOverview), not the digest
   };
 }
 
@@ -359,6 +361,7 @@ type SkuRow = {title: string; revenue: number; units?: number};
 
 /** Per-SKU ranking for a channel, or [] when that channel has no per-product data. */
 function productsFor(row: DigestArchiveRow, c: Channel): SkuRow[] {
+  if (c === 'offline') return []; // offline's top products live on the Offline Sales page, not the digest
   const d = row.digest;
   const raw =
     c === 'shopee'
@@ -375,8 +378,9 @@ function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[
   if (!sources.length) return null;
   const active = sources.find((s) => s.channel === tab) ?? sources[0];
   const max = Math.max(1, ...active.items.map((p) => p.revenue));
-  // channels selected but without any per-SKU feed yet (e.g. Shopee before its export)
-  const missing = channels.filter((c) => !sources.some((s) => s.channel === c));
+  // channels selected but without any per-SKU feed yet (e.g. Shopee before its export).
+  // Offline is excluded — its per-SKU breakdown lives on the Offline Sales page, not here.
+  const missing = channels.filter((c) => c !== 'offline' && !sources.some((s) => s.channel === c));
 
   return (
     <Card className="py-0">
@@ -449,6 +453,25 @@ function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[
 function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}) {
   if (channel === 'shopee') return <ShopeeSection row={row} />;
   if (channel === 'lazada') return <LazadaSection row={row} />;
+  if (channel === 'offline') {
+    // Offline has no digest sections (it's not part of the weekly digest). Point
+    // to its own page for the full breakdown.
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-start gap-2 p-5">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Store className="size-4" style={{color: '#c9873f'}} /> Offline · Bazaar
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Bazaar sales synced from the POS. The full breakdown (sales over time, top products, recent orders, stock alerts) lives on its own page.
+          </p>
+          <Link href="/offline-sales" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+            Open Offline Sales &rarr;
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <>
       <SalesSection row={row} />
@@ -459,10 +482,12 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 }
 
 // ── the unified overview ─────────────────────────────────────────────────────────
-export function ChannelOverview({row, priorRow, initialChannels}: {brief: AnalystBrief; row: DigestArchiveRow; priorRow?: DigestArchiveRow | null; initialChannels: Channel[]}) {
+export function ChannelOverview({row, priorRow, initialChannels, offline}: {brief: AnalystBrief; row: DigestArchiveRow; priorRow?: DigestArchiveRow | null; initialChannels: Channel[]; offline?: ChannelMetrics | null}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
   const [metric, setMetric] = useState<Metric>('adSpend');
-  const metrics = useMemo(() => channelMetrics(row), [row]);
+  // Offline metrics come from pos_orders (passed in), merged over the digest-derived
+  // channels. Offline has no ad spend / ROAS, so those metric views show it as N-A.
+  const metrics = useMemo(() => ({...channelMetrics(row), offline: offline ?? null}), [row, offline]);
   const priorMetrics = useMemo(() => (priorRow ? channelMetrics(priorRow) : null), [priorRow]);
   const priorRange = priorRow ? fmtRange(priorRow.window_from, priorRow.window_to, priorRow.digest.window?.label) : null;
   // Merged recs, reordered so those relevant to the metric on the chart come first.

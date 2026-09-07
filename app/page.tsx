@@ -5,20 +5,30 @@ import {ChannelOverview, type Channel} from '@/components/analyst/channel-compar
 import {HomeLanding} from '@/components/analyst/home-landing';
 import {OfflineChannelCard} from '@/components/analyst/offline-channel-card';
 import {getPosOrders} from '@/src/pos-sales';
-import {computeKpis, filterOrdersByRange} from '@/src/pos-sales-compute';
+import {computeKpis, filterOrdersByRange, offlineCompareMetrics} from '@/src/pos-sales-compute';
 import type {SalesKpis} from '@/src/pos-sales-types';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
-const CHANNELS: Channel[] = ['shopee', 'lazada', 'website'];
+const CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
 
-// Offline 30-day KPIs for the Overview card. Isolated + fail-soft: an offline
-// data hiccup must never break the core (digest-driven) Overview — on any error
-// the card is simply omitted.
+// Offline 30-day KPIs for the Overview home card. Isolated + fail-soft: an
+// offline data hiccup must never break the core (digest-driven) Overview — on
+// any error the card is simply omitted.
 async function offlineKpis(): Promise<SalesKpis | null> {
   try {
     const orders = filterOrdersByRange(await getPosOrders(), '30d');
     return computeKpis(orders);
+  } catch {
+    return null;
+  }
+}
+
+// Offline metrics (all orders to date) for the Compare Channels chart. Same
+// fail-soft contract: null on any error so the chart just omits offline.
+async function offlineCompare(): Promise<ReturnType<typeof offlineCompareMetrics>> {
+  try {
+    return offlineCompareMetrics(await getPosOrders());
   } catch {
     return null;
   }
@@ -51,5 +61,6 @@ export default async function Page({searchParams}: {searchParams: {week?: string
     );
   }
   const initial = CHANNELS.includes(ch as Channel) ? [ch as Channel] : CHANNELS;
-  return <ChannelOverview brief={getBrief()} row={row} priorRow={priorRow} initialChannels={initial} />;
+  const offline = await offlineCompare();
+  return <ChannelOverview brief={getBrief()} row={row} priorRow={priorRow} initialChannels={initial} offline={offline} />;
 }
