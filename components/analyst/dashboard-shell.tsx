@@ -248,8 +248,12 @@ export function DashboardShell({
           className={cn(
             // Pin the rail to the viewport (below the h-14 header) so its height
             // is bounded — otherwise a tall page stretches it and the centered
-            // toggle drifts down into the empty space below the tabs.
-            'sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 flex-col gap-1 self-start border-r border-sidebar-border bg-sidebar py-4 transition-[width] duration-200 ease-out',
+            // toggle drifts down into the empty space below the tabs. z-20 lifts
+            // the rail's stacking context above <main> so the collapsed Overview
+            // flyout (which overflows into the content area) is clickable, not
+            // just visible. Width is NOT transitioned: animating it relayouts the
+            // adjacent charts every frame and feels laggy — the toggle is instant.
+            'sticky top-14 z-20 flex h-[calc(100vh-3.5rem)] shrink-0 flex-col gap-1 self-start border-r border-sidebar-border bg-sidebar py-4',
             navExpanded ? 'w-56 items-stretch px-3' : 'w-16 items-center',
           )}
         >
