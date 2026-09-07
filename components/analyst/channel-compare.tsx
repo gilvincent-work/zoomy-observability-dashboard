@@ -494,7 +494,9 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 // ── the unified overview ─────────────────────────────────────────────────────────
 export function ChannelOverview({row, priorRow, initialChannels, offline}: {brief: AnalystBrief; row: DigestArchiveRow; priorRow?: DigestArchiveRow | null; initialChannels: Channel[]; offline?: ChannelMetrics | null}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
-  const [metric, setMetric] = useState<Metric>('adSpend');
+  // Default to Revenue (not Ad spend) so every channel — including offline, which
+  // has no ad spend — shows a bar on first paint.
+  const [metric, setMetric] = useState<Metric>('revenue');
   // Offline metrics come from pos_orders (passed in), merged over the digest-derived
   // channels. Offline has no ad spend / ROAS, so those metric views show it as N-A.
   const metrics = useMemo(() => ({...channelMetrics(row), offline: offline ?? null}), [row, offline]);
