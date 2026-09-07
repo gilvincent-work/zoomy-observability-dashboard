@@ -3,6 +3,7 @@ import {getDigests} from '@/src/data';
 import {buildCoopSystemPrompt} from '@/src/chat/context';
 import {COOP_CHAT} from '@/src/chat/config';
 import {auth} from '@/auth';
+import {devAuthEnabled, DEV_SESSION} from '@/src/dev-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,7 @@ function rateLimited(ip: string, now: number): boolean {
 type InMsg = {role: 'user' | 'assistant'; content: string};
 
 export async function POST(req: Request) {
-  const session = await auth();
+  const session = devAuthEnabled() ? DEV_SESSION : await auth();
   if (!session?.user) return new Response('Please sign in to use Coop.', {status: 401});
 
   const key = process.env.ANTHROPIC_API_KEY;
