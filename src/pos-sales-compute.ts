@@ -81,6 +81,33 @@ export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
     .slice(0, limit);
 }
 
+// ── Pagination (transactions list) ────────────────────────────────────────
+export const ORDERS_PAGE_SIZE = 25;
+
+export interface PageInfo {
+  page: number; // clamped, 1-based
+  pageSize: number;
+  totalPages: number;
+  from: number; // 0-based inclusive start index (for a range query)
+  to: number; // 0-based inclusive end index
+}
+
+/** Pure page math: clamp `page` into [1, totalPages] and derive range indices. */
+export function paginate(total: number, page: number, pageSize = ORDERS_PAGE_SIZE): PageInfo {
+  const size = Math.max(1, pageSize);
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const clamped = Math.min(Math.max(1, Math.floor(page) || 1), totalPages);
+  const from = (clamped - 1) * size;
+  const to = from + size - 1;
+  return {page: clamped, pageSize: size, totalPages, from, to};
+}
+
+/** Parse a `?page=` param into a positive integer, defaulting to 1. */
+export function parsePage(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+}
+
 // ── Business Health channel facts (Surface D) ─────────────────────────────
 /**
  * Build a synthetic "offline" ChannelFacts from POS orders so Business Health
