@@ -4,7 +4,7 @@ import {useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, ChevronDown, Home, LogOut, Mail, Package, Settings, Tag, Users} from 'lucide-react';
+import {Activity, Boxes, ChevronDown, Home, LogOut, Mail, Package, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -15,6 +15,7 @@ import {CoopChatProvider, AskCoopPill} from './coop-chat';
 // The left icon rail — Coop's thin nav. Each tab is an icon with a green active pill.
 const TABS = [
   {href: '/', label: 'Overview', icon: Home},
+  {href: '/products', label: 'Products', icon: Boxes},
   {href: '/inventory', label: 'Inventory', icon: Package},
   {href: '/customers', label: 'Customers', icon: Users},
   {href: '/traffic', label: 'Traffic', icon: Activity},
@@ -59,11 +60,18 @@ export function DashboardShell({
   const currentRange = current ? fmtRange(current.window_from, current.window_to, current.digest.window.label) : '';
 
   // The reporting-period picker only makes sense in period-scoped analytics views —
-  // hide it on the home brief ("/" with no channel), Settings, and Business Health
-  // (which uses its own fixed trailing-6-month window shown on the page).
+  // hide it on the home brief ("/" with no channel), Settings, Business Health
+  // (which uses its own fixed trailing-6-month window shown on the page), and
+  // Product Controls (a live catalog, not a period-scoped report).
   const channel = searchParams.get('channel');
   const isHome = pathname === '/' && !channel;
-  const showPeriod = Boolean(current) && !isHome && !pathname.startsWith('/settings') && !pathname.startsWith('/health') && !pathname.startsWith('/repricer');
+  const showPeriod =
+    Boolean(current) &&
+    !isHome &&
+    !pathname.startsWith('/settings') &&
+    !pathname.startsWith('/health') &&
+    !pathname.startsWith('/repricer') &&
+    !pathname.startsWith('/products');
 
   const [periodOpen, setPeriodOpen] = useState(false);
 
