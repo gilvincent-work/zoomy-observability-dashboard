@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, Boxes, ChevronDown, ChevronLeft, ChevronRight, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, Boxes, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -12,19 +12,32 @@ import {ThemeToggle} from './theme-toggle';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
 
-// The left icon rail — Coop's thin nav. Each tab is an icon with a green active pill.
-const TABS = [
-  {href: '/', label: 'Overview', icon: Home},
-  {href: '/products', label: 'Products', icon: Boxes},
+// The left rail. Overview is a group (accordion in the expanded rail) whose
+// children are the sub-views that live under it; the rest are flat tabs.
+type NavItem = {href: string; label: string; icon: React.ComponentType<{className?: string}>};
+
+const OVERVIEW: NavItem = {href: '/', label: 'Overview', icon: Home};
+const OVERVIEW_CHILDREN: NavItem[] = [
+  {href: '/health', label: 'Business Health', icon: Gauge},
+  {href: '/?channel=all', label: 'Sales', icon: BarChart3},
   {href: '/offline-sales', label: 'Offline Sales', icon: Receipt},
+];
+const FLAT_TABS: NavItem[] = [
+  {href: '/products', label: 'Products', icon: Boxes},
   {href: '/inventory', label: 'Inventory', icon: Package},
   {href: '/customers', label: 'Customers', icon: Users},
   {href: '/traffic', label: 'Traffic', icon: Activity},
   {href: '/repricer', label: 'Repricer', icon: Tag},
   {href: '/settings', label: 'Settings', icon: Settings},
-] as const;
+];
 
-const isActive = (pathname: string, href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+// Active detection. '/' is the Overview home ONLY without a channel; '/?channel='
+// is the Sales compare view. Everything else matches by path prefix.
+const leafActive = (href: string, pathname: string, channel: string | null) => {
+  if (href === '/') return pathname === '/' && !channel;
+  if (href === '/?channel=all') return pathname === '/' && Boolean(channel);
+  return pathname.startsWith(href.split('?')[0]);
+};
 
 /** The Coop wordmark — lowercase, with the second "o" in brand green. */
 function CoopMark() {
@@ -55,7 +68,15 @@ export function DashboardShell({
     .join('');
   const searchParams = useSearchParams();
   const currentWeek = searchParams.get('week') ?? digests[0]?.window_from ?? '';
-  const withWeek = (href: string) => (currentWeek ? `${href}?week=${encodeURIComponent(currentWeek)}` : href);
+  // Query-safe: merges ?week into hrefs that may already carry a query (e.g. the
+  // Sales child, /?channel=all) instead of blindly appending a second '?'.
+  const withWeek = (href: string) => {
+    if (!currentWeek) return href;
+    const [path, q = ''] = href.split('?');
+    const params = new URLSearchParams(q);
+    params.set('week', currentWeek);
+    return `${path}?${params.toString()}`;
+  };
 
   const current = digests.find((d) => d.window_from === currentWeek) ?? digests[0];
   const currentRange = current ? fmtRange(current.window_from, current.window_to, current.digest.window.label) : '';
@@ -94,6 +115,16 @@ export function DashboardShell({
       } catch {}
       return next;
     });
+
+  // Overview accordion (shown in the expanded rail). Whether any Overview view
+  // is the current page — used to highlight the collapsed parent icon and to
+  // auto-open the accordion when you navigate into a child.
+  const overviewGroupActive =
+    leafActive('/', pathname, channel) || OVERVIEW_CHILDREN.some((c) => leafActive(c.href, pathname, channel));
+  const [overviewOpen, setOverviewOpen] = useState(true);
+  useEffect(() => {
+    if (overviewGroupActive) setOverviewOpen(true);
+  }, [overviewGroupActive]);
 
   return (
     <PlaybookProvider>
@@ -219,8 +250,75 @@ export function DashboardShell({
             navExpanded ? 'w-56 items-stretch px-3' : 'w-16 items-center',
           )}
         >
-          {TABS.map((t) => {
-            const active = isActive(pathname, t.href);
+          {/* Overview — a group: an accordion in the expanded rail, a single
+              icon in the collapsed rail (its children need the labels). */}
+          {navExpanded ? (
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <Link
+                  href={withWeek('/')}
+                  aria-current={leafActive('/', pathname, channel) ? 'page' : undefined}
+                  className={cn(
+                    'relative flex h-10 flex-1 items-center gap-3 rounded-xl px-3 transition-colors',
+                    leafActive('/', pathname, channel)
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+                  )}
+                >
+                  {leafActive('/', pathname, channel) && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
+                  <OVERVIEW.icon className="size-[18px] shrink-0" />
+                  <span className="truncate text-[13px] font-medium">{OVERVIEW.label}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setOverviewOpen((o) => !o)}
+                  aria-label={overviewOpen ? 'Collapse Overview section' : 'Expand Overview section'}
+                  aria-expanded={overviewOpen}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
+                >
+                  <ChevronDown className={cn('size-4 transition-transform', overviewOpen ? '' : '-rotate-90')} />
+                </button>
+              </div>
+              {overviewOpen && (
+                <div className="ml-3 mt-1 flex flex-col gap-1 border-l border-sidebar-border pl-3">
+                  {OVERVIEW_CHILDREN.map((c) => {
+                    const active = leafActive(c.href, pathname, channel);
+                    return (
+                      <Link
+                        key={c.label}
+                        href={withWeek(c.href)}
+                        aria-current={active ? 'page' : undefined}
+                        className={cn(
+                          'flex h-9 items-center gap-3 rounded-lg px-3 transition-colors',
+                          active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+                        )}
+                      >
+                        <c.icon className="size-4 shrink-0" />
+                        <span className="truncate text-[13px] font-medium">{c.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              href={withWeek('/')}
+              title="Overview"
+              aria-label="Overview"
+              aria-current={overviewGroupActive ? 'page' : undefined}
+              className={cn(
+                'relative flex size-10 items-center justify-center rounded-xl transition-colors',
+                overviewGroupActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+              )}
+            >
+              {overviewGroupActive && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
+              <OVERVIEW.icon className="size-[18px] shrink-0" />
+            </Link>
+          )}
+
+          {FLAT_TABS.map((t) => {
+            const active = leafActive(t.href, pathname, channel);
             return (
               <Link
                 key={t.href}
