@@ -1,6 +1,6 @@
 'use client';
 
-import {useState, useTransition} from 'react';
+import {useEffect, useState, useTransition} from 'react';
 import {Boxes, Check, Pencil, Plus, X} from 'lucide-react';
 import type {PosProductRow} from '@/src/pos-types';
 import {formatPeso, lineLabel, stockLabel} from '@/src/pos-format';
@@ -27,22 +27,48 @@ function StockBadge({stock}: {stock: number}) {
 }
 
 export function ProductControls({products, usingMock}: {products: PosProductRow[]; usingMock: boolean}) {
+  // Mirror the server data locally so edits can apply optimistically (instant),
+  // then reconcile. revalidatePath in each action re-renders this tree with fresh
+  // props; this effect re-syncs to whatever the server confirmed.
+  const [rows, setRows] = useState(products);
+  useEffect(() => setRows(products), [products]);
+
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  // Render straight from props: each action calls revalidatePath('/products'),
-  // so a successful edit re-renders this server-rendered tree with fresh data.
-  function run(action: () => Promise<ActionResult>, onOk?: () => void) {
+  // Apply a patch to one row immediately; run the server action; on failure,
+  // roll the whole list back to its pre-edit state and surface the error.
+  function mutate(id: string, patch: Partial<PosProductRow>, action: () => Promise<ActionResult>) {
+    const prev = rows;
+    setRows((rs) => rs.map((r) => (r.product_id === id ? {...r, ...patch} : r)));
     setError(null);
     startTransition(async () => {
       const res = await action();
-      if (res.ok) onOk?.();
-      else setError(res.error);
+      if (!res.ok) {
+        setRows(prev);
+        setError(res.error);
+      }
     });
   }
 
-  const listed = products.filter((r) => r.active).length;
+  function create(
+    input: {product_id: string; name: string; product_line?: string; price?: string},
+    onOk: () => void,
+  ) {
+    setError(null);
+    startTransition(async () => {
+      const res = await createProductAction(input);
+      if (res.ok) {
+        setCreating(false);
+        onOk();
+      } else {
+        setError(res.error);
+      }
+    });
+  }
+
+  const listed = rows.filter((r) => r.active).length;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
@@ -50,7 +76,7 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
         <div>
           <Eyebrow icon={Boxes}>Product Controls</Eyebrow>
           <p className="text-sm text-muted-foreground">
-            {products.length} products · {listed} listed. Create products, rename, reprice, and list/unlist.
+            {rows.length} products · {listed} listed. Create products, rename, reprice, and list/unlist.
             Edits sync to the POS in-database.
           </p>
         </div>
@@ -73,20 +99,7 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
         </div>
       )}
 
-      {creating && (
-        <NewProductForm
-          pending={isPending}
-          onSubmit={(input, done) =>
-            run(
-              () => createProductAction(input),
-              () => {
-                setCreating(false);
-                done();
-              },
-            )
-          }
-        />
-      )}
+      {creating && <NewProductForm pending={isPending} onSubmit={create} />}
 
       <Card>
         <CardContent className="p-0">
@@ -103,14 +116,23 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
                 </tr>
               </thead>
               <tbody>
-                {products.map((row) => (
+                {rows.map((row) => (
                   <ProductRow
                     key={row.product_id}
                     row={row}
-                    pending={isPending}
-                    onRename={(name, done) => run(() => renameProductAction(row.product_id, name), done)}
-                    onReprice={(price, done) => run(() => repriceProductAction(row.product_id, price), done)}
-                    onToggle={() => run(() => setListingAction(row.product_id, !row.active))}
+                    onRename={(name) =>
+                      mutate(row.product_id, {name}, () => renameProductAction(row.product_id, name))
+                    }
+                    onReprice={(price) => {
+                      const n = Number(price);
+                      const patch = Number.isFinite(n) && n > 0 ? {price: n} : {};
+                      mutate(row.product_id, patch, () => repriceProductAction(row.product_id, price));
+                    }}
+                    onToggle={() =>
+                      mutate(row.product_id, {active: !row.active}, () =>
+                        setListingAction(row.product_id, !row.active),
+                      )
+                    }
                   />
                 ))}
               </tbody>
@@ -124,15 +146,13 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
 
 function ProductRow({
   row,
-  pending,
   onRename,
   onReprice,
   onToggle,
 }: {
   row: PosProductRow;
-  pending: boolean;
-  onRename: (name: string, done: () => void) => void;
-  onReprice: (price: string, done: () => void) => void;
+  onRename: (name: string) => void;
+  onReprice: (price: string) => void;
   onToggle: () => void;
 }) {
   const [editing, setEditing] = useState<EditField>(null);
@@ -143,9 +163,13 @@ function ProductRow({
     setDraft(current);
   }
 
+  // Close the editor immediately and let the parent apply the change
+  // optimistically — no waiting on the server round-trip.
   function save() {
-    if (editing === 'name') onRename(draft, () => setEditing(null));
-    else if (editing === 'price') onReprice(draft, () => setEditing(null));
+    const value = draft.trim();
+    if (editing === 'name' && value) onRename(value);
+    else if (editing === 'price' && value) onReprice(value);
+    setEditing(null);
   }
 
   return (
@@ -153,13 +177,7 @@ function ProductRow({
       <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{row.product_id}</td>
       <td className="px-4 py-2.5">
         {editing === 'name' ? (
-          <EditCell
-            value={draft}
-            onChange={setDraft}
-            onSave={save}
-            onCancel={() => setEditing(null)}
-            pending={pending}
-          />
+          <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} />
         ) : (
           <button
             type="button"
@@ -174,14 +192,7 @@ function ProductRow({
       <td className="px-4 py-2.5 text-muted-foreground">{lineLabel(row.product_line ?? '')}</td>
       <td className="px-4 py-2.5 text-right tabular-nums">
         {editing === 'price' ? (
-          <EditCell
-            value={draft}
-            onChange={setDraft}
-            onSave={save}
-            onCancel={() => setEditing(null)}
-            pending={pending}
-            numeric
-          />
+          <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} numeric />
         ) : (
           <button
             type="button"
@@ -196,26 +207,27 @@ function ProductRow({
       <td className="px-4 py-2.5 text-right">
         <StockBadge stock={row.stock} />
       </td>
-      <td className="px-4 py-2.5 text-right">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={row.active}
-          aria-label={row.active ? `Unlist ${row.name}` : `List ${row.name}`}
-          disabled={pending}
-          onClick={onToggle}
-          className={cn(
-            'relative inline-block h-5 w-9 rounded-full transition-colors disabled:opacity-50',
-            row.active ? 'bg-primary' : 'bg-muted',
-          )}
-        >
-          <span
+      <td className="px-4 py-2.5">
+        <div className="flex justify-end">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={row.active}
+            aria-label={row.active ? `Unlist ${row.name}` : `List ${row.name}`}
+            onClick={onToggle}
             className={cn(
-              'absolute top-0.5 size-4 rounded-full bg-background shadow transition-transform',
-              row.active ? 'translate-x-4' : 'translate-x-0.5',
+              'relative h-5 w-9 shrink-0 rounded-full border transition-colors',
+              row.active ? 'border-primary bg-primary' : 'border-border bg-muted',
             )}
-          />
-        </button>
+          >
+            <span
+              className={cn(
+                'absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-white shadow-sm transition-[left]',
+                row.active ? 'left-[calc(100%-1.125rem)]' : 'left-0.5',
+              )}
+            />
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -226,14 +238,12 @@ function EditCell({
   onChange,
   onSave,
   onCancel,
-  pending,
   numeric,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSave: () => void;
   onCancel: () => void;
-  pending: boolean;
   numeric?: boolean;
 }) {
   return (
@@ -243,8 +253,8 @@ function EditCell({
         type={numeric ? 'number' : 'text'}
         inputMode={numeric ? 'decimal' : 'text'}
         value={value}
-        disabled={pending}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onCancel}
         onKeyDown={(e) => {
           if (e.key === 'Enter') onSave();
           if (e.key === 'Escape') onCancel();
@@ -254,10 +264,11 @@ function EditCell({
           numeric ? 'w-24 text-right' : 'w-48',
         )}
       />
-      <Button size="icon-sm" variant="ghost" onClick={onSave} disabled={pending} aria-label="Save">
+      {/* Prevent the input's onBlur from firing before the click registers. */}
+      <Button size="icon-sm" variant="ghost" onMouseDown={(e) => e.preventDefault()} onClick={onSave} aria-label="Save">
         <Check />
       </Button>
-      <Button size="icon-sm" variant="ghost" onClick={onCancel} disabled={pending} aria-label="Cancel">
+      <Button size="icon-sm" variant="ghost" onMouseDown={(e) => e.preventDefault()} onClick={onCancel} aria-label="Cancel">
         <X />
       </Button>
     </span>
