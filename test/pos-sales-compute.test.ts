@@ -5,6 +5,8 @@ import {
   isSalesRange,
   offlineChannelFacts,
   offlineCompareMetrics,
+  paginate,
+  parsePage,
   rangeStart,
   salesByDay,
   stockAlerts,
@@ -108,6 +110,32 @@ describe('topProducts', () => {
       {product_id: 'A', name: 'Alpha', revenue: 300, units: 3},
     ].sort((a, b) => b.revenue - a.revenue));
     expect(topProducts(orders, 1)).toHaveLength(1);
+  });
+});
+
+describe('paginate', () => {
+  it('derives clamped page + range indices', () => {
+    expect(paginate(60, 1, 25)).toEqual({page: 1, pageSize: 25, totalPages: 3, from: 0, to: 24});
+    expect(paginate(60, 2, 25)).toEqual({page: 2, pageSize: 25, totalPages: 3, from: 25, to: 49});
+    expect(paginate(60, 3, 25)).toEqual({page: 3, pageSize: 25, totalPages: 3, from: 50, to: 74});
+  });
+  it('clamps out-of-range pages into [1, totalPages]', () => {
+    expect(paginate(60, 99, 25).page).toBe(3);
+    expect(paginate(60, 0, 25).page).toBe(1);
+    expect(paginate(60, -5, 25).page).toBe(1);
+  });
+  it('always has at least one page, even with zero rows', () => {
+    expect(paginate(0, 1, 25)).toEqual({page: 1, pageSize: 25, totalPages: 1, from: 0, to: 24});
+  });
+});
+
+describe('parsePage', () => {
+  it('parses positive integers, defaults to 1 otherwise', () => {
+    expect(parsePage('3')).toBe(3);
+    expect(parsePage(undefined)).toBe(1);
+    expect(parsePage('0')).toBe(1);
+    expect(parsePage('-2')).toBe(1);
+    expect(parsePage('abc')).toBe(1);
   });
 });
 

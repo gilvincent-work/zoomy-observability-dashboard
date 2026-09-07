@@ -84,27 +84,32 @@ export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts,
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <Panel title="Recent orders">
+        <Panel title="Recent orders" action={{label: 'View all', href: '/offline-sales/orders'}}>
           {orders.length === 0 ? (
             <Empty>No orders yet.</Empty>
           ) : (
             <ul className="flex flex-col divide-y">
               {orders.slice(0, 12).map((o) => (
-                <li key={o.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{timeLabel(o.created_at)}</span>
-                      {o.oversold && (
-                        <Badge variant="destructive">
-                          <TriangleAlert /> oversold
-                        </Badge>
-                      )}
+                <li key={o.id}>
+                  <Link
+                    href="/offline-sales/orders"
+                    className="-mx-2 flex items-start gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{timeLabel(o.created_at)}</span>
+                        {o.oversold && (
+                          <Badge variant="destructive">
+                            <TriangleAlert /> oversold
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ') || 'No items'}
+                      </p>
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ') || 'No items'}
-                    </p>
-                  </div>
-                  <span className="text-sm font-medium tabular-nums">{formatPeso(o.total)}</span>
+                    <span className="text-sm font-medium tabular-nums">{formatPeso(o.total)}</span>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -236,11 +241,18 @@ function Kpi({label, value, warn}: {label: string; value: string; warn?: boolean
   );
 }
 
-function Panel({title, children}: {title: string; children: React.ReactNode}) {
+function Panel({title, action, children}: {title: string; action?: {label: string; href: string}; children: React.ReactNode}) {
   return (
     <Card>
       <CardContent className="py-4">
-        <h3 className="mb-3 text-sm font-semibold">{title}</h3>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          {action && (
+            <Link href={action.href} className="text-xs font-medium text-primary hover:underline">
+              {action.label}
+            </Link>
+          )}
+        </div>
         {children}
       </CardContent>
     </Card>
