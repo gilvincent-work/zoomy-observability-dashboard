@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import {ArrowLeftRight, Receipt, TriangleAlert} from 'lucide-react';
-import {Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis} from 'recharts';
+import {ArrowLeftRight, CalendarClock, PackageX, Receipt, TriangleAlert} from 'lucide-react';
+import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
 import type {DailySales, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopProduct} from '@/src/pos-sales-types';
+import type {StockAlerts} from '@/src/pos-sales-compute';
 import {SALES_RANGES} from '@/src/pos-sales-compute';
+import type {PosProductRow} from '@/src/pos-types';
 import {formatPeso} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
@@ -19,13 +21,17 @@ type Props = {
   top: TopProduct[];
   orders: PosOrder[]; // filtered, newest first
   sync: PosSyncEntry[];
+  alerts: StockAlerts;
   usingMock: boolean;
 };
+
+const expiryLabel = (iso: string | null) =>
+  iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : '—';
 
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, kpis, daily, top, orders, sync, usingMock}: Props) {
+export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts, usingMock}: Props) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -125,6 +131,76 @@ export function OfflineSalesView({range, kpis, daily, top, orders, sync, usingMo
           )}
         </Panel>
       </div>
+
+      <div className="mt-4">
+        <StockAlertsCard alerts={alerts} />
+      </div>
+    </div>
+  );
+}
+
+function StockAlertsCard({alerts}: {alerts: StockAlerts}) {
+  const nothing = alerts.out.length === 0 && alerts.low.length === 0 && alerts.nearExpiry.length === 0;
+  return (
+    <Panel title="Stock alerts">
+      {nothing ? (
+        <Empty>All good — nothing low, out, or near expiry.</Empty>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-3">
+          <AlertColumn
+            icon={<PackageX className="size-3.5" />}
+            title="Out of stock"
+            rows={alerts.out.map((p) => ({key: p.product_id, name: p.name, note: `${p.stock}`}))}
+            tone="destructive"
+          />
+          <AlertColumn
+            icon={<TriangleAlert className="size-3.5" />}
+            title="Low stock"
+            rows={alerts.low.map((p) => ({key: p.product_id, name: p.name, note: `${p.stock} left`}))}
+            tone="warn"
+          />
+          <AlertColumn
+            icon={<CalendarClock className="size-3.5" />}
+            title="Near expiry"
+            rows={alerts.nearExpiry.map((p) => ({key: p.product_id, name: p.name, note: expiryLabel(p.next_expiry)}))}
+            tone="warn"
+          />
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function AlertColumn({
+  icon,
+  title,
+  rows,
+  tone,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  rows: {key: string; name: string; note: string}[];
+  tone: 'destructive' | 'warn';
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className={cn('flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider', tone === 'destructive' ? 'text-destructive' : 'text-muted-foreground')}>
+        {icon}
+        {title}
+        <span className="text-muted-foreground">({rows.length})</span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">None</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {rows.map((r) => (
+            <li key={r.key} className="flex items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate">{r.name}</span>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{r.note}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
