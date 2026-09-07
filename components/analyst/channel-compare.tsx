@@ -236,21 +236,31 @@ function CombinedKpis({
   priorRange?: string | null;
   channels: Channel[];
 }) {
-  const sumOf = (src: Record<Channel, ChannelMetrics | null> | null | undefined, m: Metric) =>
-    src ? channels.reduce((a, c) => a + (src[c]?.[m] ?? 0), 0) : 0;
+  const sumOf = (src: Record<Channel, ChannelMetrics | null> | null | undefined, m: Metric, chans: Channel[] = channels) =>
+    src ? chans.reduce((a, c) => a + (src[c]?.[m] ?? 0), 0) : 0;
+  // Displayed totals include every selected channel (offline included).
   const revenue = sumOf(metrics, 'revenue');
   const orders = sumOf(metrics, 'orders');
   const aov = orders ? revenue / orders : 0;
 
-  const pRevenue = priorMetrics ? sumOf(priorMetrics, 'revenue') : null;
-  const pOrders = priorMetrics ? sumOf(priorMetrics, 'orders') : null;
+  // Period-over-period delta is like-for-like: compare only channels that exist
+  // in BOTH periods. Offline has no prior-window data (it isn't in the weekly
+  // digest), so including it would inflate every delta against a permanent zero
+  // baseline. With offline absent this set == channels, so the arrows are
+  // byte-identical to before. The big totals above still include offline.
+  const cmp = priorMetrics ? channels.filter((c) => priorMetrics[c] != null) : channels;
+  const cRevenue = sumOf(metrics, 'revenue', cmp);
+  const cOrders = sumOf(metrics, 'orders', cmp);
+  const cAov = cOrders ? cRevenue / cOrders : 0;
+  const pRevenue = priorMetrics ? sumOf(priorMetrics, 'revenue', cmp) : null;
+  const pOrders = priorMetrics ? sumOf(priorMetrics, 'orders', cmp) : null;
   const pAov = priorMetrics && pOrders ? (pRevenue as number) / pOrders : null;
 
   const tiles = [
-    {label: 'Total revenue', value: money(revenue), cur: revenue, prior: pRevenue, hint: 'Sum of net revenue across the selected channels for this period.'},
-    {label: 'Total orders', value: orders.toLocaleString(), cur: orders, prior: pOrders, hint: 'Sum of orders across the selected channels for this period.'},
+    {label: 'Total revenue', value: money(revenue), cur: cRevenue, prior: pRevenue, hint: 'Sum of net revenue across the selected channels for this period. The trend compares only channels with prior-period data.'},
+    {label: 'Total orders', value: orders.toLocaleString(), cur: cOrders, prior: pOrders, hint: 'Sum of orders across the selected channels for this period. The trend compares only channels with prior-period data.'},
     // Weighted blend — total revenue ÷ total orders — NOT the average of per-channel AOVs.
-    {label: 'Blended AOV', value: money(aov), cur: aov, prior: pAov, hint: 'Total revenue ÷ total orders (a weighted blend — not the simple average of each channel’s AOV).'},
+    {label: 'Blended AOV', value: money(aov), cur: cAov, prior: pAov, hint: 'Total revenue ÷ total orders (a weighted blend — not the simple average of each channel’s AOV).'},
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-7 gap-y-3 sm:gap-x-9">

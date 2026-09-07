@@ -10,7 +10,11 @@ import type {SalesKpis} from '@/src/pos-sales-types';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
-const CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
+// All valid channels (for the ?channel= single-drill-down check). Offline is a
+// valid channel but is NOT part of the default "all" selection — it's opt-in via
+// its chip, so the default Compare Overview stays byte-identical to before.
+const ALL_CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
+const DEFAULT_CHANNELS: Channel[] = ['shopee', 'lazada', 'website'];
 
 // Offline 30-day KPIs for the Overview home card. Isolated + fail-soft: an
 // offline data hiccup must never break the core (digest-driven) Overview — on
@@ -60,7 +64,7 @@ export default async function Page({searchParams}: {searchParams: {week?: string
       </>
     );
   }
-  const initial = CHANNELS.includes(ch as Channel) ? [ch as Channel] : CHANNELS;
+  const initial = ALL_CHANNELS.includes(ch as Channel) ? [ch as Channel] : DEFAULT_CHANNELS;
   const offline = await offlineCompare();
   return <ChannelOverview brief={getBrief()} row={row} priorRow={priorRow} initialChannels={initial} offline={offline} />;
 }
