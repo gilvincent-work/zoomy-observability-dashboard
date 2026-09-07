@@ -52,7 +52,7 @@ export function OfflineHealthCard({aov, orders, target}: {aov: number; orders: n
           <div className="h-full rounded-full bg-primary" style={{width: `${pct}%`}} />
         </div>
         <p className="mb-4 text-sm text-muted-foreground">
-          LTV {formatPeso(health.contribution)} ÷ CAC {qrr != null ? formatPeso(health.cac) : '—'}
+          LTV {formatPeso(health.contribution)} ÷ CAC {qrr != null ? formatPeso(health.cac) : 'N/A'}
           {qrr != null ? ` = ${qrr.toFixed(2)}` : ' (set an event cost to compute QRR)'}
         </p>
 

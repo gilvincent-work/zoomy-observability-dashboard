@@ -26,7 +26,7 @@ type Props = {
 };
 
 const expiryLabel = (iso: string | null) =>
-  iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : '—';
+  iso ? new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : 'no date';
 
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
@@ -44,7 +44,7 @@ export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts,
 
       {usingMock && (
         <MockNote>
-          Mock sales — set <code>SUPABASE_URL_ARCHIVE</code> / <code>SUPABASE_SERVICE_ROLE_KEY_ARCHIVE</code> to the
+          Mock sales. Set <code>SUPABASE_URL_ARCHIVE</code> / <code>SUPABASE_SERVICE_ROLE_KEY_ARCHIVE</code> to the
           Staging project to load real <code>pos_orders</code>.
         </MockNote>
       )}
@@ -101,7 +101,7 @@ export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts,
                       )}
                     </div>
                     <p className="truncate text-xs text-muted-foreground">
-                      {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ') || '—'}
+                      {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ') || 'No items'}
                     </p>
                   </div>
                   <span className="text-sm font-medium tabular-nums">{formatPeso(o.total)}</span>
@@ -144,7 +144,7 @@ function StockAlertsCard({alerts}: {alerts: StockAlerts}) {
   return (
     <Panel title="Stock alerts">
       {nothing ? (
-        <Empty>All good — nothing low, out, or near expiry.</Empty>
+        <Empty>All good. Nothing low, out, or near expiry.</Empty>
       ) : (
         <div className="grid gap-4 md:grid-cols-3">
           <AlertColumn
