@@ -17,8 +17,8 @@ const fmtRange = (from: string, to: string) => {
   return `${md(from)} – ${md(to)}, ${new Date(`${to}T00:00:00Z`).getUTCFullYear()}`;
 };
 
-const CHANNEL_LABEL: Record<string, string> = {shopee: 'Shopee', lazada: 'Lazada', website: 'Website'};
-const CHANNEL_ACCENT: Record<string, string> = {shopee: '#EE4D2D', lazada: '#2F6BD4', website: '#2E7D5B'};
+const CHANNEL_LABEL: Record<string, string> = {shopee: 'Shopee', lazada: 'Lazada', website: 'Website', offline: 'Offline'};
+const CHANNEL_ACCENT: Record<string, string> = {shopee: '#EE4D2D', lazada: '#2F6BD4', website: '#2E7D5B', offline: '#C9873F'};
 
 /** Short focus-guide captions (what each field is asking for). */
 const FIELD_HELP: Record<string, string> = {
@@ -384,21 +384,35 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
         </div>
 
         {/* Repeat rate — tracked, but deliberately outside the ratio. Orders
-            still drives CAC (and the blend's weighting), so both stay editable. */}
-        <div className="rounded-xl border border-dashed border-border bg-muted/15 p-4">
-          <div className="flex items-center justify-between">
-            <SectionLabel hint={HEALTH_HINTS.repeat}>Repeat rate</SectionLabel>
-            <Pop value={h.repeat} className="text-[22px] font-bold tabular-nums text-foreground">{h.repeat.toFixed(2)}×</Pop>
+            still drives CAC (and the blend's weighting), so both stay editable.
+            Offline has no buyer identity (the POS doesn't capture one), so repeat
+            rate can't be computed — shown as N/A rather than a misleading 0. */}
+        {facts.channel === 'offline' ? (
+          <div className="rounded-xl border border-dashed border-border bg-muted/15 p-4">
+            <div className="flex items-center justify-between">
+              <SectionLabel hint={HEALTH_HINTS.repeat}>Repeat rate</SectionLabel>
+              <span className="text-[22px] font-bold tabular-nums text-foreground/50">N/A</span>
+            </div>
+            <div className="mt-2 text-[13px] leading-snug text-foreground/55">
+              The POS doesn&rsquo;t capture buyer identity yet, so orders per buyer can&rsquo;t be measured. A separate signal, <span className="font-semibold">not</span> part of QRR.
+            </div>
           </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-y-2 text-[15px] text-foreground/85">
-            <ActualField suffix="orders" initial={String(actuals.orders)} baseline={base.orders} helpKey="orders" setHelp={setHelp} onChange={(n) => onActual({...actuals, orders: n})} />
-            {op('÷')}
-            <ActualField suffix="buyers" initial={String(actuals.buyers)} baseline={base.buyers} helpKey="buyers" setHelp={setHelp} onChange={(n) => onActual({...actuals, buyers: n})} />
+        ) : (
+          <div className="rounded-xl border border-dashed border-border bg-muted/15 p-4">
+            <div className="flex items-center justify-between">
+              <SectionLabel hint={HEALTH_HINTS.repeat}>Repeat rate</SectionLabel>
+              <Pop value={h.repeat} className="text-[22px] font-bold tabular-nums text-foreground">{h.repeat.toFixed(2)}×</Pop>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-y-2 text-[15px] text-foreground/85">
+              <ActualField suffix="orders" initial={String(actuals.orders)} baseline={base.orders} helpKey="orders" setHelp={setHelp} onChange={(n) => onActual({...actuals, orders: n})} />
+              {op('÷')}
+              <ActualField suffix="buyers" initial={String(actuals.buyers)} baseline={base.buyers} helpKey="buyers" setHelp={setHelp} onChange={(n) => onActual({...actuals, buyers: n})} />
+            </div>
+            <div className="mt-2 text-[13px] leading-snug text-foreground/55">
+              Orders per buyer. A separate signal, <span className="font-semibold">not</span> part of QRR.
+            </div>
           </div>
-          <div className="mt-2 text-[13px] leading-snug text-foreground/55">
-            Orders per buyer. A separate signal — <span className="font-semibold">not</span> part of QRR.
-          </div>
-        </div>
+        )}
 
         {/* Focus guide */}
         <div className={`min-h-[1.25rem] text-[13px] font-medium transition-colors ${help ? 'text-foreground/80' : 'text-transparent'}`}>
@@ -410,12 +424,19 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-foreground/70">
             <span className="text-foreground/45">Measured</span>
             <span className="inline-flex items-center gap-1">{facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.orders} /></span>
-            <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
+            {facts.channel !== 'offline' && (
+              <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
+            )}
             <span>{peso2(facts.revenue)} revenue</span>
           </div>
           {facts.channel === 'website' && (
             <p className="mt-2 text-xs italic leading-snug text-foreground/55">
               Note: CRM order history starts 17 Apr 2026 — earlier website orders aren’t synced, so volume is expected to be lower.
+            </p>
+          )}
+          {facts.channel === 'offline' && (
+            <p className="mt-2 text-xs italic leading-snug text-foreground/55">
+              Note: POS bazaar sales. No ads (so no ROAS), and CAC comes from an event cost you enter. It joins the Overall QRR once that cost is set.
             </p>
           )}
         </div>
@@ -738,7 +759,13 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           // rather than N/A. `||` (not `??`) on purpose: snapshots saved before
           // the batch seeded this carry a literal 0, which needs the same
           // treatment as a missing value. Still fully editable on the card.
-          acqCost: c.defaults.acqCost || (c.platformFeeApplies ? 0 : DEFAULT_WEBSITE_ACQ_COST),
+          // Offline is the exception: its event cost starts at ₱0 so it stays
+          // OUT of the pooled Overall QRR until a real event cost is entered
+          // (no fabricated bazaar cost).
+          acqCost:
+            c.channel === 'offline'
+              ? c.defaults.acqCost ?? 0
+              : c.defaults.acqCost || (c.platformFeeApplies ? 0 : DEFAULT_WEBSITE_ACQ_COST),
         } as Knobs,
       ]),
     );
@@ -836,7 +863,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       ) : view === 'heatmap' && hasCohorts ? (
         <HeatmapView snapshot={snapshot} />
       ) : (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {snapshot.perChannel.map((c) => (
             <ChannelCard
               key={`${c.channel}-${nonces[c.channel] ?? 0}`}

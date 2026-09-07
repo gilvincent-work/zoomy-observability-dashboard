@@ -1,4 +1,5 @@
 import type {PosProductRow} from './pos-types';
+import type {ChannelFacts} from './health-types';
 import type {DailySales, PosOrder, SalesKpis, SalesRange, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
@@ -78,6 +79,31 @@ export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
   return Array.from(byProduct.values())
     .sort((a, b) => b.revenue - a.revenue || b.units - a.units)
     .slice(0, limit);
+}
+
+// ── Business Health channel facts (Surface D) ─────────────────────────────
+/**
+ * Build a synthetic "offline" ChannelFacts from POS orders so Business Health
+ * can render offline as a fourth channel that pools into the Overall QRR. Shaped
+ * like the Website channel: no ads (adSpend/adRevenue null → no ROAS), no
+ * platform fee, and a ₱0 event-cost default so it stays OUT of the pooled QRR
+ * until someone enters an event cost. buyers is 0 — the POS has no buyer
+ * identity — so the card shows Repeat rate N/A. Returns null when there are no
+ * orders (nothing to show).
+ */
+export function offlineChannelFacts(orders: PosOrder[]): ChannelFacts | null {
+  if (orders.length === 0) return null;
+  const {revenue, orders: count} = computeKpis(orders);
+  return {
+    channel: 'offline',
+    orders: count,
+    buyers: 0,
+    revenue,
+    adSpend: null,
+    adRevenue: null,
+    platformFeeApplies: false,
+    defaults: {cogsPct: 0.35, platformFeePct: 0, promos: 0, acqCost: 0},
+  };
 }
 
 // ── Stock alerts (Surface B) ──────────────────────────────────────────────
