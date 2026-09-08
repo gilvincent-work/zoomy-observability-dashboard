@@ -40,7 +40,7 @@ export const getPosProducts = cache(async (): Promise<PosProductRow[]> => {
   const [productsRes, inventoryRes] = await Promise.all([
     supabase
       .from('pos_products')
-      .select('product_id,name,product_line,active,pos_prices(price)')
+      .select('product_id,name,product_line,category,subcategory,active,pos_prices(price)')
       .order('product_line', {ascending: true})
       .order('name', {ascending: true}),
     supabase.from('pos_inventory').select('product_id,stock,next_expiry'),
@@ -66,6 +66,8 @@ export const getPosProducts = cache(async (): Promise<PosProductRow[]> => {
       product_id: r.product_id as string,
       name: r.name as string,
       product_line: (r.product_line as string | null) ?? null,
+      category: (r.category as string | null) ?? null,
+      subcategory: (r.subcategory as string | null) ?? null,
       active: Boolean(r.active),
       price: price?.price ?? null,
       stock: inv?.stock ?? 0,

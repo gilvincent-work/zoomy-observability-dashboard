@@ -178,6 +178,8 @@ describe('stockAlerts', () => {
   const p = (over: Partial<PosProductRow> & {product_id: string; stock: number}): PosProductRow => ({
     name: over.product_id,
     product_line: 'FDR',
+    category: 'Freeze Dried',
+    subcategory: null,
     active: true,
     price: 170,
     next_expiry: null,
