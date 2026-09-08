@@ -2,7 +2,7 @@
 
 import {revalidatePath} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
-import {parsePrice} from './pos-format';
+import {parsePrice, parseQty, PRODUCT_LINES} from './pos-format';
 
 // Server actions for Product Controls. Coop co-owns name / price / listing with
 // the POS and writes them through the SAME SECURITY DEFINER RPCs (see
@@ -19,12 +19,20 @@ function mockBlocked(): ActionResult {
   return {ok: false, error: 'Running in mock mode — set the Supabase pos_* env to make edits.'};
 }
 
-/** Create a product (Coop-only). Seeds its price via the reprice RPC if given. */
+function isValidLine(line: string): boolean {
+  return (PRODUCT_LINES as readonly string[]).includes(line);
+}
+
+/**
+ * Create a product (Coop-only). Seeds its price via the reprice RPC and its
+ * opening stock via the receive_lot RPC when given.
+ */
 export async function createProductAction(input: {
   product_id: string;
   name: string;
   product_line?: string | null;
   price?: string;
+  stock?: string;
 }): Promise<ActionResult> {
   if (usingPosMock()) return mockBlocked();
 
@@ -33,6 +41,9 @@ export async function createProductAction(input: {
   if (!product_id) return {ok: false, error: 'SKU Code is required.'};
   if (!name) return {ok: false, error: 'Name is required.'};
 
+  const line = input.product_line?.trim() || null;
+  if (line && !isValidLine(line)) return {ok: false, error: `Line must be one of ${PRODUCT_LINES.join(', ')}.`};
+
   let price: number | null = null;
   if (input.price && input.price.trim()) {
     const parsed = parsePrice(input.price);
@@ -40,13 +51,12 @@ export async function createProductAction(input: {
     price = parsed.value;
   }
 
+  const parsedQty = parseQty(input.stock ?? '');
+  if ('error' in parsedQty) return {ok: false, error: parsedQty.error};
+  const stock = parsedQty.value;
+
   const supabase = posClient();
-  const {error} = await supabase.from('pos_products').insert({
-    product_id,
-    name,
-    product_line: input.product_line?.trim() || null,
-    active: true,
-  });
+  const {error} = await supabase.from('pos_products').insert({product_id, name, product_line: line, active: true});
   if (error) {
     if (error.code === '23505') return {ok: false, error: `SKU ${product_id} already exists.`};
     return {ok: false, error: error.message};
@@ -62,6 +72,47 @@ export async function createProductAction(input: {
     if (priceErr) return {ok: false, error: `Product created, but price failed: ${priceErr.message}`};
   }
 
+  if (stock > 0) {
+    const {error: lotErr} = await supabase.rpc('receive_lot', {
+      p_product_id: product_id,
+      p_expires_on: null,
+      p_qty: stock,
+      p_lot_code: 'opening',
+    });
+    if (lotErr) return {ok: false, error: `Product created, but stock failed: ${lotErr.message}`};
+  }
+
+  revalidatePath('/products');
+  return {ok: true};
+}
+
+/** Set a product's total on-hand stock to an absolute quantity (set_product_stock RPC). */
+export async function setStockAction(product_id: string, qty: string): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const parsed = parseQty(qty);
+  if ('error' in parsed) return {ok: false, error: parsed.error};
+
+  const {error} = await posClient().rpc('set_product_stock', {
+    p_product_id: product_id,
+    p_new_qty: parsed.value,
+    p_by: ACTOR,
+  });
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/products');
+  return {ok: true};
+}
+
+/** Set a product's line (a direct column update; product_line has no RPC). */
+export async function setLineAction(product_id: string, line: string): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const trimmed = line.trim();
+  if (trimmed && !isValidLine(trimmed)) return {ok: false, error: `Line must be one of ${PRODUCT_LINES.join(', ')}.`};
+
+  const {error} = await posClient()
+    .from('pos_products')
+    .update({product_line: trimmed || null, updated_at: new Date().toISOString()})
+    .eq('product_id', product_id);
+  if (error) return {ok: false, error: error.message};
   revalidatePath('/products');
   return {ok: true};
 }

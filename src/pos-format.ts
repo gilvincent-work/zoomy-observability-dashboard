@@ -22,6 +22,23 @@ export function parsePrice(input: string): {value: number} | {error: string} {
   return {value: n};
 }
 
+/**
+ * Validate a stock quantity string. Returns the parsed non-negative integer or
+ * an error message. Empty is treated as 0 (allowed).
+ */
+export function parseQty(input: string): {value: number} | {error: string} {
+  const trimmed = input.trim();
+  if (!trimmed) return {value: 0};
+  const n = Number(trimmed);
+  if (!Number.isInteger(n)) return {error: 'Enter a whole number.'};
+  if (n < 0) return {error: 'Stock cannot be negative.'};
+  return {value: n};
+}
+
+/** The valid product lines (static set) — the Line dropdown's options. */
+export const PRODUCT_LINES = ['FDR', 'JRK', 'MEAT'] as const;
+export type ProductLineCode = (typeof PRODUCT_LINES)[number];
+
 /** A product is low on stock when at/under this many units (UI hint only). */
 export const LOW_STOCK_THRESHOLD = 10;
 

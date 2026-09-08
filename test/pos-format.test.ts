@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {formatPeso, parsePrice, stockLabel, lineLabel} from '../src/pos-format';
+import {formatPeso, parsePrice, parseQty, stockLabel, lineLabel} from '../src/pos-format';
 
 describe('formatPeso', () => {
   it('formats amounts with the peso sign and grouping', () => {
@@ -22,6 +22,20 @@ describe('parsePrice', () => {
     expect(parsePrice('abc')).toEqual({error: 'Enter a valid number.'});
     expect(parsePrice('0')).toEqual({error: 'Price must be greater than zero.'});
     expect(parsePrice('-5')).toEqual({error: 'Price must be greater than zero.'});
+  });
+});
+
+describe('parseQty', () => {
+  it('accepts non-negative integers; empty is 0', () => {
+    expect(parseQty('12')).toEqual({value: 12});
+    expect(parseQty('0')).toEqual({value: 0});
+    expect(parseQty('')).toEqual({value: 0});
+    expect(parseQty('  ')).toEqual({value: 0});
+  });
+  it('rejects negatives and non-integers', () => {
+    expect(parseQty('-1')).toEqual({error: 'Stock cannot be negative.'});
+    expect(parseQty('3.5')).toEqual({error: 'Enter a whole number.'});
+    expect(parseQty('abc')).toEqual({error: 'Enter a whole number.'});
   });
 });
 
