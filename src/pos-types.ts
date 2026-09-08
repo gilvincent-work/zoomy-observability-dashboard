@@ -4,7 +4,9 @@
 export interface PosProductRow {
   product_id: string; // SKU Code, the stable key
   name: string;
-  product_line: string | null; // FDR / JRK / MEAT
+  product_line: string | null; // FDR / JRK / MEAT (Coop's SKU-decode line)
+  category: string | null; // POS display tab — authoritative for the POS
+  subcategory: string | null; // POS secondary tab (Freeze-Dried only)
   active: boolean; // listed / unlisted
   price: number | null;
   stock: number; // Σ qty_on_hand across lots

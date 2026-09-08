@@ -3,11 +3,12 @@
 import {useEffect, useState, useTransition} from 'react';
 import {Boxes, Check, Pencil, Plus, X} from 'lucide-react';
 import type {PosProductRow} from '@/src/pos-types';
-import {formatPeso, lineLabel, PRODUCT_LINES, stockLabel} from '@/src/pos-format';
+import {formatPeso, lineLabel, POS_CATEGORIES, POS_SUBCATEGORIES, PRODUCT_LINES, SUBCATEGORY_CATEGORY, stockLabel} from '@/src/pos-format';
 import {
   createProductAction,
   renameProductAction,
   repriceProductAction,
+  setCategoryAction,
   setLineAction,
   setListingAction,
   setStockAction,
@@ -55,7 +56,15 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
   }
 
   function create(
-    input: {product_id: string; name: string; product_line?: string; price?: string; stock?: string},
+    input: {
+      product_id: string;
+      name: string;
+      product_line?: string;
+      category?: string;
+      subcategory?: string;
+      price?: string;
+      stock?: string;
+    },
     onOk: () => void,
   ) {
     setError(null);
@@ -112,6 +121,7 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
                   <th className="px-4 py-2.5 font-medium">SKU</th>
                   <th className="px-4 py-2.5 font-medium">Name</th>
                   <th className="px-4 py-2.5 font-medium">Line</th>
+                  <th className="px-4 py-2.5 font-medium">Category</th>
                   <th className="px-4 py-2.5 text-right font-medium">Price</th>
                   <th className="px-4 py-2.5 text-right font-medium">Stock</th>
                   <th className="px-4 py-2.5 text-right font-medium">Listed</th>
@@ -140,6 +150,13 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
                       const patch = Number.isInteger(n) && n >= 0 ? {stock: n} : {};
                       mutate(row.product_id, patch, () => setStockAction(row.product_id, qty));
                     }}
+                    onSetCategory={(category, subcategory) =>
+                      mutate(
+                        row.product_id,
+                        {category: category || null, subcategory: subcategory || null},
+                        () => setCategoryAction(row.product_id, category, subcategory),
+                      )
+                    }
                     onSetLine={(line) =>
                       mutate(row.product_id, {product_line: line || null}, () =>
                         setLineAction(row.product_id, line),
@@ -163,6 +180,7 @@ function ProductRow({
   onToggle,
   onSetStock,
   onSetLine,
+  onSetCategory,
 }: {
   row: PosProductRow;
   onRename: (name: string) => void;
@@ -170,6 +188,7 @@ function ProductRow({
   onToggle: () => void;
   onSetStock: (qty: string) => void;
   onSetLine: (line: string) => void;
+  onSetCategory: (category: string, subcategory: string) => void;
 }) {
   const [editing, setEditing] = useState<EditField>(null);
   const [draft, setDraft] = useState('');
@@ -208,6 +227,13 @@ function ProductRow({
       </td>
       <td className="px-4 py-2.5">
         <LineSelect value={row.product_line ?? ''} onChange={onSetLine} />
+      </td>
+      <td className="px-4 py-2.5">
+        <CategorySelect
+          category={row.category ?? ''}
+          subcategory={row.subcategory ?? ''}
+          onChange={onSetCategory}
+        />
       </td>
       <td className="px-4 py-2.5 text-right tabular-nums">
         {editing === 'price' ? (
@@ -324,19 +350,77 @@ function LineSelect({value, onChange}: {value: string; onChange: (line: string) 
   );
 }
 
+/**
+ * Inline Category picker — the POS tab, plus a subcategory select that only
+ * appears for Freeze Dried (the sole category with subcategories). Changing the
+ * category away from Freeze Dried clears the subcategory.
+ */
+function CategorySelect({
+  category,
+  subcategory,
+  onChange,
+}: {
+  category: string;
+  subcategory: string;
+  onChange: (category: string, subcategory: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <select
+        value={category}
+        onChange={(e) => onChange(e.target.value, e.target.value === SUBCATEGORY_CATEGORY ? subcategory : '')}
+        aria-label="POS category"
+        className="h-7 rounded-md border bg-background px-1.5 text-sm outline-none focus-visible:border-ring"
+      >
+        <option value="">Uncategorized</option>
+        {POS_CATEGORIES.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+      {category === SUBCATEGORY_CATEGORY && (
+        <select
+          value={subcategory}
+          onChange={(e) => onChange(category, e.target.value)}
+          aria-label="POS subcategory"
+          className="h-7 rounded-md border bg-background px-1.5 text-sm text-muted-foreground outline-none focus-visible:border-ring"
+        >
+          <option value="">— sub —</option>
+          {POS_SUBCATEGORIES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 function NewProductForm({
   pending,
   onSubmit,
 }: {
   pending: boolean;
   onSubmit: (
-    input: {product_id: string; name: string; product_line?: string; price?: string; stock?: string},
+    input: {
+      product_id: string;
+      name: string;
+      product_line?: string;
+      category?: string;
+      subcategory?: string;
+      price?: string;
+      stock?: string;
+    },
     done: () => void,
   ) => void;
 }) {
   const [productId, setProductId] = useState('');
   const [name, setName] = useState('');
   const [line, setLine] = useState('');
+  const [category, setCategory] = useState('');
+  const [subcategory, setSubcategory] = useState('');
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('');
 
@@ -344,6 +428,8 @@ function NewProductForm({
     setProductId('');
     setName('');
     setLine('');
+    setCategory('');
+    setSubcategory('');
     setPrice('');
     setStock('');
   }
@@ -381,6 +467,39 @@ function NewProductForm({
             ))}
           </select>
         </Field>
+        <Field label="Category">
+          <select
+            value={category}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              if (e.target.value !== SUBCATEGORY_CATEGORY) setSubcategory('');
+            }}
+            className="h-8 w-36 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring"
+          >
+            <option value="">Select…</option>
+            {POS_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {category === SUBCATEGORY_CATEGORY && (
+          <Field label="Subcategory">
+            <select
+              value={subcategory}
+              onChange={(e) => setSubcategory(e.target.value)}
+              className="h-8 w-40 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring"
+            >
+              <option value="">Select…</option>
+              {POS_SUBCATEGORIES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Price">
           <input
             type="number"
@@ -410,6 +529,8 @@ function NewProductForm({
                 product_id: productId,
                 name,
                 product_line: line || undefined,
+                category: category || undefined,
+                subcategory: subcategory || undefined,
                 price: price || undefined,
                 stock: stock || undefined,
               },

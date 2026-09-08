@@ -2,7 +2,7 @@
 
 import {revalidatePath} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
-import {parsePrice, parseQty, PRODUCT_LINES} from './pos-format';
+import {parsePrice, parseQty, POS_CATEGORIES, POS_SUBCATEGORIES, PRODUCT_LINES} from './pos-format';
 
 // Server actions for Product Controls. Coop co-owns name / price / listing with
 // the POS and writes them through the SAME SECURITY DEFINER RPCs (see
@@ -22,6 +22,12 @@ function mockBlocked(): ActionResult {
 function isValidLine(line: string): boolean {
   return (PRODUCT_LINES as readonly string[]).includes(line);
 }
+function isValidCategory(c: string): boolean {
+  return (POS_CATEGORIES as readonly string[]).includes(c);
+}
+function isValidSubcategory(s: string): boolean {
+  return (POS_SUBCATEGORIES as readonly string[]).includes(s);
+}
 
 /**
  * Create a product (Coop-only). Seeds its price via the reprice RPC and its
@@ -31,6 +37,8 @@ export async function createProductAction(input: {
   product_id: string;
   name: string;
   product_line?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
   price?: string;
   stock?: string;
 }): Promise<ActionResult> {
@@ -44,6 +52,11 @@ export async function createProductAction(input: {
   const line = input.product_line?.trim() || null;
   if (line && !isValidLine(line)) return {ok: false, error: `Line must be one of ${PRODUCT_LINES.join(', ')}.`};
 
+  const category = input.category?.trim() || null;
+  if (category && !isValidCategory(category)) return {ok: false, error: 'Invalid category.'};
+  const subcategory = input.subcategory?.trim() || null;
+  if (subcategory && !isValidSubcategory(subcategory)) return {ok: false, error: 'Invalid subcategory.'};
+
   let price: number | null = null;
   if (input.price && input.price.trim()) {
     const parsed = parsePrice(input.price);
@@ -56,7 +69,7 @@ export async function createProductAction(input: {
   const stock = parsedQty.value;
 
   const supabase = posClient();
-  const {error} = await supabase.from('pos_products').insert({product_id, name, product_line: line, active: true});
+  const {error} = await supabase.from('pos_products').insert({product_id, name, product_line: line, category, subcategory, active: true});
   if (error) {
     if (error.code === '23505') return {ok: false, error: `SKU ${product_id} already exists.`};
     return {ok: false, error: error.message};
@@ -111,6 +124,28 @@ export async function setLineAction(product_id: string, line: string): Promise<A
   const {error} = await posClient()
     .from('pos_products')
     .update({product_line: trimmed || null, updated_at: new Date().toISOString()})
+    .eq('product_id', product_id);
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/products');
+  return {ok: true};
+}
+
+/**
+ * Set a product's POS category (+ subcategory). Direct column update — this is
+ * the tab the POS shows. Subcategory only applies to Freeze Dried; it's cleared
+ * for any other category so a stale subcategory can't linger.
+ */
+export async function setCategoryAction(product_id: string, category: string, subcategory: string): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const cat = category.trim();
+  if (cat && !isValidCategory(cat)) return {ok: false, error: 'Invalid category.'};
+  let sub = subcategory.trim();
+  if (cat !== 'Freeze Dried') sub = '';
+  if (sub && !isValidSubcategory(sub)) return {ok: false, error: 'Invalid subcategory.'};
+
+  const {error} = await posClient()
+    .from('pos_products')
+    .update({category: cat || null, subcategory: sub || null, updated_at: new Date().toISOString()})
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/products');

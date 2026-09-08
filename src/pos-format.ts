@@ -39,6 +39,14 @@ export function parseQty(input: string): {value: number} | {error: string} {
 export const PRODUCT_LINES = ['FDR', 'JRK', 'MEAT'] as const;
 export type ProductLineCode = (typeof PRODUCT_LINES)[number];
 
+/** The POS display tabs (categories). Coop is authoritative for these. */
+export const POS_CATEGORIES = ['Freeze Dried', 'Meaty Treats', 'Super Duo Bites', 'Tasty Treats'] as const;
+export type PosCategory = (typeof POS_CATEGORIES)[number];
+
+/** Freeze-Dried's secondary tabs. Only that category has subcategories. */
+export const POS_SUBCATEGORIES = ['Fish', 'Meats', 'Cat Grass / Yogurt', 'Super Food'] as const;
+export const SUBCATEGORY_CATEGORY = 'Freeze Dried';
+
 /** A product is low on stock when at/under this many units (UI hint only). */
 export const LOW_STOCK_THRESHOLD = 10;
 
