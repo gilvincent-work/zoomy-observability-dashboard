@@ -1,6 +1,6 @@
 import type {PosProductRow} from './pos-types';
 import type {ChannelFacts} from './health-types';
-import type {DailySales, PosOrder, SalesKpis, SalesRange, TopProduct} from './pos-sales-types';
+import type {DailySales, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
 // server/client concerns so they're unit-testable and shared across pages.
@@ -81,8 +81,86 @@ export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
     .slice(0, limit);
 }
 
+// ── Transactions filters ──────────────────────────────────────────────────
+export const DEFAULT_ORDERS_FILTER: PosOrdersFilter = {
+  method: 'all',
+  range: 'all',
+  minPrice: null,
+  maxPrice: null,
+};
+
+/** Methods offered as filter chips (mirrors the POS cart Pay control order). */
+export const ORDER_METHOD_FILTERS: {value: string; label: string}[] = [
+  {value: 'all', label: 'All'},
+  {value: 'cash', label: 'Cash'},
+  {value: 'gcash', label: 'GCash'},
+  {value: 'maya', label: 'Maya'},
+  {value: 'card', label: 'Card'},
+];
+
+/** Parse a non-negative number param; null when blank or invalid. */
+function parseMoneyParam(raw: string | undefined): number | null {
+  if (raw == null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Normalize raw search params into a well-formed filter (unknowns fall back). */
+export function parseOrdersFilter(sp: {
+  method?: string;
+  range?: string;
+  min?: string;
+  max?: string;
+}): PosOrdersFilter {
+  const method = ORDER_METHOD_FILTERS.some((m) => m.value === sp.method) ? (sp.method as string) : 'all';
+  const range = isSalesRange(sp.range) ? sp.range : 'all';
+  let minPrice = parseMoneyParam(sp.min);
+  let maxPrice = parseMoneyParam(sp.max);
+  // A reversed range is a user error; swap so it always reads low → high.
+  if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
+    [minPrice, maxPrice] = [maxPrice, minPrice];
+  }
+  return {method, range, minPrice, maxPrice};
+}
+
+/** True when any filter is narrowing the results (used to show a Reset). */
+export function isFilterActive(f: PosOrdersFilter): boolean {
+  return f.method !== 'all' || f.range !== 'all' || f.minPrice != null || f.maxPrice != null;
+}
+
+/** A null payment_method is a legacy row; the UI reads it as Cash, so match it. */
+function methodMatches(orderMethod: string | null, filterMethod: string): boolean {
+  if (filterMethod === 'all') return true;
+  if (filterMethod === 'cash') return orderMethod === 'cash' || orderMethod == null;
+  return orderMethod === filterMethod;
+}
+
+/** Apply the transactions filter in memory (mock path + unit tests). */
+export function filterOrders(orders: PosOrder[], f: PosOrdersFilter, now: Date = new Date()): PosOrder[] {
+  const start = rangeStart(f.range, now);
+  return orders.filter((o) => {
+    if (!methodMatches(o.payment_method, f.method)) return false;
+    if (start && o.created_at < start) return false;
+    if (f.minPrice != null && o.total < f.minPrice) return false;
+    if (f.maxPrice != null && o.total > f.maxPrice) return false;
+    return true;
+  });
+}
+
+/** Slider bounds from the dataset's max order total, rounded up to a clean step. */
+export function priceBounds(orders: PosOrder[]): PriceBounds {
+  const max = orders.reduce((m, o) => Math.max(m, o.total), 0);
+  return boundsFromMax(max);
+}
+
+/** Round a raw max total up to a tidy slider ceiling (nearest 100, min 100). */
+export function boundsFromMax(max: number): PriceBounds {
+  const ceiling = Math.max(100, Math.ceil(max / 100) * 100);
+  return {min: 0, max: ceiling};
+}
+
 // ── Pagination (transactions list) ────────────────────────────────────────
-export const ORDERS_PAGE_SIZE = 25;
+export const ORDERS_PAGE_SIZE = 10;
 
 export interface PageInfo {
   page: number; // clamped, 1-based

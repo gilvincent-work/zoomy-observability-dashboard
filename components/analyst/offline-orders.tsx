@@ -1,20 +1,43 @@
 'use client';
 
 import Link from 'next/link';
+import {usePathname, useSearchParams} from 'next/navigation';
 import {ArrowLeft, ChevronLeft, ChevronRight, Receipt, TriangleAlert} from 'lucide-react';
-import type {PosOrder} from '@/src/pos-sales-types';
-import type {PageInfo} from '@/src/pos-sales-compute';
+import type {PosOrder, PosOrdersFilter, PriceBounds} from '@/src/pos-sales-types';
+import {isFilterActive, type PageInfo} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodLabel} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Eyebrow, MockNote} from './sections';
+import {TransactionFilters} from './transaction-filters';
 
 const timeLabel = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineOrdersView({orders, pageInfo, usingMock}: {orders: PosOrder[]; pageInfo: PageInfo; usingMock: boolean}) {
+export function OfflineOrdersView({
+  orders,
+  pageInfo,
+  filter,
+  bounds,
+  usingMock,
+}: {
+  orders: PosOrder[];
+  pageInfo: PageInfo;
+  filter: PosOrdersFilter;
+  bounds: PriceBounds;
+  usingMock: boolean;
+}) {
   const {page, totalPages, pageSize} = pageInfo;
   const firstOnPage = (page - 1) * pageSize;
+  const filtered = isFilterActive(filter);
+
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const pageHref = (p: number) => {
+    const params = new URLSearchParams(searchParams?.toString());
+    params.set('page', String(p));
+    return `${pathname}?${params.toString()}`;
+  };
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
@@ -33,10 +56,14 @@ export function OfflineOrdersView({orders, pageInfo, usingMock}: {orders: PosOrd
         </MockNote>
       )}
 
+      <TransactionFilters filter={filter} bounds={bounds} />
+
       <Card>
         <CardContent className="p-0">
           {orders.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No transactions yet.</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {filtered ? 'No transactions match these filters.' : 'No transactions yet.'}
+            </p>
           ) : (
             <ul className="flex flex-col divide-y">
               {orders.map((o, i) => (
@@ -66,13 +93,13 @@ export function OfflineOrdersView({orders, pageInfo, usingMock}: {orders: PosOrd
 
       {totalPages > 1 && (
         <nav className="mt-4 flex items-center justify-between" aria-label="Transactions pagination">
-          <PageLink href={`/offline-sales/orders?page=${page - 1}`} disabled={page <= 1}>
+          <PageLink href={pageHref(page - 1)} disabled={page <= 1}>
             <ChevronLeft className="size-3.5" /> Previous
           </PageLink>
           <span className="text-xs text-muted-foreground tabular-nums">
             Page {page} of {totalPages}
           </span>
-          <PageLink href={`/offline-sales/orders?page=${page + 1}`} disabled={page >= totalPages}>
+          <PageLink href={pageHref(page + 1)} disabled={page >= totalPages}>
             Next <ChevronRight className="size-3.5" />
           </PageLink>
         </nav>

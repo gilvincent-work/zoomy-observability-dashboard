@@ -1,12 +1,17 @@
 import {describe, it, expect} from 'vitest';
 import {
+  boundsFromMax,
   computeKpis,
+  filterOrders,
   filterOrdersByRange,
+  isFilterActive,
   isSalesRange,
   offlineChannelFacts,
   offlineCompareMetrics,
   paginate,
+  parseOrdersFilter,
   parsePage,
+  priceBounds,
   rangeStart,
   salesByDay,
   stockAlerts,
@@ -204,5 +209,84 @@ describe('stockAlerts', () => {
     const a = stockAlerts(products, NOW);
     expect(a.nearExpiry).toHaveLength(0);
     expect(a.out.map((x) => x.product_id)).toEqual(['OUT']);
+  });
+});
+
+describe('parseOrdersFilter', () => {
+  it('defaults unknown/blank params to no filter', () => {
+    expect(parseOrdersFilter({})).toEqual({method: 'all', range: 'all', minPrice: null, maxPrice: null});
+    expect(parseOrdersFilter({method: 'bitcoin', range: 'decade'})).toEqual({
+      method: 'all',
+      range: 'all',
+      minPrice: null,
+      maxPrice: null,
+    });
+  });
+  it('keeps valid method/range and parses prices', () => {
+    expect(parseOrdersFilter({method: 'gcash', range: '7d', min: '50', max: '500'})).toEqual({
+      method: 'gcash',
+      range: '7d',
+      minPrice: 50,
+      maxPrice: 500,
+    });
+  });
+  it('swaps a reversed price range', () => {
+    const f = parseOrdersFilter({min: '500', max: '50'});
+    expect(f.minPrice).toBe(50);
+    expect(f.maxPrice).toBe(500);
+  });
+  it('ignores negative or non-numeric prices', () => {
+    const f = parseOrdersFilter({min: '-10', max: 'abc'});
+    expect(f.minPrice).toBeNull();
+    expect(f.maxPrice).toBeNull();
+  });
+});
+
+describe('isFilterActive', () => {
+  it('is false only for the all/all/null/null default', () => {
+    expect(isFilterActive({method: 'all', range: 'all', minPrice: null, maxPrice: null})).toBe(false);
+    expect(isFilterActive({method: 'cash', range: 'all', minPrice: null, maxPrice: null})).toBe(true);
+    expect(isFilterActive({method: 'all', range: 'all', minPrice: 20, maxPrice: null})).toBe(true);
+  });
+});
+
+describe('filterOrders', () => {
+  const orders = [
+    order({id: 'cash', created_at: '2026-09-07T10:00:00.000Z', total: 100, payment_method: 'cash'}),
+    order({id: 'gcash', created_at: '2026-09-06T10:00:00.000Z', total: 300, payment_method: 'gcash'}),
+    order({id: 'legacy', created_at: '2026-08-01T10:00:00.000Z', total: 500, payment_method: null}),
+    order({id: 'card', created_at: '2026-09-07T09:00:00.000Z', total: 900, payment_method: 'card'}),
+  ];
+
+  it('matches cash including legacy null rows', () => {
+    const ids = filterOrders(orders, {method: 'cash', range: 'all', minPrice: null, maxPrice: null}, NOW).map((o) => o.id);
+    expect(ids.sort()).toEqual(['cash', 'legacy']);
+  });
+  it('filters by a specific method', () => {
+    const ids = filterOrders(orders, {method: 'card', range: 'all', minPrice: null, maxPrice: null}, NOW).map((o) => o.id);
+    expect(ids).toEqual(['card']);
+  });
+  it('filters by price range (inclusive)', () => {
+    const ids = filterOrders(orders, {method: 'all', range: 'all', minPrice: 100, maxPrice: 500}, NOW).map((o) => o.id);
+    expect(ids.sort()).toEqual(['cash', 'gcash', 'legacy']);
+  });
+  it('filters by date range', () => {
+    const ids = filterOrders(orders, {method: 'all', range: '7d', minPrice: null, maxPrice: null}, NOW).map((o) => o.id);
+    expect(ids).not.toContain('legacy');
+  });
+  it('combines filters (AND)', () => {
+    const ids = filterOrders(orders, {method: 'all', range: 'all', minPrice: 200, maxPrice: 400}, NOW).map((o) => o.id);
+    expect(ids).toEqual(['gcash']);
+  });
+});
+
+describe('price bounds', () => {
+  it('rounds the max up to a clean ceiling', () => {
+    expect(boundsFromMax(6767)).toEqual({min: 0, max: 6800});
+    expect(boundsFromMax(0)).toEqual({min: 0, max: 100});
+    expect(boundsFromMax(100)).toEqual({min: 0, max: 100});
+  });
+  it('derives bounds from the highest order total', () => {
+    expect(priceBounds([order({id: 'a', created_at: '2026-09-07T10:00:00.000Z', total: 250})])).toEqual({min: 0, max: 300});
   });
 });
