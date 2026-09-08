@@ -23,10 +23,14 @@ export interface PosOrder {
   items: PosOrderLine[];
 }
 
-/** Active filters for the transactions list. Empty/`all` values mean no filter. */
+/** Active filters for the transactions list. `all`/null values mean no filter. */
 export interface PosOrdersFilter {
   method: string; // 'all' | 'cash' | 'gcash' | 'maya' | 'card' | ...
-  range: SalesRange; // 'all' | 'today' | '7d' | '30d'
+  // Inclusive from/to instants (ISO). The client converts the picked calendar
+  // days into absolute instants using the viewer's timezone (start-of-day →
+  // end-of-day), so the filter matches the local times shown in the list.
+  startDate: string | null;
+  endDate: string | null;
   minPrice: number | null;
   maxPrice: number | null;
 }

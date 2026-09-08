@@ -214,21 +214,39 @@ describe('stockAlerts', () => {
 
 describe('parseOrdersFilter', () => {
   it('defaults unknown/blank params to no filter', () => {
-    expect(parseOrdersFilter({})).toEqual({method: 'all', range: 'all', minPrice: null, maxPrice: null});
-    expect(parseOrdersFilter({method: 'bitcoin', range: 'decade'})).toEqual({
+    expect(parseOrdersFilter({})).toEqual({method: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null});
+    expect(parseOrdersFilter({method: 'bitcoin', from: 'never'})).toEqual({
       method: 'all',
-      range: 'all',
+      startDate: null,
+      endDate: null,
       minPrice: null,
       maxPrice: null,
     });
   });
-  it('keeps valid method/range and parses prices', () => {
-    expect(parseOrdersFilter({method: 'gcash', range: '7d', min: '50', max: '500'})).toEqual({
+  it('keeps a valid method, date range, and prices', () => {
+    expect(parseOrdersFilter({
       method: 'gcash',
-      range: '7d',
+      from: '2026-09-01T00:00:00.000Z',
+      to: '2026-09-09T23:59:59.999Z',
+      min: '50',
+      max: '500',
+    })).toEqual({
+      method: 'gcash',
+      startDate: '2026-09-01T00:00:00.000Z',
+      endDate: '2026-09-09T23:59:59.999Z',
       minPrice: 50,
       maxPrice: 500,
     });
+  });
+  it('rejects malformed dates', () => {
+    const f = parseOrdersFilter({from: 'not-a-date', to: 'nope'});
+    expect(f.startDate).toBeNull();
+    expect(f.endDate).toBeNull();
+  });
+  it('swaps a reversed instant range', () => {
+    const f = parseOrdersFilter({from: '2026-09-09T00:00:00.000Z', to: '2026-09-01T00:00:00.000Z'});
+    expect(f.startDate).toBe('2026-09-01T00:00:00.000Z');
+    expect(f.endDate).toBe('2026-09-09T00:00:00.000Z');
   });
   it('swaps a reversed price range', () => {
     const f = parseOrdersFilter({min: '500', max: '50'});
@@ -243,10 +261,11 @@ describe('parseOrdersFilter', () => {
 });
 
 describe('isFilterActive', () => {
-  it('is false only for the all/all/null/null default', () => {
-    expect(isFilterActive({method: 'all', range: 'all', minPrice: null, maxPrice: null})).toBe(false);
-    expect(isFilterActive({method: 'cash', range: 'all', minPrice: null, maxPrice: null})).toBe(true);
-    expect(isFilterActive({method: 'all', range: 'all', minPrice: 20, maxPrice: null})).toBe(true);
+  it('is false only for the all-defaults filter', () => {
+    expect(isFilterActive({method: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null})).toBe(false);
+    expect(isFilterActive({method: 'cash', startDate: null, endDate: null, minPrice: null, maxPrice: null})).toBe(true);
+    expect(isFilterActive({method: 'all', startDate: '2026-09-01T00:00:00.000Z', endDate: null, minPrice: null, maxPrice: null})).toBe(true);
+    expect(isFilterActive({method: 'all', startDate: null, endDate: null, minPrice: 20, maxPrice: null})).toBe(true);
   });
 });
 
@@ -257,25 +276,39 @@ describe('filterOrders', () => {
     order({id: 'legacy', created_at: '2026-08-01T10:00:00.000Z', total: 500, payment_method: null}),
     order({id: 'card', created_at: '2026-09-07T09:00:00.000Z', total: 900, payment_method: 'card'}),
   ];
+  const base = {method: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null};
 
   it('matches cash including legacy null rows', () => {
-    const ids = filterOrders(orders, {method: 'cash', range: 'all', minPrice: null, maxPrice: null}, NOW).map((o) => o.id);
+    const ids = filterOrders(orders, {...base, method: 'cash'}).map((o) => o.id);
     expect(ids.sort()).toEqual(['cash', 'legacy']);
   });
   it('filters by a specific method', () => {
-    const ids = filterOrders(orders, {method: 'card', range: 'all', minPrice: null, maxPrice: null}, NOW).map((o) => o.id);
+    const ids = filterOrders(orders, {...base, method: 'card'}).map((o) => o.id);
     expect(ids).toEqual(['card']);
   });
   it('filters by price range (inclusive)', () => {
-    const ids = filterOrders(orders, {method: 'all', range: 'all', minPrice: 100, maxPrice: 500}, NOW).map((o) => o.id);
+    const ids = filterOrders(orders, {...base, minPrice: 100, maxPrice: 500}).map((o) => o.id);
     expect(ids.sort()).toEqual(['cash', 'gcash', 'legacy']);
   });
-  it('filters by date range', () => {
-    const ids = filterOrders(orders, {method: 'all', range: '7d', minPrice: null, maxPrice: null}, NOW).map((o) => o.id);
+  it('filters by an inclusive instant range', () => {
+    const ids = filterOrders(orders, {
+      ...base,
+      startDate: '2026-09-06T00:00:00.000Z',
+      endDate: '2026-09-07T23:59:59.999Z',
+    }).map((o) => o.id);
+    expect(ids.sort()).toEqual(['card', 'cash', 'gcash']);
     expect(ids).not.toContain('legacy');
   });
+  it('includes an order at the end-of-day boundary', () => {
+    const ids = filterOrders(orders, {
+      ...base,
+      startDate: '2026-09-07T00:00:00.000Z',
+      endDate: '2026-09-07T23:59:59.999Z',
+    }).map((o) => o.id);
+    expect(ids.sort()).toEqual(['card', 'cash']);
+  });
   it('combines filters (AND)', () => {
-    const ids = filterOrders(orders, {method: 'all', range: 'all', minPrice: 200, maxPrice: 400}, NOW).map((o) => o.id);
+    const ids = filterOrders(orders, {...base, minPrice: 200, maxPrice: 400}).map((o) => o.id);
     expect(ids).toEqual(['gcash']);
   });
 });

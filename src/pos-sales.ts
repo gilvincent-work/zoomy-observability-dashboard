@@ -9,7 +9,6 @@ import {
   filterOrders,
   paginate,
   priceBounds,
-  rangeStart,
   type PageInfo,
 } from './pos-sales-compute';
 import {MOCK_POS_ORDERS, MOCK_POS_SYNC_LOG} from './pos-sales-mock';
@@ -36,8 +35,8 @@ function orderFilterOps(filter: PosOrdersFilter): OrderFilterOp[] {
         : ['eq', 'payment_method', filter.method],
     );
   }
-  const start = rangeStart(filter.range);
-  if (start) ops.push(['gte', 'created_at', start]);
+  if (filter.startDate) ops.push(['gte', 'created_at', filter.startDate]);
+  if (filter.endDate) ops.push(['lte', 'created_at', filter.endDate]);
   if (filter.minPrice != null) ops.push(['gte', 'total', filter.minPrice]);
   if (filter.maxPrice != null) ops.push(['lte', 'total', filter.maxPrice]);
   return ops;

@@ -4,24 +4,18 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
 import {Popover} from '@base-ui/react/popover';
-import {ChevronDown, SlidersHorizontal, X} from 'lucide-react';
+import {CalendarDays, ChevronDown, SlidersHorizontal, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Button} from '@/components/ui/button';
 import {RangeSlider} from '@/components/ui/slider';
+import {Calendar, type DateRange} from '@/components/ui/calendar';
 import {formatPeso} from '@/src/pos-format';
 import {ORDER_METHOD_FILTERS, isFilterActive} from '@/src/pos-sales-compute';
-import type {PosOrdersFilter, PriceBounds, SalesRange} from '@/src/pos-sales-types';
-
-const DATE_FILTERS: {value: SalesRange; label: string}[] = [
-  {value: 'all', label: 'All'},
-  {value: 'today', label: 'Today'},
-  {value: '7d', label: '7 days'},
-  {value: '30d', label: '30 days'},
-];
+import type {PosOrdersFilter, PriceBounds} from '@/src/pos-sales-types';
 
 /**
  * Filter bar above the transactions list: payment-method pills, a date-range
- * preset, and a price-range popover. Every control writes to the URL search
+ * calendar, and a price-range popover. Every control writes to the URL search
  * params (and resets to page 1) so the server re-queries a filtered, paginated
  * slice. The whole bar reads back from those same params, so it's shareable and
  * survives a refresh.
@@ -56,11 +50,7 @@ export function TransactionFilters({filter, bounds}: {filter: PosOrdersFilter; b
       </Group>
 
       <Group label="When">
-        <Segmented
-          items={DATE_FILTERS}
-          active={filter.range}
-          hrefFor={(value) => hrefWith({range: value === 'all' ? null : value})}
-        />
+        <DateFilter filter={filter} hrefWith={hrefWith} router={router} />
       </Group>
 
       <Group label="Price">
@@ -69,7 +59,7 @@ export function TransactionFilters({filter, bounds}: {filter: PosOrdersFilter; b
 
       {anyActive && (
         <Link
-          href={hrefWith({method: null, range: null, min: null, max: null})}
+          href={hrefWith({method: null, from: null, to: null, min: null, max: null})}
           scroll={false}
           className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
@@ -114,6 +104,131 @@ function Segmented<T extends string>({
         </Link>
       ))}
     </div>
+  );
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** An ISO instant → the calendar day it falls on in the viewer's timezone. */
+function instantToCivil(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** A picked calendar day → the viewer-local start-of-day instant. */
+function civilStartInstant(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+}
+
+/** A picked calendar day → the viewer-local end-of-day instant (inclusive). */
+function civilEndInstant(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+}
+
+/** "Sep 1" or "Sep 1, 2025" (year shown only when it isn't the current one). */
+function shortDate(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const opts: Intl.DateTimeFormatOptions =
+    y === new Date().getFullYear() ? {month: 'short', day: 'numeric'} : {month: 'short', day: 'numeric', year: 'numeric'};
+  return date.toLocaleDateString(undefined, opts);
+}
+
+/** Human label for the applied from/to instants, e.g. "Sep 1 – Sep 9". */
+function dateLabel(filter: PosOrdersFilter): string {
+  const s = filter.startDate ? instantToCivil(filter.startDate) : null;
+  const e = filter.endDate ? instantToCivil(filter.endDate) : null;
+  if (s && e) return s === e ? shortDate(s) : `${shortDate(s)} – ${shortDate(e)}`;
+  if (s) return `From ${shortDate(s)}`;
+  if (e) return `Until ${shortDate(e)}`;
+  return 'Any date';
+}
+
+function DateFilter({
+  filter,
+  hrefWith,
+  router,
+}: {
+  filter: PosOrdersFilter;
+  hrefWith: (patch: Record<string, string | null>) => string;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const dateActive = filter.startDate != null || filter.endDate != null;
+  const [open, setOpen] = useState(false);
+  // The calendar works in civil days; the applied filter holds instants. Convert
+  // in on read and out on apply so the picker matches the local times listed.
+  const appliedRange: DateRange = {
+    start: filter.startDate ? instantToCivil(filter.startDate) : null,
+    end: filter.endDate ? instantToCivil(filter.endDate) : null,
+  };
+  const [range, setRange] = useState<DateRange>(appliedRange);
+
+  // Re-sync the draft when the applied filter changes (navigation, Clear, etc.).
+  useEffect(() => {
+    setRange({
+      start: filter.startDate ? instantToCivil(filter.startDate) : null,
+      end: filter.endDate ? instantToCivil(filter.endDate) : null,
+    });
+  }, [filter.startDate, filter.endDate]);
+
+  function apply() {
+    if (!range.start) return;
+    // A lone start with no end reads as a single day; mirror it to both bounds.
+    const endCivil = range.end ?? range.start;
+    router.push(
+      hrefWith({from: civilStartInstant(range.start), to: civilEndInstant(endCivil)}),
+      {scroll: false},
+    );
+    setOpen(false);
+  }
+
+  function reset() {
+    setRange({start: null, end: null});
+    router.push(hrefWith({from: null, to: null}), {scroll: false});
+    setOpen(false);
+  }
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+          dateActive ? 'border-primary/50 text-foreground' : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <CalendarDays className="size-3" />
+        {dateLabel(filter)}
+        <ChevronDown className="size-3 opacity-60" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="bottom" align="start" sideOffset={8}>
+          <Popover.Popup className="z-50 w-72 rounded-lg border bg-popover p-4 text-popover-foreground shadow-md outline-none">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+                {range.start && !range.end ? 'Pick an end date' : 'Date range'}
+              </span>
+              {(range.start || range.end) && (
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            <Calendar value={range} onChange={setRange} />
+
+            <Button size="sm" className="mt-3 w-full" onClick={apply} disabled={!range.start}>
+              Apply
+            </Button>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 

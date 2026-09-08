@@ -84,7 +84,8 @@ export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
 // ── Transactions filters ──────────────────────────────────────────────────
 export const DEFAULT_ORDERS_FILTER: PosOrdersFilter = {
   method: 'all',
-  range: 'all',
+  startDate: null,
+  endDate: null,
   minPrice: null,
   maxPrice: null,
 };
@@ -105,27 +106,39 @@ function parseMoneyParam(raw: string | undefined): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/** A valid ISO instant string, else null. */
+export function parseInstantParam(raw: string | undefined): string | null {
+  if (raw == null || raw === '') return null;
+  return Number.isNaN(Date.parse(raw)) ? null : raw;
+}
+
 /** Normalize raw search params into a well-formed filter (unknowns fall back). */
 export function parseOrdersFilter(sp: {
   method?: string;
-  range?: string;
+  from?: string;
+  to?: string;
   min?: string;
   max?: string;
 }): PosOrdersFilter {
   const method = ORDER_METHOD_FILTERS.some((m) => m.value === sp.method) ? (sp.method as string) : 'all';
-  const range = isSalesRange(sp.range) ? sp.range : 'all';
+  let startDate = parseInstantParam(sp.from);
+  let endDate = parseInstantParam(sp.to);
+  // A reversed range is a user error; swap so it always reads earliest → latest.
+  if (startDate && endDate && Date.parse(startDate) > Date.parse(endDate)) {
+    [startDate, endDate] = [endDate, startDate];
+  }
   let minPrice = parseMoneyParam(sp.min);
   let maxPrice = parseMoneyParam(sp.max);
-  // A reversed range is a user error; swap so it always reads low → high.
+  // A reversed price range is a user error; swap so it always reads low → high.
   if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
     [minPrice, maxPrice] = [maxPrice, minPrice];
   }
-  return {method, range, minPrice, maxPrice};
+  return {method, startDate, endDate, minPrice, maxPrice};
 }
 
 /** True when any filter is narrowing the results (used to show a Reset). */
 export function isFilterActive(f: PosOrdersFilter): boolean {
-  return f.method !== 'all' || f.range !== 'all' || f.minPrice != null || f.maxPrice != null;
+  return f.method !== 'all' || f.startDate != null || f.endDate != null || f.minPrice != null || f.maxPrice != null;
 }
 
 /** A null payment_method is a legacy row; the UI reads it as Cash, so match it. */
@@ -136,11 +149,11 @@ function methodMatches(orderMethod: string | null, filterMethod: string): boolea
 }
 
 /** Apply the transactions filter in memory (mock path + unit tests). */
-export function filterOrders(orders: PosOrder[], f: PosOrdersFilter, now: Date = new Date()): PosOrder[] {
-  const start = rangeStart(f.range, now);
+export function filterOrders(orders: PosOrder[], f: PosOrdersFilter): PosOrder[] {
   return orders.filter((o) => {
     if (!methodMatches(o.payment_method, f.method)) return false;
-    if (start && o.created_at < start) return false;
+    if (f.startDate && o.created_at < f.startDate) return false;
+    if (f.endDate && o.created_at > f.endDate) return false;
     if (f.minPrice != null && o.total < f.minPrice) return false;
     if (f.maxPrice != null && o.total > f.maxPrice) return false;
     return true;
