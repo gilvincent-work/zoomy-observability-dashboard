@@ -3,12 +3,14 @@
 import {useEffect, useState, useTransition} from 'react';
 import {Boxes, Check, Pencil, Plus, X} from 'lucide-react';
 import type {PosProductRow} from '@/src/pos-types';
-import {formatPeso, lineLabel, stockLabel} from '@/src/pos-format';
+import {formatPeso, lineLabel, PRODUCT_LINES, stockLabel} from '@/src/pos-format';
 import {
   createProductAction,
   renameProductAction,
   repriceProductAction,
+  setLineAction,
   setListingAction,
+  setStockAction,
   type ActionResult,
 } from '@/src/pos-actions';
 import {Card, CardContent} from '@/components/ui/card';
@@ -17,7 +19,7 @@ import {Badge} from '@/components/ui/badge';
 import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
 
-type EditField = 'name' | 'price' | null;
+type EditField = 'name' | 'price' | 'stock' | null;
 
 function StockBadge({stock}: {stock: number}) {
   const label = stockLabel(stock);
@@ -53,7 +55,7 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
   }
 
   function create(
-    input: {product_id: string; name: string; product_line?: string; price?: string},
+    input: {product_id: string; name: string; product_line?: string; price?: string; stock?: string},
     onOk: () => void,
   ) {
     setError(null);
@@ -133,6 +135,16 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
                         setListingAction(row.product_id, !row.active),
                       )
                     }
+                    onSetStock={(qty) => {
+                      const n = Number(qty);
+                      const patch = Number.isInteger(n) && n >= 0 ? {stock: n} : {};
+                      mutate(row.product_id, patch, () => setStockAction(row.product_id, qty));
+                    }}
+                    onSetLine={(line) =>
+                      mutate(row.product_id, {product_line: line || null}, () =>
+                        setLineAction(row.product_id, line),
+                      )
+                    }
                   />
                 ))}
               </tbody>
@@ -149,11 +161,15 @@ function ProductRow({
   onRename,
   onReprice,
   onToggle,
+  onSetStock,
+  onSetLine,
 }: {
   row: PosProductRow;
   onRename: (name: string) => void;
   onReprice: (price: string) => void;
   onToggle: () => void;
+  onSetStock: (qty: string) => void;
+  onSetLine: (line: string) => void;
 }) {
   const [editing, setEditing] = useState<EditField>(null);
   const [draft, setDraft] = useState('');
@@ -169,6 +185,7 @@ function ProductRow({
     const value = draft.trim();
     if (editing === 'name' && value) onRename(value);
     else if (editing === 'price' && value) onReprice(value);
+    else if (editing === 'stock' && value !== '') onSetStock(value);
     setEditing(null);
   }
 
@@ -189,7 +206,9 @@ function ProductRow({
           </button>
         )}
       </td>
-      <td className="px-4 py-2.5 text-muted-foreground">{lineLabel(row.product_line ?? '')}</td>
+      <td className="px-4 py-2.5">
+        <LineSelect value={row.product_line ?? ''} onChange={onSetLine} />
+      </td>
       <td className="px-4 py-2.5 text-right tabular-nums">
         {editing === 'price' ? (
           <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} numeric />
@@ -204,8 +223,19 @@ function ProductRow({
           </button>
         )}
       </td>
-      <td className="px-4 py-2.5 text-right">
-        <StockBadge stock={row.stock} />
+      <td className="px-4 py-2.5 text-right tabular-nums">
+        {editing === 'stock' ? (
+          <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} numeric />
+        ) : (
+          <button
+            type="button"
+            className="group inline-flex items-center gap-1.5 hover:text-primary"
+            onClick={() => begin('stock', String(row.stock))}
+          >
+            <StockBadge stock={row.stock} />
+            <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
+          </button>
+        )}
       </td>
       <td className="px-4 py-2.5">
         <div className="flex justify-end">
@@ -275,13 +305,32 @@ function EditCell({
   );
 }
 
+/** Inline Line picker — a native select of the static product lines. */
+function LineSelect({value, onChange}: {value: string; onChange: (line: string) => void}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label="Product line"
+      className="h-7 rounded-md border bg-background px-1.5 text-sm text-muted-foreground outline-none focus-visible:border-ring"
+    >
+      <option value="">—</option>
+      {PRODUCT_LINES.map((l) => (
+        <option key={l} value={l}>
+          {lineLabel(l)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function NewProductForm({
   pending,
   onSubmit,
 }: {
   pending: boolean;
   onSubmit: (
-    input: {product_id: string; name: string; product_line?: string; price?: string},
+    input: {product_id: string; name: string; product_line?: string; price?: string; stock?: string},
     done: () => void,
   ) => void;
 }) {
@@ -289,12 +338,14 @@ function NewProductForm({
   const [name, setName] = useState('');
   const [line, setLine] = useState('');
   const [price, setPrice] = useState('');
+  const [stock, setStock] = useState('');
 
   function reset() {
     setProductId('');
     setName('');
     setLine('');
     setPrice('');
+    setStock('');
   }
 
   return (
@@ -317,12 +368,18 @@ function NewProductForm({
           />
         </Field>
         <Field label="Line">
-          <input
+          <select
             value={line}
             onChange={(e) => setLine(e.target.value)}
-            placeholder="FDR / JRK / MEAT"
             className="h-8 w-32 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring"
-          />
+          >
+            <option value="">Select…</option>
+            {PRODUCT_LINES.map((l) => (
+              <option key={l} value={l}>
+                {lineLabel(l)}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Price">
           <input
@@ -334,12 +391,28 @@ function NewProductForm({
             className="h-8 w-24 rounded-md border bg-background px-2 text-right text-sm outline-none focus-visible:border-ring"
           />
         </Field>
+        <Field label="Stock">
+          <input
+            type="number"
+            inputMode="numeric"
+            value={stock}
+            onChange={(e) => setStock(e.target.value)}
+            placeholder="0"
+            className="h-8 w-20 rounded-md border bg-background px-2 text-right text-sm outline-none focus-visible:border-ring"
+          />
+        </Field>
         <Button
           size="sm"
           disabled={pending}
           onClick={() =>
             onSubmit(
-              {product_id: productId, name, product_line: line || undefined, price: price || undefined},
+              {
+                product_id: productId,
+                name,
+                product_line: line || undefined,
+                price: price || undefined,
+                stock: stock || undefined,
+              },
               reset,
             )
           }
