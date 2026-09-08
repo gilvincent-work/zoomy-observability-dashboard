@@ -24,6 +24,7 @@ function order(over: Partial<PosOrder> & {id: string; created_at: string}): PosO
     total: 100,
     oversold: false,
     device_id: 'pos',
+    payment_method: 'cash',
     items: [{product_id: 'A', name: 'A', qty: 1, unit_price: 100, line_total: 100}],
     ...over,
   };

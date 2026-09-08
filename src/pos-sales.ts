@@ -21,7 +21,7 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
   const [ordersRes, itemsRes, productsRes] = await Promise.all([
     supabase
       .from('pos_orders')
-      .select('id,subtotal,discount,total,oversold,device_id,created_at')
+      .select('id,subtotal,discount,total,oversold,device_id,payment_method,created_at')
       .order('created_at', {ascending: false}),
     supabase.from('pos_order_items').select('order_id,product_id,qty,unit_price,line_total'),
     supabase.from('pos_products').select('product_id,name'),
@@ -57,6 +57,7 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
     total: Number(o.total ?? 0),
     oversold: Boolean(o.oversold),
     device_id: (o.device_id as string | null) ?? null,
+    payment_method: (o.payment_method as string | null) ?? null,
     created_at: o.created_at as string,
     items: itemsByOrder.get(o.id as string) ?? [],
   }));
@@ -87,7 +88,7 @@ export const getPosOrdersPage = cache(async (page: number, pageSize?: number): P
 
   const {data: orderRows, error: ordersErr} = await supabase
     .from('pos_orders')
-    .select('id,subtotal,discount,total,oversold,device_id,created_at')
+    .select('id,subtotal,discount,total,oversold,device_id,payment_method,created_at')
     .order('created_at', {ascending: false})
     .range(info.from, info.to);
   if (ordersErr) throw new Error(`pos_orders read failed: ${ordersErr.message}`);
@@ -125,6 +126,7 @@ export const getPosOrdersPage = cache(async (page: number, pageSize?: number): P
     total: Number(o.total ?? 0),
     oversold: Boolean(o.oversold),
     device_id: (o.device_id as string | null) ?? null,
+    payment_method: (o.payment_method as string | null) ?? null,
     created_at: o.created_at as string,
     items: itemsByOrder.get(o.id as string) ?? [],
   }));

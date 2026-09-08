@@ -18,6 +18,7 @@ export interface PosOrder {
   total: number;
   oversold: boolean;
   device_id: string | null;
+  payment_method: string | null; // 'cash' | 'gcash' | 'card' | ...; null = legacy/cash
   created_at: string; // ISO
   items: PosOrderLine[];
 }
