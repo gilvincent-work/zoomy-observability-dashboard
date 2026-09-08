@@ -23,6 +23,20 @@ export interface PosOrder {
   items: PosOrderLine[];
 }
 
+/** Active filters for the transactions list. Empty/`all` values mean no filter. */
+export interface PosOrdersFilter {
+  method: string; // 'all' | 'cash' | 'gcash' | 'maya' | 'card' | ...
+  range: SalesRange; // 'all' | 'today' | '7d' | '30d'
+  minPrice: number | null;
+  maxPrice: number | null;
+}
+
+/** Inclusive slider bounds for the price filter, derived from the whole dataset. */
+export interface PriceBounds {
+  min: number;
+  max: number;
+}
+
 export interface PosSyncEntry {
   synced_at: string; // ISO
   direction: string; // push / pull

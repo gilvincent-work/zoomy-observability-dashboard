@@ -2,9 +2,46 @@ import 'server-only';
 import {cache} from 'react';
 import {unstable_noStore as noStore} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
-import type {PosOrder, PosOrderLine, PosSyncEntry} from './pos-sales-types';
-import {paginate, type PageInfo} from './pos-sales-compute';
+import type {PosOrder, PosOrderLine, PosOrdersFilter, PosSyncEntry, PriceBounds} from './pos-sales-types';
+import {
+  boundsFromMax,
+  DEFAULT_ORDERS_FILTER,
+  filterOrders,
+  paginate,
+  priceBounds,
+  rangeStart,
+  type PageInfo,
+} from './pos-sales-compute';
 import {MOCK_POS_ORDERS, MOCK_POS_SYNC_LOG} from './pos-sales-mock';
+
+/**
+ * The transactions filter expressed as PostgREST operations, so the exact same
+ * predicates apply to both the count (head) query and the row-range query. A
+ * 'cash' filter also matches legacy null rows, mirroring how the UI labels them.
+ * Returned as data (not a builder wrapper) to avoid the deep generic
+ * instantiation that wrapping the Supabase builder type triggers.
+ */
+type OrderFilterOp =
+  | ['or', string]
+  | ['eq', string, string]
+  | ['gte', string, string | number]
+  | ['lte', string, string | number];
+
+function orderFilterOps(filter: PosOrdersFilter): OrderFilterOp[] {
+  const ops: OrderFilterOp[] = [];
+  if (filter.method !== 'all') {
+    ops.push(
+      filter.method === 'cash'
+        ? ['or', 'payment_method.eq.cash,payment_method.is.null']
+        : ['eq', 'payment_method', filter.method],
+    );
+  }
+  const start = rangeStart(filter.range);
+  if (start) ops.push(['gte', 'created_at', start]);
+  if (filter.minPrice != null) ops.push(['gte', 'total', filter.minPrice]);
+  if (filter.maxPrice != null) ops.push(['lte', 'total', filter.maxPrice]);
+  return ops;
+}
 
 // SERVER-ONLY. Reads the offline (POS) sales tables with the shared archive
 // service-role key (see src/pos-data.ts). Leave the env unset to render mocks.
@@ -69,26 +106,45 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
  * (by id) — so it stays bounded as history grows, unlike getPosOrders which
  * fetches everything for aggregation. Returns the clamped page info alongside.
  */
-export const getPosOrdersPage = cache(async (page: number, pageSize?: number): Promise<{orders: PosOrder[]; pageInfo: PageInfo}> => {
+export const getPosOrdersPage = cache(async (
+  page: number,
+  filter: PosOrdersFilter = DEFAULT_ORDERS_FILTER,
+  pageSize?: number,
+): Promise<{orders: PosOrder[]; pageInfo: PageInfo}> => {
   noStore();
 
   if (usingPosMock()) {
-    const info = paginate(MOCK_POS_ORDERS.length, page, pageSize);
-    return {orders: MOCK_POS_ORDERS.slice(info.from, info.to + 1), pageInfo: info};
+    const filtered = filterOrders(MOCK_POS_ORDERS, filter);
+    const info = paginate(filtered.length, page, pageSize);
+    return {orders: filtered.slice(info.from, info.to + 1), pageInfo: info};
   }
 
   const supabase = posClient();
-  const {count, error: countErr} = await supabase
-    .from('pos_orders')
-    .select('id', {count: 'exact', head: true});
+  const ops = orderFilterOps(filter);
+
+  let countQuery = supabase.from('pos_orders').select('id', {count: 'exact', head: true});
+  for (const op of ops) {
+    countQuery = op[0] === 'or' ? countQuery.or(op[1])
+      : op[0] === 'eq' ? countQuery.eq(op[1], op[2])
+      : op[0] === 'gte' ? countQuery.gte(op[1], op[2])
+      : countQuery.lte(op[1], op[2]);
+  }
+  const {count, error: countErr} = await countQuery;
   if (countErr) throw new Error(`pos_orders count failed: ${countErr.message}`);
 
   const info = paginate(count ?? 0, page, pageSize);
   if ((count ?? 0) === 0) return {orders: [], pageInfo: info};
 
-  const {data: orderRows, error: ordersErr} = await supabase
+  let rowQuery = supabase
     .from('pos_orders')
-    .select('id,subtotal,discount,total,oversold,device_id,payment_method,created_at')
+    .select('id,subtotal,discount,total,oversold,device_id,payment_method,created_at');
+  for (const op of ops) {
+    rowQuery = op[0] === 'or' ? rowQuery.or(op[1])
+      : op[0] === 'eq' ? rowQuery.eq(op[1], op[2])
+      : op[0] === 'gte' ? rowQuery.gte(op[1], op[2])
+      : rowQuery.lte(op[1], op[2]);
+  }
+  const {data: orderRows, error: ordersErr} = await rowQuery
     .order('created_at', {ascending: false})
     .range(info.from, info.to);
   if (ordersErr) throw new Error(`pos_orders read failed: ${ordersErr.message}`);
@@ -132,6 +188,27 @@ export const getPosOrdersPage = cache(async (page: number, pageSize?: number): P
   }));
 
   return {orders, pageInfo: info};
+});
+
+/**
+ * Inclusive price bounds for the transactions filter slider, from the single
+ * highest order total across the whole dataset (unfiltered, so the slider range
+ * stays stable as other filters change). Returns a clean ceiling; 0..100 when
+ * there are no orders.
+ */
+export const getPosOrdersPriceBounds = cache(async (): Promise<PriceBounds> => {
+  noStore();
+  if (usingPosMock()) return priceBounds(MOCK_POS_ORDERS);
+
+  const supabase = posClient();
+  const {data, error} = await supabase
+    .from('pos_orders')
+    .select('total')
+    .order('total', {ascending: false})
+    .limit(1);
+  if (error) throw new Error(`pos_orders price bounds failed: ${error.message}`);
+
+  return boundsFromMax(Number(data?.[0]?.total ?? 0));
 });
 
 /** Recent sync-log entries (newest first), for the "recently synced" strip. */
