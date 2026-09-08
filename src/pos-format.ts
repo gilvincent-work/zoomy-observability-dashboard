@@ -56,6 +56,26 @@ export function stockLabel(stock: number): 'out' | 'low' | 'ok' {
   return 'ok';
 }
 
+/** Human label for a POS payment method, matching how the POS records it. */
+export function paymentMethodLabel(method: string | null | undefined): string {
+  switch (method) {
+    case 'cash':
+      return 'Cash';
+    case 'gcash':
+      return 'GCash';
+    case 'card':
+      return 'Card';
+    case 'maya':
+      return 'Maya';
+    case 'bpi':
+      return 'BPI';
+    case 'bank_transfer':
+      return 'Bank';
+    default:
+      return 'Cash';
+  }
+}
+
 /** Human label for a product-line code. */
 export function lineLabel(line: ProductLine): string {
   switch (line) {

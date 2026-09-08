@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {ArrowLeft, ChevronLeft, ChevronRight, Receipt, TriangleAlert} from 'lucide-react';
 import type {PosOrder} from '@/src/pos-sales-types';
 import type {PageInfo} from '@/src/pos-sales-compute';
-import {formatPeso} from '@/src/pos-format';
+import {formatPeso, paymentMethodLabel} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Eyebrow, MockNote} from './sections';
@@ -45,6 +45,7 @@ export function OfflineOrdersView({orders, pageInfo, usingMock}: {orders: PosOrd
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{timeLabel(o.created_at)}</span>
+                      <Badge variant="secondary">{paymentMethodLabel(o.payment_method)}</Badge>
                       {o.oversold && (
                         <Badge variant="destructive">
                           <TriangleAlert /> oversold
