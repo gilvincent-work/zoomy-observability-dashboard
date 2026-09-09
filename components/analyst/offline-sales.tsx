@@ -13,6 +13,7 @@ import {Badge} from '@/components/ui/badge';
 import {ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig} from '@/components/ui/chart';
 import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
+import {RefreshControl} from './refresh-control';
 
 type Props = {
   range: SalesRange;
@@ -23,6 +24,7 @@ type Props = {
   sync: PosSyncEntry[];
   alerts: StockAlerts;
   usingMock: boolean;
+  fetchedAt: string; // ISO; when the server loaded this data
 };
 
 const expiryLabel = (iso: string | null) =>
@@ -31,7 +33,7 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts, usingMock}: Props) {
+export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts, usingMock, fetchedAt}: Props) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -39,7 +41,10 @@ export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts,
           <Eyebrow icon={Receipt}>Offline Sales</Eyebrow>
           <p className="text-sm text-muted-foreground">Bazaar sales synced from the POS.</p>
         </div>
-        <RangeTabs active={range} />
+        <div className="flex flex-wrap items-center gap-3">
+          <RefreshControl fetchedAt={fetchedAt} />
+          <RangeTabs active={range} />
+        </div>
       </div>
 
       {usingMock && (

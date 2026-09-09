@@ -27,6 +27,7 @@ export default async function Page({searchParams}: {searchParams: {range?: strin
       sync={sync}
       alerts={stockAlerts(products)}
       usingMock={usingPosMock()}
+      fetchedAt={new Date().toISOString()}
     />
   );
 }

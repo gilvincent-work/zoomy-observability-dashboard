@@ -11,6 +11,7 @@ import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Eyebrow, MockNote} from './sections';
 import {TransactionFilters} from './transaction-filters';
+import {RefreshControl} from './refresh-control';
 
 const timeLabel = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
@@ -21,12 +22,14 @@ export function OfflineOrdersView({
   filter,
   bounds,
   usingMock,
+  fetchedAt,
 }: {
   orders: PosOrder[];
   pageInfo: PageInfo;
   filter: PosOrdersFilter;
   bounds: PriceBounds;
   usingMock: boolean;
+  fetchedAt: string;
 }) {
   const {page, totalPages, pageSize} = pageInfo;
   const firstOnPage = (page - 1) * pageSize;
@@ -45,9 +48,12 @@ export function OfflineOrdersView({
       <Link href="/offline-sales" className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-3.5" /> Offline Sales
       </Link>
-      <div className="mb-4">
-        <Eyebrow icon={Receipt}>All transactions</Eyebrow>
-        <p className="text-sm text-muted-foreground">Every offline sale synced from the POS, newest first.</p>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Eyebrow icon={Receipt}>All transactions</Eyebrow>
+          <p className="text-sm text-muted-foreground">Every offline sale synced from the POS, newest first.</p>
+        </div>
+        <RefreshControl fetchedAt={fetchedAt} />
       </div>
 
       {usingMock && (

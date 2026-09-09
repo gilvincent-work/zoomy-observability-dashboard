@@ -20,6 +20,7 @@ export default async function Page({searchParams}: {searchParams: SearchParams})
       filter={filter}
       bounds={bounds}
       usingMock={usingPosMock()}
+      fetchedAt={new Date().toISOString()}
     />
   );
 }
