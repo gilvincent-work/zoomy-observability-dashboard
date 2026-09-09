@@ -35,6 +35,7 @@ function orderFilterOps(filter: PosOrdersFilter): OrderFilterOp[] {
         : ['eq', 'payment_method', filter.method],
     );
   }
+  if (filter.status !== 'all') ops.push(['eq', 'status', filter.status]);
   if (filter.startDate) ops.push(['gte', 'created_at', filter.startDate]);
   if (filter.endDate) ops.push(['lte', 'created_at', filter.endDate]);
   if (filter.minPrice != null) ops.push(['gte', 'total', filter.minPrice]);

@@ -94,6 +94,7 @@ export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
 // ── Transactions filters ──────────────────────────────────────────────────
 export const DEFAULT_ORDERS_FILTER: PosOrdersFilter = {
   method: 'all',
+  status: 'all',
   startDate: null,
   endDate: null,
   minPrice: null,
@@ -107,6 +108,13 @@ export const ORDER_METHOD_FILTERS: {value: string; label: string}[] = [
   {value: 'gcash', label: 'GCash'},
   {value: 'maya', label: 'Maya'},
   {value: 'card', label: 'Card'},
+];
+
+/** Status chips for the transactions filter. */
+export const ORDER_STATUS_FILTERS: {value: string; label: string}[] = [
+  {value: 'all', label: 'All'},
+  {value: 'completed', label: 'Completed'},
+  {value: 'voided', label: 'Voided'},
 ];
 
 /** Parse a non-negative number param; null when blank or invalid. */
@@ -125,12 +133,14 @@ export function parseInstantParam(raw: string | undefined): string | null {
 /** Normalize raw search params into a well-formed filter (unknowns fall back). */
 export function parseOrdersFilter(sp: {
   method?: string;
+  status?: string;
   from?: string;
   to?: string;
   min?: string;
   max?: string;
 }): PosOrdersFilter {
   const method = ORDER_METHOD_FILTERS.some((m) => m.value === sp.method) ? (sp.method as string) : 'all';
+  const status = ORDER_STATUS_FILTERS.some((s) => s.value === sp.status) ? (sp.status as string) : 'all';
   let startDate = parseInstantParam(sp.from);
   let endDate = parseInstantParam(sp.to);
   // A reversed range is a user error; swap so it always reads earliest → latest.
@@ -143,12 +153,12 @@ export function parseOrdersFilter(sp: {
   if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
     [minPrice, maxPrice] = [maxPrice, minPrice];
   }
-  return {method, startDate, endDate, minPrice, maxPrice};
+  return {method, status, startDate, endDate, minPrice, maxPrice};
 }
 
 /** True when any filter is narrowing the results (used to show a Reset). */
 export function isFilterActive(f: PosOrdersFilter): boolean {
-  return f.method !== 'all' || f.startDate != null || f.endDate != null || f.minPrice != null || f.maxPrice != null;
+  return f.method !== 'all' || f.status !== 'all' || f.startDate != null || f.endDate != null || f.minPrice != null || f.maxPrice != null;
 }
 
 /** A null payment_method is a legacy row; the UI reads it as Cash, so match it. */
@@ -162,6 +172,7 @@ function methodMatches(orderMethod: string | null, filterMethod: string): boolea
 export function filterOrders(orders: PosOrder[], f: PosOrdersFilter): PosOrder[] {
   return orders.filter((o) => {
     if (!methodMatches(o.payment_method, f.method)) return false;
+    if (f.status !== 'all' && o.status !== f.status) return false;
     if (f.startDate && o.created_at < f.startDate) return false;
     if (f.endDate && o.created_at > f.endDate) return false;
     if (f.minPrice != null && o.total < f.minPrice) return false;

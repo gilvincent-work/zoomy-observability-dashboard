@@ -14,6 +14,11 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-09
 
+### Offline Sales: status (voided) filter — `feat(offline-sales)`
+- Added a **Status** filter (All / Completed / Voided) to the transactions bar,
+  so you can show voided sales only. Applies server-side alongside the other
+  filters (count + rows), URL-driven, and is cleared by "Clear filters".
+
 ### Offline Sales: refresh control + last-loaded time — `feat(offline-sales)`
 - Added a **Refresh** control on the Offline Sales overview and the orders
   subpage. It re-fetches the server data in place via `router.refresh()` (no

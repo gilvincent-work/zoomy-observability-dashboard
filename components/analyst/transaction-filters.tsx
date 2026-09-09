@@ -10,7 +10,7 @@ import {Button} from '@/components/ui/button';
 import {RangeSlider} from '@/components/ui/slider';
 import {Calendar, type DateRange} from '@/components/ui/calendar';
 import {formatPeso} from '@/src/pos-format';
-import {ORDER_METHOD_FILTERS, isFilterActive} from '@/src/pos-sales-compute';
+import {ORDER_METHOD_FILTERS, ORDER_STATUS_FILTERS, isFilterActive} from '@/src/pos-sales-compute';
 import type {PosOrdersFilter, PriceBounds} from '@/src/pos-sales-types';
 
 /**
@@ -57,9 +57,17 @@ export function TransactionFilters({filter, bounds}: {filter: PosOrdersFilter; b
         <PriceFilter filter={filter} bounds={bounds} hrefWith={hrefWith} router={router} />
       </Group>
 
+      <Group label="Status">
+        <Segmented
+          items={ORDER_STATUS_FILTERS}
+          active={filter.status}
+          hrefFor={(value) => hrefWith({status: value === 'all' ? null : value})}
+        />
+      </Group>
+
       {anyActive && (
         <Link
-          href={hrefWith({method: null, from: null, to: null, min: null, max: null})}
+          href={hrefWith({method: null, status: null, from: null, to: null, min: null, max: null})}
           scroll={false}
           className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
