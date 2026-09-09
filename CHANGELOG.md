@@ -14,6 +14,12 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-09
 
+### Offline Sales: refresh control + last-loaded time — `feat(offline-sales)`
+- Added a **Refresh** control on the Offline Sales overview and the orders
+  subpage. It re-fetches the server data in place via `router.refresh()` (no
+  full page reload, spins while pending) and shows a relative **"Updated …"**
+  timestamp of when the data was last loaded (stamped server-side per render).
+
 ### Reflect POS voids + remarks — `feat(offline-sales)`
 - Read `status` / `remarks` from `pos_orders`. **Voided sales are excluded from
   revenue and every aggregation** (KPIs, daily sales, top products, and the
