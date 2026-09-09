@@ -28,6 +28,7 @@ export interface PosOrder {
 /** Active filters for the transactions list. `all`/null values mean no filter. */
 export interface PosOrdersFilter {
   method: string; // 'all' | 'cash' | 'gcash' | 'maya' | 'card' | ...
+  status: string; // 'all' | 'completed' | 'voided'
   // Inclusive from/to instants (ISO). The client converts the picked calendar
   // days into absolute instants using the viewer's timezone (start-of-day →
   // end-of-day), so the filter matches the local times shown in the list.

@@ -234,24 +234,27 @@ describe('stockAlerts', () => {
 
 describe('parseOrdersFilter', () => {
   it('defaults unknown/blank params to no filter', () => {
-    expect(parseOrdersFilter({})).toEqual({method: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null});
-    expect(parseOrdersFilter({method: 'bitcoin', from: 'never'})).toEqual({
+    expect(parseOrdersFilter({})).toEqual({method: 'all', status: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null});
+    expect(parseOrdersFilter({method: 'bitcoin', status: 'huh', from: 'never'})).toEqual({
       method: 'all',
+      status: 'all',
       startDate: null,
       endDate: null,
       minPrice: null,
       maxPrice: null,
     });
   });
-  it('keeps a valid method, date range, and prices', () => {
+  it('keeps a valid method, status, date range, and prices', () => {
     expect(parseOrdersFilter({
       method: 'gcash',
+      status: 'voided',
       from: '2026-09-01T00:00:00.000Z',
       to: '2026-09-09T23:59:59.999Z',
       min: '50',
       max: '500',
     })).toEqual({
       method: 'gcash',
+      status: 'voided',
       startDate: '2026-09-01T00:00:00.000Z',
       endDate: '2026-09-09T23:59:59.999Z',
       minPrice: 50,
@@ -282,10 +285,11 @@ describe('parseOrdersFilter', () => {
 
 describe('isFilterActive', () => {
   it('is false only for the all-defaults filter', () => {
-    expect(isFilterActive({method: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null})).toBe(false);
-    expect(isFilterActive({method: 'cash', startDate: null, endDate: null, minPrice: null, maxPrice: null})).toBe(true);
-    expect(isFilterActive({method: 'all', startDate: '2026-09-01T00:00:00.000Z', endDate: null, minPrice: null, maxPrice: null})).toBe(true);
-    expect(isFilterActive({method: 'all', startDate: null, endDate: null, minPrice: 20, maxPrice: null})).toBe(true);
+    expect(isFilterActive({method: 'all', status: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null})).toBe(false);
+    expect(isFilterActive({method: 'cash', status: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null})).toBe(true);
+    expect(isFilterActive({method: 'all', status: 'voided', startDate: null, endDate: null, minPrice: null, maxPrice: null})).toBe(true);
+    expect(isFilterActive({method: 'all', status: 'all', startDate: '2026-09-01T00:00:00.000Z', endDate: null, minPrice: null, maxPrice: null})).toBe(true);
+    expect(isFilterActive({method: 'all', status: 'all', startDate: null, endDate: null, minPrice: 20, maxPrice: null})).toBe(true);
   });
 });
 
@@ -296,11 +300,16 @@ describe('filterOrders', () => {
     order({id: 'legacy', created_at: '2026-08-01T10:00:00.000Z', total: 500, payment_method: null}),
     order({id: 'card', created_at: '2026-09-07T09:00:00.000Z', total: 900, payment_method: 'card'}),
   ];
-  const base = {method: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null};
+  const base = {method: 'all', status: 'all', startDate: null, endDate: null, minPrice: null, maxPrice: null};
 
   it('matches cash including legacy null rows', () => {
     const ids = filterOrders(orders, {...base, method: 'cash'}).map((o) => o.id);
     expect(ids.sort()).toEqual(['cash', 'legacy']);
+  });
+  it('filters by status (voided only)', () => {
+    const withVoid = [...orders, order({id: 'void', created_at: '2026-09-07T11:00:00.000Z', total: 200, status: 'voided'})];
+    expect(filterOrders(withVoid, {...base, status: 'voided'}).map((o) => o.id)).toEqual(['void']);
+    expect(filterOrders(withVoid, {...base, status: 'completed'}).map((o) => o.id).sort()).toEqual(['card', 'cash', 'gcash', 'legacy']);
   });
   it('filters by a specific method', () => {
     const ids = filterOrders(orders, {...base, method: 'card'}).map((o) => o.id);
