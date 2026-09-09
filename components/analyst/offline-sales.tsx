@@ -97,18 +97,19 @@ export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts,
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm">{timeLabel(o.created_at)}</span>
+                        <span className={cn('text-sm', o.status === 'voided' && 'line-through')}>{timeLabel(o.created_at)}</span>
+                        {o.status === 'voided' && <Badge variant="destructive">voided</Badge>}
                         {o.oversold && (
                           <Badge variant="destructive">
                             <TriangleAlert /> oversold
                           </Badge>
                         )}
                       </div>
-                      <p className="truncate text-xs text-muted-foreground">
+                      <p className={cn('truncate text-xs text-muted-foreground', o.status === 'voided' && 'line-through')}>
                         {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ') || 'No items'}
                       </p>
                     </div>
-                    <span className="text-sm font-medium tabular-nums">{formatPeso(o.total)}</span>
+                    <span className={cn('text-sm font-medium tabular-nums', o.status === 'voided' && 'text-muted-foreground line-through')}>{formatPeso(o.total)}</span>
                   </Link>
                 </li>
               ))}

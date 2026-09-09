@@ -19,6 +19,8 @@ export interface PosOrder {
   oversold: boolean;
   device_id: string | null;
   payment_method: string | null; // 'cash' | 'gcash' | 'card' | ...; null = legacy/cash
+  status: string; // 'completed' | 'voided'; voided sales are excluded from revenue
+  remarks: string | null; // free-text note set from the POS
   created_at: string; // ISO
   items: PosOrderLine[];
 }
