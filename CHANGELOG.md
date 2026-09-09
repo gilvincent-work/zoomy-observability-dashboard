@@ -14,6 +14,10 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-09
 
+### Offline Sales: cap "Recent orders" at 5 — `fix(offline-sales)`
+- The "Recent orders" panel on the Offline Sales overview listed up to 12 rows,
+  making it very long. Capped it at 5 (the full history is behind "View all").
+
 ### Offline Sales: date-range calendar picker — `feat(offline-sales)`
 - Replaced the Today/7d/30d date presets with a **date-range calendar popover**
   on the All-transactions list (two-pick inclusive range, future days disabled,
