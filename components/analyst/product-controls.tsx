@@ -1,7 +1,8 @@
 'use client';
 
-import {useEffect, useState, useTransition} from 'react';
-import {Boxes, Check, Pencil, Plus, X} from 'lucide-react';
+import {useEffect, useId, useRef, useState, useTransition} from 'react';
+import {createPortal} from 'react-dom';
+import {AlertCircle, Boxes, Check, Pencil, Plus, Undo2, X} from 'lucide-react';
 import type {PosProductRow} from '@/src/pos-types';
 import {formatPeso, lineLabel, POS_CATEGORIES, POS_SUBCATEGORIES, PRODUCT_LINES, SUBCATEGORY_CATEGORY, stockLabel} from '@/src/pos-format';
 import {
@@ -36,23 +37,85 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
   const [rows, setRows] = useState(products);
   useEffect(() => setRows(products), [products]);
 
+  // `error` now covers only product creation (which has no row to anchor to).
+  // Per-row edit results live in `status`, keyed by product_id, so a failure is
+  // shown under the row that caused it and a success flashes a "Saved" chip.
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<Record<string, {saved?: boolean; error?: string}>>({});
+  const [toast, setToast] = useState<{message: string; onUndo: () => void} | null>(null);
   const [creating, setCreating] = useState(false);
   const [isPending, startTransition] = useTransition();
 
+  const savedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      Object.values(savedTimers.current).forEach(clearTimeout);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
+
+  function clearStatus(id: string) {
+    setStatus((s) => {
+      if (!s[id]) return s;
+      const next = {...s};
+      delete next[id];
+      return next;
+    });
+  }
+
+  // A transient "Saved" chip on the row, cleared after a couple of seconds.
+  function flashSaved(id: string) {
+    setStatus((s) => ({...s, [id]: {saved: true}}));
+    clearTimeout(savedTimers.current[id]);
+    savedTimers.current[id] = setTimeout(() => clearStatus(id), 2200);
+  }
+
+  // One undo toast at a time; auto-dismisses so it never blocks the table.
+  function showToast(message: string, onUndo: () => void) {
+    setToast({message, onUndo});
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 6000);
+  }
+  function dismissToast() {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(null);
+  }
+
   // Apply a patch to one row immediately; run the server action; on failure,
-  // roll the whole list back to its pre-edit state and surface the error.
-  function mutate(id: string, patch: Partial<PosProductRow>, action: () => Promise<ActionResult>) {
+  // roll the whole list back and anchor the error to the row; on success,
+  // flash a "Saved" chip and run any follow-up (e.g. the unlist undo toast).
+  function mutate(
+    id: string,
+    patch: Partial<PosProductRow>,
+    action: () => Promise<ActionResult>,
+    opts?: {onOk?: () => void},
+  ) {
     const prev = rows;
     setRows((rs) => rs.map((r) => (r.product_id === id ? {...r, ...patch} : r)));
-    setError(null);
+    clearStatus(id);
     startTransition(async () => {
       const res = await action();
       if (!res.ok) {
         setRows(prev);
-        setError(res.error);
+        setStatus((s) => ({...s, [id]: {error: res.error}}));
+      } else {
+        flashSaved(id);
+        opts?.onOk?.();
       }
     });
+  }
+
+  // Listing changes route through here so unlisting (destructive) earns an undo
+  // toast. Listing again is safe and silent beyond the "Saved" chip.
+  function setListing(row: PosProductRow, next: boolean) {
+    mutate(
+      row.product_id,
+      {active: next},
+      () => setListingAction(row.product_id, next),
+      next ? undefined : {onOk: () => showToast(`“${row.name}” unlisted`, () => setListing(row, true))},
+    );
   }
 
   function create(
@@ -128,70 +191,99 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
-                  <ProductRow
-                    key={row.product_id}
-                    row={row}
-                    onRename={(name) =>
-                      mutate(row.product_id, {name}, () => renameProductAction(row.product_id, name))
-                    }
-                    onReprice={(price) => {
-                      const n = Number(price);
-                      const patch = Number.isFinite(n) && n > 0 ? {price: n} : {};
-                      mutate(row.product_id, patch, () => repriceProductAction(row.product_id, price));
-                    }}
-                    onToggle={() =>
-                      mutate(row.product_id, {active: !row.active}, () =>
-                        setListingAction(row.product_id, !row.active),
-                      )
-                    }
-                    onSetStock={(qty) => {
-                      const n = Number(qty);
-                      const patch = Number.isInteger(n) && n >= 0 ? {stock: n} : {};
-                      mutate(row.product_id, patch, () => setStockAction(row.product_id, qty));
-                    }}
-                    onSetCategory={(category, subcategory) =>
-                      mutate(
-                        row.product_id,
-                        {category: category || null, subcategory: subcategory || null},
-                        () => setCategoryAction(row.product_id, category, subcategory),
-                      )
-                    }
-                    onSetLine={(line) =>
-                      mutate(row.product_id, {product_line: line || null}, () =>
-                        setLineAction(row.product_id, line),
-                      )
-                    }
-                  />
-                ))}
+                {rows.map((row) => {
+                  const st = status[row.product_id];
+                  return (
+                    <ProductRow
+                      key={row.product_id}
+                      row={row}
+                      saved={st?.saved}
+                      error={st?.error}
+                      onDismissError={() => clearStatus(row.product_id)}
+                      onRename={(name) =>
+                        mutate(row.product_id, {name}, () => renameProductAction(row.product_id, name))
+                      }
+                      onReprice={(price) => {
+                        const n = Number(price);
+                        const patch = Number.isFinite(n) && n > 0 ? {price: n} : {};
+                        mutate(row.product_id, patch, () => repriceProductAction(row.product_id, price));
+                      }}
+                      onSetListing={(next) => setListing(row, next)}
+                      onSetStock={(qty) => {
+                        const n = Number(qty);
+                        const patch = Number.isInteger(n) && n >= 0 ? {stock: n} : {};
+                        mutate(row.product_id, patch, () => setStockAction(row.product_id, qty));
+                      }}
+                      onSetCategory={(category, subcategory) =>
+                        mutate(
+                          row.product_id,
+                          {category: category || null, subcategory: subcategory || null},
+                          () => setCategoryAction(row.product_id, category, subcategory),
+                        )
+                      }
+                      onSetLine={(line) =>
+                        mutate(row.product_id, {product_line: line || null}, () =>
+                          setLineAction(row.product_id, line),
+                        )
+                      }
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
+
+      {toast && (
+        <div className="fixed inset-x-0 bottom-6 z-50 flex justify-center px-4" role="status" aria-live="polite">
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-popover px-4 py-2.5 text-sm shadow-lg">
+            <span className="text-foreground">{toast.message}</span>
+            <button
+              type="button"
+              onClick={() => {
+                toast.onUndo();
+                dismissToast();
+              }}
+              className="inline-flex items-center gap-1.5 font-medium text-primary transition-opacity hover:opacity-80"
+            >
+              <Undo2 className="size-3.5" /> Undo
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function ProductRow({
   row,
+  saved,
+  error,
+  onDismissError,
   onRename,
   onReprice,
-  onToggle,
+  onSetListing,
   onSetStock,
   onSetLine,
   onSetCategory,
 }: {
   row: PosProductRow;
+  saved?: boolean;
+  error?: string;
+  onDismissError: () => void;
   onRename: (name: string) => void;
   onReprice: (price: string) => void;
-  onToggle: () => void;
+  onSetListing: (next: boolean) => void;
   onSetStock: (qty: string) => void;
   onSetLine: (line: string) => void;
   onSetCategory: (category: string, subcategory: string) => void;
 }) {
   const [editing, setEditing] = useState<EditField>(null);
   const [draft, setDraft] = useState('');
+  // Unlisting hides a product from the POS, so it asks first — inline, not a
+  // modal. Listing again is non-destructive and applies immediately.
+  const [confirmUnlist, setConfirmUnlist] = useState(false);
 
   function begin(field: EditField, current: string) {
     setEditing(field);
@@ -209,83 +301,175 @@ function ProductRow({
   }
 
   return (
-    <tr className={cn('border-b last:border-0', !row.active && 'opacity-55')}>
-      <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{row.product_id}</td>
-      <td className="px-4 py-2.5">
-        {editing === 'name' ? (
-          <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} />
-        ) : (
-          <button
-            type="button"
-            className="group flex items-center gap-1.5 text-left hover:text-primary"
-            onClick={() => begin('name', row.name)}
-          >
-            <span>{row.name}</span>
-            <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
-          </button>
-        )}
-      </td>
-      <td className="px-4 py-2.5">
-        <LineSelect value={row.product_line ?? ''} onChange={onSetLine} />
-      </td>
-      <td className="px-4 py-2.5">
-        <CategorySelect
-          category={row.category ?? ''}
-          subcategory={row.subcategory ?? ''}
-          onChange={onSetCategory}
-        />
-      </td>
-      <td className="px-4 py-2.5 text-right tabular-nums">
-        {editing === 'price' ? (
-          <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} numeric />
-        ) : (
-          <button
-            type="button"
-            className="group inline-flex items-center gap-1.5 hover:text-primary"
-            onClick={() => begin('price', row.price != null ? String(row.price) : '')}
-          >
-            <span>{formatPeso(row.price)}</span>
-            <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
-          </button>
-        )}
-      </td>
-      <td className="px-4 py-2.5 text-right tabular-nums">
-        {editing === 'stock' ? (
-          <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} numeric />
-        ) : (
-          <button
-            type="button"
-            className="group inline-flex items-center gap-1.5 hover:text-primary"
-            onClick={() => begin('stock', String(row.stock))}
-          >
-            <StockBadge stock={row.stock} />
-            <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
-          </button>
-        )}
-      </td>
-      <td className="px-4 py-2.5">
-        <div className="flex justify-end">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={row.active}
-            aria-label={row.active ? `Unlist ${row.name}` : `List ${row.name}`}
-            onClick={onToggle}
-            className={cn(
-              'relative h-5 w-9 shrink-0 rounded-full border transition-colors',
-              row.active ? 'border-primary bg-primary' : 'border-border bg-muted',
+    <>
+      <tr className={cn('border-b', error ? 'border-transparent' : 'last:border-0', !row.active && 'opacity-55')}>
+        <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{row.product_id}</td>
+        <td className="px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            {editing === 'name' ? (
+              <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} />
+            ) : (
+              <button
+                type="button"
+                className="group flex items-center gap-1.5 text-left hover:text-primary"
+                onClick={() => begin('name', row.name)}
+              >
+                <span>{row.name}</span>
+                <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
+              </button>
             )}
-          >
-            <span
+            {saved && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                <Check className="size-3" /> Saved
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-2.5">
+          <LineSelect value={row.product_line ?? ''} onChange={onSetLine} />
+        </td>
+        <td className="px-4 py-2.5">
+          <CategorySelect
+            category={row.category ?? ''}
+            subcategory={row.subcategory ?? ''}
+            onChange={onSetCategory}
+          />
+        </td>
+        <td className="px-4 py-2.5 text-right tabular-nums">
+          {editing === 'price' ? (
+            <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} numeric />
+          ) : (
+            <button
+              type="button"
+              className="group inline-flex items-center gap-1.5 hover:text-primary"
+              onClick={() => begin('price', row.price != null ? String(row.price) : '')}
+            >
+              <span>{formatPeso(row.price)}</span>
+              <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
+            </button>
+          )}
+        </td>
+        <td className="px-4 py-2.5 text-right tabular-nums">
+          {editing === 'stock' ? (
+            <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} numeric />
+          ) : (
+            <button
+              type="button"
+              className="group inline-flex items-center gap-1.5 hover:text-primary"
+              onClick={() => begin('stock', String(row.stock))}
+            >
+              <StockBadge stock={row.stock} />
+              <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
+            </button>
+          )}
+        </td>
+        <td className="px-4 py-2.5">
+          <div className="flex justify-end">
+            {/* Listing again is safe and immediate; unlisting hides the product
+                from the POS, so it opens a confirm dialog (centered, no layout
+                shift — the inline version pushed the row past the viewport). */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={row.active}
+              aria-label={row.active ? `Unlist ${row.name}` : `List ${row.name}`}
+              onClick={() => (row.active ? setConfirmUnlist(true) : onSetListing(true))}
               className={cn(
-                'absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-white shadow-sm transition-[left]',
-                row.active ? 'left-[calc(100%-1.125rem)]' : 'left-0.5',
+                'relative h-5 w-9 shrink-0 rounded-full border transition-colors',
+                row.active ? 'border-primary bg-primary' : 'border-border bg-muted',
               )}
+            >
+              <span
+                className={cn(
+                  'absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-white shadow-sm transition-[left]',
+                  row.active ? 'left-[calc(100%-1.125rem)]' : 'left-0.5',
+                )}
+              />
+            </button>
+          </div>
+          {confirmUnlist && (
+            <ConfirmDialog
+              title={`Unlist “${row.name}”?`}
+              body="Customers won’t see it in the POS until you list it again."
+              confirmLabel="Unlist"
+              onConfirm={() => {
+                setConfirmUnlist(false);
+                onSetListing(false);
+              }}
+              onCancel={() => setConfirmUnlist(false)}
             />
-          </button>
+          )}
+        </td>
+      </tr>
+      {error && (
+        <tr className="border-b last:border-0">
+          <td colSpan={7} className="px-4 pb-2.5">
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+              <span className="flex-1">{error}</span>
+              <button
+                type="button"
+                onClick={onDismissError}
+                aria-label="Dismiss error"
+                className="shrink-0 transition-opacity hover:opacity-70"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/**
+ * A small centered confirmation dialog for destructive actions (unlisting).
+ * Portaled to <body> so it can't be clipped by the table's horizontal scroll,
+ * dismissable by Escape or backdrop, with focus landing on the confirm button.
+ */
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const titleId = useId();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <button type="button" aria-label="Cancel" onClick={onCancel} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
+      <div className="relative w-full max-w-sm rounded-xl border border-border bg-popover p-5 shadow-lg">
+        <h2 id={titleId} className="text-sm font-semibold text-foreground">
+          {title}
+        </h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button size="sm" variant="destructive" autoFocus onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
         </div>
-      </td>
-    </tr>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -11,6 +11,7 @@ import {ArrowLeft, Check, Globe, Search, Store} from 'lucide-react';
 import type {DigestArchiveRow, DigestFigure, DigestRec} from '../../src/types';
 import type {AnalystBrief} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
+import {metricValueClass} from './metric';
 import {Card, CardContent} from '@/components/ui/card';
 import {Sparkles} from 'lucide-react';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
@@ -153,8 +154,11 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
         ) : (
           <>
+          {/* Columns flex to share the panel width (min-w-0 so they can shrink),
+              so 2–4 channels always fit at any zoom; the bar itself is capped so
+              it never balloons when only a couple of channels are selected. */}
           <div
-            className="flex items-end justify-center gap-8 border-b border-border pt-1 sm:gap-12"
+            className="flex items-end gap-3 border-b border-border pt-1 sm:gap-6"
             style={{
               height: 168,
               // faint horizontal gridlines for a sense of scale
@@ -165,10 +169,10 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
             {rows.map(({c, value}) => {
               const meta = CH[c];
               return (
-                <div key={c} className="flex flex-col items-center justify-end gap-1.5">
-                  <div className="text-[15px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
+                <div key={c} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5">
+                  <div className="max-w-full truncate text-[15px] font-semibold tabular-nums text-foreground">{fmt(metric, value)}</div>
                   <div
-                    className="w-20 rounded-t-xl shadow-sm transition-all sm:w-24 lg:w-28"
+                    className="w-full max-w-[112px] rounded-t-xl shadow-sm transition-all"
                     style={{
                       height: Math.max(6, (value / max) * 130),
                       backgroundImage: `linear-gradient(180deg, ${meta.accent} 0%, color-mix(in oklab, ${meta.accent} 72%, white) 100%)`,
@@ -178,13 +182,13 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
               );
             })}
           </div>
-          <div className="flex justify-center gap-8 pt-2.5 sm:gap-12">
+          <div className="flex gap-3 pt-2.5 sm:gap-6">
             {rows.map(({c}) => {
               const meta = CH[c];
               const Icon = meta.icon;
               return (
-                <div key={c} className="flex w-20 items-center justify-center gap-1.5 text-[13px] font-medium text-foreground sm:w-24 lg:w-28">
-                  <Icon className="size-4" style={{color: meta.accent}} /> {meta.label}
+                <div key={c} className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-[13px] font-medium text-foreground">
+                  <Icon className="size-4 shrink-0" style={{color: meta.accent}} /> <span className="truncate">{meta.label}</span>
                 </div>
               );
             })}
@@ -270,7 +274,7 @@ function CombinedKpis({
             {t.label} <InfoTip text={t.hint} />
           </span>
           <span className="flex items-baseline gap-2">
-            <span className="font-serif text-[23px] font-normal leading-tight tracking-tight tabular-nums text-foreground">{t.value}</span>
+            <span className={cn(metricValueClass, 'text-[23px] text-foreground')}>{t.value}</span>
             <KpiDelta cur={t.cur} prior={t.prior} range={priorRange ?? null} />
           </span>
         </div>

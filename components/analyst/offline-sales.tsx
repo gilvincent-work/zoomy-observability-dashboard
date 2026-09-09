@@ -13,6 +13,7 @@ import {Badge} from '@/components/ui/badge';
 import {ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig} from '@/components/ui/chart';
 import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
+import {Metric} from './metric';
 import {RefreshControl} from './refresh-control';
 
 type Props = {
@@ -237,14 +238,7 @@ function RangeTabs({active}: {active: SalesRange}) {
 }
 
 function Kpi({label, value, warn}: {label: string; value: string; warn?: boolean}) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-1 py-4">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
-        <span className={cn('text-2xl font-semibold tabular-nums', warn && 'text-destructive')}>{value}</span>
-      </CardContent>
-    </Card>
-  );
+  return <Metric label={label} value={value} valueClassName={warn ? 'text-destructive' : undefined} />;
 }
 
 function Panel({title, action, children}: {title: string; action?: {label: string; href: string}; children: React.ReactNode}) {

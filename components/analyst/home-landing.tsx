@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import {Activity, ArrowRight, Check, Globe, Megaphone, Sparkles} from 'lucide-react';
+import {Activity, ArrowRight, Check, Globe, Megaphone} from 'lucide-react';
 import type {DigestArchiveRow, DigestRec} from '../../src/types';
 import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
@@ -71,6 +71,9 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
   const present = [row.digest.shopee, row.digest.lazada, row.digest.sales || row.digest.customers].filter(Boolean).length;
   const week = row.window_from;
   const actions = collectActions(row);
+  // Lead with the real synthesized verdict from the archived digest, so the first
+  // thing an owner reads is how the store is actually doing — not a capability list.
+  const verdict = row.digest.headline?.trim() || 'Your latest store-ops brief is ready.';
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
@@ -78,16 +81,13 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
 
       <Card>
         <CardContent className="p-6 md:p-7">
-          {/* header */}
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <span className="relative flex size-2.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/40" />
-                <span className="relative inline-flex size-2.5 rounded-full bg-primary" />
-              </span>
-              <div>
-                <div className="text-[17px] font-semibold leading-tight text-foreground">Coop Intelligence</div>
-                <div className="text-xs text-muted-foreground">Your store-ops brief · {range}</div>
+          {/* header — the real verdict leads; stats sit alongside it */}
+          <div className="mb-5 flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
+            <div className="max-w-xl">
+              <p className="font-serif text-[22px] font-normal leading-snug text-foreground">{verdict}</p>
+              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="size-1.5 shrink-0 rounded-full bg-primary" />
+                Store-ops brief · {range}
               </div>
             </div>
             <div className="flex items-center gap-8">
@@ -197,7 +197,7 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
                   'Direct video ads',
                 ].map((t) => (
                   <li key={t} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Sparkles className="size-3.5 shrink-0 text-muted-foreground/60" />
+                    <span className="size-1 shrink-0 rounded-full bg-muted-foreground/50" aria-hidden />
                     {t}
                   </li>
                 ))}
