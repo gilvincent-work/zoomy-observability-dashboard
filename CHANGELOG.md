@@ -12,6 +12,17 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-09 (develop only — not yet promoted to staging)
+
+### Bundles section on Product Controls — `feat(bundles)`
+- Added a **Bundles** component under Product Controls that reads the bundles
+  synced from the POS (`pos_bundles`): shows each bundle's emoji (tap-only
+  picker), name, type (Buy Any N / Fixed), price, listed toggle, and delete.
+  Editing writes to `pos_bundles` (emoji/name/price/active via direct update,
+  delete via the shared RPC) so changes mirror back to every POS device.
+  Bundle creation stays in the POS. Added `getPosBundles`, `PosBundleRow`, the
+  bundle actions, mock bundles, and 🍐 to the emoji palette.
+
 ## 2026-09-09
 
 ### Emoji picker is tap-only (no typing) — `fix(products)`

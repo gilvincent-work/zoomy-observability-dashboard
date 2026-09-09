@@ -220,3 +220,73 @@ export async function setListingAction(product_id: string, active: boolean): Pro
   revalidatePath('/products');
   return {ok: true};
 }
+
+// ── Bundles ────────────────────────────────────────────────────────────────
+// Bundles are created on the POS; Coop co-edits them. These are direct column
+// updates / deletes on pos_bundles (service role) — the POS mirrors pos_bundles
+// on its next catalog pull, so edits propagate to every device. Bundle creation
+// stays in the POS (the Buy-Any-N builder).
+
+/** Set a bundle's tile emoji (1-3 chars). */
+export async function setBundleEmojiAction(bundle_id: string, emoji: string): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const parsed = parseEmoji(emoji);
+  if ('error' in parsed) return {ok: false, error: parsed.error};
+
+  const {error} = await posClient()
+    .from('pos_bundles')
+    .update({emoji: parsed.value, updated_at: new Date().toISOString()})
+    .eq('bundle_id', bundle_id);
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/products');
+  return {ok: true};
+}
+
+/** List / unlist a bundle (hides it from the POS Bundles pill). */
+export async function setBundleActiveAction(bundle_id: string, active: boolean): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const {error} = await posClient()
+    .from('pos_bundles')
+    .update({active, updated_at: new Date().toISOString()})
+    .eq('bundle_id', bundle_id);
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/products');
+  return {ok: true};
+}
+
+/** Rename a bundle. */
+export async function renameBundleAction(bundle_id: string, name: string): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const trimmed = name.trim();
+  if (!trimmed) return {ok: false, error: 'Name is required.'};
+  const {error} = await posClient()
+    .from('pos_bundles')
+    .update({name: trimmed, updated_at: new Date().toISOString()})
+    .eq('bundle_id', bundle_id);
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/products');
+  return {ok: true};
+}
+
+/** Reprice a bundle. */
+export async function repriceBundleAction(bundle_id: string, price: string): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const parsed = parsePrice(price);
+  if ('error' in parsed) return {ok: false, error: parsed.error};
+  const {error} = await posClient()
+    .from('pos_bundles')
+    .update({price: parsed.value, updated_at: new Date().toISOString()})
+    .eq('bundle_id', bundle_id);
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/products');
+  return {ok: true};
+}
+
+/** Delete a bundle (and its items) via the shared RPC, so the POS drops it too. */
+export async function deleteBundleAction(bundle_id: string): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const {error} = await posClient().rpc('delete_pos_bundle', {p_bundle_id: bundle_id});
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/products');
+  return {ok: true};
+}

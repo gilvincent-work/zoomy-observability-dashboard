@@ -13,3 +13,16 @@ export interface PosProductRow {
   stock: number; // Σ qty_on_hand across lots
   next_expiry: string | null; // earliest expiry with stock, ISO date
 }
+
+/** A bundle synced from the POS (pos_bundles + its items). */
+export interface PosBundleRow {
+  bundle_id: string; // the POS's shared bundle_uuid
+  name: string;
+  price: number;
+  active: boolean;
+  bundle_type: 'fixed' | 'pick';
+  pick_count: number | null; // Buy Any N (pick bundles)
+  line_categories: string[] | null; // eligible POS lines (pick bundles)
+  emoji: string | null; // tile emoji; null = derived from lines on the POS
+  items: {product_id: string; name: string; qty: number}[]; // fixed-bundle contents
+}

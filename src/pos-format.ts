@@ -70,7 +70,7 @@ export const PRODUCT_EMOJIS = [
   '🐟', '🐠', '🍤', '🦐', '🦑', '🦀',
   '🐔', '🦆', '🦃', '🥚', '🧀', '🥛',
   '🌿', '🍀', '🥕', '🫐', '🍓', '🍎',
-  '🎃', '🍠', '🥦', '🥜', '🍯', '🧊',
+  '🍐', '🎃', '🍠', '🥦', '🥜', '🍯',
 ];
 
 /** Split a string into grapheme clusters so multi-codepoint emoji count as one. */

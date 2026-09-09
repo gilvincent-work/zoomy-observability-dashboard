@@ -1,4 +1,4 @@
-import type {PosProductRow} from './pos-types';
+import type {PosProductRow, PosBundleRow} from './pos-types';
 
 // Mock catalog for local dashboard work when the Supabase pos_* env is absent
 // (mirrors src/mock.ts for digests). Matches the 26-SKU masterfile + the flat
@@ -30,4 +30,10 @@ export const MOCK_POS_PRODUCTS: PosProductRow[] = [
   {product_id: 'ZMYFDFDRSLMWHL01', name: 'Freeze-Dried Salmon Steak', product_line: 'FDR', category: 'Freeze Dried', subcategory: null, emoji: null, active: true, price: 170, stock: 35, next_expiry: '2026-12-01'},
   {product_id: 'ZMYFDFDRCHKEGG01', name: 'Freeze-Dried Chicken & Egg', product_line: 'FDR', category: 'Freeze Dried', subcategory: null, emoji: null, active: true, price: 170, stock: 24, next_expiry: '2026-11-25'},
   {product_id: 'ZMYFDFDRBEFBLU01', name: 'Freeze-Dried Beef Blueberry', product_line: 'FDR', category: 'Freeze Dried', subcategory: null, emoji: null, active: true, price: 170, stock: 11, next_expiry: '2027-02-14'},
+];
+
+export const MOCK_POS_BUNDLES: PosBundleRow[] = [
+  {bundle_id: 'mock-bundle-1', name: 'Buy Any 4', price: 570, active: true, bundle_type: 'pick', pick_count: 4, line_categories: ['Meaty Treats', 'Freeze Dried'], emoji: '🐟🥩', items: []},
+  {bundle_id: 'mock-bundle-2', name: 'Buy Any 2', price: 550, active: true, bundle_type: 'pick', pick_count: 2, line_categories: ['Tasty Treats', 'Super Duo Bites'], emoji: '🐔🥕🦴', items: []},
+  {bundle_id: 'mock-bundle-3', name: 'Buy Any 3 - Sample ni Lance', price: 6767, active: true, bundle_type: 'pick', pick_count: 3, line_categories: ['Freeze Dried', 'Meaty Treats', 'Tasty Treats'], emoji: null, items: []},
 ];
