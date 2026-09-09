@@ -7,6 +7,7 @@ export interface PosProductRow {
   product_line: string | null; // FDR / JRK / MEAT (Coop's SKU-decode line)
   category: string | null; // POS display tab — authoritative for the POS
   subcategory: string | null; // POS secondary tab (Freeze-Dried only)
+  emoji: string | null; // 1-3 emoji for the POS tile; null = POS default
   active: boolean; // listed / unlisted
   price: number | null;
   stock: number; // Σ qty_on_hand across lots

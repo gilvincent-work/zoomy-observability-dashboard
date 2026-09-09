@@ -2,7 +2,7 @@
 
 import {revalidatePath} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
-import {parsePrice, parseQty, POS_CATEGORIES, POS_SUBCATEGORIES, PRODUCT_LINES} from './pos-format';
+import {parseEmoji, parsePrice, parseQty, POS_CATEGORIES, POS_SUBCATEGORIES, PRODUCT_LINES} from './pos-format';
 
 // Server actions for Product Controls. Coop co-owns name / price / listing with
 // the POS and writes them through the SAME SECURITY DEFINER RPCs (see
@@ -39,6 +39,7 @@ export async function createProductAction(input: {
   product_line?: string | null;
   category?: string | null;
   subcategory?: string | null;
+  emoji?: string;
   price?: string;
   stock?: string;
 }): Promise<ActionResult> {
@@ -57,6 +58,15 @@ export async function createProductAction(input: {
   const subcategory = input.subcategory?.trim() || null;
   if (subcategory && !isValidSubcategory(subcategory)) return {ok: false, error: 'Invalid subcategory.'};
 
+  // Emoji is optional on create; when given it must be 1-3 chars. Empty -> null
+  // so the POS uses its default tile emoji.
+  let emoji: string | null = null;
+  if (input.emoji && input.emoji.trim()) {
+    const parsed = parseEmoji(input.emoji);
+    if ('error' in parsed) return {ok: false, error: parsed.error};
+    emoji = parsed.value;
+  }
+
   let price: number | null = null;
   if (input.price && input.price.trim()) {
     const parsed = parsePrice(input.price);
@@ -69,7 +79,7 @@ export async function createProductAction(input: {
   const stock = parsedQty.value;
 
   const supabase = posClient();
-  const {error} = await supabase.from('pos_products').insert({product_id, name, product_line: line, category, subcategory, active: true});
+  const {error} = await supabase.from('pos_products').insert({product_id, name, product_line: line, category, subcategory, emoji, active: true});
   if (error) {
     if (error.code === '23505') return {ok: false, error: `SKU ${product_id} already exists.`};
     return {ok: false, error: error.message};
@@ -110,6 +120,21 @@ export async function setStockAction(product_id: string, qty: string): Promise<A
     p_new_qty: parsed.value,
     p_by: ACTOR,
   });
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/products');
+  return {ok: true};
+}
+
+/** Set a product's tile emoji (1-3 chars; a direct column update, no RPC). */
+export async function setEmojiAction(product_id: string, emoji: string): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const parsed = parseEmoji(emoji);
+  if ('error' in parsed) return {ok: false, error: parsed.error};
+
+  const {error} = await posClient()
+    .from('pos_products')
+    .update({emoji: parsed.value, updated_at: new Date().toISOString()})
+    .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/products');
   return {ok: true};

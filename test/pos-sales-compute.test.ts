@@ -206,6 +206,7 @@ describe('stockAlerts', () => {
     product_line: 'FDR',
     category: 'Freeze Dried',
     subcategory: null,
+    emoji: null,
     active: true,
     price: 170,
     next_expiry: null,
