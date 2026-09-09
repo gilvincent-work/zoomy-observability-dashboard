@@ -57,7 +57,7 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
   const [ordersRes, itemsRes, productsRes] = await Promise.all([
     supabase
       .from('pos_orders')
-      .select('id,subtotal,discount,total,oversold,device_id,payment_method,created_at')
+      .select('id,subtotal,discount,total,oversold,device_id,payment_method,status,remarks,created_at')
       .order('created_at', {ascending: false}),
     supabase.from('pos_order_items').select('order_id,product_id,qty,unit_price,line_total'),
     supabase.from('pos_products').select('product_id,name'),
@@ -94,6 +94,8 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
     oversold: Boolean(o.oversold),
     device_id: (o.device_id as string | null) ?? null,
     payment_method: (o.payment_method as string | null) ?? null,
+    status: (o.status as string | null) === 'voided' ? 'voided' : 'completed',
+    remarks: (o.remarks as string | null) ?? null,
     created_at: o.created_at as string,
     items: itemsByOrder.get(o.id as string) ?? [],
   }));
@@ -136,7 +138,7 @@ export const getPosOrdersPage = cache(async (
 
   let rowQuery = supabase
     .from('pos_orders')
-    .select('id,subtotal,discount,total,oversold,device_id,payment_method,created_at');
+    .select('id,subtotal,discount,total,oversold,device_id,payment_method,status,remarks,created_at');
   for (const op of ops) {
     rowQuery = op[0] === 'or' ? rowQuery.or(op[1])
       : op[0] === 'eq' ? rowQuery.eq(op[1], op[2])
@@ -182,6 +184,8 @@ export const getPosOrdersPage = cache(async (
     oversold: Boolean(o.oversold),
     device_id: (o.device_id as string | null) ?? null,
     payment_method: (o.payment_method as string | null) ?? null,
+    status: (o.status as string | null) === 'voided' ? 'voided' : 'completed',
+    remarks: (o.remarks as string | null) ?? null,
     created_at: o.created_at as string,
     items: itemsByOrder.get(o.id as string) ?? [],
   }));

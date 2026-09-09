@@ -14,6 +14,16 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-09
 
+### Reflect POS voids + remarks — `feat(offline-sales)`
+- Read `status` / `remarks` from `pos_orders`. **Voided sales are excluded from
+  revenue and every aggregation** (KPIs, daily sales, top products, and the
+  offline Business Health / Compare Channels metrics that derive from them).
+- Voided orders still appear in the orders list and Recent orders panel, shown
+  **struck-through with a "voided" badge**; a POS **remark** renders inline
+  under the order.
+- **Decision:** a void means the sale didn't count, so it drops out of Coop
+  revenue; it stays visible (struck-through) for audit.
+
 ### Offline Sales: cap "Recent orders" at 5 — `fix(offline-sales)`
 - The "Recent orders" panel on the Offline Sales overview listed up to 12 rows,
   making it very long. Capped it at 5 (the full history is behind "View all").

@@ -30,6 +30,8 @@ function order(over: Partial<PosOrder> & {id: string; created_at: string}): PosO
     oversold: false,
     device_id: 'pos',
     payment_method: 'cash',
+    status: 'completed',
+    remarks: null,
     items: [{product_id: 'A', name: 'A', qty: 1, unit_price: 100, line_total: 100}],
     ...over,
   };
@@ -81,6 +83,24 @@ describe('computeKpis', () => {
   });
   it('handles no orders', () => {
     expect(computeKpis([])).toEqual({revenue: 0, orders: 0, units: 0, oversells: 0});
+  });
+  it('excludes voided sales from every total', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 500, items: [{product_id: 'A', name: 'A', qty: 2, unit_price: 250, line_total: 500}]}),
+      order({id: '2', created_at: NOW.toISOString(), total: 900, status: 'voided', items: [{product_id: 'B', name: 'B', qty: 3, unit_price: 300, line_total: 900}]}),
+    ];
+    expect(computeKpis(orders)).toEqual({revenue: 500, orders: 1, units: 2, oversells: 0});
+  });
+});
+
+describe('void exclusion in aggregations', () => {
+  it('drops voided sales from salesByDay and topProducts', () => {
+    const orders = [
+      order({id: '1', created_at: '2026-09-07T09:00:00.000Z', total: 100, items: [{product_id: 'A', name: 'A', qty: 1, unit_price: 100, line_total: 100}]}),
+      order({id: '2', created_at: '2026-09-07T10:00:00.000Z', total: 900, status: 'voided', items: [{product_id: 'A', name: 'A', qty: 9, unit_price: 100, line_total: 900}]}),
+    ];
+    expect(salesByDay(orders)).toEqual([{day: '2026-09-07', revenue: 100, orders: 1}]);
+    expect(topProducts(orders)).toEqual([{product_id: 'A', name: 'A', revenue: 100, units: 1}]);
   });
 });
 

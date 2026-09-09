@@ -37,22 +37,31 @@ export function filterOrdersByRange(orders: PosOrder[], range: SalesRange, now: 
   return orders.filter((o) => o.created_at >= start);
 }
 
+/** A voided sale didn't happen: it's excluded from every revenue aggregation. */
+function isVoided(o: PosOrder): boolean {
+  return o.status === 'voided';
+}
+
 export function computeKpis(orders: PosOrder[]): SalesKpis {
   let revenue = 0;
+  let count = 0;
   let units = 0;
   let oversells = 0;
   for (const o of orders) {
+    if (isVoided(o)) continue;
     revenue += o.total;
+    count += 1;
     if (o.oversold) oversells += 1;
     for (const it of o.items) units += it.qty;
   }
-  return {revenue, orders: orders.length, units, oversells};
+  return {revenue, orders: count, units, oversells};
 }
 
 /** Group orders by UTC calendar day, ascending. Days with no sales are omitted. */
 export function salesByDay(orders: PosOrder[]): DailySales[] {
   const byDay = new Map<string, {revenue: number; orders: number}>();
   for (const o of orders) {
+    if (isVoided(o)) continue;
     const day = o.created_at.slice(0, 10); // YYYY-MM-DD (UTC)
     const cur = byDay.get(day) ?? {revenue: 0, orders: 0};
     cur.revenue += o.total;
@@ -68,6 +77,7 @@ export function salesByDay(orders: PosOrder[]): DailySales[] {
 export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
   const byProduct = new Map<string, TopProduct>();
   for (const o of orders) {
+    if (isVoided(o)) continue;
     for (const it of o.items) {
       if (!it.product_id) continue; // skip bundle-only lines with no SKU
       const cur = byProduct.get(it.product_id) ?? {product_id: it.product_id, name: it.name, revenue: 0, units: 0};

@@ -6,6 +6,7 @@ import {ArrowLeft, ChevronLeft, ChevronRight, Receipt, TriangleAlert} from 'luci
 import type {PosOrder, PosOrdersFilter, PriceBounds} from '@/src/pos-sales-types';
 import {isFilterActive, type PageInfo} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodLabel} from '@/src/pos-format';
+import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Eyebrow, MockNote} from './sections';
@@ -67,23 +68,27 @@ export function OfflineOrdersView({
           ) : (
             <ul className="flex flex-col divide-y">
               {orders.map((o, i) => (
-                <li key={o.id} className="flex items-start gap-4 px-5 py-3.5">
+                <li key={o.id} className={cn('flex items-start gap-4 px-5 py-3.5', o.status === 'voided' && 'opacity-60')}>
                   <span className="mt-0.5 w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{firstOnPage + i + 1}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{timeLabel(o.created_at)}</span>
+                      <span className={cn('text-sm font-medium', o.status === 'voided' && 'line-through')}>{timeLabel(o.created_at)}</span>
                       <Badge variant="secondary">{paymentMethodLabel(o.payment_method)}</Badge>
+                      {o.status === 'voided' && <Badge variant="destructive">voided</Badge>}
                       {o.oversold && (
                         <Badge variant="destructive">
                           <TriangleAlert /> oversold
                         </Badge>
                       )}
                     </div>
-                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                    <p className={cn('mt-0.5 text-xs leading-relaxed text-muted-foreground', o.status === 'voided' && 'line-through')}>
                       {o.items.map((it) => `${it.name} ×${it.qty}`).join(', ') || 'No items'}
                     </p>
+                    {o.remarks && (
+                      <p className="mt-1 text-xs italic text-muted-foreground/80">“{o.remarks}”</p>
+                    )}
                   </div>
-                  <span className="shrink-0 text-sm font-semibold tabular-nums">{formatPeso(o.total)}</span>
+                  <span className={cn('shrink-0 text-sm font-semibold tabular-nums', o.status === 'voided' && 'text-muted-foreground line-through')}>{formatPeso(o.total)}</span>
                 </li>
               ))}
             </ul>
