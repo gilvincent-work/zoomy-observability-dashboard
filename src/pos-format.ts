@@ -71,6 +71,7 @@ export const PRODUCT_EMOJIS = [
   '🐔', '🦆', '🦃', '🥚', '🧀', '🥛',
   '🌿', '🍀', '🥕', '🫐', '🍓', '🍎',
   '🍐', '🎃', '🍠', '🥦', '🥜', '🍯',
+  '🥢', '🧊',
 ];
 
 /** Split a string into grapheme clusters so multi-codepoint emoji count as one. */
@@ -103,6 +104,8 @@ export function paymentMethodLabel(method: string | null | undefined): string {
   switch (method) {
     case 'cash':
       return 'Cash';
+    case 'qrph':
+      return 'QRPH';
     case 'gcash':
       return 'GCash';
     case 'card':
