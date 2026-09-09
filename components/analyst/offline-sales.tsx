@@ -89,7 +89,7 @@ export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts,
             <Empty>No orders yet.</Empty>
           ) : (
             <ul className="flex flex-col divide-y">
-              {orders.slice(0, 12).map((o) => (
+              {orders.slice(0, 5).map((o) => (
                 <li key={o.id}>
                   <Link
                     href="/offline-sales/orders"
