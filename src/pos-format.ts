@@ -60,8 +60,21 @@ export function stockLabel(stock: number): 'out' | 'low' | 'ok' {
 export const DEFAULT_EMOJI = '🍬';
 export const MAX_EMOJI = 3;
 
+/**
+ * Curated tile emojis for the tap-only picker (users don't type these, and a
+ * desktop has no emoji key). Mirrors zoomy-pos/constants/emoji.ts.
+ */
+export const PRODUCT_EMOJIS = [
+  '🍬', '🦴', '🐾', '🐕', '🐈', '⭐️',
+  '🥩', '🍖', '🍗', '🥓', '🍔', '🌭',
+  '🐟', '🐠', '🍤', '🦐', '🦑', '🦀',
+  '🐔', '🦆', '🦃', '🥚', '🧀', '🥛',
+  '🌿', '🍀', '🥕', '🫐', '🍓', '🍎',
+  '🎃', '🍠', '🥦', '🥜', '🍯', '🧊',
+];
+
 /** Split a string into grapheme clusters so multi-codepoint emoji count as one. */
-function graphemes(input: string): string[] {
+export function graphemes(input: string): string[] {
   const Seg = (Intl as {Segmenter?: typeof Intl.Segmenter}).Segmenter;
   if (Seg) {
     return Array.from(new Seg(undefined, {granularity: 'grapheme'}).segment(input), (s) => s.segment);

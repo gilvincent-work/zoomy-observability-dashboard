@@ -16,14 +16,14 @@ import {
   setStockAction,
   type ActionResult,
 } from '@/src/pos-actions';
-import {clampEmoji} from '@/src/pos-format';
+import {EmojiPicker} from './emoji-picker';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
 
-type EditField = 'name' | 'price' | 'stock' | 'emoji' | null;
+type EditField = 'name' | 'price' | 'stock' | null;
 
 function StockBadge({stock}: {stock: number}) {
   const label = stockLabel(stock);
@@ -230,9 +230,10 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
                         )
                       }
                       onSetEmoji={(emoji) => {
-                        const cleaned = clampEmoji(emoji);
-                        const patch = cleaned ? {emoji: cleaned} : {};
-                        mutate(row.product_id, patch, () => setEmojiAction(row.product_id, emoji));
+                        // The picker already returns a clamped value; skip empty
+                        // (the picker never commits empty, but guard anyway).
+                        if (!emoji) return;
+                        mutate(row.product_id, {emoji}, () => setEmojiAction(row.product_id, emoji));
                       }}
                     />
                   );
@@ -307,7 +308,6 @@ function ProductRow({
     if (editing === 'name' && value) onRename(value);
     else if (editing === 'price' && value) onReprice(value);
     else if (editing === 'stock' && value !== '') onSetStock(value);
-    else if (editing === 'emoji' && value) onSetEmoji(value);
     setEditing(null);
   }
 
@@ -315,20 +315,12 @@ function ProductRow({
     <>
       <tr className={cn('border-b', error ? 'border-transparent' : 'last:border-0', !row.active && 'opacity-55')}>
         <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{row.product_id}</td>
-        <td className="px-4 py-2.5 text-center text-lg leading-none">
-          {editing === 'emoji' ? (
-            <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} />
-          ) : (
-            <button
-              type="button"
-              className="group inline-flex items-center gap-1 hover:opacity-80"
-              onClick={() => begin('emoji', row.emoji ?? '')}
-              aria-label={`Edit emoji for ${row.name}`}
-            >
-              <span>{row.emoji || '🍬'}</span>
-              <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
-            </button>
-          )}
+        <td className="px-4 py-2.5 text-center">
+          <EmojiPicker
+            value={row.emoji ?? ''}
+            onCommit={(next) => onSetEmoji(next)}
+            ariaLabel={`Edit emoji for ${row.name}`}
+          />
         </td>
         <td className="px-4 py-2.5">
           <div className="flex items-center gap-2">
@@ -714,12 +706,7 @@ function NewProductForm({
           </Field>
         )}
         <Field label="Emoji">
-          <input
-            value={emoji}
-            onChange={(e) => setEmoji(clampEmoji(e.target.value))}
-            placeholder="🍬"
-            className="h-8 w-20 rounded-md border bg-background px-2 text-center text-lg leading-none outline-none focus-visible:border-ring"
-          />
+          <EmojiPicker value={emoji} onChange={setEmoji} ariaLabel="Choose product emoji" />
         </Field>
         <Field label="Price">
           <input
