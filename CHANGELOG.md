@@ -14,6 +14,14 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-09
 
+### Product Controls: emoji on create + edit — `feat(products)`
+- Product Controls gains an **Emoji** column (editable inline, 1 to 3 emoji) and
+  an emoji field on the New Product form. Written directly to the new
+  `pos_products.emoji` column (service role). The POS reads it to seed a new
+  tile; existing POS emoji edits are preserved on sync.
+- Added `clampEmoji` / `parseEmoji` helpers (grapheme-aware, capped at 3) and a
+  `setEmojiAction`. `PosProductRow` + reads + mock carry the emoji.
+
 ### Design critique follow-ups: edit safety, tile consistency, home & footer — `feat(ui)`
 Acting on the Impeccable UI critique (30/40; "authored, not slop") — four of the
 five priority fixes (compare-view overload deferred):

@@ -56,6 +56,35 @@ export function stockLabel(stock: number): 'out' | 'low' | 'ok' {
   return 'ok';
 }
 
+/** The POS tile emoji fallback, shared with the app's default. */
+export const DEFAULT_EMOJI = '🍬';
+export const MAX_EMOJI = 3;
+
+/** Split a string into grapheme clusters so multi-codepoint emoji count as one. */
+function graphemes(input: string): string[] {
+  const Seg = (Intl as {Segmenter?: typeof Intl.Segmenter}).Segmenter;
+  if (Seg) {
+    return Array.from(new Seg(undefined, {granularity: 'grapheme'}).segment(input), (s) => s.segment);
+  }
+  return Array.from(input); // code-point fallback (good enough for most emoji)
+}
+
+/** Trim whitespace and cap at MAX_EMOJI grapheme clusters (for input handling). */
+export function clampEmoji(input: string): string {
+  return graphemes(input.replace(/\s+/g, '')).slice(0, MAX_EMOJI).join('');
+}
+
+/**
+ * Validate an emoji field: 1 to MAX_EMOJI characters after trimming. Returns the
+ * cleaned value or an error. Empty is allowed by callers that treat it as "use
+ * the default" — this is for the explicit-set path.
+ */
+export function parseEmoji(input: string): {value: string} | {error: string} {
+  const cleaned = clampEmoji(input);
+  if (!cleaned) return {error: 'Enter at least one emoji.'};
+  return {value: cleaned};
+}
+
 /** Human label for a POS payment method, matching how the POS records it. */
 export function paymentMethodLabel(method: string | null | undefined): string {
   switch (method) {
