@@ -14,6 +14,12 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-09
 
+### Emoji picker is tap-only (no typing) — `fix(products)`
+- The emoji column and New Product field were plain text inputs — you can't type
+  an emoji on a desktop keyboard. Replaced both with a **tap-only picker**
+  (`EmojiPicker`): a popover with a curated emoji grid, a live preview, and a
+  backspace; tap up to 3. Curated set lives in `pos-format.ts`.
+
 ### Product Controls: emoji on create + edit — `feat(products)`
 - Product Controls gains an **Emoji** column (editable inline, 1 to 3 emoji) and
   an emoji field on the New Product form. Written directly to the new
