@@ -14,6 +14,34 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-09
 
+### Design critique follow-ups: edit safety, tile consistency, home & footer — `feat(ui)`
+Acting on the Impeccable UI critique (30/40; "authored, not slop") — four of the
+five priority fixes (compare-view overload deferred):
+- **P0 · Product Controls edit safety.** Price/unlist edits no longer apply
+  silently. Each row now flashes a **"Saved"** chip on success, unlisting asks
+  for **inline confirmation** first (it hides a product from the POS), an
+  **Undo toast** reverses an unlist, and edit **errors anchor under the offending
+  row** instead of a single bar at the top of the table. Decision: match the
+  repricer's existing reassurance (confirm/undo/guardrails) on the one surface
+  that writes to a live catalog.
+- **P1 · One canonical metric tile.** Added `components/analyst/metric.tsx`
+  (`Metric`, `metricValueClass`, `MetricDelta`) and pointed the six divergent KPI
+  dialects (`KpiTile`, `FigureTiles`, `CombinedKpis`, offline `Kpi`, repricer
+  `StatCard`, and the home stat) at it, so every value renders in the house serif
+  face. Removed the now-dead `Delta` in `sections.tsx`. Fixes the inconsistency
+  that dragged heuristic #4 (Consistency) to 2/4.
+- **P3 · Home leads with the verdict.** `home-landing.tsx` now opens with the
+  real synthesized `digest.headline` (not a generic "Coop Intelligence" panel),
+  retired the `animate-ping` live-dot and the `Sparkles` "AI analyst" bullets —
+  the only AI-slop signifiers the critique flagged.
+- **P3 · Health footer is no longer a text wall.** The trailing 200-word "how
+  it's calculated" prose on Business Health is now a collapsed
+  **`<details>` disclosure**, so the view resolves on its charts/cards, not a wall
+  of caveats. (The other two views' "footers" were already one-liners.)
+
+Verified: `tsc --noEmit` clean, 84 tests pass, Impeccable detector clean on all
+changed files. No schema/data changes. Deferred: P2 (channel-compare overload).
+
 ### Offline Sales: status (voided) filter — `feat(offline-sales)`
 - Added a **Status** filter (All / Completed / Voided) to the transactions bar,
   so you can show voided sales only. Applies server-side alongside the other

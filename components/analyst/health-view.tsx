@@ -2,7 +2,7 @@
 
 import {useEffect, useRef, useState} from 'react';
 import {useRouter} from 'next/navigation';
-import {ArrowLeft} from 'lucide-react';
+import {ArrowLeft, ChevronDown} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import type {BusinessHealthSnapshot, ChannelActuals, ChannelFacts, Knobs} from '@/src/health-types';
 import {DEFAULT_WEBSITE_ACQ_COST, computeChannelHealth, computeHealth, computeOverallHealth, factsToActuals} from '@/src/health-compute';
@@ -902,7 +902,12 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       )}
       </div>
 
-      <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
+      <details className="group rounded-xl border border-dashed border-border bg-muted/30 text-[13px] leading-relaxed text-foreground/65">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 p-4 font-medium text-foreground/80 [&::-webkit-details-marker]:hidden">
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          How this is calculated
+        </summary>
+        <div className="px-4 pb-4">
         {view === 'trend' ? (
           <p>
             <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">horizontal dashed line</strong> is the target of {snapshot.target}, and bars below it are under target. The <strong className="text-foreground">dark dotted line with markers</strong> is the <strong className="text-foreground">Overall QRR</strong> for each month — the same blend as the header pill (total gross margin ÷ total spend for that month), so a month where a channel had no acquisition cost leaves that channel out of the blend. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website is seeded with a placeholder Acq. cost of ₱5,000, so it appears from its first month of orders — edit that on the Cards tab to reflect real spend. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
@@ -916,7 +921,8 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
             Each channel stands alone (no blending); the <strong className="text-foreground">Overall QRR</strong> beside the title is the one exception — the whole business pooled by volume, over only the channels that have a CAC: total gross margin ÷ total marketing + promo spend, so every order counts once and the figure sits near the highest-volume channel. A channel with no acquisition cost is excluded from both sides (its profit against ₱0 would inflate the ratio); give it an Acq. cost and it joins in. <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. Both sides of the ratio are <strong className="text-foreground">per order</strong>: LTV here is the gross margin on one order = AOV × Margin, and CAC = (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target} — with promos at ₱0 this is simply Margin × ROAS. <strong className="text-foreground">Repeat rate</strong> (orders ÷ buyers) is shown per channel as its own KPI and is deliberately not folded into QRR. Website has no ads, so its CAC comes from Acq. cost — seeded with a ₱5,000 placeholder for the window, which you should replace with real organic/ops spend. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
           </p>
         )}
-      </footer>
+        </div>
+      </details>
     </div>
   );
 }
