@@ -39,6 +39,7 @@ import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
+import {Metric, metricValueClass} from './metric';
 import {RevenueForecastChart} from './charts';
 
 export const CATEGORY_ICON: Record<Category, typeof Package> = {
@@ -82,21 +83,8 @@ export function ConfidenceMeter({value, className}: {value: number; className?: 
   );
 }
 
-export function Delta({pct}: {pct: number}) {
-  const up = pct >= 0;
-  const Icon = up ? TrendingUp : TrendingDown;
-  return (
-    <span
-      className="inline-flex items-center gap-0.5 text-xs font-medium tabular-nums"
-      style={{color: up ? 'var(--status-good)' : 'var(--status-crit)'}}
-    >
-      <Icon className="size-3.5" />
-      {up ? '+' : ''}
-      {pct}%
-    </span>
-  );
-}
-
+// Thin wrapper over the canonical <Metric> so existing call sites keep their
+// {icon,label,value,delta,sub} shape while the value renders in the house face.
 export function KpiTile({
   icon: Icon,
   label,
@@ -110,21 +98,7 @@ export function KpiTile({
   delta?: number;
   sub?: string;
 }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            <Icon className="size-3.5" />
-            {label}
-          </span>
-          {delta != null && <Delta pct={delta} />}
-        </div>
-        <div className="font-mono text-2xl font-semibold tabular-nums">{value}</div>
-        {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
-      </CardContent>
-    </Card>
-  );
+  return <Metric icon={Icon} label={label} value={value} delta={delta} sub={sub} />;
 }
 
 // ── verdict hero ──────────────────────────────────────────────────────────────
@@ -223,7 +197,7 @@ export function FigureTiles({figures, hideBasis}: {figures: DigestFigure[]; hide
               </div>
               <div className="flex items-baseline gap-0.5">
                 <span
-                  className="text-[30px] font-semibold leading-none tracking-tight tabular-nums"
+                  className={cn(metricValueClass, 'text-[30px]')}
                   style={{color: status === 'warn' || status === 'crit' ? statusColor! : 'var(--foreground)'}}
                 >
                   {f.value.toLocaleString()}

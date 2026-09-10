@@ -15,6 +15,7 @@ import {
   summarise,
 } from '@/src/reprice-labels';
 import {InfoTip} from './info-tip';
+import {metricValueClass} from './metric';
 
 // Shared money formatter — every peso figure on this page goes through this,
 // so thousands separators and the ₱ sign are consistent everywhere.
@@ -75,10 +76,7 @@ function StatCard({label, value, hint, sub, size = 'lg', tone = 'default'}: {
   size?: 'lg' | 'md';
   tone?: 'default' | 'emerald';
 }) {
-  const valueClass =
-    size === 'lg'
-      ? 'text-[28px] font-bold leading-none tabular-nums'
-      : 'text-[19px] font-bold leading-tight tabular-nums';
+  const valueClass = size === 'lg' ? `${metricValueClass} text-[28px]` : `${metricValueClass} text-[19px]`;
   const toneClass = tone === 'emerald' ? 'text-emerald-700 dark:text-emerald-400' : 'text-foreground';
 
   return (

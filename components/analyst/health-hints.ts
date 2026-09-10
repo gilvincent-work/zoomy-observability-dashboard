@@ -31,4 +31,5 @@ export const HEALTH_HINTS: Record<string, string> = {
   ch_shopee: 'Buyers are exact — deduped by the order export’s buyer username. Revenue is the order Grand Total. Ad figures are the real Mar–Jul data.',
   ch_lazada: 'Buyers are an estimate, ~1.3% high (a stable name + address + city match) — deliberately conservative. Ad figures come from the Lazada API for the full period.',
   ch_website: 'Buyers are exact (real customer IDs). There’s no ad data, so ROAS is N/A and CAC comes from the Acq. cost — seeded at ₱5,000 as a placeholder, so treat this channel’s QRR as provisional until you enter real spend. CRM order history starts 17 Apr 2026, so volume here is lower.',
+  ch_offline: 'Bazaar sales synced from the POS. There are no ads (so no ROAS) and no buyer identity (so Repeat rate is N/A). CAC comes from an event cost you enter; until you do, offline stays out of the pooled Overall QRR.',
 };

@@ -1,6 +1,8 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
+import {useRouter} from 'next/navigation';
+import {ArrowLeft, ChevronDown} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import type {BusinessHealthSnapshot, ChannelActuals, ChannelFacts, Knobs} from '@/src/health-types';
 import {DEFAULT_WEBSITE_ACQ_COST, computeChannelHealth, computeHealth, computeOverallHealth, factsToActuals} from '@/src/health-compute';
@@ -17,8 +19,8 @@ const fmtRange = (from: string, to: string) => {
   return `${md(from)} – ${md(to)}, ${new Date(`${to}T00:00:00Z`).getUTCFullYear()}`;
 };
 
-const CHANNEL_LABEL: Record<string, string> = {shopee: 'Shopee', lazada: 'Lazada', website: 'Website'};
-const CHANNEL_ACCENT: Record<string, string> = {shopee: '#EE4D2D', lazada: '#2F6BD4', website: '#2E7D5B'};
+const CHANNEL_LABEL: Record<string, string> = {shopee: 'Shopee', lazada: 'Lazada', website: 'Website', offline: 'Offline'};
+const CHANNEL_ACCENT: Record<string, string> = {shopee: '#EE4D2D', lazada: '#2F6BD4', website: '#2E7D5B', offline: '#C9873F'};
 
 /** Short focus-guide captions (what each field is asking for). */
 const FIELD_HELP: Record<string, string> = {
@@ -384,21 +386,35 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
         </div>
 
         {/* Repeat rate — tracked, but deliberately outside the ratio. Orders
-            still drives CAC (and the blend's weighting), so both stay editable. */}
-        <div className="rounded-xl border border-dashed border-border bg-muted/15 p-4">
-          <div className="flex items-center justify-between">
-            <SectionLabel hint={HEALTH_HINTS.repeat}>Repeat rate</SectionLabel>
-            <Pop value={h.repeat} className="text-[22px] font-bold tabular-nums text-foreground">{h.repeat.toFixed(2)}×</Pop>
+            still drives CAC (and the blend's weighting), so both stay editable.
+            Offline has no buyer identity (the POS doesn't capture one), so repeat
+            rate can't be computed — shown as N/A rather than a misleading 0. */}
+        {facts.channel === 'offline' ? (
+          <div className="rounded-xl border border-dashed border-border bg-muted/15 p-4">
+            <div className="flex items-center justify-between">
+              <SectionLabel hint={HEALTH_HINTS.repeat}>Repeat rate</SectionLabel>
+              <span className="text-[22px] font-bold tabular-nums text-foreground/50">N/A</span>
+            </div>
+            <div className="mt-2 text-[13px] leading-snug text-foreground/55">
+              The POS doesn&rsquo;t capture buyer identity yet, so orders per buyer can&rsquo;t be measured. A separate signal, <span className="font-semibold">not</span> part of QRR.
+            </div>
           </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-y-2 text-[15px] text-foreground/85">
-            <ActualField suffix="orders" initial={String(actuals.orders)} baseline={base.orders} helpKey="orders" setHelp={setHelp} onChange={(n) => onActual({...actuals, orders: n})} />
-            {op('÷')}
-            <ActualField suffix="buyers" initial={String(actuals.buyers)} baseline={base.buyers} helpKey="buyers" setHelp={setHelp} onChange={(n) => onActual({...actuals, buyers: n})} />
+        ) : (
+          <div className="rounded-xl border border-dashed border-border bg-muted/15 p-4">
+            <div className="flex items-center justify-between">
+              <SectionLabel hint={HEALTH_HINTS.repeat}>Repeat rate</SectionLabel>
+              <Pop value={h.repeat} className="text-[22px] font-bold tabular-nums text-foreground">{h.repeat.toFixed(2)}×</Pop>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-y-2 text-[15px] text-foreground/85">
+              <ActualField suffix="orders" initial={String(actuals.orders)} baseline={base.orders} helpKey="orders" setHelp={setHelp} onChange={(n) => onActual({...actuals, orders: n})} />
+              {op('÷')}
+              <ActualField suffix="buyers" initial={String(actuals.buyers)} baseline={base.buyers} helpKey="buyers" setHelp={setHelp} onChange={(n) => onActual({...actuals, buyers: n})} />
+            </div>
+            <div className="mt-2 text-[13px] leading-snug text-foreground/55">
+              Orders per buyer. A separate signal, <span className="font-semibold">not</span> part of QRR.
+            </div>
           </div>
-          <div className="mt-2 text-[13px] leading-snug text-foreground/55">
-            Orders per buyer. A separate signal — <span className="font-semibold">not</span> part of QRR.
-          </div>
-        </div>
+        )}
 
         {/* Focus guide */}
         <div className={`min-h-[1.25rem] text-[13px] font-medium transition-colors ${help ? 'text-foreground/80' : 'text-transparent'}`}>
@@ -410,12 +426,19 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-foreground/70">
             <span className="text-foreground/45">Measured</span>
             <span className="inline-flex items-center gap-1">{facts.orders.toLocaleString()} orders <InfoTip text={HEALTH_HINTS.orders} /></span>
-            <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
+            {facts.channel !== 'offline' && (
+              <span className="inline-flex items-center gap-1">{facts.buyers.toLocaleString()} buyers <InfoTip text={HEALTH_HINTS.buyers} /></span>
+            )}
             <span>{peso2(facts.revenue)} revenue</span>
           </div>
           {facts.channel === 'website' && (
             <p className="mt-2 text-xs italic leading-snug text-foreground/55">
               Note: CRM order history starts 17 Apr 2026 — earlier website orders aren’t synced, so volume is expected to be lower.
+            </p>
+          )}
+          {facts.channel === 'offline' && (
+            <p className="mt-2 text-xs italic leading-snug text-foreground/55">
+              Note: POS bazaar sales. No ads (so no ROAS), and CAC comes from an event cost you enter. It joins the Overall QRR once that cost is set.
             </p>
           )}
         </div>
@@ -738,7 +761,13 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
           // rather than N/A. `||` (not `??`) on purpose: snapshots saved before
           // the batch seeded this carry a literal 0, which needs the same
           // treatment as a missing value. Still fully editable on the card.
-          acqCost: c.defaults.acqCost || (c.platformFeeApplies ? 0 : DEFAULT_WEBSITE_ACQ_COST),
+          // Offline is the exception: its event cost starts at ₱0 so it stays
+          // OUT of the pooled Overall QRR until a real event cost is entered
+          // (no fabricated bazaar cost).
+          acqCost:
+            c.channel === 'offline'
+              ? c.defaults.acqCost ?? 0
+              : c.defaults.acqCost || (c.platformFeeApplies ? 0 : DEFAULT_WEBSITE_ACQ_COST),
         } as Knobs,
       ]),
     );
@@ -749,6 +778,14 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const [view, setView] = useState<'cards' | 'trend' | 'heatmap'>('cards');
   const hasMonthly = (snapshot.monthly?.length ?? 0) > 0;
   const hasCohorts = Boolean(snapshot.cohorts);
+
+  // Back button: return to wherever the user came from, not a hardcoded route.
+  // Falls back to the Overview home when there's no in-app history to pop.
+  const router = useRouter();
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back();
+    else router.push('/');
+  };
 
   const baseKnobs = defaults();
   const baseActuals = actualDefaults();
@@ -786,6 +823,15 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
         }`}
       >
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={goBack}
+              aria-label="Go back"
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ArrowLeft className="size-4" />
+            </button>
           <div>
             <h1 className={`font-bold tracking-tight text-foreground transition-[font-size] duration-300 ${condensed ? 'text-[21px]' : 'text-[28px]'}`}>
               Business Health
@@ -801,6 +847,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
                 </p>
               </div>
             </div>
+          </div>
           </div>
           {view === 'cards' && (
             <OverallQrrPill
@@ -836,7 +883,7 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       ) : view === 'heatmap' && hasCohorts ? (
         <HeatmapView snapshot={snapshot} />
       ) : (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {snapshot.perChannel.map((c) => (
             <ChannelCard
               key={`${c.channel}-${nonces[c.channel] ?? 0}`}
@@ -855,7 +902,12 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
       )}
       </div>
 
-      <footer className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] leading-relaxed text-foreground/65">
+      <details className="group rounded-xl border border-dashed border-border bg-muted/30 text-[13px] leading-relaxed text-foreground/65">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 p-4 font-medium text-foreground/80 [&::-webkit-details-marker]:hidden">
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          How this is calculated
+        </summary>
+        <div className="px-4 pb-4">
         {view === 'trend' ? (
           <p>
             <strong className="text-foreground">Trend</strong> plots each channel’s QRR month by month, so you can see whether unit economics are improving. Each bar uses your <strong className="text-foreground">current assumptions from the Cards tab</strong> (Promos &amp; Acq. cost are spread across months by order volume); the <strong className="text-foreground">horizontal dashed line</strong> is the target of {snapshot.target}, and bars below it are under target. The <strong className="text-foreground">dark dotted line with markers</strong> is the <strong className="text-foreground">Overall QRR</strong> for each month — the same blend as the header pill (total gross margin ÷ total spend for that month), so a month where a channel had no acquisition cost leaves that channel out of the blend. Shopee starts in March (ads began then, so earlier months have no acquisition cost to divide by); Website is seeded with a placeholder Acq. cost of ₱5,000, so it appears from its first month of orders — edit that on the Cards tab to reflect real spend. Hover a bar for the exact value. Trailing window {snapshot.window.label}.
@@ -869,7 +921,8 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
             Each channel stands alone (no blending); the <strong className="text-foreground">Overall QRR</strong> beside the title is the one exception — the whole business pooled by volume, over only the channels that have a CAC: total gross margin ÷ total marketing + promo spend, so every order counts once and the figure sits near the highest-volume channel. A channel with no acquisition cost is excluded from both sides (its profit against ₱0 would inflate the ratio); give it an Acq. cost and it joins in. <strong className="text-foreground">Every field is editable</strong>: <strong className="text-foreground">solid-outlined</strong> chips are cost assumptions (COGS%, Platform Fee%, Promos, Acq. cost); <strong className="text-foreground">dashed</strong> fields are your measured actuals (AOV, orders, buyers, ROAS) — override them to model a target, and they turn amber to flag the hypothetical. Margin = 1 − COGS% − Platform Fee%. Both sides of the ratio are <strong className="text-foreground">per order</strong>: LTV here is the gross margin on one order = AOV × Margin, and CAC = (marketing or acquisition) + (Promos ÷ orders). QRR = LTV ÷ CAC, target {snapshot.target} — with promos at ₱0 this is simply Margin × ROAS. <strong className="text-foreground">Repeat rate</strong> (orders ÷ buyers) is shown per channel as its own KPI and is deliberately not folded into QRR. Website has no ads, so its CAC comes from Acq. cost — seeded with a ₱5,000 placeholder for the window, which you should replace with real organic/ops spend. “Measured” under each card is the source data; a channel’s <span className="font-semibold text-amber-700 dark:text-amber-300">↺ Reset</span> pill appears by its name once you change something, restoring just that channel. Edits reset on reload. Trailing window {snapshot.window.label}.
           </p>
         )}
-      </footer>
+        </div>
+      </details>
     </div>
   );
 }

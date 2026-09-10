@@ -3,10 +3,42 @@ import {getBrief} from '@/src/salesSignals';
 import {pickIndex} from '@/src/week';
 import {ChannelOverview, type Channel} from '@/components/analyst/channel-compare';
 import {HomeLanding} from '@/components/analyst/home-landing';
+import {OfflineChannelCard} from '@/components/analyst/offline-channel-card';
+import {getPosOrders} from '@/src/pos-sales';
+import {computeKpis, filterOrdersByRange, offlineCompareMetrics} from '@/src/pos-sales-compute';
+import type {SalesKpis} from '@/src/pos-sales-types';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
-const CHANNELS: Channel[] = ['shopee', 'lazada', 'website'];
+// All channels, including offline, are selected by default on the compare
+// Overview (PO decision 2026-09-07). Note: offline totals are all-time (offline
+// isn't tied to the digest's weekly window), so the headline totals mix bases;
+// the period-over-period trend arrows stay like-for-like (offline is excluded
+// from that comparison in CombinedKpis, since it has no prior-window data).
+const ALL_CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
+const DEFAULT_CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
+
+// Offline 30-day KPIs for the Overview home card. Isolated + fail-soft: an
+// offline data hiccup must never break the core (digest-driven) Overview — on
+// any error the card is simply omitted.
+async function offlineKpis(): Promise<SalesKpis | null> {
+  try {
+    const orders = filterOrdersByRange(await getPosOrders(), '30d');
+    return computeKpis(orders);
+  } catch {
+    return null;
+  }
+}
+
+// Offline metrics (all orders to date) for the Compare Channels chart. Same
+// fail-soft contract: null on any error so the chart just omits offline.
+async function offlineCompare(): Promise<ReturnType<typeof offlineCompareMetrics>> {
+  try {
+    return offlineCompareMetrics(await getPosOrders());
+  } catch {
+    return null;
+  }
+}
 
 export default async function Page({searchParams}: {searchParams: {week?: string; channel?: string}}) {
   // Customer PII is masked inside getDigests() (server-only) rather than here, so
@@ -21,7 +53,20 @@ export default async function Page({searchParams}: {searchParams: {week?: string
   // overview — 'all' (or an unknown value) selects every channel, a single channel
   // starts filtered to it (drills into its detail).
   const ch = searchParams.channel;
-  if (!ch) return <HomeLanding row={row} />;
-  const initial = CHANNELS.includes(ch as Channel) ? [ch as Channel] : CHANNELS;
-  return <ChannelOverview brief={getBrief()} row={row} priorRow={priorRow} initialChannels={initial} />;
+  if (!ch) {
+    const kpis = await offlineKpis();
+    return (
+      <>
+        <HomeLanding row={row} />
+        {kpis && (
+          <div className="mx-auto -mt-6 max-w-5xl px-6 pb-12 md:px-10">
+            <OfflineChannelCard kpis={kpis} />
+          </div>
+        )}
+      </>
+    );
+  }
+  const initial = ALL_CHANNELS.includes(ch as Channel) ? [ch as Channel] : DEFAULT_CHANNELS;
+  const offline = await offlineCompare();
+  return <ChannelOverview brief={getBrief()} row={row} priorRow={priorRow} initialChannels={initial} offline={offline} />;
 }

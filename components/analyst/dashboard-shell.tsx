@@ -1,10 +1,10 @@
 'use client';
 
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, ChevronDown, Home, LogOut, Mail, Package, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, Boxes, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -12,17 +12,32 @@ import {ThemeToggle} from './theme-toggle';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
 
-// The left icon rail — Coop's thin nav. Each tab is an icon with a green active pill.
-const TABS = [
-  {href: '/', label: 'Overview', icon: Home},
+// The left rail. Overview is a group (accordion in the expanded rail) whose
+// children are the sub-views that live under it; the rest are flat tabs.
+type NavItem = {href: string; label: string; icon: React.ComponentType<{className?: string}>};
+
+const OVERVIEW: NavItem = {href: '/', label: 'Overview', icon: Home};
+const OVERVIEW_CHILDREN: NavItem[] = [
+  {href: '/health', label: 'Business Health', icon: Gauge},
+  {href: '/?channel=all', label: 'Sales', icon: BarChart3},
+  {href: '/offline-sales', label: 'Offline Sales', icon: Receipt},
+];
+const FLAT_TABS: NavItem[] = [
+  {href: '/products', label: 'Products', icon: Boxes},
   {href: '/inventory', label: 'Inventory', icon: Package},
   {href: '/customers', label: 'Customers', icon: Users},
   {href: '/traffic', label: 'Traffic', icon: Activity},
   {href: '/repricer', label: 'Repricer', icon: Tag},
   {href: '/settings', label: 'Settings', icon: Settings},
-] as const;
+];
 
-const isActive = (pathname: string, href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+// Active detection. '/' is the Overview home ONLY without a channel; '/?channel='
+// is the Sales compare view. Everything else matches by path prefix.
+const leafActive = (href: string, pathname: string, channel: string | null) => {
+  if (href === '/') return pathname === '/' && !channel;
+  if (href === '/?channel=all') return pathname === '/' && Boolean(channel);
+  return pathname.startsWith(href.split('?')[0]);
+};
 
 /** The Coop wordmark — lowercase, with the second "o" in brand green. */
 function CoopMark() {
@@ -53,19 +68,66 @@ export function DashboardShell({
     .join('');
   const searchParams = useSearchParams();
   const currentWeek = searchParams.get('week') ?? digests[0]?.window_from ?? '';
-  const withWeek = (href: string) => (currentWeek ? `${href}?week=${encodeURIComponent(currentWeek)}` : href);
+  // Query-safe: merges ?week into hrefs that may already carry a query (e.g. the
+  // Sales child, /?channel=all) instead of blindly appending a second '?'.
+  const withWeek = (href: string) => {
+    if (!currentWeek) return href;
+    const [path, q = ''] = href.split('?');
+    const params = new URLSearchParams(q);
+    params.set('week', currentWeek);
+    return `${path}?${params.toString()}`;
+  };
 
   const current = digests.find((d) => d.window_from === currentWeek) ?? digests[0];
   const currentRange = current ? fmtRange(current.window_from, current.window_to, current.digest.window.label) : '';
 
   // The reporting-period picker only makes sense in period-scoped analytics views —
-  // hide it on the home brief ("/" with no channel), Settings, and Business Health
-  // (which uses its own fixed trailing-6-month window shown on the page).
+  // hide it on the home brief ("/" with no channel), Settings, Business Health
+  // (which uses its own fixed trailing-6-month window shown on the page), and
+  // Product Controls (a live catalog, not a period-scoped report).
   const channel = searchParams.get('channel');
   const isHome = pathname === '/' && !channel;
-  const showPeriod = Boolean(current) && !isHome && !pathname.startsWith('/settings') && !pathname.startsWith('/health') && !pathname.startsWith('/repricer');
+  const showPeriod =
+    Boolean(current) &&
+    !isHome &&
+    !pathname.startsWith('/settings') &&
+    !pathname.startsWith('/health') &&
+    !pathname.startsWith('/repricer') &&
+    !pathname.startsWith('/products') &&
+    !pathname.startsWith('/offline-sales');
 
   const [periodOpen, setPeriodOpen] = useState(false);
+
+  // Nav rail can expand to show labels beside the icons (8 icon-only tabs are
+  // hard to tell apart). Default collapsed to match SSR; restore the saved
+  // choice after mount to avoid a hydration mismatch, and persist changes.
+  const [navExpanded, setNavExpanded] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('coop-nav-expanded') === '1') setNavExpanded(true);
+    } catch {}
+  }, []);
+  // Flyout submenu for the collapsed rail's Overview group.
+  const [overviewFlyout, setOverviewFlyout] = useState(false);
+  const toggleNav = () =>
+    setNavExpanded((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('coop-nav-expanded', next ? '1' : '0');
+      } catch {}
+      setOverviewFlyout(false); // don't carry a collapsed-rail popover across modes
+      return next;
+    });
+
+  // Overview accordion (shown in the expanded rail). Whether any Overview view
+  // is the current page — used to highlight the collapsed parent icon and to
+  // auto-open the accordion when you navigate into a child.
+  const overviewGroupActive =
+    leafActive('/', pathname, channel) || OVERVIEW_CHILDREN.some((c) => leafActive(c.href, pathname, channel));
+  const [overviewOpen, setOverviewOpen] = useState(true);
+  useEffect(() => {
+    if (overviewGroupActive) setOverviewOpen(true);
+  }, [overviewGroupActive]);
 
   return (
     <PlaybookProvider>
@@ -182,28 +244,164 @@ export function DashboardShell({
 
       {/* ── Body: icon rail + canvas ────────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-sidebar-border bg-sidebar py-4">
-          {TABS.map((t) => {
-            const active = isActive(pathname, t.href);
+        <nav
+          className={cn(
+            // Pin the rail to the viewport (below the h-14 header) so its height
+            // is bounded — otherwise a tall page stretches it and the centered
+            // toggle drifts down into the empty space below the tabs. z-20 lifts
+            // the rail's stacking context above <main> so the collapsed Overview
+            // flyout (which overflows into the content area) is clickable, not
+            // just visible. Width is NOT transitioned: animating it relayouts the
+            // adjacent charts every frame and feels laggy — the toggle is instant.
+            'sticky top-14 z-20 flex h-[calc(100vh-3.5rem)] shrink-0 flex-col gap-1 self-start border-r border-sidebar-border bg-sidebar py-4',
+            navExpanded ? 'w-56 items-stretch px-3' : 'w-16 items-center',
+          )}
+        >
+          {/* Overview — a group: an accordion in the expanded rail, a single
+              icon in the collapsed rail (its children need the labels). */}
+          {navExpanded ? (
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <Link
+                  href={withWeek('/')}
+                  aria-current={leafActive('/', pathname, channel) ? 'page' : undefined}
+                  className={cn(
+                    'relative flex h-10 flex-1 items-center gap-3 rounded-xl px-3 transition-colors',
+                    leafActive('/', pathname, channel)
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+                  )}
+                >
+                  {leafActive('/', pathname, channel) && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
+                  <OVERVIEW.icon className="size-[18px] shrink-0" />
+                  <span className="truncate text-[13px] font-medium">{OVERVIEW.label}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setOverviewOpen((o) => !o)}
+                  aria-label={overviewOpen ? 'Collapse Overview section' : 'Expand Overview section'}
+                  aria-expanded={overviewOpen}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
+                >
+                  <ChevronDown className={cn('size-4 transition-transform', overviewOpen ? '' : '-rotate-90')} />
+                </button>
+              </div>
+              {overviewOpen && (
+                <div className="ml-3 mt-1 flex flex-col gap-1 border-l border-sidebar-border pl-3">
+                  {OVERVIEW_CHILDREN.map((c) => {
+                    const active = leafActive(c.href, pathname, channel);
+                    return (
+                      <Link
+                        key={c.label}
+                        href={withWeek(c.href)}
+                        aria-current={active ? 'page' : undefined}
+                        className={cn(
+                          'flex h-9 items-center gap-3 rounded-lg px-3 transition-colors',
+                          active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+                        )}
+                      >
+                        <c.icon className="size-4 shrink-0" />
+                        <span className="truncate text-[13px] font-medium">{c.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="relative">
+              {/* Collapsed: the Overview icon opens a flyout submenu with the
+                  group's children + labels (no room for inline labels here). */}
+              <button
+                type="button"
+                onClick={() => setOverviewFlyout((o) => !o)}
+                title="Overview"
+                aria-label="Overview"
+                aria-haspopup="menu"
+                aria-expanded={overviewFlyout}
+                aria-current={overviewGroupActive ? 'page' : undefined}
+                className={cn(
+                  'relative flex size-10 items-center justify-center rounded-xl transition-colors',
+                  overviewGroupActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
+                )}
+              >
+                {overviewGroupActive && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
+                <OVERVIEW.icon className="size-[18px] shrink-0" />
+                {/* Rest-state affordance: a small chevron badge marks this icon
+                    as a group with a submenu (the only one), so it reads as
+                    expandable before any click. Rotates when the flyout opens. */}
+                <ChevronRight
+                  aria-hidden
+                  className={cn(
+                    'absolute bottom-0.5 right-0.5 size-2.5 transition-transform',
+                    overviewFlyout ? 'rotate-90' : '',
+                    overviewGroupActive ? 'text-primary/70' : 'text-muted-foreground/60',
+                  )}
+                />
+              </button>
+              {overviewFlyout && (
+                <>
+                  <button className="fixed inset-0 z-20 cursor-default" aria-hidden onClick={() => setOverviewFlyout(false)} />
+                  <div role="menu" className="absolute left-full top-0 z-30 ml-2 w-52 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lg">
+                    {[OVERVIEW, ...OVERVIEW_CHILDREN].map((item) => {
+                      const active = leafActive(item.href, pathname, channel);
+                      return (
+                        <Link
+                          key={item.label}
+                          href={withWeek(item.href)}
+                          role="menuitem"
+                          onClick={() => setOverviewFlyout(false)}
+                          aria-current={active ? 'page' : undefined}
+                          className={cn(
+                            'flex h-9 items-center gap-2.5 rounded-lg px-2.5 transition-colors',
+                            active ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted',
+                          )}
+                        >
+                          <item.icon className="size-4 shrink-0" />
+                          <span className="truncate text-[13px] font-medium">{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {FLAT_TABS.map((t) => {
+            const active = leafActive(t.href, pathname, channel);
             return (
               <Link
                 key={t.href}
                 href={withWeek(t.href)}
-                title={t.label}
+                title={navExpanded ? undefined : t.label}
                 aria-label={t.label}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'relative flex size-10 items-center justify-center rounded-xl transition-colors',
+                  'relative flex h-10 items-center rounded-xl transition-colors',
+                  navExpanded ? 'w-full gap-3 px-3' : 'size-10 justify-center',
                   active
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
                 )}
               >
                 {active && <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />}
-                <t.icon className="size-[18px]" />
+                <t.icon className="size-[18px] shrink-0" />
+                {navExpanded && <span className="truncate text-[13px] font-medium">{t.label}</span>}
               </Link>
             );
           })}
+
+          {/* Expand / collapse toggle — straddles the rail's right edge, vertically centered. */}
+          <button
+            type="button"
+            onClick={toggleNav}
+            aria-label={navExpanded ? 'Collapse navigation' : 'Expand navigation'}
+            aria-expanded={navExpanded}
+            className="absolute -right-3 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-sidebar-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+          >
+            {navExpanded ? <ChevronLeft className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          </button>
         </nav>
 
         <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-y-auto">
