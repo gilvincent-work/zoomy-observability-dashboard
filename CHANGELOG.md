@@ -14,6 +14,25 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-10 (develop only — not yet promoted to staging)
 
+### Product Controls: breathing room in the header and table — `fix(products)`
+- The header row (product count + description, "Updated Xs ago" + Refresh +
+  New product) had no gap between the two sides — at some viewport widths the
+  description text ran right up against "Updated just now". Switched to
+  `flex-wrap` with an explicit gap (matching the pattern already used on the
+  Offline Sales header), so the two sides always keep a clear gap and wrap
+  onto their own line on narrow viewports instead of colliding.
+- The 8-column table (SKU/Emoji/Name/Line/Category+Subcategory/Price/Stock/
+  Listed) was being squeezed by the page's `max-w-5xl` container: Name wrapped
+  onto 3+ lines and the Listed toggle sat flush against the card's right edge
+  with no margin. Widened Product Controls (and Bundles below it, kept in
+  sync so the two sections still line up) to `max-w-6xl`, gave the table and
+  its Name column sensible minimum widths, and added extra right padding on
+  the Listed column. At typical desktop widths this now fits with real
+  breathing room and no horizontal scroll; on genuinely narrow viewports the
+  existing `overflow-x-auto` still scrolls the table horizontally instead of
+  squishing columns unreadable. Verified in a real browser at 1897px (no
+  scroll, comfortable spacing) and 900px (table correctly scrolls).
+
 ### Live Refresh + filters on Product Controls — `feat(products)`
 - Product Controls (and the Bundles section below it) previously only showed
   what was loaded on the initial page request — a POS-side edit (reprice,

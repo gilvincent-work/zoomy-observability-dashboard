@@ -165,8 +165,8 @@ export function ProductControls({
   const showingFiltered = filteredRows.length !== rows.length;
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
-      <div className="mb-4 flex items-center justify-between">
+    <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div>
           <Eyebrow icon={Boxes}>Product Controls</Eyebrow>
           <p className="text-sm text-muted-foreground">
@@ -182,7 +182,7 @@ export function ProductControls({
             . Create products, rename, reprice, and list/unlist. Edits sync to the POS in-database.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <RefreshControl fetchedAt={fetchedAt} />
           <Button size="sm" onClick={() => setCreating((c) => !c)}>
             {creating ? <X /> : <Plus />}
@@ -210,18 +210,24 @@ export function ProductControls({
 
       <Card>
         <CardContent className="p-0">
+          {/* min-w keeps every column (esp. the stacked Category/Subcategory
+              selects) at a readable width instead of being squeezed by the
+              card's container — narrower viewports scroll horizontally here
+              instead of wrapping Name onto three lines. The last column gets
+              extra right padding so its toggle never sits flush against the
+              card edge. */}
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1000px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
                   <th className="px-4 py-2.5 font-medium">SKU</th>
                   <th className="px-4 py-2.5 text-center font-medium">Emoji</th>
-                  <th className="px-4 py-2.5 font-medium">Name</th>
+                  <th className="min-w-[150px] px-4 py-2.5 font-medium">Name</th>
                   <th className="px-4 py-2.5 font-medium">Line</th>
                   <th className="px-4 py-2.5 font-medium">Category</th>
                   <th className="px-4 py-2.5 text-right font-medium">Price</th>
                   <th className="px-4 py-2.5 text-right font-medium">Stock</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Listed</th>
+                  <th className="py-2.5 pr-6 pl-4 text-right font-medium">Listed</th>
                 </tr>
               </thead>
               <tbody>
@@ -360,7 +366,7 @@ function ProductRow({
             ariaLabel={`Edit emoji for ${row.name}`}
           />
         </td>
-        <td className="px-4 py-2.5">
+        <td className="min-w-[150px] px-4 py-2.5">
           <div className="flex items-center gap-2">
             {editing === 'name' ? (
               <EditCell value={draft} onChange={setDraft} onSave={save} onCancel={() => setEditing(null)} />
@@ -419,7 +425,7 @@ function ProductRow({
             </button>
           )}
         </td>
-        <td className="px-4 py-2.5">
+        <td className="py-2.5 pr-6 pl-4">
           <div className="flex justify-end">
             {/* Listing again is safe and immediate; unlisting hides the product
                 from the POS, so it opens a confirm dialog (centered, no layout
