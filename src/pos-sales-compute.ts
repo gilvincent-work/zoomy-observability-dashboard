@@ -105,6 +105,7 @@ export const DEFAULT_ORDERS_FILTER: PosOrdersFilter = {
 export const ORDER_METHOD_FILTERS: {value: string; label: string}[] = [
   {value: 'all', label: 'All'},
   {value: 'cash', label: 'Cash'},
+  {value: 'qrph', label: 'QRPH'},
   {value: 'gcash', label: 'GCash'},
   {value: 'maya', label: 'Maya'},
   {value: 'card', label: 'Card'},

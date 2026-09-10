@@ -12,6 +12,29 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-10 (develop only — not yet promoted to staging)
+
+### QRPH payment label + filter — `feat(offline-sales)`
+- Added **QRPH** to `paymentMethodLabel` and `ORDER_METHOD_FILTERS`, matching
+  the new POS payment method (a generic QR tap). Old GCash/Maya/Card records
+  are unaffected — this only adds a label/filter for the new value going
+  forward.
+
+### Chopsticks + ice cube added to the emoji palette — `feat(products)`
+- Added 🥢 and 🧊 to `PRODUCT_EMOJIS` in `pos-format.ts`, matching the POS's
+  palette (`constants/emoji.ts`).
+
+## 2026-09-09 (develop only — not yet promoted to staging)
+
+### Bundles section on Product Controls — `feat(bundles)`
+- Added a **Bundles** component under Product Controls that reads the bundles
+  synced from the POS (`pos_bundles`): shows each bundle's emoji (tap-only
+  picker), name, type (Buy Any N / Fixed), price, listed toggle, and delete.
+  Editing writes to `pos_bundles` (emoji/name/price/active via direct update,
+  delete via the shared RPC) so changes mirror back to every POS device.
+  Bundle creation stays in the POS. Added `getPosBundles`, `PosBundleRow`, the
+  bundle actions, mock bundles, and 🍐 to the emoji palette.
+
 ## 2026-09-09
 
 ### Emoji picker is tap-only (no typing) — `fix(products)`
