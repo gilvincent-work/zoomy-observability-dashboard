@@ -72,7 +72,7 @@ export function BundleControls({bundles}: {bundles: PosBundleRow[]}) {
       : `${b.items.length} item${b.items.length !== 1 ? 's' : ''}: ${b.items.map((i) => `${i.name}×${i.qty}`).join(', ') || '—'}`;
 
   return (
-    <div className="mx-auto mt-8 max-w-5xl px-6 md:px-10">
+    <div className="mx-auto mt-8 max-w-6xl px-6 md:px-10">
       <div className="mb-4">
         <Eyebrow icon={Boxes}>Bundles</Eyebrow>
         <p className="text-sm text-muted-foreground">
