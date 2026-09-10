@@ -17,11 +17,14 @@ import {
   type ActionResult,
 } from '@/src/pos-actions';
 import {EmojiPicker} from './emoji-picker';
+import {ProductFilters} from './product-filters';
+import {RefreshControl} from './refresh-control';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
+import {DEFAULT_PRODUCT_FILTER, filterProductRows, productStockMax, type ProductFilter} from '@/src/pos-product-filter';
 
 type EditField = 'name' | 'price' | 'stock' | null;
 
@@ -32,12 +35,26 @@ function StockBadge({stock}: {stock: number}) {
   return <span className="tabular-nums text-sm text-muted-foreground">{stock}</span>;
 }
 
-export function ProductControls({products, usingMock}: {products: PosProductRow[]; usingMock: boolean}) {
+export function ProductControls({
+  products,
+  usingMock,
+  fetchedAt,
+}: {
+  products: PosProductRow[];
+  usingMock: boolean;
+  fetchedAt: string;
+}) {
   // Mirror the server data locally so edits can apply optimistically (instant),
   // then reconcile. revalidatePath in each action re-renders this tree with fresh
-  // props; this effect re-syncs to whatever the server confirmed.
+  // props; this effect re-syncs to whatever the server confirmed. The Refresh
+  // button (RefreshControl) triggers a plain router.refresh(), which lands here
+  // as a new `products` prop — same path, no separate refetch logic needed.
   const [rows, setRows] = useState(products);
   useEffect(() => setRows(products), [products]);
+
+  const [filter, setFilter] = useState<ProductFilter>(DEFAULT_PRODUCT_FILTER);
+  const filteredRows = filterProductRows(rows, filter);
+  const stockMax = productStockMax(rows);
 
   // `error` now covers only product creation (which has no row to anchor to).
   // Per-row edit results live in `status`, keyed by product_id, so a failure is
@@ -145,6 +162,7 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
   }
 
   const listed = rows.filter((r) => r.active).length;
+  const showingFiltered = filteredRows.length !== rows.length;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
@@ -152,14 +170,25 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
         <div>
           <Eyebrow icon={Boxes}>Product Controls</Eyebrow>
           <p className="text-sm text-muted-foreground">
-            {rows.length} products · {listed} listed. Create products, rename, reprice, and list/unlist.
-            Edits sync to the POS in-database.
+            {showingFiltered ? (
+              <>
+                {filteredRows.length} of {rows.length} products
+              </>
+            ) : (
+              <>
+                {rows.length} products · {listed} listed
+              </>
+            )}
+            . Create products, rename, reprice, and list/unlist. Edits sync to the POS in-database.
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreating((c) => !c)}>
-          {creating ? <X /> : <Plus />}
-          {creating ? 'Cancel' : 'New product'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <RefreshControl fetchedAt={fetchedAt} />
+          <Button size="sm" onClick={() => setCreating((c) => !c)}>
+            {creating ? <X /> : <Plus />}
+            {creating ? 'Cancel' : 'New product'}
+          </Button>
+        </div>
       </div>
 
       {usingMock && (
@@ -176,6 +205,8 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
       )}
 
       {creating && <NewProductForm pending={isPending} onSubmit={create} />}
+
+      <ProductFilters filter={filter} onChange={setFilter} stockMax={stockMax} />
 
       <Card>
         <CardContent className="p-0">
@@ -194,7 +225,14 @@ export function ProductControls({products, usingMock}: {products: PosProductRow[
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
+                {filteredRows.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
+                      No products match these filters.
+                    </td>
+                  </tr>
+                )}
+                {filteredRows.map((row) => {
                   const st = status[row.product_id];
                   return (
                     <ProductRow
