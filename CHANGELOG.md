@@ -14,6 +14,26 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-09-10 (develop only — not yet promoted to staging)
 
+### Live Refresh + filters on Product Controls — `feat(products)`
+- Product Controls (and the Bundles section below it) previously only showed
+  what was loaded on the initial page request — a POS-side edit (reprice,
+  stock, listing) wasn't visible until a full browser reload. Added the same
+  `RefreshControl` pattern the Offline Sales transactions page already uses:
+  a button that calls `router.refresh()` to re-fetch server data in place,
+  with an "Updated Xs/mins ago" label. `BundleControls` gained the matching
+  `useEffect` re-sync (it was missing one, so a refresh silently wouldn't
+  have updated it) so one Refresh button covers both sections.
+- Added a filter bar above the Product Controls table: a name/SKU search,
+  Category pills (mirroring the POS's own tabs), a Subcategory pill row
+  (Freeze Dried only), a Listed/Unlisted status pill, and a stock-range
+  popover. Unlike the transactions filter bar (which is URL-param-driven
+  because it's server-paginated), this is local component state — the whole
+  catalog is already loaded in one request, so narrowing it is a pure
+  in-memory filter with no extra round-trip. New `src/pos-product-filter.ts`
+  holds the pure filter logic + types (unit tested, 12 new tests) and
+  `components/analyst/product-filters.tsx` holds the UI, both following the
+  existing `pos-sales-compute.ts` / `transaction-filters.tsx` split.
+
 ### QRPH payment label + filter — `feat(offline-sales)`
 - Added **QRPH** to `paymentMethodLabel` and `ORDER_METHOD_FILTERS`, matching
   the new POS payment method (a generic QR tap). Old GCash/Maya/Card records

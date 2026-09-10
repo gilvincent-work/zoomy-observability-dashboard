@@ -1,6 +1,6 @@
 'use client';
 
-import {useState, useTransition} from 'react';
+import {useEffect, useState, useTransition} from 'react';
 import {Boxes, Check, Pencil, Trash2} from 'lucide-react';
 import type {PosBundleRow} from '@/src/pos-types';
 import type {ActionResult} from '@/src/pos-actions';
@@ -24,7 +24,12 @@ import {EmojiPicker} from './emoji-picker';
  * it on the next catalog pull, so all devices converge.
  */
 export function BundleControls({bundles}: {bundles: PosBundleRow[]}) {
+  // Mirror the server data locally so edits can apply optimistically, then
+  // reconcile. The page's shared Refresh button (in ProductControls) triggers
+  // a plain router.refresh(), which lands here as a new `bundles` prop — this
+  // effect re-syncs to it, same pattern as ProductControls.
   const [rows, setRows] = useState(bundles);
+  useEffect(() => setRows(bundles), [bundles]);
   const [status, setStatus] = useState<Record<string, {saved?: boolean; error?: string}>>({});
   const [isPending, startTransition] = useTransition();
 
