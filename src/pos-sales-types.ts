@@ -13,12 +13,14 @@ export interface PosOrderLine {
 
 export interface PosOrder {
   id: string;
+  client_uuid: string; // idempotency key; passed to void_pos_order when voiding here
   subtotal: number;
   discount: number | null;
   total: number;
   oversold: boolean;
   device_id: string | null;
   payment_method: string | null; // 'cash' | 'gcash' | 'card' | ...; null = legacy/cash
+  customer_handle: string | null; // optional furbaby / IG handle from the POS sale
   status: string; // 'completed' | 'voided'; voided sales are excluded from revenue
   remarks: string | null; // free-text note set from the POS
   created_at: string; // ISO
