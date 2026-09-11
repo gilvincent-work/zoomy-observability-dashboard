@@ -1,6 +1,6 @@
 import type {PosProductRow} from './pos-types';
 import type {ChannelFacts} from './health-types';
-import type {BundleSalesSummary, DailySales, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
+import type {BundleSalesSummary, DailySales, DayMethodRevenue, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
 // server/client concerns so they're unit-testable and shared across pages.
@@ -16,13 +16,31 @@ export function isSalesRange(v: string | undefined): v is SalesRange {
   return v === 'today' || v === '7d' || v === '30d' || v === 'all';
 }
 
-/** Inclusive lower bound (ISO) for a range, or null for 'all'. */
+// Asia/Manila is UTC+8 year-round (no DST). Sales are reported on the Manila
+// calendar day so "Today" and the daily chart match how an owner thinks about a
+// bazaar day (and match the Daily target bar). A Manila day begins at 16:00 UTC
+// the previous day.
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** The UTC instant at which the current Asia/Manila calendar day began. */
+export function manilaDayStart(now: Date = new Date()): Date {
+  const shifted = new Date(now.getTime() + MANILA_OFFSET_MS);
+  shifted.setUTCHours(0, 0, 0, 0);
+  return new Date(shifted.getTime() - MANILA_OFFSET_MS);
+}
+
+/** The Manila calendar day (YYYY-MM-DD) an instant falls on. */
+export function manilaDayKey(iso: string): string {
+  return new Date(new Date(iso).getTime() + MANILA_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Inclusive lower bound (ISO) for a range, or null for 'all'. 'today' is the
+ *  Manila calendar day; 7d/30d are rolling 7x/30x-24h windows. */
 export function rangeStart(range: SalesRange, now: Date = new Date()): string | null {
   if (range === 'all') return null;
+  if (range === 'today') return manilaDayStart(now).toISOString();
   const d = new Date(now);
-  if (range === 'today') {
-    d.setUTCHours(0, 0, 0, 0);
-  } else if (range === '7d') {
+  if (range === '7d') {
     d.setUTCDate(d.getUTCDate() - 7);
   } else if (range === '30d') {
     d.setUTCDate(d.getUTCDate() - 30);
@@ -57,12 +75,12 @@ export function computeKpis(orders: PosOrder[]): SalesKpis {
   return {revenue, orders: count, units, oversells};
 }
 
-/** Group orders by UTC calendar day, ascending. Days with no sales are omitted. */
+/** Group orders by Manila calendar day, ascending. Days with no sales omitted. */
 export function salesByDay(orders: PosOrder[]): DailySales[] {
   const byDay = new Map<string, {revenue: number; orders: number}>();
   for (const o of orders) {
     if (isVoided(o)) continue;
-    const day = o.created_at.slice(0, 10); // YYYY-MM-DD (UTC)
+    const day = manilaDayKey(o.created_at); // YYYY-MM-DD (Asia/Manila)
     const cur = byDay.get(day) ?? {revenue: 0, orders: 0};
     cur.revenue += o.total;
     cur.orders += 1;
@@ -70,6 +88,45 @@ export function salesByDay(orders: PosOrder[]): DailySales[] {
   }
   return Array.from(byDay.entries())
     .map(([day, v]) => ({day, revenue: v.revenue, orders: v.orders}))
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+// ── Payment-method breakdown ──────────────────────────────────────────────
+// Canonical display order for methods (matches the POS pay control + badges).
+// A null/legacy payment_method reads as cash, consistent with the label helper.
+const PAYMENT_METHOD_ORDER = ['cash', 'qrph', 'gcash', 'maya', 'card', 'bpi', 'bank_transfer'];
+
+/** An order's payment method, with null/legacy normalized to 'cash'. */
+export function orderMethod(o: PosOrder): string {
+  return o.payment_method ?? 'cash';
+}
+
+/** Distinct payment methods present in these orders (voided excluded), in
+ *  canonical order, with any unknown method appended alphabetically. */
+export function presentMethods(orders: PosOrder[]): string[] {
+  const set = new Set<string>();
+  for (const o of orders) if (!isVoided(o)) set.add(orderMethod(o));
+  return Array.from(set).sort((a, b) => {
+    const ia = PAYMENT_METHOD_ORDER.indexOf(a);
+    const ib = PAYMENT_METHOD_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+}
+
+/** Revenue per Manila day split by payment method, ascending by day. Days with
+ *  no (non-voided) sales are omitted. Feeds the stacked sales-over-time chart. */
+export function salesByDayAndMethod(orders: PosOrder[]): DayMethodRevenue[] {
+  const byDay = new Map<string, Record<string, number>>();
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    const day = manilaDayKey(o.created_at);
+    const method = orderMethod(o);
+    const rec = byDay.get(day) ?? {};
+    rec[method] = (rec[method] ?? 0) + o.total;
+    byDay.set(day, rec);
+  }
+  return Array.from(byDay.entries())
+    .map(([day, byMethod]) => ({day, byMethod}))
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 

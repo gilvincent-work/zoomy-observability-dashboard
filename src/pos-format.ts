@@ -146,6 +146,31 @@ export function paymentMethodBadgeClass(method: string | null | undefined): stri
   }
 }
 
+/** Solid color (hex) per payment method, matching paymentMethodBadgeClass's
+ *  hues (emerald / violet / sky / teal / amber / rose / slate). Used for the
+ *  stacked chart fills and the payment dropdown's color dots so both read the
+ *  same. Unknown methods get a neutral slate. */
+export function paymentMethodColor(method: string | null | undefined): string {
+  switch (method) {
+    case 'cash':
+      return '#10b981'; // emerald-500
+    case 'qrph':
+      return '#8b5cf6'; // violet-500
+    case 'gcash':
+      return '#0ea5e9'; // sky-500
+    case 'maya':
+      return '#14b8a6'; // teal-500
+    case 'card':
+      return '#f59e0b'; // amber-500
+    case 'bpi':
+      return '#f43f5e'; // rose-500
+    case 'bank_transfer':
+      return '#64748b'; // slate-500
+    default:
+      return '#94a3b8'; // slate-400 (unknown / other)
+  }
+}
+
 /** Human label for a product-line code. */
 export function lineLabel(line: ProductLine): string {
   switch (line) {

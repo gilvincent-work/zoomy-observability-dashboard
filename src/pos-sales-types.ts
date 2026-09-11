@@ -68,6 +68,12 @@ export interface DailySales {
   orders: number;
 }
 
+/** Revenue for one Manila day split by payment method, for the stacked chart. */
+export interface DayMethodRevenue {
+  day: string; // YYYY-MM-DD (Asia/Manila)
+  byMethod: Record<string, number>; // method key -> revenue that day
+}
+
 export interface TopProduct {
   product_id: string;
   name: string;

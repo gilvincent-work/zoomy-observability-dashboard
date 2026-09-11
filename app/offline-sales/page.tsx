@@ -9,7 +9,6 @@ import {
   computeKpis,
   filterOrdersByRange,
   isSalesRange,
-  salesByDay,
   stockAlerts,
   topBundles,
   topProducts,
@@ -41,7 +40,6 @@ export default async function Page({searchParams}: {searchParams: {range?: strin
       range={range}
       progress={progress}
       kpis={computeKpis(orders)}
-      daily={salesByDay(orders)}
       top={topProducts(orders)}
       topByUnits={topProducts(orders, 5, 'units')}
       topBundles={topBundles(orders)}

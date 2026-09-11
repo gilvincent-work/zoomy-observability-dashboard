@@ -12,6 +12,29 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-12 — Offline Sales: Manila "Today" fix + payment-method breakdown — `feat(offline-sales)`
+
+- **Fix: "Today" (and the sales chart's day buckets) now use Asia/Manila (UTC+8)**
+  instead of UTC. Previously, after Manila midnight the "Today" KPI kept showing
+  the previous day's sales until 8 AM (e.g. ₱51,482 while the Daily target, which
+  was already Manila-based, showed ₱0). `rangeStart('today')` and `salesByDay` now
+  bucket by the Manila calendar day, so the KPIs match the Daily target and how an
+  owner thinks of a bazaar day. (`manilaDayStart` moved into `pos-sales-compute`
+  and is shared; 7d/30d are rolling windows, effectively unchanged.)
+- **New color-coded payment-method dropdown** (top-left of the header, default
+  "All payment options"). Picking a method makes the four KPI cards (Revenue /
+  Orders / Units / Oversells) show **that method's** numbers. Only methods present
+  in the current range are listed. Colors match the transaction badges (Cash green,
+  QRPH violet, GCash blue, Maya teal, Card amber, BPI rose, Bank slate).
+- **"Sales over time" is now a stacked bar chart by payment method.** Default shows
+  every method in full color; selecting one **highlights its segments and greys the
+  rest** (still visible). Hovering a day shows a **mini tooltip** with each payment
+  option's amount, plus a color legend under the chart. New `orderMethod`,
+  `presentMethods`, `salesByDayAndMethod` in `pos-sales-compute`; the breakdown is
+  computed client-side from the range's orders so switching is instant.
+- Verified: typecheck clean, 118 tests pass (+4), production build green;
+  Manila-vs-UTC "today" gap confirmed against Staging (₱51,482 UTC vs ₱0 Manila).
+
 ## 2026-09-12 — Top products: sort by revenue or units (pill toggle) — `feat(offline-sales)`
 
 - **Top products can now be ranked by units sold**, not just revenue. A small

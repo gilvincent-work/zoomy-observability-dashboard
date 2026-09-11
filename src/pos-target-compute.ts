@@ -1,24 +1,13 @@
 import type {PosOrder} from './pos-sales-types';
 import type {DailyProgress, TargetTier} from './pos-target-types';
-import {computeKpis} from './pos-sales-compute';
+import {computeKpis, manilaDayStart} from './pos-sales-compute';
 
 // Pure helpers for the daily-target health bar. No server/client concerns so
 // they're unit-testable and shared. "Today" is the Asia/Manila calendar day
-// (UTC+8, no DST) so the goal resets at local midnight, matching how an owner
-// thinks about a bazaar day. This is deliberately independent of the Offline
-// Sales range tabs, which still use UTC (see COOP_INTEGRATION_PLAN.md Surface E).
+// (manilaDayStart lives in pos-sales-compute, now shared with the range tabs).
 
-const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8, fixed year-round
-
-/**
- * The UTC instant at which the current Asia/Manila calendar day began. Shift
- * `now` into Manila wall-clock, truncate to midnight, then shift back to UTC.
- */
-export function manilaDayStart(now: Date = new Date()): Date {
-  const shifted = new Date(now.getTime() + MANILA_OFFSET_MS);
-  shifted.setUTCHours(0, 0, 0, 0);
-  return new Date(shifted.getTime() - MANILA_OFFSET_MS);
-}
+// Re-exported for existing importers of this module.
+export {manilaDayStart};
 
 /** Sum of today's (Manila-day) revenue; voided sales excluded via computeKpis. */
 export function todaysRevenue(orders: PosOrder[], now: Date = new Date()): number {
