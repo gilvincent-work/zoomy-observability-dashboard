@@ -12,6 +12,36 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-11 — Gamified daily-target health bar (Phase 5 Surface E, Staging only) — `feat(offline-sales)`
+
+- **New "Daily target" health bar** showing **today's POS revenue vs an owner-set
+  peso goal**, with a fill that escalates red → amber → lime → emerald as the day
+  closes on the target, a `%`, and a `₱X of ₱Y · ₱Z to go` readout. **Full bar
+  (with an inline goal editor)** sits atop `/offline-sales`; a **compact,
+  read-only strip** leads the home landing. v1 is progress + color tiers only
+  (no milestones, streaks, or levels).
+- **"Today" is the Asia/Manila calendar day** (resets at local midnight), computed
+  in a new `src/pos-target-compute.ts` module. This is deliberately independent of
+  the Offline Sales range tabs, which still use UTC, so the bar and the "Today"
+  tab can differ for sales between 00:00 and 08:00 Manila (accepted for v1).
+- **Editable target, DB-backed.** New additive `pos_settings` table (key/value) +
+  `set_pos_daily_target` RPC on Staging (RLS on, anon-read policy; writes flow
+  through the SECURITY DEFINER RPC like every other `pos_*` write). Seeded at
+  ₱5,000. `set_pos_daily_target` is the only new schema; the four Coop tables and
+  the ten existing `pos_*` tables are untouched. `zoomy-pos/supabase/pos_schema.sql`
+  mirrors it. **Not applied to prod.**
+- **Fail-soft by construction.** Both page reads wrap the target/progress fetch in
+  try/catch → `null` → the bar is simply omitted, so a missing or failing
+  `pos_settings` can never 500 a page that otherwise renders (matches the offline
+  isolation already used on the home Overview). `pos-sales-compute.ts` and
+  `getPosOrders` are reused (not modified); the landing shares the React-cached
+  orders fetch, adding no extra query.
+- New files: `src/pos-target-types.ts`, `src/pos-target-compute.ts`,
+  `src/pos-target.ts`, `src/pos-target-actions.ts`,
+  `components/analyst/daily-target-bar.tsx`. Verified: typecheck clean, 107 tests
+  pass (+11 for the Manila-day boundary, tiers, and overflow math), production
+  build green, and the target read/write round-tripped live against Staging.
+
 ## 2026-09-11 — Offline Sales: IG handle, color-coded methods, void + restock — `feat(offline-sales)`
 
 - **IG / furbaby handle** now shows on each transaction (a 🐾 chip) when set.
