@@ -5,7 +5,8 @@ export type SalesRange = 'today' | '7d' | '30d' | 'all';
 
 export interface PosOrderLine {
   product_id: string | null; // SKU; null for a bundle line
-  name: string; // resolved product name, or the raw id if unknown
+  bundle_id?: string | null; // set on a bundle line (product_id is then null)
+  name: string; // resolved product or bundle name, or the raw id if unknown
   qty: number;
   unit_price: number;
   line_total: number;
@@ -73,6 +74,14 @@ export interface TopProduct {
   revenue: number; // itemized only: Σ line_total (bundle picks are ₱0, so excluded)
   units: number; // Σ qty, INCLUDING bundle-picked units
   bundledUnits: number; // of `units`, how many came from ₱0 (bundle-pick) lines
+}
+
+/** A bundle ranked by revenue, from bundle_id order lines (post write-path fix). */
+export interface TopBundle {
+  bundle_id: string;
+  name: string;
+  revenue: number; // Σ line_total on this bundle's lines
+  orders: number; // number of bundle lines (one per bundle sold)
 }
 
 /**

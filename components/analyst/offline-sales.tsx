@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import {ArrowLeftRight, CalendarClock, PackageX, Receipt, TriangleAlert} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
-import type {BundleSalesSummary, DailySales, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopProduct} from '@/src/pos-sales-types';
+import type {BundleSalesSummary, DailySales, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
 import type {StockAlerts} from '@/src/pos-sales-compute';
 import {SALES_RANGES} from '@/src/pos-sales-compute';
@@ -25,6 +25,7 @@ type Props = {
   kpis: SalesKpis;
   daily: DailySales[];
   top: TopProduct[];
+  topBundles: TopBundle[]; // bundles sold by name (from bundle_id lines)
   bundles: BundleSalesSummary; // reconciles itemized product revenue with the KPI
   orders: PosOrder[]; // filtered, newest first
   sync: PosSyncEntry[];
@@ -39,7 +40,7 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, progress, kpis, daily, top, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
+export function OfflineSalesView({range, progress, kpis, daily, top, topBundles, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -130,6 +131,26 @@ export function OfflineSalesView({range, progress, kpis, daily, top, bundles, or
           )}
         </Panel>
       </div>
+
+      {topBundles.length > 0 && (
+        <div className="mt-4">
+          <Panel
+            title="Top bundles"
+            info="Bundles sold as a set. Sales made offline, or before bundle tracking landed, are counted in the Bundle deals total on Top products but are not listed by name here."
+          >
+            <ul className="flex flex-col gap-2.5">
+              {topBundles.map((b, i) => (
+                <li key={b.bundle_id} className="flex items-center gap-3">
+                  <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm">{b.name}</span>
+                  <span className="text-xs text-muted-foreground">{b.orders} {b.orders === 1 ? 'order' : 'orders'}</span>
+                  <span className="w-20 text-right text-sm font-medium tabular-nums">{formatPeso(b.revenue)}</span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        </div>
+      )}
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <Panel title="Recent orders" action={{label: 'View all', href: '/offline-sales/orders'}}>

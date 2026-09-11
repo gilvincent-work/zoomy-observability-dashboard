@@ -1,6 +1,6 @@
 import type {PosProductRow} from './pos-types';
 import type {ChannelFacts} from './health-types';
-import type {BundleSalesSummary, DailySales, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopProduct} from './pos-sales-types';
+import type {BundleSalesSummary, DailySales, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
 // server/client concerns so they're unit-testable and shared across pages.
@@ -96,10 +96,11 @@ export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
 }
 
 /**
- * Reconcile itemized (per-product) revenue with the Revenue KPI. Bundle deals
- * live only on the order header, so the difference between an order's total and
- * the sum of its line_totals is bundle revenue not attributed to any product.
- * itemizedRevenue + bundleRevenue == totalRevenue by construction.
+ * Reconcile itemized (per-product) revenue with the Revenue KPI. Bundle revenue
+ * is everything NOT attributed to a product line, whether it sits on a bundle_id
+ * line (post write-path fix) or only on the order header (pre-fix / offline
+ * retries). So itemizedRevenue sums product lines only, and bundleRevenue is the
+ * remainder; itemizedRevenue + bundleRevenue == totalRevenue by construction.
  */
 export function bundleSalesSummary(orders: PosOrder[]): BundleSalesSummary {
   let itemizedRevenue = 0;
@@ -108,12 +109,35 @@ export function bundleSalesSummary(orders: PosOrder[]): BundleSalesSummary {
   for (const o of orders) {
     if (isVoided(o)) continue;
     totalRevenue += o.total;
-    let lineSum = 0;
-    for (const it of o.items) lineSum += it.line_total;
-    itemizedRevenue += lineSum;
-    if (o.total - lineSum > 0) bundleOrders += 1;
+    let productLineSum = 0;
+    for (const it of o.items) if (it.product_id) productLineSum += it.line_total;
+    itemizedRevenue += productLineSum;
+    if (o.total - productLineSum > 0) bundleOrders += 1;
   }
   return {itemizedRevenue, bundleRevenue: totalRevenue - itemizedRevenue, bundleOrders, totalRevenue};
+}
+
+/**
+ * Top bundles by revenue, from bundle_id lines. Only sales recorded with a real
+ * bundle line appear here (online sales after the write-path fix); pre-fix and
+ * offline-retried bundle sales carry no bundle_id, so they don't show by name
+ * but are still counted in bundleSalesSummary's bundleRevenue. Voided excluded.
+ */
+export function topBundles(orders: PosOrder[], limit = 5): TopBundle[] {
+  const byBundle = new Map<string, TopBundle>();
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    for (const it of o.items) {
+      if (!it.bundle_id) continue;
+      const cur = byBundle.get(it.bundle_id) ?? {bundle_id: it.bundle_id, name: it.name, revenue: 0, orders: 0};
+      cur.revenue += it.line_total;
+      cur.orders += 1;
+      byBundle.set(it.bundle_id, cur);
+    }
+  }
+  return Array.from(byBundle.values())
+    .sort((a, b) => b.revenue - a.revenue || b.orders - a.orders)
+    .slice(0, limit);
 }
 
 // ── Transactions filters ──────────────────────────────────────────────────

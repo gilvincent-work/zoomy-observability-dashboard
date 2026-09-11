@@ -11,6 +11,7 @@ import {
   isSalesRange,
   salesByDay,
   stockAlerts,
+  topBundles,
   topProducts,
 } from '@/src/pos-sales-compute';
 import {OfflineSalesView} from '@/components/analyst/offline-sales';
@@ -42,6 +43,7 @@ export default async function Page({searchParams}: {searchParams: {range?: strin
       kpis={computeKpis(orders)}
       daily={salesByDay(orders)}
       top={topProducts(orders)}
+      topBundles={topBundles(orders)}
       bundles={bundleSalesSummary(orders)}
       orders={orders}
       sync={sync}

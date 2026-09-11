@@ -3,6 +3,7 @@ import {
   boundsFromMax,
   bundleSalesSummary,
   computeKpis,
+  topBundles,
   filterOrders,
   filterOrdersByRange,
   isFilterActive,
@@ -187,6 +188,52 @@ describe('bundleSalesSummary', () => {
       ]}),
     ];
     expect(bundleSalesSummary(orders)).toEqual({itemizedRevenue: 200, bundleRevenue: 0, bundleOrders: 0, totalRevenue: 200});
+  });
+
+  it('keeps bundle-line revenue out of itemized (post write-path fix)', () => {
+    // A bundle recorded the new way: a bundle_id line carries the price, picks ride at ₱0.
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: null, bundle_id: 'buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+        {product_id: 'A', name: 'A', qty: 1, unit_price: 0, line_total: 0},
+        {product_id: 'B', name: 'B', qty: 1, unit_price: 0, line_total: 0},
+      ]}),
+    ];
+    // itemized excludes the bundle line, so bundleRevenue lands on the bundle, not products.
+    expect(bundleSalesSummary(orders)).toEqual({itemizedRevenue: 0, bundleRevenue: 570, bundleOrders: 1, totalRevenue: 570});
+  });
+});
+
+describe('topBundles', () => {
+  it('ranks bundles by revenue from bundle_id lines, ignoring product and voided lines', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: null, bundle_id: 'buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+        {product_id: 'A', name: 'A', qty: 1, unit_price: 0, line_total: 0},
+      ]}),
+      order({id: '2', created_at: NOW.toISOString(), total: 550, items: [
+        {product_id: null, bundle_id: 'buy-any-2', name: 'Buy Any 2', qty: 1, unit_price: 550, line_total: 550},
+      ]}),
+      order({id: '3', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: null, bundle_id: 'buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+      ]}),
+      order({id: '4', created_at: NOW.toISOString(), total: 570, status: 'voided', items: [
+        {product_id: null, bundle_id: 'buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+      ]}),
+    ];
+    expect(topBundles(orders)).toEqual([
+      {bundle_id: 'buy-any-4', name: 'Buy Any 4', revenue: 1140, orders: 2},
+      {bundle_id: 'buy-any-2', name: 'Buy Any 2', revenue: 550, orders: 1},
+    ]);
+  });
+
+  it('is empty when no order has a bundle line (pre-fix / offline data)', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 850, items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 5, unit_price: 170, line_total: 850},
+      ]}),
+    ];
+    expect(topBundles(orders)).toEqual([]);
   });
 });
 

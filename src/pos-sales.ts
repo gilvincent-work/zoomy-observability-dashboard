@@ -55,29 +55,35 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
   if (usingPosMock()) return MOCK_POS_ORDERS;
 
   const supabase = posClient();
-  const [ordersRes, itemsRes, productsRes] = await Promise.all([
+  const [ordersRes, itemsRes, productsRes, bundlesRes] = await Promise.all([
     supabase
       .from('pos_orders')
       .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at')
       .order('created_at', {ascending: false}),
-    supabase.from('pos_order_items').select('order_id,product_id,qty,unit_price,line_total'),
+    supabase.from('pos_order_items').select('order_id,product_id,bundle_id,qty,unit_price,line_total'),
     supabase.from('pos_products').select('product_id,name'),
+    supabase.from('pos_bundles').select('bundle_id,name'),
   ]);
 
   if (ordersRes.error) throw new Error(`pos_orders read failed: ${ordersRes.error.message}`);
   if (itemsRes.error) throw new Error(`pos_order_items read failed: ${itemsRes.error.message}`);
   if (productsRes.error) throw new Error(`pos_products read failed: ${productsRes.error.message}`);
+  if (bundlesRes.error) throw new Error(`pos_bundles read failed: ${bundlesRes.error.message}`);
 
   const nameBySku = new Map<string, string>();
   for (const p of productsRes.data ?? []) nameBySku.set(p.product_id as string, p.name as string);
+  const nameByBundle = new Map<string, string>();
+  for (const b of bundlesRes.data ?? []) nameByBundle.set(b.bundle_id as string, b.name as string);
 
   const itemsByOrder = new Map<string, PosOrderLine[]>();
   for (const it of itemsRes.data ?? []) {
     const orderId = it.order_id as string;
     const productId = (it.product_id as string | null) ?? null;
+    const bundleId = (it.bundle_id as string | null) ?? null;
     const line: PosOrderLine = {
       product_id: productId,
-      name: (productId && nameBySku.get(productId)) || productId || 'Unknown',
+      bundle_id: bundleId,
+      name: (productId && nameBySku.get(productId)) || (bundleId && nameByBundle.get(bundleId)) || productId || bundleId || 'Unknown',
       qty: (it.qty as number) ?? 0,
       unit_price: Number(it.unit_price ?? 0),
       line_total: Number(it.line_total ?? 0),
@@ -154,24 +160,30 @@ export const getPosOrdersPage = cache(async (
   if (ordersErr) throw new Error(`pos_orders read failed: ${ordersErr.message}`);
 
   const ids = (orderRows ?? []).map((o) => o.id as string);
-  const [itemsRes, productsRes] = await Promise.all([
-    supabase.from('pos_order_items').select('order_id,product_id,qty,unit_price,line_total').in('order_id', ids),
+  const [itemsRes, productsRes, bundlesRes] = await Promise.all([
+    supabase.from('pos_order_items').select('order_id,product_id,bundle_id,qty,unit_price,line_total').in('order_id', ids),
     supabase.from('pos_products').select('product_id,name'),
+    supabase.from('pos_bundles').select('bundle_id,name'),
   ]);
   if (itemsRes.error) throw new Error(`pos_order_items read failed: ${itemsRes.error.message}`);
   if (productsRes.error) throw new Error(`pos_products read failed: ${productsRes.error.message}`);
+  if (bundlesRes.error) throw new Error(`pos_bundles read failed: ${bundlesRes.error.message}`);
 
   const nameBySku = new Map<string, string>();
   for (const p of productsRes.data ?? []) nameBySku.set(p.product_id as string, p.name as string);
+  const nameByBundle = new Map<string, string>();
+  for (const b of bundlesRes.data ?? []) nameByBundle.set(b.bundle_id as string, b.name as string);
 
   const itemsByOrder = new Map<string, PosOrderLine[]>();
   for (const it of itemsRes.data ?? []) {
     const orderId = it.order_id as string;
     const productId = (it.product_id as string | null) ?? null;
+    const bundleId = (it.bundle_id as string | null) ?? null;
     const arr = itemsByOrder.get(orderId) ?? [];
     arr.push({
       product_id: productId,
-      name: (productId && nameBySku.get(productId)) || productId || 'Unknown',
+      bundle_id: bundleId,
+      name: (productId && nameBySku.get(productId)) || (bundleId && nameByBundle.get(bundleId)) || productId || bundleId || 'Unknown',
       qty: (it.qty as number) ?? 0,
       unit_price: Number(it.unit_price ?? 0),
       line_total: Number(it.line_total ?? 0),

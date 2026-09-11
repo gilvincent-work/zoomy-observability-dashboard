@@ -12,6 +12,25 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-11 — Top bundles panel + reads real bundle lines (Phase 5 Surface F, step 3, Staging only) — `feat(offline-sales)`
+
+- **New "Top bundles" panel** on `/offline-sales` — bundles ranked by revenue
+  (name, orders, revenue), fed by real `bundle_id` order lines now that the POS
+  records them (see the POS changelog, step 2). Appears once bundle sales flow
+  through the updated POS; hidden when there are none.
+- **Order reads now resolve bundles.** `getPosOrders` / `getPosOrdersPage` select
+  `bundle_id` and join `pos_bundles` for the name, so bundle lines show the bundle
+  name instead of "Unknown" in the orders list; `PosOrderLine` gained `bundle_id`.
+- **Reconciliation is now era-proof.** `bundleSalesSummary` sums itemized revenue
+  from **product lines only**, so `bundleRevenue = total − product-line revenue`
+  is correct whether bundle money sits on a real bundle line (new sales) or only
+  on the order header (pre-fix / offline-retried sales). New `topBundles` compute.
+- Pre-fix and offline-retried bundle sales carry no `bundle_id`, so they stay in
+  the "Bundle deals" reconciling total but are not listed by name in "Top bundles"
+  (documented in the panel's info tip). No backfill.
+- Verified: typecheck clean, 113 tests pass (+3), production build green. A mock
+  "Buy Any 4" sale was added so the panel renders in mock mode.
+
 ## 2026-09-11 — Honest bundle reporting in Top products (Phase 5 Surface F, Staging only) — `feat(offline-sales)`
 
 - **Fixes a misleading "Top products" panel.** A row like "Cat Grass Cubes,
