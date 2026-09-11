@@ -70,6 +70,20 @@ export interface DailySales {
 export interface TopProduct {
   product_id: string;
   name: string;
-  revenue: number;
-  units: number;
+  revenue: number; // itemized only: Σ line_total (bundle picks are ₱0, so excluded)
+  units: number; // Σ qty, INCLUDING bundle-picked units
+  bundledUnits: number; // of `units`, how many came from ₱0 (bundle-pick) lines
+}
+
+/**
+ * Reconciles per-product (itemized) revenue with the Revenue KPI. Bundle deals
+ * are recorded as ₱0 component lines with the bundle price only on the order
+ * header, so `itemizedRevenue` (what Top products sums) is short of the KPI by
+ * `bundleRevenue`. By construction: itemizedRevenue + bundleRevenue = totalRevenue.
+ */
+export interface BundleSalesSummary {
+  itemizedRevenue: number; // Σ line_total across product lines
+  bundleRevenue: number; // total - itemized: bundle money not attributed to any product
+  bundleOrders: number; // orders carrying a bundle deal (order.total exceeds its line sum)
+  totalRevenue: number; // = itemizedRevenue + bundleRevenue = Revenue KPI
 }

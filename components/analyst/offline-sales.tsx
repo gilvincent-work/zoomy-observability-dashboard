@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import {ArrowLeftRight, CalendarClock, PackageX, Receipt, TriangleAlert} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
-import type {DailySales, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopProduct} from '@/src/pos-sales-types';
+import type {BundleSalesSummary, DailySales, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopProduct} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
 import type {StockAlerts} from '@/src/pos-sales-compute';
 import {SALES_RANGES} from '@/src/pos-sales-compute';
@@ -17,6 +17,7 @@ import {Eyebrow, MockNote} from './sections';
 import {Metric} from './metric';
 import {RefreshControl} from './refresh-control';
 import {DailyTargetBar} from './daily-target-bar';
+import {InfoTip} from './info-tip';
 
 type Props = {
   range: SalesRange;
@@ -24,6 +25,7 @@ type Props = {
   kpis: SalesKpis;
   daily: DailySales[];
   top: TopProduct[];
+  bundles: BundleSalesSummary; // reconciles itemized product revenue with the KPI
   orders: PosOrder[]; // filtered, newest first
   sync: PosSyncEntry[];
   alerts: StockAlerts;
@@ -37,7 +39,7 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, progress, kpis, daily, top, orders, sync, alerts, usingMock, fetchedAt}: Props) {
+export function OfflineSalesView({range, progress, kpis, daily, top, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -80,20 +82,51 @@ export function OfflineSalesView({range, progress, kpis, daily, top, orders, syn
           )}
         </Panel>
 
-        <Panel title="Top products">
-          {top.length === 0 ? (
+        <Panel
+          title="Top products"
+          info="Money shown is itemized sales only. Bundle deals are priced as a set, so their value is listed once under Bundle deals, not split per item."
+        >
+          {top.length === 0 && bundles.bundleRevenue <= 0 ? (
             <Empty>No sales in this range.</Empty>
           ) : (
-            <ul className="flex flex-col gap-2.5">
-              {top.map((t, i) => (
-                <li key={t.product_id} className="flex items-center gap-3">
-                  <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{t.name}</span>
-                  <span className="text-xs text-muted-foreground">{t.units} units</span>
-                  <span className="w-20 text-right text-sm font-medium tabular-nums">{formatPeso(t.revenue)}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="flex flex-col gap-2.5">
+              <ul className="flex flex-col gap-2.5">
+                {top.map((t, i) => (
+                  <li key={t.product_id} className="flex items-start gap-3">
+                    <span className="w-4 pt-0.5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">{t.name}</span>
+                      {t.bundledUnits > 0 && (
+                        <span className="text-[11px] text-muted-foreground">
+                          {t.bundledUnits} of these units were bundled
+                        </span>
+                      )}
+                    </span>
+                    <span className="pt-0.5 text-xs text-muted-foreground">{t.units} units</span>
+                    <span className="w-20 pt-0.5 text-right text-sm font-medium tabular-nums">{formatPeso(t.revenue)}</span>
+                  </li>
+                ))}
+              </ul>
+
+              {bundles.bundleRevenue > 0 && (
+                <>
+                  <div className="h-px w-full bg-border" />
+                  <div className="flex items-center gap-3">
+                    <span className="w-4" />
+                    <span className="min-w-0 flex-1 text-sm">
+                      Bundle deals
+                      <span className="ml-1.5 text-[11px] text-muted-foreground">priced as a set</span>
+                    </span>
+                    <span className="text-xs text-muted-foreground">{bundles.bundleOrders} orders</span>
+                    <span className="w-20 text-right text-sm font-medium tabular-nums">{formatPeso(bundles.bundleRevenue)}</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Itemized {formatPeso(bundles.itemizedRevenue)} plus bundles {formatPeso(bundles.bundleRevenue)} is{' '}
+                    {formatPeso(bundles.totalRevenue)}, matching Revenue above.
+                  </p>
+                </>
+              )}
+            </div>
           )}
         </Panel>
       </div>
@@ -250,12 +283,15 @@ function Kpi({label, value, warn}: {label: string; value: string; warn?: boolean
   return <Metric label={label} value={value} valueClassName={warn ? 'text-destructive' : undefined} />;
 }
 
-function Panel({title, action, children}: {title: string; action?: {label: string; href: string}; children: React.ReactNode}) {
+function Panel({title, info, action, children}: {title: string; info?: string; action?: {label: string; href: string}; children: React.ReactNode}) {
   return (
     <Card>
       <CardContent className="py-4">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">{title}</h3>
+          <h3 className="flex items-center gap-1 text-sm font-semibold">
+            {title}
+            {info && <InfoTip text={info} />}
+          </h3>
           {action && (
             <Link href={action.href} className="text-xs font-medium text-primary hover:underline">
               {action.label}

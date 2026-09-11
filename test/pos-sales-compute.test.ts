@@ -1,6 +1,7 @@
 import {describe, it, expect} from 'vitest';
 import {
   boundsFromMax,
+  bundleSalesSummary,
   computeKpis,
   filterOrders,
   filterOrdersByRange,
@@ -102,7 +103,7 @@ describe('void exclusion in aggregations', () => {
       order({id: '2', created_at: '2026-09-07T10:00:00.000Z', total: 900, status: 'voided', items: [{product_id: 'A', name: 'A', qty: 9, unit_price: 100, line_total: 900}]}),
     ];
     expect(salesByDay(orders)).toEqual([{day: '2026-09-07', revenue: 100, orders: 1}]);
-    expect(topProducts(orders)).toEqual([{product_id: 'A', name: 'A', revenue: 100, units: 1}]);
+    expect(topProducts(orders)).toEqual([{product_id: 'A', name: 'A', revenue: 100, units: 1, bundledUnits: 0}]);
   });
 });
 
@@ -134,10 +135,58 @@ describe('topProducts', () => {
     ];
     const top = topProducts(orders, 5);
     expect(top).toEqual([
-      {product_id: 'B', name: 'Beta', revenue: 250, units: 5},
-      {product_id: 'A', name: 'Alpha', revenue: 300, units: 3},
+      {product_id: 'B', name: 'Beta', revenue: 250, units: 5, bundledUnits: 0},
+      {product_id: 'A', name: 'Alpha', revenue: 300, units: 3, bundledUnits: 0},
     ].sort((a, b) => b.revenue - a.revenue));
     expect(topProducts(orders, 1)).toHaveLength(1);
+  });
+
+  it('counts ₱0 (bundle-pick) lines as units but not revenue', () => {
+    // The Cat Grass case from prod: 5 sold at 170 (real revenue) + 4 given as
+    // bundle picks at 0 -> 9 units, 850 revenue, 4 of them bundled.
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 5, unit_price: 170, line_total: 850},
+      ]}),
+      order({id: '2', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 4, unit_price: 0, line_total: 0},
+      ]}),
+    ];
+    expect(topProducts(orders)).toEqual([{product_id: 'CG', name: 'Cat Grass', revenue: 850, units: 9, bundledUnits: 4}]);
+  });
+});
+
+describe('bundleSalesSummary', () => {
+  it('reconciles itemized product revenue with the Revenue KPI', () => {
+    const orders = [
+      // à la carte: order total equals its line sum -> no bundle revenue
+      order({id: '1', created_at: NOW.toISOString(), total: 850, items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 5, unit_price: 170, line_total: 850},
+      ]}),
+      // a "Buy Any 4" bundle: 570 on the header, all component lines ₱0
+      order({id: '2', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 1, unit_price: 0, line_total: 0},
+        {product_id: 'BL', name: 'Beef Liver', qty: 1, unit_price: 0, line_total: 0},
+        {product_id: 'DB', name: 'Duck Breast', qty: 1, unit_price: 0, line_total: 0},
+        {product_id: 'CH', name: 'Chicken', qty: 1, unit_price: 0, line_total: 0},
+      ]}),
+    ];
+    const s = bundleSalesSummary(orders);
+    expect(s).toEqual({itemizedRevenue: 850, bundleRevenue: 570, bundleOrders: 1, totalRevenue: 1420});
+    // The invariant the reconciliation line relies on:
+    expect(s.itemizedRevenue + s.bundleRevenue).toBe(s.totalRevenue);
+  });
+
+  it('excludes voided orders and reports no bundle revenue for pure à-la-carte data', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 200, items: [
+        {product_id: 'A', name: 'A', qty: 1, unit_price: 200, line_total: 200},
+      ]}),
+      order({id: '2', created_at: NOW.toISOString(), total: 570, status: 'voided', items: [
+        {product_id: 'A', name: 'A', qty: 1, unit_price: 0, line_total: 0},
+      ]}),
+    ];
+    expect(bundleSalesSummary(orders)).toEqual({itemizedRevenue: 200, bundleRevenue: 0, bundleOrders: 0, totalRevenue: 200});
   });
 });
 
