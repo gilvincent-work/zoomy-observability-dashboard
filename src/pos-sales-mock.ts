@@ -37,6 +37,18 @@ export const MOCK_POS_ORDERS: PosOrder[] = [
       {product_id: 'ZMYFDJRKDCKWHL01', name: 'Tasty Treats Duck Jerky', qty: 1, unit_price: 310, line_total: 310},
     ],
   },
+  {
+    // A "Buy Any 4" bundle sale recorded the new way: one bundle line carries the
+    // ₱570 (revenue -> Top bundles), the 4 picks ride along at ₱0 (for inventory).
+    id: 'mock-6', client_uuid: 'mock-6-uuid', subtotal: 570, discount: null, total: 570, oversold: false, device_id: 'pos', payment_method: 'qrph', customer_handle: 'Nala', created_at: iso(1, 11), status: 'completed', remarks: null,
+    items: [
+      {product_id: null, bundle_id: 'offline-event-buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+      {product_id: 'ZMYFDFDRBEFLVR01', name: 'Freeze-Dried Beef Liver Cubes', qty: 1, unit_price: 0, line_total: 0},
+      {product_id: 'ZMYFDFDRCGRCUB01', name: 'Freeze-Dried Cat Grass Cubes', qty: 1, unit_price: 0, line_total: 0},
+      {product_id: 'ZMYFDFDRDCKBRT01', name: 'Freeze-Dried Duck Breast Cubes', qty: 1, unit_price: 0, line_total: 0},
+      {product_id: 'ZMYFDFDRCHKBRT01', name: 'Freeze-Dried Chicken Breast Cubes', qty: 1, unit_price: 0, line_total: 0},
+    ],
+  },
 ];
 
 export const MOCK_POS_SYNC_LOG: PosSyncEntry[] = [
