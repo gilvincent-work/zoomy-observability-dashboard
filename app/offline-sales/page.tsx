@@ -43,6 +43,7 @@ export default async function Page({searchParams}: {searchParams: {range?: strin
       kpis={computeKpis(orders)}
       daily={salesByDay(orders)}
       top={topProducts(orders)}
+      topByUnits={topProducts(orders, 5, 'units')}
       topBundles={topBundles(orders)}
       bundles={bundleSalesSummary(orders)}
       orders={orders}

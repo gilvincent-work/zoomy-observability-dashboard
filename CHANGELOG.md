@@ -12,6 +12,16 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-12 — Top products: sort by revenue or units (pill toggle) — `feat(offline-sales)`
+
+- **Top products can now be ranked by units sold**, not just revenue. A small
+  Revenue/Units pill in the panel header toggles the sort instantly (client-side,
+  no reload); the active metric's column is emphasized. Both lists are computed
+  server-side so "top by units" is the true top 5 by units, not the revenue top 5
+  re-ordered. `topProducts` gained a `sortBy` argument; the Bundle deals
+  reconciliation row is unaffected by the toggle.
+- Verified: typecheck clean, 114 tests pass (+1), production build green.
+
 ## 2026-09-11 — Top bundles panel + reads real bundle lines (Phase 5 Surface F, step 3, Staging only) — `feat(offline-sales)`
 
 - **New "Top bundles" panel** on `/offline-sales` — bundles ranked by revenue
