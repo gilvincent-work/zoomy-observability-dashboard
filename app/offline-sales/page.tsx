@@ -5,6 +5,7 @@ import {getPosProducts, usingPosMock} from '@/src/pos-data';
 import {getDailyTarget} from '@/src/pos-target';
 import {progress as computeProgress, todaysRevenue} from '@/src/pos-target-compute';
 import {
+  bundleSalesSummary,
   computeKpis,
   filterOrdersByRange,
   isSalesRange,
@@ -41,6 +42,7 @@ export default async function Page({searchParams}: {searchParams: {range?: strin
       kpis={computeKpis(orders)}
       daily={salesByDay(orders)}
       top={topProducts(orders)}
+      bundles={bundleSalesSummary(orders)}
       orders={orders}
       sync={sync}
       alerts={stockAlerts(products)}

@@ -1,6 +1,6 @@
 import type {PosProductRow} from './pos-types';
 import type {ChannelFacts} from './health-types';
-import type {DailySales, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopProduct} from './pos-sales-types';
+import type {BundleSalesSummary, DailySales, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
 // server/client concerns so they're unit-testable and shared across pages.
@@ -80,15 +80,40 @@ export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
     if (isVoided(o)) continue;
     for (const it of o.items) {
       if (!it.product_id) continue; // skip bundle-only lines with no SKU
-      const cur = byProduct.get(it.product_id) ?? {product_id: it.product_id, name: it.name, revenue: 0, units: 0};
+      const cur = byProduct.get(it.product_id) ?? {product_id: it.product_id, name: it.name, revenue: 0, units: 0, bundledUnits: 0};
       cur.revenue += it.line_total;
       cur.units += it.qty;
+      // A ₱0 line is a bundle pick: it moved stock but its value sits on the
+      // order header (see the RCA in COOP_INTEGRATION_PLAN.md), so it adds units
+      // without adding revenue.
+      if (it.line_total === 0) cur.bundledUnits += it.qty;
       byProduct.set(it.product_id, cur);
     }
   }
   return Array.from(byProduct.values())
     .sort((a, b) => b.revenue - a.revenue || b.units - a.units)
     .slice(0, limit);
+}
+
+/**
+ * Reconcile itemized (per-product) revenue with the Revenue KPI. Bundle deals
+ * live only on the order header, so the difference between an order's total and
+ * the sum of its line_totals is bundle revenue not attributed to any product.
+ * itemizedRevenue + bundleRevenue == totalRevenue by construction.
+ */
+export function bundleSalesSummary(orders: PosOrder[]): BundleSalesSummary {
+  let itemizedRevenue = 0;
+  let totalRevenue = 0;
+  let bundleOrders = 0;
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    totalRevenue += o.total;
+    let lineSum = 0;
+    for (const it of o.items) lineSum += it.line_total;
+    itemizedRevenue += lineSum;
+    if (o.total - lineSum > 0) bundleOrders += 1;
+  }
+  return {itemizedRevenue, bundleRevenue: totalRevenue - itemizedRevenue, bundleOrders, totalRevenue};
 }
 
 // ── Transactions filters ──────────────────────────────────────────────────

@@ -12,6 +12,33 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-11 — Honest bundle reporting in Top products (Phase 5 Surface F, Staging only) — `feat(offline-sales)`
+
+- **Fixes a misleading "Top products" panel.** A row like "Cat Grass Cubes,
+  9 units, ₱850" looked wrong. Root cause (verified on prod, read-only):
+  "Buy Any N" bundles are recorded as ₱0 component line items with the bundle
+  price sitting only on the order header, so per-product **units** count bundle
+  picks while per-product **revenue** (`Σ line_total`) excludes them. The two
+  columns were on different bases, and the panel summed to far less than the
+  Revenue KPI (on prod, ₱6,300 of a ₱17,130 total; the ₱10,830 gap = 19 bundles).
+- **Presentation-only fix (no schema or write-path change, dashboard is
+  read-only).** `topProducts` now also reports `bundledUnits` (units from ₱0
+  lines), and a new `bundleSalesSummary` reconciles itemized product revenue with
+  the KPI (`itemizedRevenue + bundleRevenue = totalRevenue`, by construction).
+  The panel now: carries an info tip that the money column is itemized only;
+  annotates rows whose units include bundle picks ("N of these units were
+  bundled"); and adds a **"Bundle deals"** row plus a reconciliation line so the
+  panel ties back to Revenue.
+- **Heuristic + scope.** A ₱0 line is treated as a bundle pick (true on prod
+  today; genuine freebies would be misattributed until the write path is fixed).
+  **Not** backfilling the historical ₱0-component orders, and **rejected**
+  splitting a bundle's price across its picks (fabricates a false-precise figure).
+  The root-cause POS write-path fix (emit a real `bundle_id` line) and a future
+  "Top bundles" panel are deferred follow-ups. Full RCA + sequencing in
+  `COOP_INTEGRATION_PLAN.md` ("RCA + FIX" block).
+- Verified: typecheck clean, 110 tests pass (+3), production build green, and the
+  reconciliation invariant confirmed against live Staging data.
+
 ## 2026-09-11 — Gamified daily-target health bar (Phase 5 Surface E, Staging only) — `feat(offline-sales)`
 
 - **New "Daily target" health bar** showing **today's POS revenue vs an owner-set
