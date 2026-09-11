@@ -3,6 +3,10 @@ import {
   boundsFromMax,
   bundleSalesSummary,
   computeKpis,
+  manilaDayKey,
+  orderMethod,
+  presentMethods,
+  salesByDayAndMethod,
   topBundles,
   filterOrders,
   filterOrdersByRange,
@@ -49,7 +53,9 @@ describe('isSalesRange / rangeStart', () => {
   });
   it('computes an inclusive start, null for all', () => {
     expect(rangeStart('all', NOW)).toBeNull();
-    expect(rangeStart('today', NOW)).toBe('2026-09-07T00:00:00.000Z');
+    // 'today' is the Manila calendar day: NOW is Sep 7 20:00 Manila, so the day
+    // began Sep 7 00:00 Manila = Sep 6 16:00 UTC.
+    expect(rangeStart('today', NOW)).toBe('2026-09-06T16:00:00.000Z');
     expect(rangeStart('7d', NOW)).toBe('2026-08-31T12:00:00.000Z');
     expect(rangeStart('30d', NOW)).toBe('2026-08-08T12:00:00.000Z');
   });
@@ -108,16 +114,54 @@ describe('void exclusion in aggregations', () => {
   });
 });
 
-describe('salesByDay', () => {
-  it('groups by UTC day ascending', () => {
+describe('payment-method breakdown', () => {
+  it('normalizes null/legacy payment_method to cash', () => {
+    expect(orderMethod(order({id: '1', created_at: NOW.toISOString(), payment_method: null}))).toBe('cash');
+    expect(orderMethod(order({id: '2', created_at: NOW.toISOString(), payment_method: 'gcash'}))).toBe('gcash');
+  });
+
+  it('lists present methods in canonical order, excluding voided', () => {
     const orders = [
-      order({id: '1', created_at: '2026-09-07T09:00:00.000Z', total: 100}),
-      order({id: '2', created_at: '2026-09-07T20:00:00.000Z', total: 50}),
-      order({id: '3', created_at: '2026-09-05T09:00:00.000Z', total: 200}),
+      order({id: '1', created_at: NOW.toISOString(), payment_method: 'gcash'}),
+      order({id: '2', created_at: NOW.toISOString(), payment_method: null}), // cash
+      order({id: '3', created_at: NOW.toISOString(), payment_method: 'card'}),
+      order({id: '4', created_at: NOW.toISOString(), payment_method: 'maya', status: 'voided'}),
+    ];
+    expect(presentMethods(orders)).toEqual(['cash', 'gcash', 'card']);
+  });
+
+  it('splits revenue by Manila day and method, excluding voided', () => {
+    const orders = [
+      order({id: '1', created_at: '2026-09-07T09:00:00Z', total: 100, payment_method: 'cash'}), // Sep 7 Manila
+      order({id: '2', created_at: '2026-09-07T10:00:00Z', total: 200, payment_method: 'gcash'}), // Sep 7 Manila
+      order({id: '3', created_at: '2026-09-07T20:00:00Z', total: 50, payment_method: 'cash'}), // Sep 8 Manila (crosses midnight)
+      order({id: '4', created_at: '2026-09-07T11:00:00Z', total: 999, payment_method: 'cash', status: 'voided'}),
+    ];
+    expect(salesByDayAndMethod(orders)).toEqual([
+      {day: '2026-09-07', byMethod: {cash: 100, gcash: 200}},
+      {day: '2026-09-08', byMethod: {cash: 50}},
+    ]);
+  });
+});
+
+describe('manilaDayKey', () => {
+  it('returns the Manila calendar day for an instant', () => {
+    expect(manilaDayKey('2026-09-07T09:00:00Z')).toBe('2026-09-07'); // 17:00 Manila
+    expect(manilaDayKey('2026-09-07T20:00:00Z')).toBe('2026-09-08'); // 04:00 Manila next day
+  });
+});
+
+describe('salesByDay', () => {
+  it('groups by Manila calendar day ascending', () => {
+    const orders = [
+      order({id: '1', created_at: '2026-09-07T09:00:00.000Z', total: 100}), // Sep 7 17:00 Manila
+      order({id: '2', created_at: '2026-09-07T20:00:00.000Z', total: 50}), // Sep 8 04:00 Manila (crosses midnight)
+      order({id: '3', created_at: '2026-09-05T09:00:00.000Z', total: 200}), // Sep 5 17:00 Manila
     ];
     expect(salesByDay(orders)).toEqual([
       {day: '2026-09-05', revenue: 200, orders: 1},
-      {day: '2026-09-07', revenue: 150, orders: 2},
+      {day: '2026-09-07', revenue: 100, orders: 1},
+      {day: '2026-09-08', revenue: 50, orders: 1},
     ]);
   });
 });

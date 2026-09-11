@@ -1,18 +1,18 @@
 'use client';
 
-import {useState} from 'react';
+import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeftRight, CalendarClock, PackageX, Receipt, TriangleAlert} from 'lucide-react';
+import {ArrowLeftRight, CalendarClock, ChevronDown, PackageX, Receipt, TriangleAlert} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
-import type {BundleSalesSummary, DailySales, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
+import type {BundleSalesSummary, DayMethodRevenue, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
 import type {StockAlerts} from '@/src/pos-sales-compute';
-import {SALES_RANGES} from '@/src/pos-sales-compute';
+import {SALES_RANGES, computeKpis, orderMethod, presentMethods, salesByDayAndMethod} from '@/src/pos-sales-compute';
 import type {PosProductRow} from '@/src/pos-types';
-import {formatPeso} from '@/src/pos-format';
+import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
-import {ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig} from '@/components/ui/chart';
+import {ChartContainer, ChartTooltip, type ChartConfig} from '@/components/ui/chart';
 import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
 import {Metric} from './metric';
@@ -23,8 +23,7 @@ import {InfoTip} from './info-tip';
 type Props = {
   range: SalesRange;
   progress: DailyProgress | null; // today vs daily goal; null = hidden (fail-soft)
-  kpis: SalesKpis;
-  daily: DailySales[];
+  kpis: SalesKpis; // all-methods totals for the range
   top: TopProduct[]; // ranked by revenue
   topByUnits: TopProduct[]; // same products ranked by units sold
   topBundles: TopBundle[]; // bundles sold by name (from bundle_id lines)
@@ -42,13 +41,27 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, progress, kpis, daily, top, topByUnits, topBundles, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
+export function OfflineSalesView({range, progress, kpis, top, topByUnits, topBundles, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
+  // 'all' or a specific payment method. The method drives the KPI cards and
+  // which segment of the stacked chart is highlighted. Computed client-side from
+  // the range-filtered orders so switching is instant (no reload).
+  const [method, setMethod] = useState<string>('all');
+  const methods = useMemo(() => presentMethods(orders), [orders]);
+  const stackData = useMemo(() => salesByDayAndMethod(orders), [orders]);
+  const shownKpis = useMemo(
+    () => (method === 'all' ? kpis : computeKpis(orders.filter((o) => orderMethod(o) === method))),
+    [method, orders, kpis],
+  );
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Eyebrow icon={Receipt}>Offline Sales</Eyebrow>
           <p className="text-sm text-muted-foreground">Bazaar sales synced from the POS.</p>
+          <div className="mt-2.5">
+            <PaymentMethodSelect value={method} methods={methods} onChange={setMethod} />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <RefreshControl fetchedAt={fetchedAt} />
@@ -70,18 +83,18 @@ export function OfflineSalesView({range, progress, kpis, daily, top, topByUnits,
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Revenue" value={formatPeso(kpis.revenue)} />
-        <Kpi label="Orders" value={String(kpis.orders)} />
-        <Kpi label="Units" value={String(kpis.units)} />
-        <Kpi label="Oversells" value={String(kpis.oversells)} warn={kpis.oversells > 0} />
+        <Kpi label="Revenue" value={formatPeso(shownKpis.revenue)} />
+        <Kpi label="Orders" value={String(shownKpis.orders)} />
+        <Kpi label="Units" value={String(shownKpis.units)} />
+        <Kpi label="Oversells" value={String(shownKpis.oversells)} warn={shownKpis.oversells > 0} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Panel title="Sales over time">
-          {daily.length === 0 ? (
+          {stackData.length === 0 ? (
             <Empty>No sales in this range.</Empty>
           ) : (
-            <DailyChart data={daily} />
+            <MethodStackChart data={stackData} methods={methods} selected={method} />
           )}
         </Panel>
 
@@ -363,18 +376,131 @@ function Empty({children}: {children: React.ReactNode}) {
   return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
-function DailyChart({data}: {data: DailySales[]}) {
-  const config = {revenue: {label: 'Revenue', color: 'var(--chart-1)'}} satisfies ChartConfig;
-  const rows = data.map((d) => ({label: shortDay(d.day), revenue: d.revenue}));
+// Per-day revenue stacked by payment method. When a method is selected its
+// segments keep full color and the rest go grey (still visible). Hovering a bar
+// shows each payment option's amount for that day.
+function MethodStackChart({data, methods, selected}: {data: DayMethodRevenue[]; methods: string[]; selected: string}) {
+  const config = Object.fromEntries(methods.map((m) => [m, {label: paymentMethodLabel(m), color: paymentMethodColor(m)}])) as ChartConfig;
+  const rows = data.map((d) => ({label: shortDay(d.day), ...Object.fromEntries(methods.map((m) => [m, d.byMethod[m] ?? 0]))}));
+  const topMethod = methods[methods.length - 1];
+
   return (
-    <ChartContainer config={config} className="h-[220px] w-full">
-      <BarChart data={rows} margin={{left: 4, right: 8, top: 8, bottom: 0}}>
-        <CartesianGrid vertical={false} strokeDasharray="3 3" />
-        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-        <YAxis tickLine={false} axisLine={false} width={44} fontSize={11} tickFormatter={(v) => formatPeso(Number(v))} />
-        <ChartTooltip content={<ChartTooltipContent formatter={(v) => formatPeso(Number(v))} />} />
-        <Bar dataKey="revenue" fill="var(--chart-1)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-      </BarChart>
-    </ChartContainer>
+    <div className="flex flex-col gap-2">
+      <ChartContainer config={config} className="h-[220px] w-full">
+        <BarChart data={rows} margin={{left: 4, right: 8, top: 8, bottom: 0}}>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
+          <YAxis tickLine={false} axisLine={false} width={44} fontSize={11} tickFormatter={(v) => formatPeso(Number(v))} />
+          <ChartTooltip cursor={{fill: 'var(--muted)', opacity: 0.35}} content={<MethodTooltip />} />
+          {methods.map((m) => {
+            const active = selected === 'all' || selected === m;
+            return (
+              <Bar
+                key={m}
+                dataKey={m}
+                stackId="rev"
+                fill={active ? paymentMethodColor(m) : '#52525b'}
+                fillOpacity={active ? 1 : 0.35}
+                radius={m === topMethod ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+                isAnimationActive={false}
+              />
+            );
+          })}
+        </BarChart>
+      </ChartContainer>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {methods.map((m) => {
+          const active = selected === 'all' || selected === m;
+          return (
+            <span key={m} className={cn('inline-flex items-center gap-1.5 text-[11px]', active ? 'text-muted-foreground' : 'text-muted-foreground/40')}>
+              <span className="size-2 rounded-[3px]" style={{backgroundColor: active ? paymentMethodColor(m) : '#52525b'}} />
+              {paymentMethodLabel(m)}
+            </span>
+          );
+        })}
+      </div>
+    </div>
   );
+}
+
+type TooltipRow = {dataKey?: string; value?: number};
+
+/** Mini tooltip: each payment option's revenue for the hovered day. */
+function MethodTooltip({active, payload, label}: {active?: boolean; payload?: TooltipRow[]; label?: string}) {
+  if (!active || !payload?.length) return null;
+  const rows = payload.filter((p) => Number(p.value) > 0);
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-lg border bg-background px-2.5 py-1.5 text-xs shadow-lg">
+      <div className="mb-1 font-medium text-foreground">{label}</div>
+      <ul className="flex min-w-[9rem] flex-col gap-0.5">
+        {rows.map((p) => (
+          <li key={p.dataKey} className="flex items-center gap-1.5">
+            <span className="size-2 rounded-[3px]" style={{backgroundColor: paymentMethodColor(p.dataKey)}} />
+            <span className="text-muted-foreground">{paymentMethodLabel(p.dataKey)}</span>
+            <span className="ml-auto font-medium tabular-nums text-foreground">{formatPeso(Number(p.value))}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Color-coded payment-method dropdown. Default "All payment options". */
+function PaymentMethodSelect({value, methods, onChange}: {value: string; methods: string[]; onChange: (v: string) => void}) {
+  const [open, setOpen] = useState(false);
+  const options = [{value: 'all', label: 'All payment options'}, ...methods.map((m) => ({value: m, label: paymentMethodLabel(m)}))];
+  const current = options.find((o) => o.value === value) ?? options[0];
+
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="inline-flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
+      >
+        <MethodDot method={value} />
+        {current.label}
+        <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+          <ul
+            role="listbox"
+            className="absolute left-0 z-50 mt-1 min-w-[13rem] overflow-hidden rounded-lg border bg-background p-1 shadow-lg"
+          >
+            {options.map((o) => (
+              <li key={o.value}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={o.value === value}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted',
+                    o.value === value ? 'font-medium text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  <MethodDot method={o.value} />
+                  {o.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The color swatch for a method; a muted ring for "all". */
+function MethodDot({method}: {method: string}) {
+  if (method === 'all') return <span className="size-2.5 rounded-full border border-muted-foreground/50" aria-hidden />;
+  return <span className="size-2.5 rounded-full" style={{backgroundColor: paymentMethodColor(method)}} aria-hidden />;
 }
