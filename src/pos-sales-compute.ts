@@ -73,8 +73,12 @@ export function salesByDay(orders: PosOrder[]): DailySales[] {
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
-/** Top products by revenue (units as tiebreak), from order line items. */
-export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
+/** How the Top products list is ranked: by itemized revenue or by units sold. */
+export type TopProductSort = 'revenue' | 'units';
+
+/** Top products from order line items, ranked by revenue (default) or units,
+ *  each with the other as tiebreak. */
+export function topProducts(orders: PosOrder[], limit = 5, sortBy: TopProductSort = 'revenue'): TopProduct[] {
   const byProduct = new Map<string, TopProduct>();
   for (const o of orders) {
     if (isVoided(o)) continue;
@@ -90,8 +94,10 @@ export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
       byProduct.set(it.product_id, cur);
     }
   }
+  const byRevenue = (a: TopProduct, b: TopProduct) => b.revenue - a.revenue || b.units - a.units;
+  const byUnits = (a: TopProduct, b: TopProduct) => b.units - a.units || b.revenue - a.revenue;
   return Array.from(byProduct.values())
-    .sort((a, b) => b.revenue - a.revenue || b.units - a.units)
+    .sort(sortBy === 'units' ? byUnits : byRevenue)
     .slice(0, limit);
 }
 

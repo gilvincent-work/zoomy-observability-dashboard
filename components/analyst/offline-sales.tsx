@@ -1,5 +1,6 @@
 'use client';
 
+import {useState} from 'react';
 import Link from 'next/link';
 import {ArrowLeftRight, CalendarClock, PackageX, Receipt, TriangleAlert} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
@@ -24,7 +25,8 @@ type Props = {
   progress: DailyProgress | null; // today vs daily goal; null = hidden (fail-soft)
   kpis: SalesKpis;
   daily: DailySales[];
-  top: TopProduct[];
+  top: TopProduct[]; // ranked by revenue
+  topByUnits: TopProduct[]; // same products ranked by units sold
   topBundles: TopBundle[]; // bundles sold by name (from bundle_id lines)
   bundles: BundleSalesSummary; // reconciles itemized product revenue with the KPI
   orders: PosOrder[]; // filtered, newest first
@@ -40,7 +42,7 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, progress, kpis, daily, top, topBundles, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
+export function OfflineSalesView({range, progress, kpis, daily, top, topByUnits, topBundles, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -83,53 +85,7 @@ export function OfflineSalesView({range, progress, kpis, daily, top, topBundles,
           )}
         </Panel>
 
-        <Panel
-          title="Top products"
-          info="Money shown is itemized sales only. Bundle deals are priced as a set, so their value is listed once under Bundle deals, not split per item."
-        >
-          {top.length === 0 && bundles.bundleRevenue <= 0 ? (
-            <Empty>No sales in this range.</Empty>
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              <ul className="flex flex-col gap-2.5">
-                {top.map((t, i) => (
-                  <li key={t.product_id} className="flex items-start gap-3">
-                    <span className="w-4 pt-0.5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{t.name}</span>
-                      {t.bundledUnits > 0 && (
-                        <span className="text-[11px] text-muted-foreground">
-                          {t.bundledUnits} of these units were bundled
-                        </span>
-                      )}
-                    </span>
-                    <span className="pt-0.5 text-xs text-muted-foreground">{t.units} units</span>
-                    <span className="w-20 pt-0.5 text-right text-sm font-medium tabular-nums">{formatPeso(t.revenue)}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {bundles.bundleRevenue > 0 && (
-                <>
-                  <div className="h-px w-full bg-border" />
-                  <div className="flex items-center gap-3">
-                    <span className="w-4" />
-                    <span className="min-w-0 flex-1 text-sm">
-                      Bundle deals
-                      <span className="ml-1.5 text-[11px] text-muted-foreground">priced as a set</span>
-                    </span>
-                    <span className="text-xs text-muted-foreground">{bundles.bundleOrders} orders</span>
-                    <span className="w-20 text-right text-sm font-medium tabular-nums">{formatPeso(bundles.bundleRevenue)}</span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Itemized {formatPeso(bundles.itemizedRevenue)} plus bundles {formatPeso(bundles.bundleRevenue)} is{' '}
-                    {formatPeso(bundles.totalRevenue)}, matching Revenue above.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
-        </Panel>
+        <TopProductsPanel byRevenue={top} byUnits={topByUnits} bundles={bundles} />
       </div>
 
       {topBundles.length > 0 && (
@@ -304,7 +260,84 @@ function Kpi({label, value, warn}: {label: string; value: string; warn?: boolean
   return <Metric label={label} value={value} valueClassName={warn ? 'text-destructive' : undefined} />;
 }
 
-function Panel({title, info, action, children}: {title: string; info?: string; action?: {label: string; href: string}; children: React.ReactNode}) {
+function TopProductsPanel({byRevenue, byUnits, bundles}: {byRevenue: TopProduct[]; byUnits: TopProduct[]; bundles: BundleSalesSummary}) {
+  const [sort, setSort] = useState<'revenue' | 'units'>('revenue');
+  const rows = sort === 'revenue' ? byRevenue : byUnits;
+
+  const pill = (
+    <div className="inline-flex rounded-md border p-0.5">
+      {(['revenue', 'units'] as const).map((key) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => setSort(key)}
+          aria-pressed={sort === key}
+          className={cn(
+            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+            sort === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {key === 'revenue' ? 'Revenue' : 'Units'}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <Panel
+      title="Top products"
+      info="Money shown is itemized sales only. Bundle deals are priced as a set, so their value is listed once under Bundle deals, not split per item."
+      control={pill}
+    >
+      {rows.length === 0 && bundles.bundleRevenue <= 0 ? (
+        <Empty>No sales in this range.</Empty>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          <ul className="flex flex-col gap-2.5">
+            {rows.map((t, i) => (
+              <li key={t.product_id} className="flex items-start gap-3">
+                <span className="w-4 pt-0.5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm">{t.name}</span>
+                  {t.bundledUnits > 0 && (
+                    <span className="text-[11px] text-muted-foreground">{t.bundledUnits} of these units were bundled</span>
+                  )}
+                </span>
+                <span className={cn('pt-0.5 text-xs tabular-nums', sort === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                  {t.units} units
+                </span>
+                <span className={cn('w-20 pt-0.5 text-right text-sm tabular-nums', sort === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                  {formatPeso(t.revenue)}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {bundles.bundleRevenue > 0 && (
+            <>
+              <div className="h-px w-full bg-border" />
+              <div className="flex items-center gap-3">
+                <span className="w-4" />
+                <span className="min-w-0 flex-1 text-sm">
+                  Bundle deals
+                  <span className="ml-1.5 text-[11px] text-muted-foreground">priced as a set</span>
+                </span>
+                <span className="text-xs text-muted-foreground">{bundles.bundleOrders} orders</span>
+                <span className="w-20 text-right text-sm font-medium tabular-nums">{formatPeso(bundles.bundleRevenue)}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Itemized {formatPeso(bundles.itemizedRevenue)} plus bundles {formatPeso(bundles.bundleRevenue)} is{' '}
+                {formatPeso(bundles.totalRevenue)}, matching Revenue above.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function Panel({title, info, action, control, children}: {title: string; info?: string; action?: {label: string; href: string}; control?: React.ReactNode; children: React.ReactNode}) {
   return (
     <Card>
       <CardContent className="py-4">
@@ -313,6 +346,7 @@ function Panel({title, info, action, children}: {title: string; info?: string; a
             {title}
             {info && <InfoTip text={info} />}
           </h3>
+          {control}
           {action && (
             <Link href={action.href} className="text-xs font-medium text-primary hover:underline">
               {action.label}

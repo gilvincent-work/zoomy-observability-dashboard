@@ -142,6 +142,17 @@ describe('topProducts', () => {
     expect(topProducts(orders, 1)).toHaveLength(1);
   });
 
+  it('ranks by units when sortBy is "units" (revenue as tiebreak)', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), items: [
+        {product_id: 'A', name: 'Alpha', qty: 1, unit_price: 1000, line_total: 1000}, // high revenue, low units
+        {product_id: 'B', name: 'Beta', qty: 10, unit_price: 50, line_total: 500}, // low revenue, high units
+      ]}),
+    ];
+    expect(topProducts(orders, 5, 'revenue').map((t) => t.product_id)).toEqual(['A', 'B']);
+    expect(topProducts(orders, 5, 'units').map((t) => t.product_id)).toEqual(['B', 'A']);
+  });
+
   it('counts ₱0 (bundle-pick) lines as units but not revenue', () => {
     // The Cat Grass case from prod: 5 sold at 170 (real revenue) + 4 given as
     // bundle picks at 0 -> 9 units, 850 revenue, 4 of them bundled.
