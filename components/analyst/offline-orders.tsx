@@ -1,11 +1,13 @@
 'use client';
 
+import {useState, useTransition} from 'react';
 import Link from 'next/link';
-import {usePathname, useSearchParams} from 'next/navigation';
-import {ArrowLeft, ChevronLeft, ChevronRight, Receipt, TriangleAlert} from 'lucide-react';
+import {usePathname, useRouter, useSearchParams} from 'next/navigation';
+import {ArrowLeft, Ban, ChevronLeft, ChevronRight, PawPrint, Receipt, TriangleAlert} from 'lucide-react';
 import type {PosOrder, PosOrdersFilter, PriceBounds} from '@/src/pos-sales-types';
 import {isFilterActive, type PageInfo} from '@/src/pos-sales-compute';
-import {formatPeso, paymentMethodLabel} from '@/src/pos-format';
+import {formatPeso, paymentMethodLabel, paymentMethodBadgeClass} from '@/src/pos-format';
+import {voidOrderAction} from '@/src/pos-sales-actions';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
@@ -37,10 +39,32 @@ export function OfflineOrdersView({
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const pageHref = (p: number) => {
     const params = new URLSearchParams(searchParams?.toString());
     params.set('page', String(p));
     return `${pathname}?${params.toString()}`;
+  };
+
+  // Voiding is destructive (it restocks the sale), so it confirms first, then
+  // re-fetches the server data so the row shows voided + totals update.
+  const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [voidError, setVoidError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const voidOrder = (o: PosOrder) => {
+    if (o.status === 'voided') return;
+    const ok = window.confirm(
+      `Void this ₱${o.total.toLocaleString()} sale?\n\nIts items will be added back to stock. This can't be undone.`,
+    );
+    if (!ok) return;
+    setVoidError(null);
+    setVoidingId(o.client_uuid);
+    startTransition(async () => {
+      const res = await voidOrderAction(o.client_uuid);
+      setVoidingId(null);
+      if (!res.ok) setVoidError(res.error);
+      else router.refresh();
+    });
   };
 
   return (
@@ -77,9 +101,16 @@ export function OfflineOrdersView({
                 <li key={o.id} className={cn('flex items-start gap-4 px-5 py-3.5', o.status === 'voided' && 'opacity-60')}>
                   <span className="mt-0.5 w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{firstOnPage + i + 1}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className={cn('text-sm font-medium', o.status === 'voided' && 'line-through')}>{timeLabel(o.created_at)}</span>
-                      <Badge variant="secondary">{paymentMethodLabel(o.payment_method)}</Badge>
+                      <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', paymentMethodBadgeClass(o.payment_method))}>
+                        {paymentMethodLabel(o.payment_method)}
+                      </span>
+                      {o.customer_handle && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          <PawPrint className="size-3" /> {o.customer_handle}
+                        </span>
+                      )}
                       {o.status === 'voided' && <Badge variant="destructive">voided</Badge>}
                       {o.oversold && (
                         <Badge variant="destructive">
@@ -94,13 +125,32 @@ export function OfflineOrdersView({
                       <p className="mt-1 text-xs italic text-muted-foreground/80">“{o.remarks}”</p>
                     )}
                   </div>
-                  <span className={cn('shrink-0 text-sm font-semibold tabular-nums', o.status === 'voided' && 'text-muted-foreground line-through')}>{formatPeso(o.total)}</span>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className={cn('text-sm font-semibold tabular-nums', o.status === 'voided' && 'text-muted-foreground line-through')}>{formatPeso(o.total)}</span>
+                    {o.status !== 'voided' && (
+                      <button
+                        type="button"
+                        onClick={() => voidOrder(o)}
+                        disabled={pending && voidingId === o.client_uuid}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive hover:text-destructive disabled:opacity-50"
+                      >
+                        <Ban className="size-3" />
+                        {pending && voidingId === o.client_uuid ? 'Voiding…' : 'Void'}
+                      </button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </CardContent>
       </Card>
+
+      {voidError && (
+        <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          Couldn’t void: {voidError}
+        </div>
+      )}
 
       {totalPages > 1 && (
         <nav className="mt-4 flex items-center justify-between" aria-label="Transactions pagination">

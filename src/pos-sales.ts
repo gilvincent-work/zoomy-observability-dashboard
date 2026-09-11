@@ -58,7 +58,7 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
   const [ordersRes, itemsRes, productsRes] = await Promise.all([
     supabase
       .from('pos_orders')
-      .select('id,subtotal,discount,total,oversold,device_id,payment_method,status,remarks,created_at')
+      .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at')
       .order('created_at', {ascending: false}),
     supabase.from('pos_order_items').select('order_id,product_id,qty,unit_price,line_total'),
     supabase.from('pos_products').select('product_id,name'),
@@ -89,12 +89,14 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
 
   return (ordersRes.data ?? []).map((o): PosOrder => ({
     id: o.id as string,
+    client_uuid: o.client_uuid as string,
     subtotal: Number(o.subtotal ?? 0),
     discount: o.discount != null ? Number(o.discount) : null,
     total: Number(o.total ?? 0),
     oversold: Boolean(o.oversold),
     device_id: (o.device_id as string | null) ?? null,
     payment_method: (o.payment_method as string | null) ?? null,
+    customer_handle: (o.customer_handle as string | null) ?? null,
     status: (o.status as string | null) === 'voided' ? 'voided' : 'completed',
     remarks: (o.remarks as string | null) ?? null,
     created_at: o.created_at as string,
@@ -139,7 +141,7 @@ export const getPosOrdersPage = cache(async (
 
   let rowQuery = supabase
     .from('pos_orders')
-    .select('id,subtotal,discount,total,oversold,device_id,payment_method,status,remarks,created_at');
+    .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at');
   for (const op of ops) {
     rowQuery = op[0] === 'or' ? rowQuery.or(op[1])
       : op[0] === 'eq' ? rowQuery.eq(op[1], op[2])
@@ -179,12 +181,14 @@ export const getPosOrdersPage = cache(async (
 
   const orders = (orderRows ?? []).map((o): PosOrder => ({
     id: o.id as string,
+    client_uuid: o.client_uuid as string,
     subtotal: Number(o.subtotal ?? 0),
     discount: o.discount != null ? Number(o.discount) : null,
     total: Number(o.total ?? 0),
     oversold: Boolean(o.oversold),
     device_id: (o.device_id as string | null) ?? null,
     payment_method: (o.payment_method as string | null) ?? null,
+    customer_handle: (o.customer_handle as string | null) ?? null,
     status: (o.status as string | null) === 'voided' ? 'voided' : 'completed',
     remarks: (o.remarks as string | null) ?? null,
     created_at: o.created_at as string,

@@ -12,6 +12,26 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-11 — Offline Sales: IG handle, color-coded methods, void + restock — `feat(offline-sales)`
+
+- **IG / furbaby handle** now shows on each transaction (a 🐾 chip) when set.
+  Requires the cross-repo change: `pos_orders` gained a `customer_handle`
+  column, `apply_pos_order` persists it, and the POS pushes it (see the POS
+  changelog). Only appears on sales made *after* that ships — past synced sales
+  have none. Remarks were already displayed; both now read clearly.
+- **Payment method badges are color-coded** (`paymentMethodBadgeClass`): Cash
+  green, QRPH violet, GCash blue, Maya teal, Card amber, BPI rose, Bank slate —
+  muted tints, readable in both light and dark themes.
+- **Void a sale from Coop** (new `voidOrderAction` → the shared `void_pos_order`
+  RPC), with a confirm. **Voiding now restocks**: `void_pos_order` was
+  redefined to reverse the sale's FEFO inventory decrements (add each qty back
+  to the lot it came from) and log compensating stock movements — idempotent, so
+  a re-void never double-restocks. This applies to POS-side voids too, since
+  both call the same RPC (previously no void restored stock anywhere).
+- Verified end-to-end against Staging in a real browser: a sale decremented
+  stock, the in-app Void restored it exactly, and the row flipped to voided.
+  `tsc`, 96 tests, and the production build all pass.
+
 ## 2026-09-10 (develop only — not yet promoted to staging)
 
 ### Product Controls: breathing room in the header and table — `fix(products)`
