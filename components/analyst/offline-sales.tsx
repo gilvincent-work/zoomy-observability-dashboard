@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {ArrowLeftRight, CalendarClock, PackageX, Receipt, TriangleAlert} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
 import type {DailySales, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopProduct} from '@/src/pos-sales-types';
+import type {DailyProgress} from '@/src/pos-target-types';
 import type {StockAlerts} from '@/src/pos-sales-compute';
 import {SALES_RANGES} from '@/src/pos-sales-compute';
 import type {PosProductRow} from '@/src/pos-types';
@@ -15,9 +16,11 @@ import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
 import {Metric} from './metric';
 import {RefreshControl} from './refresh-control';
+import {DailyTargetBar} from './daily-target-bar';
 
 type Props = {
   range: SalesRange;
+  progress: DailyProgress | null; // today vs daily goal; null = hidden (fail-soft)
   kpis: SalesKpis;
   daily: DailySales[];
   top: TopProduct[];
@@ -34,7 +37,7 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts, usingMock, fetchedAt}: Props) {
+export function OfflineSalesView({range, progress, kpis, daily, top, orders, sync, alerts, usingMock, fetchedAt}: Props) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -53,6 +56,12 @@ export function OfflineSalesView({range, kpis, daily, top, orders, sync, alerts,
           Mock sales. Set <code>SUPABASE_URL_ARCHIVE</code> / <code>SUPABASE_SERVICE_ROLE_KEY_ARCHIVE</code> to the
           Staging project to load real <code>pos_orders</code>.
         </MockNote>
+      )}
+
+      {progress && (
+        <div className="mb-4">
+          <DailyTargetBar progress={progress} variant="full" />
+        </div>
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
