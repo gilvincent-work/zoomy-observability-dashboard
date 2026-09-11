@@ -121,6 +121,31 @@ export function paymentMethodLabel(method: string | null | undefined): string {
   }
 }
 
+/** Tailwind classes for a color-coded payment-method badge — a muted tinted
+ *  background + readable text per method, so the mix of methods in the
+ *  transactions list is scannable at a glance on the dark theme. */
+export function paymentMethodBadgeClass(method: string | null | undefined): string {
+  // Darker text in light mode, lighter in dark mode — readable on both themes.
+  switch (method) {
+    case 'cash':
+      return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+    case 'qrph':
+      return 'bg-violet-500/15 text-violet-700 dark:text-violet-300';
+    case 'gcash':
+      return 'bg-sky-500/15 text-sky-700 dark:text-sky-300';
+    case 'maya':
+      return 'bg-teal-500/15 text-teal-700 dark:text-teal-300';
+    case 'card':
+      return 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
+    case 'bpi':
+      return 'bg-rose-500/15 text-rose-700 dark:text-rose-300';
+    case 'bank_transfer':
+      return 'bg-slate-500/15 text-slate-700 dark:text-slate-300';
+    default: // null/legacy reads as cash
+      return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+  }
+}
+
 /** Human label for a product-line code. */
 export function lineLabel(line: ProductLine): string {
   switch (line) {

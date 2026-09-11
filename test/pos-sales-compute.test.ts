@@ -24,12 +24,14 @@ const NOW = new Date('2026-09-07T12:00:00.000Z');
 
 function order(over: Partial<PosOrder> & {id: string; created_at: string}): PosOrder {
   return {
+    client_uuid: `${over.id}-uuid`,
     subtotal: 100,
     discount: null,
     total: 100,
     oversold: false,
     device_id: 'pos',
     payment_method: 'cash',
+    customer_handle: null,
     status: 'completed',
     remarks: null,
     items: [{product_id: 'A', name: 'A', qty: 1, unit_price: 100, line_total: 100}],
