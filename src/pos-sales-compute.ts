@@ -1,6 +1,6 @@
 import type {PosProductRow} from './pos-types';
 import type {ChannelFacts} from './health-types';
-import type {BundleSalesSummary, DailySales, DayMethodRevenue, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
+import type {BundleSalesSummary, DailySales, DayMethodRevenue, EditEntry, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
 // server/client concerns so they're unit-testable and shared across pages.
@@ -171,6 +171,53 @@ export function isBundleOrder(order: PosOrder): boolean {
   let productLineSum = 0;
   for (const it of order.items) if (it.product_id) productLineSum += it.line_total;
   return order.total - productLineSum > 0.005;
+}
+
+/**
+ * Reconstruct an order's stored lines into editable entries (individual items +
+ * bundle groups). Bundle groups are rebuilt from bundle_group: the header row
+ * (bundle_id, product_id null) gives the bundle id + price; the ₱0 product rows
+ * sharing that group are its picks. A legacy fixed-bundle header with no group
+ * becomes a bundle entry with no picks (its components come from the definition).
+ * Orphan groups (picks with no header — e.g. a pre-grouping/offline-retried sale)
+ * degrade to loose ₱0 items so the sale is still editable, just without the rule.
+ * Appearance order is preserved.
+ */
+export function orderToEntries(order: PosOrder): EditEntry[] {
+  const out: EditEntry[] = [];
+  const groupIndex = new Map<string, number>();
+  for (const l of order.items) {
+    const grp = l.bundle_group ?? null;
+    if (grp != null) {
+      let idx = groupIndex.get(grp);
+      if (idx === undefined) {
+        idx = out.length;
+        groupIndex.set(grp, idx);
+        out.push({kind: 'bundle', bundle_id: l.bundle_id ?? '', price: 0, picks: []});
+      }
+      const e = out[idx] as Extract<EditEntry, {kind: 'bundle'}>;
+      if (l.bundle_id && l.product_id == null) {
+        e.bundle_id = l.bundle_id;
+        e.price = l.line_total;
+      } else if (l.product_id) {
+        e.picks.push({product_id: l.product_id, qty: l.qty});
+      }
+    } else if (l.bundle_id && l.product_id == null) {
+      out.push({kind: 'bundle', bundle_id: l.bundle_id, price: l.line_total, picks: []});
+    } else if (l.product_id) {
+      out.push({kind: 'item', product_id: l.product_id, qty: l.qty, unit_price: l.unit_price});
+    }
+  }
+  // Flatten orphan groups (no header resolved) into loose ₱0 items.
+  const cleaned: EditEntry[] = [];
+  for (const e of out) {
+    if (e.kind === 'bundle' && !e.bundle_id) {
+      for (const p of e.picks) cleaned.push({kind: 'item', product_id: p.product_id, qty: p.qty, unit_price: 0});
+    } else {
+      cleaned.push(e);
+    }
+  }
+  return cleaned;
 }
 
 /**

@@ -3,6 +3,7 @@
 import {revalidatePath} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
 import type {ActionResult} from './pos-actions';
+import type {EditEntry} from './pos-sales-types';
 
 /**
  * Void a POS sale from Coop by its client_uuid. Uses the same SECURITY DEFINER
@@ -50,34 +51,34 @@ export async function unvoidOrderAction(clientUuid: string): Promise<ActionResul
   return {ok: true};
 }
 
-/** One edited product line: a catalog SKU, a qty, and a unit price. */
-export type EditOrderLine = {product_id: string; qty: number; unit_price: number};
-
 /**
  * Edit a POS sale from Coop in place, via the shared edit_pos_order RPC. It
- * reverses the order's inventory then re-applies the new item set, and updates
- * the payment method / IG handle / items — recomputing the total server-side, so
- * stock, revenue-by-method, and the KPIs all stay consistent. Rejects a voided
- * order. Online-only.
+ * reverses the order's inventory then re-applies the new entry set (individual
+ * items + bundle groups), updating payment method / IG handle and recomputing the
+ * total server-side, so stock, revenue-by-method, and the KPIs stay consistent.
+ * The RPC enforces each bundle's rules (a pick bundle needs exactly its
+ * pick_count picks, all from eligible categories) and rejects an invalid or
+ * voided order. Online-only.
  */
 export async function editOrderAction(
   clientUuid: string,
   patch: {payment_method?: string; customer_handle?: string | null},
-  lines: EditOrderLine[],
+  entries: EditEntry[],
 ): Promise<ActionResult> {
   if (usingPosMock()) {
     return {ok: false, error: 'Running in mock mode — set the Supabase pos_* env to edit.'};
   }
   if (!clientUuid) return {ok: false, error: 'Missing order reference.'};
-  const clean = lines.filter((l) => l.product_id && l.qty > 0);
-  if (clean.length === 0) return {ok: false, error: 'An order needs at least one item.'};
 
-  const p_items = clean.map((l) => ({
-    product_id: l.product_id,
-    qty: l.qty,
-    unit_price: l.unit_price,
-    line_total: Math.round(l.qty * l.unit_price * 100) / 100,
-  }));
+  const p_entries = entries
+    .map((e) =>
+      e.kind === 'bundle'
+        ? {kind: 'bundle', bundle_id: e.bundle_id, price: e.price, picks: e.picks.filter((p) => p.product_id && p.qty > 0)}
+        : {kind: 'item', product_id: e.product_id, qty: e.qty, unit_price: e.unit_price},
+    )
+    .filter((e) => (e.kind === 'bundle' ? !!e.bundle_id : !!e.product_id && (e.qty ?? 0) > 0));
+  if (p_entries.length === 0) return {ok: false, error: 'An order needs at least one item.'};
+
   // Only send handle when it's part of the patch; '' clears it, a value sets it.
   const p_patch: Record<string, string> = {};
   if (patch.payment_method) p_patch.payment_method = patch.payment_method;
@@ -86,7 +87,7 @@ export async function editOrderAction(
   const {data, error} = await posClient().rpc('edit_pos_order', {
     p_client_uuid: clientUuid,
     p_patch,
-    p_items,
+    p_entries,
   });
   if (error) return {ok: false, error: error.message};
   if (data && (data as {ok?: boolean}).ok === false) {
