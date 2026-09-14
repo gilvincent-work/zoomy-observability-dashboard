@@ -12,6 +12,20 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-14 — Offline Sales: unvoid a voided order (Staging only) — `feat(offline-sales)`
+
+- **Voided orders now show an Unvoid action** in the Orders table
+  (`/offline-sales/orders`), the inverse of Void. It confirms first, then calls
+  the shared `unvoid_pos_order` RPC (restores the order to completed and re-applies
+  its inventory FEFO server-side), and revalidates the Orders and Offline Sales
+  views so the sale returns to the KPIs, payment-method breakdown, and stock.
+- **Online-only.** Rejects an order that isn't voided; errors surface inline.
+  Void's confirm copy updated ("You can unvoid it later") now that it's reversible.
+- **Schema (Staging, mirrored in `../zoomy-pos/supabase/pos_schema.sql`):** new
+  `unvoid_pos_order(text)`; `void_pos_order`'s audit now reverses the full net
+  footprint so repeated void↔unvoid cycles stay ledger-consistent.
+  **Staging only — not promoted to prod.**
+
 ## 2026-09-14 — Offline Sales: edit an order in place (Staging only) — `feat(offline-sales)`
 
 - **The Orders table (`/offline-sales/orders`) now has an Edit action per order.**
