@@ -12,6 +12,28 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-14 — Offline Sales: edit an order in place (Staging only) — `feat(offline-sales)`
+
+- **The Orders table (`/offline-sales/orders`) now has an Edit action per order.**
+  A modal lets you change the payment method, IG handle, and the product lines
+  (pick a catalog product, set qty and unit price, add/remove lines) with a live
+  running total. Saving calls the shared `edit_pos_order` RPC, which reverses and
+  re-applies inventory and recomputes the total server-side, then revalidates the
+  Orders and Offline Sales views so KPIs, the payment-method breakdown, and stock
+  all reflect the change.
+- **Guards mirror the POS:** voided orders show no Edit action (terminal);
+  **bundle/component-only orders are not editable** (Edit is hidden when any line
+  has a null `product_id`). An order line whose product has since been unlisted
+  still shows its product in the picker (labeled "(unlisted)") instead of a blank
+  select, so editing it doesn't silently drop the line.
+- **Data plumbing:** `PosOrder` gained `client_uuid`, `customer_handle`, and
+  `edited_at`; the Orders view surfaces an "edited" marker on changed orders. New
+  `editOrderAction` server action + `PosCatalogItem` slim catalog fetched on the
+  Orders page.
+- **Staging only — not promoted to prod.** The `edit_pos_order` / `void_pos_order`
+  schema changes live on Staging Supabase (mirrored in
+  `../zoomy-pos/supabase/pos_schema.sql`); prod is unchanged.
+
 ## 2026-09-12 — Offline Sales: Manila "Today" fix + payment-method breakdown — `feat(offline-sales)`
 
 - **Fix: "Today" (and the sales chart's day buckets) now use Asia/Manila (UTC+8)**
