@@ -14,6 +14,7 @@ function order(over: Partial<PosOrder> & {id: string; created_at: string}): PosO
     customer_handle: null,
     status: 'completed',
     remarks: null,
+    edited_at: null,
     items: [{product_id: 'A', name: 'A', qty: 1, unit_price: 100, line_total: 100}],
     ...over,
   };

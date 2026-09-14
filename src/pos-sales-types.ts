@@ -25,7 +25,15 @@ export interface PosOrder {
   status: string; // 'completed' | 'voided'; voided sales are excluded from revenue
   remarks: string | null; // free-text note set from the POS
   created_at: string; // ISO
+  edited_at: string | null; // ISO; set when the order was edited (null = never)
   items: PosOrderLine[];
+}
+
+/** Slim catalog entry for the edit-order product picker. */
+export interface PosCatalogItem {
+  product_id: string;
+  name: string;
+  price: number | null;
 }
 
 /** Active filters for the transactions list. `all`/null values mean no filter. */

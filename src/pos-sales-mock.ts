@@ -12,26 +12,26 @@ function iso(daysAgo: number, hour = 12): string {
 
 export const MOCK_POS_ORDERS: PosOrder[] = [
   {
-    id: 'mock-1', client_uuid: 'mock-1-uuid', subtotal: 540, discount: null, total: 540, oversold: false, device_id: 'pos', payment_method: 'cash', customer_handle: '@daisy_the_pug', created_at: iso(0, 9), status: 'completed', remarks: null,
+    id: 'mock-1', client_uuid: 'mock-1-uuid', subtotal: 540, discount: null, total: 540, oversold: false, device_id: 'pos', payment_method: 'cash', customer_handle: '@daisy_the_pug', created_at: iso(0, 9), status: 'completed', remarks: null, edited_at: null,
     items: [
       {product_id: 'ZMYFDMEATBEFWHL01', name: 'Meaty Treats Beef', qty: 2, unit_price: 200, line_total: 400},
       {product_id: 'ZMYFDFDRSLMCUB01', name: 'Freeze-Dried Salmon Cubes', qty: 1, unit_price: 140, line_total: 140},
     ],
   },
   {
-    id: 'mock-2', client_uuid: 'mock-2-uuid', subtotal: 300, discount: null, total: 300, oversold: true, device_id: 'pos', payment_method: 'gcash', customer_handle: null, created_at: iso(0, 14), status: 'voided', remarks: null,
+    id: 'mock-2', client_uuid: 'mock-2-uuid', subtotal: 300, discount: null, total: 300, oversold: true, device_id: 'pos', payment_method: 'gcash', customer_handle: null, created_at: iso(0, 14), status: 'voided', remarks: null, edited_at: null,
     items: [{product_id: 'ZMYFDJRKCHKWHL01', name: 'Tasty Treats Chicken Jerky', qty: 1, unit_price: 300, line_total: 300}],
   },
   {
-    id: 'mock-3', client_uuid: 'mock-3-uuid', subtotal: 340, discount: null, total: 340, oversold: false, device_id: 'pos', payment_method: 'card', customer_handle: 'Milo', created_at: iso(3), status: 'completed', remarks: 'Customer paid via bank transfer',
+    id: 'mock-3', client_uuid: 'mock-3-uuid', subtotal: 340, discount: null, total: 340, oversold: false, device_id: 'pos', payment_method: 'card', customer_handle: 'Milo', created_at: iso(3), status: 'completed', remarks: 'Customer paid via bank transfer', edited_at: iso(2),
     items: [{product_id: 'ZMYFDFDRBEFLVR01', name: 'Freeze-Dried Beef Liver Cubes', qty: 2, unit_price: 170, line_total: 340}],
   },
   {
-    id: 'mock-4', client_uuid: 'mock-4-uuid', subtotal: 200, discount: null, total: 200, oversold: false, device_id: 'pos', payment_method: 'gcash', customer_handle: null, created_at: iso(12), status: 'completed', remarks: null,
+    id: 'mock-4', client_uuid: 'mock-4-uuid', subtotal: 200, discount: null, total: 200, oversold: false, device_id: 'pos', payment_method: 'gcash', customer_handle: null, created_at: iso(12), status: 'completed', remarks: null, edited_at: null,
     items: [{product_id: 'ZMYFDMEATBEFWHL01', name: 'Meaty Treats Beef', qty: 1, unit_price: 200, line_total: 200}],
   },
   {
-    id: 'mock-5', client_uuid: 'mock-5-uuid', subtotal: 510, discount: null, total: 510, oversold: false, device_id: 'pos', payment_method: 'cash', customer_handle: 'Coco (@coco.corgi)', created_at: iso(25), status: 'completed', remarks: null,
+    id: 'mock-5', client_uuid: 'mock-5-uuid', subtotal: 510, discount: null, total: 510, oversold: false, device_id: 'pos', payment_method: 'cash', customer_handle: 'Coco (@coco.corgi)', created_at: iso(25), status: 'completed', remarks: null, edited_at: null,
     items: [
       {product_id: 'ZMYFDMEATSLMWHL01', name: 'Meaty Treats Salmon', qty: 1, unit_price: 200, line_total: 200},
       {product_id: 'ZMYFDJRKDCKWHL01', name: 'Tasty Treats Duck Jerky', qty: 1, unit_price: 310, line_total: 310},
@@ -40,7 +40,7 @@ export const MOCK_POS_ORDERS: PosOrder[] = [
   {
     // A "Buy Any 4" bundle sale recorded the new way: one bundle line carries the
     // ₱570 (revenue -> Top bundles), the 4 picks ride along at ₱0 (for inventory).
-    id: 'mock-6', client_uuid: 'mock-6-uuid', subtotal: 570, discount: null, total: 570, oversold: false, device_id: 'pos', payment_method: 'qrph', customer_handle: 'Nala', created_at: iso(1, 11), status: 'completed', remarks: null,
+    id: 'mock-6', client_uuid: 'mock-6-uuid', subtotal: 570, discount: null, total: 570, oversold: false, device_id: 'pos', payment_method: 'qrph', customer_handle: 'Nala', created_at: iso(1, 11), status: 'completed', remarks: null, edited_at: null,
     items: [
       {product_id: null, bundle_id: 'offline-event-buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
       {product_id: 'ZMYFDFDRBEFLVR01', name: 'Freeze-Dried Beef Liver Cubes', qty: 1, unit_price: 0, line_total: 0},
