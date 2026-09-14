@@ -12,6 +12,26 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-14 — Offline Sales: don't corrupt bundles on edit + show line subtotals — `fix(offline-sales)`
+
+- **Fix: bundle orders were editable and editing them wiped the bundle price.**
+  A "Buy Any N for ₱X" sale records its picks as ₱0 component lines with the ₱X
+  premium living only on the order total. The old Edit guard looked for a line
+  with no `product_id` (a `bundle_id` line) to spot a bundle, but the POS never
+  writes one, so the guard never fired and bundle orders showed an Edit button.
+  Editing recomputes the total from the line totals, which zeroed the premium
+  (e.g. a ₱570 "Cat Grass Cubes ×4" became ₱0). Now bundles are detected the
+  reliable way, `total > Σ product-line totals` (new tested `isBundleOrder`), and
+  the Edit action is hidden for them (matching the POS). To change a bundle, void
+  it and re-ring.
+- **Line subtotals in the edit modal.** Each item row now shows a read-only
+  `qty × unit price` subtotal, so a ×2 line at ₱210 visibly reads ₱420 instead of
+  looking like it ignored the quantity. The ₱ field stays the editable unit price
+  (auto-filled from the catalog on pick).
+- **Data repair (Staging):** restored the one bundle order a buggy edit had
+  corrupted (back to ₱570 / ×4) and corrected its cat-grass stock.
+- **Staging only — not promoted to prod.**
+
 ## 2026-09-14 — Offline Sales: unvoid a voided order (Staging only) — `feat(offline-sales)`
 
 - **Voided orders now show an Unvoid action** in the Orders table

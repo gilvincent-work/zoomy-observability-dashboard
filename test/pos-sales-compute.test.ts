@@ -10,6 +10,7 @@ import {
   topBundles,
   filterOrders,
   filterOrdersByRange,
+  isBundleOrder,
   isFilterActive,
   isSalesRange,
   offlineChannelFacts,
@@ -101,6 +102,31 @@ describe('computeKpis', () => {
       order({id: '2', created_at: NOW.toISOString(), total: 900, status: 'voided', items: [{product_id: 'B', name: 'B', qty: 3, unit_price: 300, line_total: 900}]}),
     ];
     expect(computeKpis(orders)).toEqual({revenue: 500, orders: 1, units: 2, oversells: 0});
+  });
+});
+
+describe('isBundleOrder', () => {
+  it('flags an order whose total exceeds its product-line sum (bundle premium)', () => {
+    // A "Buy Any 4 for ₱570" sale: ₱0 component picks, premium on the header.
+    const o = order({
+      id: 'b1', created_at: '2026-09-07T00:00:00.000Z', total: 570,
+      items: [{product_id: 'CGC', name: 'Cat Grass Cubes', qty: 4, unit_price: 0, line_total: 0}],
+    });
+    expect(isBundleOrder(o)).toBe(true);
+  });
+  it('does not flag a plain order where total equals the line sum', () => {
+    const o = order({
+      id: 'p1', created_at: '2026-09-07T00:00:00.000Z', total: 400,
+      items: [{product_id: 'A', name: 'A', qty: 2, unit_price: 200, line_total: 400}],
+    });
+    expect(isBundleOrder(o)).toBe(false);
+  });
+  it('does not flag a discounted order (total below the line sum)', () => {
+    const o = order({
+      id: 'd1', created_at: '2026-09-07T00:00:00.000Z', total: 350, discount: 50,
+      items: [{product_id: 'A', name: 'A', qty: 2, unit_price: 200, line_total: 400}],
+    });
+    expect(isBundleOrder(o)).toBe(false);
   });
 });
 
