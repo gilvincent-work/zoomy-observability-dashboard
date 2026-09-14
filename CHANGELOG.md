@@ -12,6 +12,17 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-14 — Offline Sales: Top products + Top bundles share one column — `style(offline-sales)`
+
+- **Merged the standalone full-width "Top bundles" card into the right column**,
+  stacked directly under Top products. The overview second row is now cleanly two
+  columns: Sales over time (left) and the Top products / Top bundles stack (right).
+- **One Revenue/Units toggle drives both.** Lifted the toggle into a shared
+  `TopSellersColumn`; switching it re-ranks products and bundles together. In Units
+  mode bundles rank by orders (their unit analog: one order == one bundle sold) and
+  emphasize the orders figure; in Revenue mode they rank by revenue. No data or
+  totals changed, purely layout + the shared control. **Staging only.**
+
 ## 2026-09-14 — Offline Sales: bundles show pre-populated on edit (no empty prompt) — `fix(offline-sales)`
 
 - **On first load, the editor shows the order's real content** — two bundles show
