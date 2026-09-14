@@ -98,28 +98,8 @@ export function OfflineSalesView({range, progress, kpis, top, topByUnits, topBun
           )}
         </Panel>
 
-        <TopProductsPanel byRevenue={top} byUnits={topByUnits} bundles={bundles} />
+        <TopSellersColumn byRevenue={top} byUnits={topByUnits} bundles={bundles} topBundles={topBundles} />
       </div>
-
-      {topBundles.length > 0 && (
-        <div className="mt-4">
-          <Panel
-            title="Top bundles"
-            info="Bundles sold as a set. Sales made offline, or before bundle tracking landed, are counted in the Bundle deals total on Top products but are not listed by name here."
-          >
-            <ul className="flex flex-col gap-2.5">
-              {topBundles.map((b, i) => (
-                <li key={b.bundle_id} className="flex items-center gap-3">
-                  <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{b.name}</span>
-                  <span className="text-xs text-muted-foreground">{b.orders} {b.orders === 1 ? 'order' : 'orders'}</span>
-                  <span className="w-20 text-right text-sm font-medium tabular-nums">{formatPeso(b.revenue)}</span>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        </div>
-      )}
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <Panel title="Recent orders" action={{label: 'View all', href: '/offline-sales/orders'}}>
@@ -273,9 +253,26 @@ function Kpi({label, value, warn}: {label: string; value: string; warn?: boolean
   return <Metric label={label} value={value} valueClassName={warn ? 'text-destructive' : undefined} />;
 }
 
-function TopProductsPanel({byRevenue, byUnits, bundles}: {byRevenue: TopProduct[]; byUnits: TopProduct[]; bundles: BundleSalesSummary}) {
+/** Right column of the overview: Top products stacked over Top bundles, both
+ *  driven by one shared Revenue/Units toggle. In Units mode bundles rank by
+ *  orders (their unit analog: one order == one bundle sold). */
+function TopSellersColumn({
+  byRevenue,
+  byUnits,
+  bundles,
+  topBundles,
+}: {
+  byRevenue: TopProduct[];
+  byUnits: TopProduct[];
+  bundles: BundleSalesSummary;
+  topBundles: TopBundle[];
+}) {
   const [sort, setSort] = useState<'revenue' | 'units'>('revenue');
   const rows = sort === 'revenue' ? byRevenue : byUnits;
+  const bundleRows =
+    sort === 'revenue'
+      ? topBundles
+      : [...topBundles].sort((a, b) => b.orders - a.orders || b.revenue - a.revenue);
 
   const pill = (
     <div className="inline-flex rounded-md border p-0.5">
@@ -297,56 +294,80 @@ function TopProductsPanel({byRevenue, byUnits, bundles}: {byRevenue: TopProduct[
   );
 
   return (
-    <Panel
-      title="Top products"
-      info="Money shown is itemized sales only. Bundle deals are priced as a set, so their value is listed once under Bundle deals, not split per item."
-      control={pill}
-    >
-      {rows.length === 0 && bundles.bundleRevenue <= 0 ? (
-        <Empty>No sales in this range.</Empty>
-      ) : (
-        <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-4">
+      <Panel
+        title="Top products"
+        info="Money shown is itemized sales only. Bundle deals are priced as a set, so their value is listed once under Bundle deals, not split per item."
+        control={pill}
+      >
+        {rows.length === 0 && bundles.bundleRevenue <= 0 ? (
+          <Empty>No sales in this range.</Empty>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            <ul className="flex flex-col gap-2.5">
+              {rows.map((t, i) => (
+                <li key={t.product_id} className="flex items-start gap-3">
+                  <span className="w-4 pt-0.5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">{t.name}</span>
+                    {t.bundledUnits > 0 && (
+                      <span className="text-[11px] text-muted-foreground">{t.bundledUnits} of these units were bundled</span>
+                    )}
+                  </span>
+                  <span className={cn('pt-0.5 text-xs tabular-nums', sort === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                    {t.units} units
+                  </span>
+                  <span className={cn('w-20 pt-0.5 text-right text-sm tabular-nums', sort === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                    {formatPeso(t.revenue)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            {bundles.bundleRevenue > 0 && (
+              <>
+                <div className="h-px w-full bg-border" />
+                <div className="flex items-center gap-3">
+                  <span className="w-4" />
+                  <span className="min-w-0 flex-1 text-sm">
+                    Bundle deals
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">priced as a set</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">{bundles.bundleOrders} orders</span>
+                  <span className="w-20 text-right text-sm font-medium tabular-nums">{formatPeso(bundles.bundleRevenue)}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Itemized {formatPeso(bundles.itemizedRevenue)} plus bundles {formatPeso(bundles.bundleRevenue)} is{' '}
+                  {formatPeso(bundles.totalRevenue)}, matching Revenue above.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+      </Panel>
+
+      {topBundles.length > 0 && (
+        <Panel
+          title="Top bundles"
+          info="Bundles sold as a set. Sales made offline, or before bundle tracking landed, are counted in the Bundle deals total on Top products but are not listed by name here."
+        >
           <ul className="flex flex-col gap-2.5">
-            {rows.map((t, i) => (
-              <li key={t.product_id} className="flex items-start gap-3">
-                <span className="w-4 pt-0.5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm">{t.name}</span>
-                  {t.bundledUnits > 0 && (
-                    <span className="text-[11px] text-muted-foreground">{t.bundledUnits} of these units were bundled</span>
-                  )}
+            {bundleRows.map((b, i) => (
+              <li key={b.bundle_id} className="flex items-center gap-3">
+                <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-sm">{b.name}</span>
+                <span className={cn('text-xs tabular-nums', sort === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                  {b.orders} {b.orders === 1 ? 'order' : 'orders'}
                 </span>
-                <span className={cn('pt-0.5 text-xs tabular-nums', sort === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
-                  {t.units} units
-                </span>
-                <span className={cn('w-20 pt-0.5 text-right text-sm tabular-nums', sort === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
-                  {formatPeso(t.revenue)}
+                <span className={cn('w-20 text-right text-sm tabular-nums', sort === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                  {formatPeso(b.revenue)}
                 </span>
               </li>
             ))}
           </ul>
-
-          {bundles.bundleRevenue > 0 && (
-            <>
-              <div className="h-px w-full bg-border" />
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="min-w-0 flex-1 text-sm">
-                  Bundle deals
-                  <span className="ml-1.5 text-[11px] text-muted-foreground">priced as a set</span>
-                </span>
-                <span className="text-xs text-muted-foreground">{bundles.bundleOrders} orders</span>
-                <span className="w-20 text-right text-sm font-medium tabular-nums">{formatPeso(bundles.bundleRevenue)}</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Itemized {formatPeso(bundles.itemizedRevenue)} plus bundles {formatPeso(bundles.bundleRevenue)} is{' '}
-                {formatPeso(bundles.totalRevenue)}, matching Revenue above.
-              </p>
-            </>
-          )}
-        </div>
+        </Panel>
       )}
-    </Panel>
+    </div>
   );
 }
 
