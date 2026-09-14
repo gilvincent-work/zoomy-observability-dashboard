@@ -173,17 +173,26 @@ export function isBundleOrder(order: PosOrder): boolean {
   return order.total - productLineSum > 0.005;
 }
 
+/** Minimal bundle facts orderToEntries needs to re-link a legacy bundle order. */
+export type BundleMatch = {bundle_id: string; bundle_type: 'pick' | 'fixed'; pick_count: number | null};
+
 /**
  * Reconstruct an order's stored lines into editable entries (individual items +
  * bundle groups). Bundle groups are rebuilt from bundle_group: the header row
  * (bundle_id, product_id null) gives the bundle id + price; the ₱0 product rows
  * sharing that group are its picks. A legacy fixed-bundle header with no group
  * becomes a bundle entry with no picks (its components come from the definition).
- * Orphan groups (picks with no header — e.g. a pre-grouping/offline-retried sale)
- * degrade to loose ₱0 items so the sale is still editable, just without the rule.
- * Appearance order is preserved.
+ *
+ * Legacy pick-bundle sales predate bundle_group: their picks are ₱0 product lines
+ * with the bundle premium sitting only on the order total. Those would otherwise
+ * read as loose ₱0 items with a ₱0 subtotal, so when a leftover premium remains
+ * (order.total exceeds the entry sum) the ₱0 items are folded back into a bundle
+ * carrying that premium as its price, auto-linked to the bundle whose pick_count
+ * matches the pick quantity (unique). Editing then shows it as a real bundle and,
+ * on save, it self-heals into the grouped shape. Unmatched legacy bundles keep an
+ * empty bundle_id for the editor to link. Appearance order is preserved.
  */
-export function orderToEntries(order: PosOrder): EditEntry[] {
+export function orderToEntries(order: PosOrder, defs: BundleMatch[] = []): EditEntry[] {
   const out: EditEntry[] = [];
   const groupIndex = new Map<string, number>();
   for (const l of order.items) {
@@ -216,6 +225,20 @@ export function orderToEntries(order: PosOrder): EditEntry[] {
     } else {
       cleaned.push(e);
     }
+  }
+
+  // Fold a legacy bundle premium (unattributed money on the total) back into a
+  // bundle made of the ₱0 items, auto-linked by pick_count when unambiguous.
+  const entriesSum = cleaned.reduce((s, e) => s + (e.kind === 'item' ? e.qty * e.unit_price : e.price), 0);
+  const premium = order.total - entriesSum;
+  const zeros = cleaned.filter((e): e is Extract<EditEntry, {kind: 'item'}> => e.kind === 'item' && e.unit_price === 0);
+  if (premium > 0.005 && zeros.length > 0) {
+    const rest = cleaned.filter((e) => !(e.kind === 'item' && e.unit_price === 0));
+    const pickQty = zeros.reduce((s, e) => s + e.qty, 0);
+    const matches = defs.filter((d) => d.bundle_type === 'pick' && d.pick_count === pickQty);
+    const bundle_id = matches.length === 1 ? matches[0].bundle_id : '';
+    rest.push({kind: 'bundle', bundle_id, price: premium, picks: zeros.map((e) => ({product_id: e.product_id, qty: e.qty}))});
+    return rest;
   }
   return cleaned;
 }
