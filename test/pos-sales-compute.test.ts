@@ -11,6 +11,7 @@ import {
   filterOrders,
   filterOrdersByRange,
   isBundleOrder,
+  orderToEntries,
   isFilterActive,
   isSalesRange,
   offlineChannelFacts,
@@ -127,6 +128,44 @@ describe('isBundleOrder', () => {
       items: [{product_id: 'A', name: 'A', qty: 2, unit_price: 200, line_total: 400}],
     });
     expect(isBundleOrder(o)).toBe(false);
+  });
+});
+
+describe('orderToEntries', () => {
+  const L = (over: Partial<PosOrder['items'][number]>): PosOrder['items'][number] => ({
+    product_id: null, bundle_id: null, bundle_group: null, name: 'x', qty: 1, unit_price: 0, line_total: 0, ...over,
+  });
+
+  it('rebuilds a bundle group (header + ₱0 picks) alongside an individual item', () => {
+    const o = order({
+      id: 'm1', created_at: '2026-09-07T00:00:00.000Z', total: 800,
+      items: [
+        L({product_id: 'BEEF', qty: 1, unit_price: 200, line_total: 200}),
+        L({bundle_id: 'B3', bundle_group: '1', unit_price: 600, line_total: 600}),
+        L({product_id: 'CGC', bundle_group: '1', qty: 1}),
+        L({product_id: 'SLM', bundle_group: '1', qty: 1}),
+      ],
+    });
+    expect(orderToEntries(o)).toEqual([
+      {kind: 'item', product_id: 'BEEF', qty: 1, unit_price: 200},
+      {kind: 'bundle', bundle_id: 'B3', price: 600, picks: [{product_id: 'CGC', qty: 1}, {product_id: 'SLM', qty: 1}]},
+    ]);
+  });
+
+  it('treats a legacy fixed-bundle header (no group) as a bundle with no picks', () => {
+    const o = order({
+      id: 'm2', created_at: '2026-09-07T00:00:00.000Z', total: 300,
+      items: [L({bundle_id: 'FIX', unit_price: 300, line_total: 300})],
+    });
+    expect(orderToEntries(o)).toEqual([{kind: 'bundle', bundle_id: 'FIX', price: 300, picks: []}]);
+  });
+
+  it('degrades orphan picks (a group with no header) to loose ₱0 items', () => {
+    const o = order({
+      id: 'm3', created_at: '2026-09-07T00:00:00.000Z', total: 0,
+      items: [L({product_id: 'CGC', bundle_group: '9', qty: 2})],
+    });
+    expect(orderToEntries(o)).toEqual([{kind: 'item', product_id: 'CGC', qty: 2, unit_price: 0}]);
   });
 });
 

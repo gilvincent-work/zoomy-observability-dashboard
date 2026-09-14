@@ -12,6 +12,29 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-14 — Offline Sales: bundle-aware order editing — `feat(offline-sales)`
+
+- **Bundles are editable again (correctly).** The Edit action is back on every
+  non-voided order, including bundles. The editor shows an order as entries:
+  individual items and bundle groups. A "Buy Any N" bundle renders N pick slots
+  restricted to its eligible categories with a live `X / N` counter and an
+  editable price; a fixed bundle shows its components with an editable price. You
+  can add items or add a bundle to any order, and Save is blocked until each
+  bundle meets its rule. This supersedes the 2026-09-14 fix that hid Edit for
+  bundles.
+- **Enforced server-side.** Saving calls the reworked `edit_pos_order`, which
+  takes structured entries, checks each bundle's pick_count + pick eligibility,
+  re-derives stock FEFO, and recomputes the total (`Σ item totals + Σ bundle
+  prices`) — rejecting an invalid or voided order before anything mutates.
+- **Reconstruction.** Orders now carry `bundle_group` on their lines; the new
+  tested `orderToEntries` rebuilds groups from it (a legacy fixed-bundle header
+  becomes a bundle with no picks; orphan picks degrade to loose items). The
+  Orders page fetches active bundle definitions + product categories for the
+  editor.
+- **Schema (Staging, mirrored in `../zoomy-pos/supabase/pos_schema.sql`):**
+  `pos_order_items.bundle_group`; `edit_pos_order` takes `p_entries`;
+  `apply_pos_order` persists `bundle_group`. **Staging only — not promoted to prod.**
+
 ## 2026-09-14 — Offline Sales: don't corrupt bundles on edit + show line subtotals — `fix(offline-sales)`
 
 - **Fix: bundle orders were editable and editing them wiped the bundle price.**

@@ -4,8 +4,9 @@
 export type SalesRange = 'today' | '7d' | '30d' | 'all';
 
 export interface PosOrderLine {
-  product_id: string | null; // SKU; null for a bundle line
-  bundle_id?: string | null; // set on a bundle line (product_id is then null)
+  product_id: string | null; // SKU; null for a bundle header line
+  bundle_id?: string | null; // set on a bundle header line (product_id is then null)
+  bundle_group?: string | null; // ties a bundle's header + its ₱0 pick lines into one instance
   name: string; // resolved product or bundle name, or the raw id if unknown
   qty: number;
   unit_price: number;
@@ -34,6 +35,25 @@ export interface PosCatalogItem {
   product_id: string;
   name: string;
   price: number | null;
+  category: string | null; // POS display tab; used to filter a bundle's eligible picks
+}
+
+/** One editable entry on an order: an individual product line, or a bundle group
+ *  (its price + picked products; picks are empty for a fixed bundle). Sent to
+ *  edit_pos_order and reconstructed from an order's stored lines. */
+export type EditEntry =
+  | {kind: 'item'; product_id: string; qty: number; unit_price: number}
+  | {kind: 'bundle'; bundle_id: string; price: number; picks: {product_id: string; qty: number}[]};
+
+/** Slim bundle definition for the edit-order editor (rules + fixed components). */
+export interface PosBundleDef {
+  bundle_id: string;
+  name: string;
+  price: number;
+  bundle_type: 'pick' | 'fixed';
+  pick_count: number | null; // exact number of picks a 'pick' bundle needs
+  line_categories: string[] | null; // eligible product categories for picks
+  items: {product_id: string; name: string; qty: number}[]; // fixed bundle components
 }
 
 /** Active filters for the transactions list. `all`/null values mean no filter. */

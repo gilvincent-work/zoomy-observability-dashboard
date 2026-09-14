@@ -4,8 +4,8 @@ import {useState, useTransition} from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
 import {ArrowLeft, Ban, ChevronLeft, ChevronRight, PawPrint, Pencil, Plus, Receipt, RotateCcw, TriangleAlert, X} from 'lucide-react';
-import type {PosOrder, PosOrdersFilter, PriceBounds, PosCatalogItem} from '@/src/pos-sales-types';
-import {isFilterActive, isBundleOrder, type PageInfo} from '@/src/pos-sales-compute';
+import type {PosOrder, PosOrdersFilter, PriceBounds, PosCatalogItem, PosBundleDef, EditEntry} from '@/src/pos-sales-types';
+import {isFilterActive, orderToEntries, type PageInfo} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodLabel, paymentMethodBadgeClass} from '@/src/pos-format';
 import {voidOrderAction, unvoidOrderAction, editOrderAction} from '@/src/pos-sales-actions';
 import {cn} from '@/lib/utils';
@@ -28,6 +28,7 @@ export function OfflineOrdersView({
   filter,
   bounds,
   catalog,
+  bundles,
   usingMock,
   fetchedAt,
 }: {
@@ -36,6 +37,7 @@ export function OfflineOrdersView({
   filter: PosOrdersFilter;
   bounds: PriceBounds;
   catalog: PosCatalogItem[];
+  bundles: PosBundleDef[];
   usingMock: boolean;
   fetchedAt: string;
 }) {
@@ -161,20 +163,16 @@ export function OfflineOrdersView({
                     <span className={cn('text-sm font-semibold tabular-nums', o.status === 'voided' && 'text-muted-foreground line-through')}>{formatPeso(o.total)}</span>
                     {o.status !== 'voided' ? (
                       <div className="flex items-center gap-1.5">
-                        {/* Bundle orders aren't editable line-by-line: the bundle
-                            premium lives on the order total, not the product lines,
-                            so recomputing total from lines would zero it. Detected
-                            by total exceeding the product-line sum (isBundleOrder).
-                            To change a bundle, void it and re-ring. */}
-                        {!isBundleOrder(o) && (
-                          <button
-                            type="button"
-                            onClick={() => setEditing(o)}
-                            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                          >
-                            <Pencil className="size-3" /> Edit
-                          </button>
-                        )}
+                        {/* Every non-voided order is editable now, bundles included:
+                            the editor rebuilds bundle groups from the order and the
+                            RPC re-derives the total + enforces each bundle's rules. */}
+                        <button
+                          type="button"
+                          onClick={() => setEditing(o)}
+                          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                        >
+                          <Pencil className="size-3" /> Edit
+                        </button>
                         <button
                           type="button"
                           onClick={() => voidOrder(o)}
@@ -214,6 +212,7 @@ export function OfflineOrdersView({
         <EditOrderModal
           order={editing}
           catalog={catalog}
+          bundles={bundles}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -239,70 +238,99 @@ export function OfflineOrdersView({
   );
 }
 
-type DraftLine = {product_id: string; qty: string; unit_price: string};
+type DraftItem = {kind: 'item'; product_id: string; qty: string; unit_price: string};
+type DraftPick = {product_id: string; qty: string};
+type DraftBundle = {kind: 'bundle'; bundle_id: string; price: string; picks: DraftPick[]};
+type DraftEntry = DraftItem | DraftBundle;
 
-/** Edit an order: payment method, IG handle, and the product lines (add/remove,
- *  qty, unit price). Saving calls edit_pos_order, which reconciles stock + total
- *  server-side. Bundle lines aren't editable here; an order made purely of
- *  component products (the POS's normal shape) edits fully. */
+/** Edit an order end-to-end: payment method, IG handle, individual items, and
+ *  bundle groups. Bundles keep their rules, a "pick N" bundle enforces exactly N
+ *  picks from its eligible categories; a fixed bundle shows its components; both
+ *  let you edit the bundle price. You can freely add items or bundles to any
+ *  order. Saving calls edit_pos_order, which re-derives stock + total and
+ *  re-checks every bundle rule server-side. */
 function EditOrderModal({
   order,
   catalog,
+  bundles,
   onClose,
   onSaved,
 }: {
   order: PosOrder;
   catalog: PosCatalogItem[];
+  bundles: PosBundleDef[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  // Options include the catalog PLUS any SKU already on this order that's no
-  // longer in the active catalog (unlisted since the sale), labeled from the
-  // order item, so an existing line always shows its product instead of blank.
+  // Options = the catalog PLUS any SKU already on this order that's since been
+  // unlisted, so an existing line always shows its product instead of blank.
   const catalogSkus = new Set(catalog.map((c) => c.product_id));
-  const extraOptions = order.items
+  const extraOptions: PosCatalogItem[] = order.items
     .filter((it) => it.product_id && !catalogSkus.has(it.product_id))
-    .map((it) => ({product_id: it.product_id as string, name: `${it.name} (unlisted)`, price: it.unit_price}));
+    .map((it) => ({product_id: it.product_id as string, name: `${it.name} (unlisted)`, price: it.unit_price, category: null}));
   const options: PosCatalogItem[] = [...extraOptions, ...catalog];
   const priceBySku = new Map(options.map((c) => [c.product_id, c.price ?? 0]));
+  const bundleById = new Map(bundles.map((b) => [b.bundle_id, b]));
+  const nameFromOrder = new Map(order.items.filter((it) => it.bundle_id).map((it) => [it.bundle_id as string, it.name]));
+
   const [method, setMethod] = useState(order.payment_method ?? 'cash');
   const [handle, setHandle] = useState(order.customer_handle ?? '');
-  const [lines, setLines] = useState<DraftLine[]>(
-    order.items
-      .filter((it) => it.product_id)
-      .map((it) => ({product_id: it.product_id as string, qty: String(it.qty), unit_price: String(it.unit_price)})),
+  const [entries, setEntries] = useState<DraftEntry[]>(() =>
+    orderToEntries(order).map((e): DraftEntry =>
+      e.kind === 'item'
+        ? {kind: 'item', product_id: e.product_id, qty: String(e.qty), unit_price: String(e.unit_price)}
+        : {kind: 'bundle', bundle_id: e.bundle_id, price: String(e.price), picks: e.picks.map((p) => ({product_id: p.product_id, qty: String(p.qty)}))},
+    ),
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const total = lines.reduce((sum, l) => sum + (Number(l.qty) || 0) * (Number(l.unit_price) || 0), 0);
-  const hasValidLine = lines.some((l) => l.product_id && Number(l.qty) > 0);
+  const eligibleOptions = (b: PosBundleDef | undefined) => {
+    if (!b || !b.line_categories || b.line_categories.length === 0) return options;
+    return options.filter((c) => c.category != null && b.line_categories!.includes(c.category));
+  };
+  const bundleName = (id: string) => bundleById.get(id)?.name ?? nameFromOrder.get(id) ?? 'Bundle';
+  const picksTotal = (picks: DraftPick[]) => picks.reduce((s, p) => s + (Number(p.qty) || 0), 0);
 
-  function setLine(i: number, patch: Partial<DraftLine>) {
-    setLines((ls) => ls.map((l, idx) => (idx === i ? {...l, ...patch} : l)));
-  }
-  function pickProduct(i: number, sku: string) {
-    // Auto-fill unit price from the catalog on pick; stays editable after.
-    setLine(i, {product_id: sku, unit_price: String(priceBySku.get(sku) ?? 0)});
-  }
-  function addLine() {
-    setLines((ls) => [...ls, {product_id: '', qty: '1', unit_price: '0'}]);
-  }
-  function removeLine(i: number) {
-    setLines((ls) => ls.filter((_, idx) => idx !== i));
-  }
+  const entryTotal = (e: DraftEntry) =>
+    e.kind === 'item' ? (Number(e.qty) || 0) * (Number(e.unit_price) || 0) : Number(e.price) || 0;
+  const total = entries.reduce((sum, e) => sum + entryTotal(e), 0);
+
+  // A pick bundle must have exactly its pick_count picks, each with a product.
+  const bundleProblem = (e: DraftBundle): string | null => {
+    const def = bundleById.get(e.bundle_id);
+    if (!def || def.bundle_type !== 'pick' || def.pick_count == null) return null;
+    if (e.picks.some((p) => !p.product_id)) return 'choose a product for every pick';
+    const n = picksTotal(e.picks);
+    if (n !== def.pick_count) return `needs exactly ${def.pick_count} (has ${n})`;
+    return null;
+  };
+  const canSave =
+    entries.length > 0 &&
+    entries.every((e) => (e.kind === 'item' ? !!e.product_id && Number(e.qty) > 0 : !bundleProblem(e)));
+
+  const patchEntry = (i: number, next: DraftEntry) => setEntries((es) => es.map((e, idx) => (idx === i ? next : e)));
+  const removeEntry = (i: number) => setEntries((es) => es.filter((_, idx) => idx !== i));
+  const addItem = () => setEntries((es) => [...es, {kind: 'item', product_id: '', qty: '1', unit_price: '0'}]);
+  const addBundle = (id: string) => {
+    const def = bundleById.get(id);
+    if (!def) return;
+    const picks =
+      def.bundle_type === 'pick' && def.pick_count
+        ? Array.from({length: def.pick_count}, () => ({product_id: '', qty: '1'}))
+        : [];
+    setEntries((es) => [...es, {kind: 'bundle', bundle_id: id, price: String(def.price), picks}]);
+  };
 
   function save() {
     setError(null);
-    const payloadLines = lines
-      .filter((l) => l.product_id && Number(l.qty) > 0)
-      .map((l) => ({product_id: l.product_id, qty: Number(l.qty), unit_price: Number(l.unit_price) || 0}));
-    if (payloadLines.length === 0) {
-      setError('An order needs at least one item.');
-      return;
-    }
+    const payload: EditEntry[] = entries.map((e) =>
+      e.kind === 'item'
+        ? {kind: 'item', product_id: e.product_id, qty: Number(e.qty) || 0, unit_price: Number(e.unit_price) || 0}
+        : {kind: 'bundle', bundle_id: e.bundle_id, price: Number(e.price) || 0, picks: e.picks.map((p) => ({product_id: p.product_id, qty: Number(p.qty) || 0}))},
+    );
     startTransition(async () => {
-      const res = await editOrderAction(order.client_uuid, {payment_method: method, customer_handle: handle.trim()}, payloadLines);
+      const res = await editOrderAction(order.client_uuid, {payment_method: method, customer_handle: handle.trim()}, payload);
       if (!res.ok) setError(res.error);
       else onSaved();
     });
@@ -344,61 +372,80 @@ function EditOrderModal({
             </label>
           </div>
 
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Items</span>
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Items &amp; bundles</span>
           <div className="mt-1.5 flex flex-col gap-2">
-            {lines.map((l, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <select
-                  value={l.product_id}
-                  onChange={(e) => pickProduct(i, e.target.value)}
-                  className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring"
-                >
-                  <option value="">Select product…</option>
-                  {options.map((c) => (
-                    <option key={c.product_id} value={c.product_id}>{c.name}</option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  aria-label="Quantity"
-                  value={l.qty}
-                  onChange={(e) => setLine(i, {qty: e.target.value})}
-                  className="h-8 w-14 rounded-md border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:border-ring"
-                />
-                <div className="relative w-24">
-                  <span className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-xs text-muted-foreground">₱</span>
+            {entries.map((e, i) =>
+              e.kind === 'item' ? (
+                <div key={i} className="flex items-center gap-2">
+                  <select
+                    value={e.product_id}
+                    onChange={(ev) => patchEntry(i, {...e, product_id: ev.target.value, unit_price: String(priceBySku.get(ev.target.value) ?? e.unit_price)})}
+                    className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring"
+                  >
+                    <option value="">Select product…</option>
+                    {options.map((c) => (
+                      <option key={c.product_id} value={c.product_id}>{c.name}</option>
+                    ))}
+                  </select>
                   <input
-                    type="number"
-                    inputMode="decimal"
-                    aria-label="Unit price"
-                    value={l.unit_price}
-                    onChange={(e) => setLine(i, {unit_price: e.target.value})}
-                    className="h-8 w-full rounded-md border bg-background pr-2 pl-5 text-right text-sm tabular-nums outline-none focus-visible:border-ring"
+                    type="number" inputMode="numeric" aria-label="Quantity" value={e.qty}
+                    onChange={(ev) => patchEntry(i, {...e, qty: ev.target.value})}
+                    className="h-8 w-12 rounded-md border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:border-ring"
                   />
+                  <div className="relative w-20">
+                    <span className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-xs text-muted-foreground">₱</span>
+                    <input
+                      type="number" inputMode="decimal" aria-label="Unit price" value={e.unit_price}
+                      onChange={(ev) => patchEntry(i, {...e, unit_price: ev.target.value})}
+                      className="h-8 w-full rounded-md border bg-background pr-2 pl-5 text-right text-sm tabular-nums outline-none focus-visible:border-ring"
+                    />
+                  </div>
+                  <span className="w-16 shrink-0 text-right text-sm font-medium tabular-nums text-muted-foreground" aria-label="Line subtotal">
+                    {formatPeso(entryTotal(e))}
+                  </span>
+                  <button type="button" onClick={() => removeEntry(i)} aria-label="Remove item" className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive">
+                    <X className="size-4" />
+                  </button>
                 </div>
-                <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums text-muted-foreground" aria-label="Line subtotal">
-                  {formatPeso((Number(l.qty) || 0) * (Number(l.unit_price) || 0))}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeLine(i)}
-                  aria-label="Remove item"
-                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            ))}
+              ) : (
+                <BundleEntryCard
+                  key={i}
+                  entry={e}
+                  def={bundleById.get(e.bundle_id)}
+                  name={bundleName(e.bundle_id)}
+                  eligible={eligibleOptions(bundleById.get(e.bundle_id))}
+                  problem={bundleProblem(e)}
+                  onPatch={(next) => patchEntry(i, next)}
+                  onRemove={() => removeEntry(i)}
+                />
+              ),
+            )}
           </div>
 
-          <button
-            type="button"
-            onClick={addLine}
-            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary transition-opacity hover:opacity-80"
-          >
-            <Plus className="size-3.5" /> Add item
-          </button>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={addItem} className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-opacity hover:opacity-80">
+              <Plus className="size-3.5" /> Add item
+            </button>
+            {bundles.length > 0 && (
+              <label className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                <Plus className="size-3.5" />
+                <select
+                  aria-label="Add bundle"
+                  value=""
+                  onChange={(ev) => {
+                    if (ev.target.value) addBundle(ev.target.value);
+                    ev.currentTarget.value = '';
+                  }}
+                  className="h-7 rounded-md border border-transparent bg-transparent px-1 text-xs font-medium text-primary outline-none hover:opacity-80 focus-visible:border-ring"
+                >
+                  <option value="">Add bundle…</option>
+                  {bundles.map((b) => (
+                    <option key={b.bundle_id} value={b.bundle_id}>{b.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
 
           {error && (
             <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -411,12 +458,102 @@ function EditOrderModal({
           <span className="text-sm font-semibold tabular-nums">Total {formatPeso(total)}</span>
           <div className="flex gap-2">
             <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button size="sm" onClick={save} disabled={pending || !hasValidLine}>
+            <Button size="sm" onClick={save} disabled={pending || !canSave}>
               {pending ? 'Saving…' : 'Save changes'}
             </Button>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** One bundle group inside the edit modal: name + rule, an editable price, and
+ *  either pick slots (Buy Any N, restricted to eligible categories, enforced to
+ *  exactly N) or the fixed components (read-only). */
+function BundleEntryCard({
+  entry,
+  def,
+  name,
+  eligible,
+  problem,
+  onPatch,
+  onRemove,
+}: {
+  entry: DraftBundle;
+  def: PosBundleDef | undefined;
+  name: string;
+  eligible: PosCatalogItem[];
+  problem: string | null;
+  onPatch: (next: DraftBundle) => void;
+  onRemove: () => void;
+}) {
+  const isPick = def?.bundle_type === 'pick';
+  const setPick = (j: number, patch: Partial<DraftPick>) =>
+    onPatch({...entry, picks: entry.picks.map((p, idx) => (idx === j ? {...p, ...patch} : p))});
+  const addPick = () => onPatch({...entry, picks: [...entry.picks, {product_id: '', qty: '1'}]});
+  const removePick = (j: number) => onPatch({...entry, picks: entry.picks.filter((_, idx) => idx !== j)});
+  const picked = entry.picks.reduce((s, p) => s + (Number(p.qty) || 0), 0);
+
+  return (
+    <div className="rounded-lg border border-border bg-background/40 p-2.5">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">Bundle</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{name}</span>
+        <div className="relative w-24">
+          <span className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-xs text-muted-foreground">₱</span>
+          <input
+            type="number" inputMode="decimal" aria-label="Bundle price" value={entry.price}
+            onChange={(e) => onPatch({...entry, price: e.target.value})}
+            className="h-8 w-full rounded-md border bg-background pr-2 pl-5 text-right text-sm tabular-nums outline-none focus-visible:border-ring"
+          />
+        </div>
+        <button type="button" onClick={onRemove} aria-label="Remove bundle" className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive">
+          <X className="size-4" />
+        </button>
+      </div>
+
+      {isPick ? (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>Picks</span>
+            <span className={cn('tabular-nums', problem ? 'text-destructive' : 'text-emerald-500')}>
+              {picked} / {def?.pick_count ?? '—'}
+            </span>
+          </div>
+          {entry.picks.map((p, j) => (
+            <div key={j} className="flex items-center gap-2">
+              <select
+                value={p.product_id}
+                onChange={(e) => setPick(j, {product_id: e.target.value})}
+                className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring"
+              >
+                <option value="">Select pick…</option>
+                {eligible.map((c) => (
+                  <option key={c.product_id} value={c.product_id}>{c.name}</option>
+                ))}
+              </select>
+              <input
+                type="number" inputMode="numeric" aria-label="Pick quantity" value={p.qty}
+                onChange={(e) => setPick(j, {qty: e.target.value})}
+                className="h-8 w-12 rounded-md border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:border-ring"
+              />
+              <button type="button" onClick={() => removePick(j)} aria-label="Remove pick" className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive">
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ))}
+          <button type="button" onClick={addPick} className="mt-0.5 inline-flex items-center gap-1 self-start text-[11px] font-medium text-primary transition-opacity hover:opacity-80">
+            <Plus className="size-3" /> Add pick
+          </button>
+        </div>
+      ) : def ? (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          {def.items.length > 0 ? def.items.map((it) => `${it.name} ×${it.qty}`).join(', ') : 'Fixed bundle'}
+        </p>
+      ) : null}
+
+      {problem && <p className="mt-1.5 text-[11px] text-destructive">This bundle {problem}.</p>}
     </div>
   );
 }

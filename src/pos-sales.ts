@@ -60,7 +60,7 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
       .from('pos_orders')
       .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at')
       .order('created_at', {ascending: false}),
-    supabase.from('pos_order_items').select('order_id,product_id,bundle_id,qty,unit_price,line_total'),
+    supabase.from('pos_order_items').select('order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total'),
     supabase.from('pos_products').select('product_id,name'),
     supabase.from('pos_bundles').select('bundle_id,name'),
   ]);
@@ -83,6 +83,7 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
     const line: PosOrderLine = {
       product_id: productId,
       bundle_id: bundleId,
+      bundle_group: (it.bundle_group as string | null) ?? null,
       name: (productId && nameBySku.get(productId)) || (bundleId && nameByBundle.get(bundleId)) || productId || bundleId || 'Unknown',
       qty: (it.qty as number) ?? 0,
       unit_price: Number(it.unit_price ?? 0),
@@ -162,7 +163,7 @@ export const getPosOrdersPage = cache(async (
 
   const ids = (orderRows ?? []).map((o) => o.id as string);
   const [itemsRes, productsRes, bundlesRes] = await Promise.all([
-    supabase.from('pos_order_items').select('order_id,product_id,bundle_id,qty,unit_price,line_total').in('order_id', ids),
+    supabase.from('pos_order_items').select('order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total').in('order_id', ids),
     supabase.from('pos_products').select('product_id,name'),
     supabase.from('pos_bundles').select('bundle_id,name'),
   ]);
@@ -184,6 +185,7 @@ export const getPosOrdersPage = cache(async (
     arr.push({
       product_id: productId,
       bundle_id: bundleId,
+      bundle_group: (it.bundle_group as string | null) ?? null,
       name: (productId && nameBySku.get(productId)) || (bundleId && nameByBundle.get(bundleId)) || productId || bundleId || 'Unknown',
       qty: (it.qty as number) ?? 0,
       unit_price: Number(it.unit_price ?? 0),
