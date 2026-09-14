@@ -12,6 +12,25 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-14 — Offline Sales: bundles show pre-populated on edit (no empty prompt) — `fix(offline-sales)`
+
+- **On first load, the editor shows the order's real content** — two bundles show
+  as two, each with its picks already filled, never an empty "Select bundle…"
+  prompt. Each `bundle_group` reconstructs as its own bundle (no merging); a group
+  with no header is auto-identified by matching its pick quantity to a bundle's
+  `pick_count`, and any unattributed premium is defaulted onto the ₱0 bundles (a
+  matched bundle takes its list price first, the remainder lands on the first).
+- **Custom (unlinked) bundles are now valid and saveable** — a group that matches
+  no bundle keeps its picks + an editable price and no longer blocks Save or forces
+  a selection. The RPC stores it via a **custom-bundle premium line** (both ids
+  null, tied to the group); the `pos_order_items` check constraint was relaxed to
+  allow that third line shape. A bundle selector still lets you link it to a real
+  bundle to get its rules.
+- **Sales always record a bundle header now** (`buildBundleOrderItems`): a
+  resolvable Coop id makes a linked header, an unresolvable one a custom premium
+  line — so a bundle's price + grouping are never lost to an orphan group again.
+- **Staging only — not promoted to prod.**
+
 ## 2026-09-14 — Offline Sales: legacy bundle orders edit as bundles — `fix(offline-sales)`
 
 - **A pre-grouping bundle sale now opens as a bundle, not loose ₱0 rows.** When an

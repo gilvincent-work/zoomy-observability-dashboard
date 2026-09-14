@@ -275,7 +275,7 @@ function EditOrderModal({
   const [method, setMethod] = useState(order.payment_method ?? 'cash');
   const [handle, setHandle] = useState(order.customer_handle ?? '');
   const [entries, setEntries] = useState<DraftEntry[]>(() =>
-    orderToEntries(order, bundles.map((b) => ({bundle_id: b.bundle_id, bundle_type: b.bundle_type, pick_count: b.pick_count}))).map((e): DraftEntry =>
+    orderToEntries(order, bundles.map((b) => ({bundle_id: b.bundle_id, bundle_type: b.bundle_type, pick_count: b.pick_count, price: b.price}))).map((e): DraftEntry =>
       e.kind === 'item'
         ? {kind: 'item', product_id: e.product_id, qty: String(e.qty), unit_price: String(e.unit_price)}
         : {kind: 'bundle', bundle_id: e.bundle_id, price: String(e.price), picks: e.picks.map((p) => ({product_id: p.product_id, qty: String(p.qty)}))},
@@ -294,12 +294,12 @@ function EditOrderModal({
     e.kind === 'item' ? (Number(e.qty) || 0) * (Number(e.unit_price) || 0) : Number(e.price) || 0;
   const total = entries.reduce((sum, e) => sum + entryTotal(e), 0);
 
-  // A pick bundle must be linked and have exactly its pick_count picks.
+  // A linked pick bundle must have exactly its pick_count picks. A custom
+  // (unlinked) bundle is valid as-is — it just carries a price and its picks.
   const bundleProblem = (e: DraftBundle): string | null => {
-    if (!e.bundle_id) return 'pick which bundle this is';
-    const def = bundleById.get(e.bundle_id);
-    if (!def || def.bundle_type !== 'pick' || def.pick_count == null) return null;
     if (e.picks.some((p) => !p.product_id)) return 'choose a product for every pick';
+    const def = e.bundle_id ? bundleById.get(e.bundle_id) : undefined;
+    if (!def || def.bundle_type !== 'pick' || def.pick_count == null) return null;
     const n = picksTotal(e.picks);
     if (n !== def.pick_count) return `needs exactly ${def.pick_count} (has ${n})`;
     return null;
@@ -487,7 +487,9 @@ function BundleEntryCard({
   onPatch: (next: DraftBundle) => void;
   onRemove: () => void;
 }) {
-  const isPick = def?.bundle_type === 'pick';
+  // Show pick slots for a "pick" bundle AND for a custom/unlinked bundle (its
+  // picks are arbitrary); only a known fixed bundle hides them behind components.
+  const showPicks = def?.bundle_type !== 'fixed';
   // Link/relink this group to a bundle (keeps the current picks so a folded legacy
   // bundle doesn't lose them; the pick counter guides any adjustment). Fills an
   // empty price from the chosen bundle's default.
@@ -509,9 +511,9 @@ function BundleEntryCard({
           aria-label="Bundle"
           value={entry.bundle_id}
           onChange={(e) => relink(e.target.value)}
-          className={cn('h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm font-medium outline-none focus-visible:border-ring', !entry.bundle_id && 'border-destructive text-muted-foreground')}
+          className={cn('h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm font-medium outline-none focus-visible:border-ring', !entry.bundle_id && 'text-muted-foreground')}
         >
-          <option value="">Select bundle…</option>
+          <option value="">Custom bundle (link…)</option>
           {bundles.map((b) => (
             <option key={b.bundle_id} value={b.bundle_id}>{b.name}</option>
           ))}
@@ -529,12 +531,12 @@ function BundleEntryCard({
         </button>
       </div>
 
-      {isPick ? (
+      {showPicks ? (
         <div className="mt-2 flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-[11px] text-muted-foreground">
             <span>Picks</span>
             <span className={cn('tabular-nums', problem ? 'text-destructive' : 'text-emerald-500')}>
-              {picked} / {def?.pick_count ?? '—'}
+              {picked}{def?.pick_count != null ? ` / ${def.pick_count}` : ''}
             </span>
           </div>
           {entry.picks.map((p, j) => (
@@ -563,11 +565,11 @@ function BundleEntryCard({
             <Plus className="size-3" /> Add pick
           </button>
         </div>
-      ) : def ? (
+      ) : (
         <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-          {def.items.length > 0 ? def.items.map((it) => `${it.name} ×${it.qty}`).join(', ') : 'Fixed bundle'}
+          {def && def.items.length > 0 ? def.items.map((it) => `${it.name} ×${it.qty}`).join(', ') : 'Fixed bundle'}
         </p>
-      ) : null}
+      )}
 
       {problem && <p className="mt-1.5 text-[11px] text-destructive">This bundle {problem}.</p>}
     </div>
