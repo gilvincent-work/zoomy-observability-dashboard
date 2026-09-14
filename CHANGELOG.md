@@ -12,6 +12,21 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-14 — Offline Sales: legacy bundle orders edit as bundles — `fix(offline-sales)`
+
+- **A pre-grouping bundle sale now opens as a bundle, not loose ₱0 rows.** When an
+  order carries a bundle premium (its total exceeds the entry sum) with ₱0 picks,
+  `orderToEntries` folds those picks into a bundle card carrying the premium as its
+  price (so it shows ₱570, not ₱0), auto-linked to the bundle whose `pick_count`
+  matches the pick quantity. Editing then shows only that bundle's picks, and
+  **saving self-heals the order into the proper grouped shape**.
+- **Pick options are restricted to the bundle's eligible categories** (already the
+  rule for grouped bundles; now applies to folded legacy ones too). Each bundle
+  card has a **bundle selector** to link/relink; an unlinked bundle blocks Save
+  until you choose which bundle it is.
+- Corrected a stale Staging `pick_count` on "Buy Any 4" (was 3) so it enforces and
+  auto-matches as 4. **Staging only — not promoted to prod.**
+
 ## 2026-09-14 — Offline Sales: bundle-aware order editing — `feat(offline-sales)`
 
 - **Bundles are editable again (correctly).** The Edit action is back on every

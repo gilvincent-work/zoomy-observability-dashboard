@@ -271,12 +271,11 @@ function EditOrderModal({
   const options: PosCatalogItem[] = [...extraOptions, ...catalog];
   const priceBySku = new Map(options.map((c) => [c.product_id, c.price ?? 0]));
   const bundleById = new Map(bundles.map((b) => [b.bundle_id, b]));
-  const nameFromOrder = new Map(order.items.filter((it) => it.bundle_id).map((it) => [it.bundle_id as string, it.name]));
 
   const [method, setMethod] = useState(order.payment_method ?? 'cash');
   const [handle, setHandle] = useState(order.customer_handle ?? '');
   const [entries, setEntries] = useState<DraftEntry[]>(() =>
-    orderToEntries(order).map((e): DraftEntry =>
+    orderToEntries(order, bundles.map((b) => ({bundle_id: b.bundle_id, bundle_type: b.bundle_type, pick_count: b.pick_count}))).map((e): DraftEntry =>
       e.kind === 'item'
         ? {kind: 'item', product_id: e.product_id, qty: String(e.qty), unit_price: String(e.unit_price)}
         : {kind: 'bundle', bundle_id: e.bundle_id, price: String(e.price), picks: e.picks.map((p) => ({product_id: p.product_id, qty: String(p.qty)}))},
@@ -289,15 +288,15 @@ function EditOrderModal({
     if (!b || !b.line_categories || b.line_categories.length === 0) return options;
     return options.filter((c) => c.category != null && b.line_categories!.includes(c.category));
   };
-  const bundleName = (id: string) => bundleById.get(id)?.name ?? nameFromOrder.get(id) ?? 'Bundle';
   const picksTotal = (picks: DraftPick[]) => picks.reduce((s, p) => s + (Number(p.qty) || 0), 0);
 
   const entryTotal = (e: DraftEntry) =>
     e.kind === 'item' ? (Number(e.qty) || 0) * (Number(e.unit_price) || 0) : Number(e.price) || 0;
   const total = entries.reduce((sum, e) => sum + entryTotal(e), 0);
 
-  // A pick bundle must have exactly its pick_count picks, each with a product.
+  // A pick bundle must be linked and have exactly its pick_count picks.
   const bundleProblem = (e: DraftBundle): string | null => {
+    if (!e.bundle_id) return 'pick which bundle this is';
     const def = bundleById.get(e.bundle_id);
     if (!def || def.bundle_type !== 'pick' || def.pick_count == null) return null;
     if (e.picks.some((p) => !p.product_id)) return 'choose a product for every pick';
@@ -412,7 +411,7 @@ function EditOrderModal({
                   key={i}
                   entry={e}
                   def={bundleById.get(e.bundle_id)}
-                  name={bundleName(e.bundle_id)}
+                  bundles={bundles}
                   eligible={eligibleOptions(bundleById.get(e.bundle_id))}
                   problem={bundleProblem(e)}
                   onPatch={(next) => patchEntry(i, next)}
@@ -474,7 +473,7 @@ function EditOrderModal({
 function BundleEntryCard({
   entry,
   def,
-  name,
+  bundles,
   eligible,
   problem,
   onPatch,
@@ -482,13 +481,20 @@ function BundleEntryCard({
 }: {
   entry: DraftBundle;
   def: PosBundleDef | undefined;
-  name: string;
+  bundles: PosBundleDef[];
   eligible: PosCatalogItem[];
   problem: string | null;
   onPatch: (next: DraftBundle) => void;
   onRemove: () => void;
 }) {
   const isPick = def?.bundle_type === 'pick';
+  // Link/relink this group to a bundle (keeps the current picks so a folded legacy
+  // bundle doesn't lose them; the pick counter guides any adjustment). Fills an
+  // empty price from the chosen bundle's default.
+  const relink = (bundle_id: string) => {
+    const nd = bundles.find((b) => b.bundle_id === bundle_id);
+    onPatch({...entry, bundle_id, price: entry.price && entry.price !== '0' ? entry.price : String(nd?.price ?? 0)});
+  };
   const setPick = (j: number, patch: Partial<DraftPick>) =>
     onPatch({...entry, picks: entry.picks.map((p, idx) => (idx === j ? {...p, ...patch} : p))});
   const addPick = () => onPatch({...entry, picks: [...entry.picks, {product_id: '', qty: '1'}]});
@@ -499,7 +505,17 @@ function BundleEntryCard({
     <div className="rounded-lg border border-border bg-background/40 p-2.5">
       <div className="flex items-center gap-2">
         <span className="inline-flex items-center rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">Bundle</span>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{name}</span>
+        <select
+          aria-label="Bundle"
+          value={entry.bundle_id}
+          onChange={(e) => relink(e.target.value)}
+          className={cn('h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm font-medium outline-none focus-visible:border-ring', !entry.bundle_id && 'border-destructive text-muted-foreground')}
+        >
+          <option value="">Select bundle…</option>
+          {bundles.map((b) => (
+            <option key={b.bundle_id} value={b.bundle_id}>{b.name}</option>
+          ))}
+        </select>
         <div className="relative w-24">
           <span className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-xs text-muted-foreground">₱</span>
           <input
