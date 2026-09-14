@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
 import {ArrowLeft, Ban, ChevronLeft, ChevronRight, PawPrint, Pencil, Plus, Receipt, RotateCcw, TriangleAlert, X} from 'lucide-react';
 import type {PosOrder, PosOrdersFilter, PriceBounds, PosCatalogItem} from '@/src/pos-sales-types';
-import {isFilterActive, type PageInfo} from '@/src/pos-sales-compute';
+import {isFilterActive, isBundleOrder, type PageInfo} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodLabel, paymentMethodBadgeClass} from '@/src/pos-format';
 import {voidOrderAction, unvoidOrderAction, editOrderAction} from '@/src/pos-sales-actions';
 import {cn} from '@/lib/utils';
@@ -161,10 +161,12 @@ export function OfflineOrdersView({
                     <span className={cn('text-sm font-semibold tabular-nums', o.status === 'voided' && 'text-muted-foreground line-through')}>{formatPeso(o.total)}</span>
                     {o.status !== 'voided' ? (
                       <div className="flex items-center gap-1.5">
-                        {/* Bundle orders (a line with no product_id) aren't editable:
-                            the bundle's price lives on that line, not the products,
-                            so re-applying product lines would zero the revenue. */}
-                        {!o.items.some((it) => it.product_id === null) && (
+                        {/* Bundle orders aren't editable line-by-line: the bundle
+                            premium lives on the order total, not the product lines,
+                            so recomputing total from lines would zero it. Detected
+                            by total exceeding the product-line sum (isBundleOrder).
+                            To change a bundle, void it and re-ring. */}
+                        {!isBundleOrder(o) && (
                           <button
                             type="button"
                             onClick={() => setEditing(o)}
@@ -375,6 +377,9 @@ function EditOrderModal({
                     className="h-8 w-full rounded-md border bg-background pr-2 pl-5 text-right text-sm tabular-nums outline-none focus-visible:border-ring"
                   />
                 </div>
+                <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums text-muted-foreground" aria-label="Line subtotal">
+                  {formatPeso((Number(l.qty) || 0) * (Number(l.unit_price) || 0))}
+                </span>
                 <button
                   type="button"
                   onClick={() => removeLine(i)}

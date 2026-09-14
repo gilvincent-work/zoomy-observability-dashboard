@@ -159,6 +159,21 @@ export function topProducts(orders: PosOrder[], limit = 5, sortBy: TopProductSor
 }
 
 /**
+ * A bundle order carries a "bundle premium": money on the order total that no
+ * product line accounts for (a "Buy Any N for ₱X" deal records its picks as ₱0
+ * component lines and puts ₱X only on the order header). There's no bundle flag
+ * on pos_orders, so this premium — total exceeding the sum of product line totals
+ * — is the reliable signal. Such orders are NOT safe to edit line-by-line: the
+ * edit RPC recomputes total from the line totals, which would wipe the premium.
+ * (A plain discounted order has total <= line sum, so it's never misflagged.)
+ */
+export function isBundleOrder(order: PosOrder): boolean {
+  let productLineSum = 0;
+  for (const it of order.items) if (it.product_id) productLineSum += it.line_total;
+  return order.total - productLineSum > 0.005;
+}
+
+/**
  * Reconcile itemized (per-product) revenue with the Revenue KPI. Bundle revenue
  * is everything NOT attributed to a product line, whether it sits on a bundle_id
  * line (post write-path fix) or only on the order header (pre-fix / offline
