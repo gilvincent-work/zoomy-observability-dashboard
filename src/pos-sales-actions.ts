@@ -26,6 +26,30 @@ export async function voidOrderAction(clientUuid: string): Promise<ActionResult>
   return {ok: true};
 }
 
+/**
+ * Unvoid a previously voided POS sale from Coop by its client_uuid (inverse of
+ * voidOrderAction). Uses the SECURITY DEFINER unvoid_pos_order RPC, which flips
+ * the order back to 'completed' AND re-applies its inventory decrements FEFO.
+ * Rejects an order that isn't voided. Online-only.
+ */
+export async function unvoidOrderAction(clientUuid: string): Promise<ActionResult> {
+  if (usingPosMock()) {
+    return {ok: false, error: 'Running in mock mode — set the Supabase pos_* env to unvoid.'};
+  }
+  if (!clientUuid) return {ok: false, error: 'Missing order reference.'};
+
+  const {data, error} = await posClient().rpc('unvoid_pos_order', {p_client_uuid: clientUuid});
+  if (error) return {ok: false, error: error.message};
+  if (data && (data as {ok?: boolean}).ok === false) {
+    return {ok: false, error: (data as {error?: string}).error ?? 'Unvoid failed.'};
+  }
+
+  // Restores the sale to the KPIs and revenue-by-method, so refresh both surfaces.
+  revalidatePath('/offline-sales/orders');
+  revalidatePath('/offline-sales');
+  return {ok: true};
+}
+
 /** One edited product line: a catalog SKU, a qty, and a unit price. */
 export type EditOrderLine = {product_id: string; qty: number; unit_price: number};
 

@@ -3,11 +3,11 @@
 import {useState, useTransition} from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
-import {ArrowLeft, Ban, ChevronLeft, ChevronRight, PawPrint, Pencil, Plus, Receipt, TriangleAlert, X} from 'lucide-react';
+import {ArrowLeft, Ban, ChevronLeft, ChevronRight, PawPrint, Pencil, Plus, Receipt, RotateCcw, TriangleAlert, X} from 'lucide-react';
 import type {PosOrder, PosOrdersFilter, PriceBounds, PosCatalogItem} from '@/src/pos-sales-types';
 import {isFilterActive, type PageInfo} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodLabel, paymentMethodBadgeClass} from '@/src/pos-format';
-import {voidOrderAction, editOrderAction} from '@/src/pos-sales-actions';
+import {voidOrderAction, unvoidOrderAction, editOrderAction} from '@/src/pos-sales-actions';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
@@ -52,23 +52,41 @@ export function OfflineOrdersView({
     return `${pathname}?${params.toString()}`;
   };
 
-  // Voiding is destructive (it restocks the sale), so it confirms first, then
-  // re-fetches the server data so the row shows voided + totals update.
-  const [voidingId, setVoidingId] = useState<string | null>(null);
-  const [voidError, setVoidError] = useState<string | null>(null);
+  // Voiding restocks the sale; unvoiding re-applies it. Both confirm first, then
+  // re-fetch the server data so the row + totals update. actingId tracks whichever
+  // order is mid-flight so only its button shows a spinner.
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const voidOrder = (o: PosOrder) => {
     if (o.status === 'voided') return;
     const ok = window.confirm(
-      `Void this ₱${o.total.toLocaleString()} sale?\n\nIts items will be added back to stock. This can't be undone.`,
+      `Void this ₱${o.total.toLocaleString()} sale?\n\nIts items will be added back to stock. You can unvoid it later.`,
     );
     if (!ok) return;
-    setVoidError(null);
-    setVoidingId(o.client_uuid);
+    setActionError(null);
+    setActingId(o.client_uuid);
     startTransition(async () => {
       const res = await voidOrderAction(o.client_uuid);
-      setVoidingId(null);
-      if (!res.ok) setVoidError(res.error);
+      setActingId(null);
+      if (!res.ok) setActionError(res.error);
+      else router.refresh();
+    });
+  };
+
+  // Unvoid restores a voided sale (re-applies its inventory + revenue).
+  const unvoidOrder = (o: PosOrder) => {
+    if (o.status !== 'voided') return;
+    const ok = window.confirm(
+      `Unvoid this ₱${o.total.toLocaleString()} sale?\n\nIt will be restored and its items taken back out of stock.`,
+    );
+    if (!ok) return;
+    setActionError(null);
+    setActingId(o.client_uuid);
+    startTransition(async () => {
+      const res = await unvoidOrderAction(o.client_uuid);
+      setActingId(null);
+      if (!res.ok) setActionError(res.error);
       else router.refresh();
     });
   };
@@ -141,7 +159,7 @@ export function OfflineOrdersView({
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
                     <span className={cn('text-sm font-semibold tabular-nums', o.status === 'voided' && 'text-muted-foreground line-through')}>{formatPeso(o.total)}</span>
-                    {o.status !== 'voided' && (
+                    {o.status !== 'voided' ? (
                       <div className="flex items-center gap-1.5">
                         {/* Bundle orders (a line with no product_id) aren't editable:
                             the bundle's price lives on that line, not the products,
@@ -158,13 +176,23 @@ export function OfflineOrdersView({
                         <button
                           type="button"
                           onClick={() => voidOrder(o)}
-                          disabled={pending && voidingId === o.client_uuid}
+                          disabled={pending && actingId === o.client_uuid}
                           className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive hover:text-destructive disabled:opacity-50"
                         >
                           <Ban className="size-3" />
-                          {pending && voidingId === o.client_uuid ? 'Voiding…' : 'Void'}
+                          {pending && actingId === o.client_uuid ? 'Voiding…' : 'Void'}
                         </button>
                       </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => unvoidOrder(o)}
+                        disabled={pending && actingId === o.client_uuid}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-emerald-500 hover:text-emerald-500 disabled:opacity-50"
+                      >
+                        <RotateCcw className="size-3" />
+                        {pending && actingId === o.client_uuid ? 'Unvoiding…' : 'Unvoid'}
+                      </button>
                     )}
                   </div>
                 </li>
@@ -174,9 +202,9 @@ export function OfflineOrdersView({
         </CardContent>
       </Card>
 
-      {voidError && (
+      {actionError && (
         <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          Couldn’t void: {voidError}
+          Couldn’t update order: {actionError}
         </div>
       )}
 
