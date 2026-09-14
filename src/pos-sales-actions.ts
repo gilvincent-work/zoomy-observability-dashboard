@@ -76,7 +76,9 @@ export async function editOrderAction(
         ? {kind: 'bundle', bundle_id: e.bundle_id, price: e.price, picks: e.picks.filter((p) => p.product_id && p.qty > 0)}
         : {kind: 'item', product_id: e.product_id, qty: e.qty, unit_price: e.unit_price},
     )
-    .filter((e) => (e.kind === 'bundle' ? !!e.bundle_id : !!e.product_id && (e.qty ?? 0) > 0));
+    // Keep every bundle (a custom bundle has an empty bundle_id, which the RPC
+    // stores as a premium line); drop only empty item lines.
+    .filter((e) => e.kind === 'bundle' || (!!e.product_id && (e.qty ?? 0) > 0));
   if (p_entries.length === 0) return {ok: false, error: 'An order needs at least one item.'};
 
   // Only send handle when it's part of the patch; '' clears it, a value sets it.

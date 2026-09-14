@@ -160,12 +160,12 @@ describe('orderToEntries', () => {
     expect(orderToEntries(o)).toEqual([{kind: 'bundle', bundle_id: 'FIX', price: 300, picks: []}]);
   });
 
-  it('degrades orphan picks (a group with no header) to loose ₱0 items', () => {
+  it('keeps an orphan group (picks, no header) as its own custom bundle', () => {
     const o = order({
       id: 'm3', created_at: '2026-09-07T00:00:00.000Z', total: 0,
       items: [L({product_id: 'CGC', bundle_group: '9', qty: 2})],
     });
-    expect(orderToEntries(o)).toEqual([{kind: 'item', product_id: 'CGC', qty: 2, unit_price: 0}]);
+    expect(orderToEntries(o)).toEqual([{kind: 'bundle', bundle_id: '', price: 0, picks: [{product_id: 'CGC', qty: 2}]}]);
   });
 
   it('folds a legacy bundle (₱0 picks + premium on total) into a bundle, auto-linked by pick_count', () => {
@@ -179,7 +179,7 @@ describe('orderToEntries', () => {
         L({product_id: 'CGC', qty: 1, unit_price: 170, line_total: 170}),
       ],
     });
-    const defs = [{bundle_id: 'B4', bundle_type: 'pick' as const, pick_count: 4}, {bundle_id: 'B3', bundle_type: 'pick' as const, pick_count: 3}];
+    const defs = [{bundle_id: 'B4', bundle_type: 'pick' as const, pick_count: 4, price: 650}, {bundle_id: 'B3', bundle_type: 'pick' as const, pick_count: 3, price: 500}];
     expect(orderToEntries(o, defs)).toEqual([
       {kind: 'item', product_id: 'CGC', qty: 1, unit_price: 170},
       {kind: 'bundle', bundle_id: 'B4', price: 570, picks: [
@@ -193,8 +193,27 @@ describe('orderToEntries', () => {
       id: 'm5', created_at: '2026-09-07T00:00:00.000Z', total: 500,
       items: [L({product_id: 'A', qty: 1}), L({product_id: 'B', qty: 1})],
     });
-    const out = orderToEntries(o, [{bundle_id: 'B4', bundle_type: 'pick', pick_count: 4}]);
+    const out = orderToEntries(o, [{bundle_id: 'B4', bundle_type: 'pick', pick_count: 4, price: 650}]);
     expect(out).toEqual([{kind: 'bundle', bundle_id: '', price: 500, picks: [{product_id: 'A', qty: 1}, {product_id: 'B', qty: 1}]}]);
+  });
+
+  it('shows two orphan bundle groups (no headers) as two separate bundles, not one merged', () => {
+    // A sale of two bundles whose Coop ids didn\'t resolve: picks grouped but no
+    // header, premium (1120) on the total. Group 1 (4 picks) auto-links to B4 and
+    // takes its list price (650); the remainder (470) lands on the unlinked group 2.
+    const o = order({
+      id: 'm6', created_at: '2026-09-07T00:00:00.000Z', total: 1120,
+      items: [
+        L({product_id: 'A', bundle_group: '1', qty: 1}), L({product_id: 'B', bundle_group: '1', qty: 1}),
+        L({product_id: 'C', bundle_group: '1', qty: 1}), L({product_id: 'D', bundle_group: '1', qty: 1}),
+        L({product_id: 'E', bundle_group: '2', qty: 1}), L({product_id: 'F', bundle_group: '2', qty: 1}),
+      ],
+    });
+    const defs = [{bundle_id: 'B4', bundle_type: 'pick' as const, pick_count: 4, price: 650}];
+    expect(orderToEntries(o, defs)).toEqual([
+      {kind: 'bundle', bundle_id: 'B4', price: 650, picks: [{product_id: 'A', qty: 1}, {product_id: 'B', qty: 1}, {product_id: 'C', qty: 1}, {product_id: 'D', qty: 1}]},
+      {kind: 'bundle', bundle_id: '', price: 470, picks: [{product_id: 'E', qty: 1}, {product_id: 'F', qty: 1}]},
+    ]);
   });
 });
 
