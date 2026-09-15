@@ -5,6 +5,8 @@ import {
   computeKpis,
   eventRollups,
   featuredEvent,
+  paymentBreakdown,
+  eventRevenueSeries,
   manilaDayKey,
   orderMethod,
   petMix,
@@ -729,5 +731,40 @@ describe('featuredEvent', () => {
   it('ignores events with no dates', () => {
     const events = [event({event_id: 'undated'})];
     expect(featuredEvent(events, TODAY)).toBeNull();
+  });
+});
+
+describe('paymentBreakdown', () => {
+  const at = '2026-09-07T10:00:00.000Z';
+  it('sums revenue + orders per method, richest first, voided excluded', () => {
+    const orders = [
+      order({id: '1', created_at: at, total: 300, payment_method: 'cash'}),
+      order({id: '2', created_at: at, total: 600, payment_method: 'gcash'}),
+      order({id: '3', created_at: at, total: 200, payment_method: 'cash'}),
+      order({id: '4', created_at: at, total: 999, payment_method: 'cash', status: 'voided'}),
+    ];
+    expect(paymentBreakdown(orders)).toEqual([
+      {method: 'gcash', revenue: 600, orders: 1},
+      {method: 'cash', revenue: 500, orders: 2},
+    ]);
+  });
+});
+
+describe('eventRevenueSeries', () => {
+  it('builds a cumulative series oldest-first, voided excluded', () => {
+    const orders = [
+      order({id: '2', created_at: '2026-09-07T11:00:00.000Z', total: 200}),
+      order({id: '1', created_at: '2026-09-07T10:00:00.000Z', total: 300}),
+      order({id: '3', created_at: '2026-09-07T12:00:00.000Z', total: 999, status: 'voided'}),
+      order({id: '4', created_at: '2026-09-07T13:00:00.000Z', total: 100}),
+    ];
+    expect(eventRevenueSeries(orders)).toEqual([
+      {t: '2026-09-07T10:00:00.000Z', revenue: 300},
+      {t: '2026-09-07T11:00:00.000Z', revenue: 500},
+      {t: '2026-09-07T13:00:00.000Z', revenue: 600},
+    ]);
+  });
+  it('is empty when there are no (non-voided) orders', () => {
+    expect(eventRevenueSeries([])).toEqual([]);
   });
 });

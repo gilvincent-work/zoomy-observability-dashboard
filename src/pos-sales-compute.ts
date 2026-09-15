@@ -141,6 +141,45 @@ export function featuredEvent(events: PosEvent[], todayKey: string): FeaturedEve
   return null;
 }
 
+export interface PaymentSlice {
+  method: string; // 'cash' | 'gcash' | ...
+  revenue: number;
+  orders: number;
+}
+
+/** Revenue + order count per payment method for a set of orders (voided
+ *  excluded), richest first. Powers the event payment split. */
+export function paymentBreakdown(orders: PosOrder[]): PaymentSlice[] {
+  const by = new Map<string, {revenue: number; orders: number}>();
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    const key = orderMethod(o);
+    const cur = by.get(key) ?? {revenue: 0, orders: 0};
+    cur.revenue += o.total;
+    cur.orders += 1;
+    by.set(key, cur);
+  }
+  return [...by.entries()]
+    .map(([method, v]) => ({method, revenue: v.revenue, orders: v.orders}))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+export interface RevenuePoint {
+  t: string; // ISO instant of the order
+  revenue: number; // running (cumulative) revenue up to and including this order
+}
+
+/** Cumulative revenue over time for an event's orders (voided excluded), oldest
+ *  first: a smooth rising series for the trend line. Each order adds a point. */
+export function eventRevenueSeries(orders: PosOrder[]): RevenuePoint[] {
+  const sorted = orders.filter((o) => !isVoided(o)).slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
+  let running = 0;
+  return sorted.map((o) => {
+    running += o.total;
+    return {t: o.created_at, revenue: running};
+  });
+}
+
 /** Group orders by Manila calendar day, ascending. Days with no sales omitted. */
 export function salesByDay(orders: PosOrder[]): DailySales[] {
   const byDay = new Map<string, {revenue: number; orders: number}>();

@@ -1,15 +1,16 @@
 'use client';
 
-import {useState} from 'react';
+import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, CalendarDays, MapPin, Pencil, Plus, Store} from 'lucide-react';
-import type {EventRollup} from '@/src/pos-sales-types';
+import {ArrowLeft, CalendarDays, ChevronDown, MapPin, Pencil, Plus, Store} from 'lucide-react';
+import type {EventRollup, PosOrder} from '@/src/pos-sales-types';
 import {formatPeso} from '@/src/pos-format';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Eyebrow, MockNote} from './sections';
 import {RefreshControl} from './refresh-control';
 import {EventForm} from './event-form';
+import {EventAnalytics} from './event-analytics';
 
 /** "2026-09-14" → "Sep 14, 2026". */
 function dayLabel(iso: string | null): string | null {
@@ -29,9 +30,41 @@ function eventDates(startsOn: string | null, endsOn: string | null): string | nu
   return end ? `${start} – ${end}` : start;
 }
 
-export function OfflineEventsView({rollups, usingMock, fetchedAt}: {rollups: EventRollup[]; usingMock: boolean; fetchedAt: string}) {
+export function OfflineEventsView({
+  rollups,
+  orders,
+  currentEventId,
+  usingMock,
+  fetchedAt,
+}: {
+  rollups: EventRollup[];
+  orders: PosOrder[];
+  currentEventId: string | null;
+  usingMock: boolean;
+  fetchedAt: string;
+}) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Orders bucketed by event, so each card computes its analytics from its own.
+  const ordersByEvent = useMemo(() => {
+    const m = new Map<string, PosOrder[]>();
+    for (const o of orders) {
+      if (!o.event_id) continue;
+      const arr = m.get(o.event_id) ?? [];
+      arr.push(o);
+      m.set(o.event_id, arr);
+    }
+    return m;
+  }, [orders]);
+
+  // The live event floats to the top; the rest keep their date order.
+  const ordered = useMemo(() => {
+    if (!currentEventId) return rollups;
+    const current = rollups.filter((r) => r.event.event_id === currentEventId);
+    const rest = rollups.filter((r) => r.event.event_id !== currentEventId);
+    return [...current, ...rest];
+  }, [rollups, currentEventId]);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
@@ -79,11 +112,17 @@ export function OfflineEventsView({rollups, usingMock, fetchedAt}: {rollups: Eve
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {rollups.map((r) =>
+          {ordered.map((r) =>
             editingId === r.event.event_id ? (
               <EventForm key={r.event.event_id} initial={r.event} onDone={() => setEditingId(null)} />
             ) : (
-              <EventCard key={r.event.event_id} rollup={r} onEdit={() => { setCreating(false); setEditingId(r.event.event_id); }} />
+              <EventCard
+                key={r.event.event_id}
+                rollup={r}
+                orders={ordersByEvent.get(r.event.event_id) ?? []}
+                spotlight={r.event.event_id === currentEventId}
+                onEdit={() => { setCreating(false); setEditingId(r.event.event_id); }}
+              />
             ),
           )}
         </div>
@@ -92,30 +131,41 @@ export function OfflineEventsView({rollups, usingMock, fetchedAt}: {rollups: Eve
   );
 }
 
-function EventCard({rollup, onEdit}: {rollup: EventRollup; onEdit: () => void}) {
+function EventCard({rollup, orders: eventOrders, spotlight, onEdit}: {rollup: EventRollup; orders: PosOrder[]; spotlight: boolean; onEdit: () => void}) {
   const {event, revenue, orders, cashSales, expectedCash} = rollup;
   const closed = event.status === 'closed';
   const dates = eventDates(event.starts_on, event.ends_on);
   const place = [event.venue, event.city].filter(Boolean).join(', ');
   // Over/short once the till is counted: counted closing_cash vs expected.
   const variance = closed && event.closing_cash != null && expectedCash != null ? event.closing_cash - expectedCash : null;
+  // The live event opens expanded; the rest collapse to the summary + a toggle.
+  const [open, setOpen] = useState(spotlight);
 
   return (
-    <Card>
+    <Card className={cn(spotlight && 'border-transparent ring-1 ring-[var(--status-good)]/40')}>
       <CardContent className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-semibold tracking-tight">{event.name || 'Untitled event'}</h3>
-              <span
-                className={cn(
-                  'inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide',
-                  closed ? 'bg-muted text-muted-foreground' : 'text-emerald-700 dark:text-emerald-300',
-                )}
-                style={closed ? undefined : {backgroundColor: 'color-mix(in oklab, var(--status-good) 14%, transparent)'}}
-              >
-                {closed ? 'Closed' : 'Active'}
-              </span>
+              {spotlight ? (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300"
+                  style={{backgroundColor: 'color-mix(in oklab, var(--status-good) 14%, transparent)'}}
+                >
+                  <span className="size-1.5 rounded-full bg-[var(--status-good)]" aria-hidden /> Happening now
+                </span>
+              ) : (
+                <span
+                  className={cn(
+                    'inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide',
+                    closed ? 'bg-muted text-muted-foreground' : 'text-emerald-700 dark:text-emerald-300',
+                  )}
+                  style={closed ? undefined : {backgroundColor: 'color-mix(in oklab, var(--status-good) 14%, transparent)'}}
+                >
+                  {closed ? 'Closed' : 'Active'}
+                </span>
+              )}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               {dates && (
@@ -179,6 +229,24 @@ function EventCard({rollup, onEdit}: {rollup: EventRollup; onEdit: () => void}) 
             {event.cash_note && <p className="mt-1.5 text-muted-foreground">{event.cash_note}</p>}
           </div>
         )}
+
+        {/* Analytics: expanded for the live event, collapsed-with-toggle for the rest. */}
+        <div className="mt-4 border-t pt-4">
+          {open && (
+            <div className="mb-3">
+              <EventAnalytics event={event} orders={eventOrders} />
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
+            {open ? 'Hide analytics' : 'Show analytics'}
+          </button>
+        </div>
       </CardContent>
     </Card>
   );
