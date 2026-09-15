@@ -18,7 +18,23 @@ function parseOptionalAmount(v: string): {value: number | null} | {error: string
 
 const inputCls =
   'w-full rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring';
+// Date fields: make the whole field clickable (cursor) and force the native
+// picker's color-scheme to follow dark mode, so the calendar icon is visible
+// instead of black-on-black. (Scoped here rather than app-wide.)
+const dateInputCls = `${inputCls} cursor-pointer dark:[color-scheme:dark]`;
 const labelCls = 'mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+
+/** Open the browser's native date picker on click, so tapping anywhere in the
+ *  field (not just the small icon) shows the calendar. Guarded: showPicker needs
+ *  a user gesture and isn't in every engine. */
+function openNativePicker(el: HTMLInputElement) {
+  const input = el as HTMLInputElement & {showPicker?: () => void};
+  try {
+    input.showPicker?.();
+  } catch {
+    /* unsupported or blocked outside a user gesture; typing still works */
+  }
+}
 
 /**
  * Coop event scheduler. Create a new bazaar or edit an existing one, writing
@@ -114,12 +130,14 @@ export function EventForm({initial, onDone}: {initial?: PosEvent; onDone: () => 
           <div />
           <div>
             <label className={labelCls} htmlFor="ev-start">Start date</label>
-            <input id="ev-start" type="date" className={inputCls} value={startsOn}
+            <input id="ev-start" type="date" className={dateInputCls} value={startsOn}
+              onClick={(e) => openNativePicker(e.currentTarget)}
               onChange={(e) => setStartsOn(e.target.value)} />
           </div>
           <div>
             <label className={labelCls} htmlFor="ev-end">End date</label>
-            <input id="ev-end" type="date" className={inputCls} value={endsOn}
+            <input id="ev-end" type="date" className={dateInputCls} value={endsOn}
+              onClick={(e) => openNativePicker(e.currentTarget)}
               onChange={(e) => setEndsOn(e.target.value)} />
           </div>
           <div>

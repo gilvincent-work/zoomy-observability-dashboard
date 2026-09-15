@@ -36,7 +36,9 @@ Dates are local working dates (GMT+8). Newest first.
   `upsert_pos_event` / `close_pos_event` RPCs. This is the primary way Coop
   schedules a bazaar's dates so the POS auto-detects and tags that day's sales.
   Overlapping date ranges are rejected (the RPC's guard; surfaced as a plain
-  "those dates overlap another event" message).
+  "those dates overlap another event" message). Date fields: the whole field
+  opens the native picker on click (`showPicker`), and the picker icon follows
+  dark mode (`color-scheme`) so it isn't black-on-black.
 - **Events in the drawer nav.** Added an "Events" tab under the Overview group,
   right below Offline Sales (both the expanded accordion and the collapsed
   flyout). Active detection split so `/offline-sales` and `/offline-sales/events`
