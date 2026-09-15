@@ -7,6 +7,7 @@ import {
   featuredEvent,
   paymentBreakdown,
   eventRevenueSeries,
+  datesInRange,
   manilaDayKey,
   orderMethod,
   petMix,
@@ -747,6 +748,21 @@ describe('paymentBreakdown', () => {
       {method: 'gcash', revenue: 600, orders: 1},
       {method: 'cash', revenue: 500, orders: 2},
     ]);
+  });
+});
+
+describe('datesInRange', () => {
+  it('lists inclusive days for a multi-day range', () => {
+    expect(datesInRange('2026-09-15', '2026-09-17')).toEqual(['2026-09-15', '2026-09-16', '2026-09-17']);
+  });
+  it('yields the single day when start equals end or only one bound is set', () => {
+    expect(datesInRange('2026-09-15', '2026-09-15')).toEqual(['2026-09-15']);
+    expect(datesInRange('2026-09-15', null)).toEqual(['2026-09-15']);
+    expect(datesInRange(null, '2026-09-15')).toEqual(['2026-09-15']);
+  });
+  it('returns [] for a reversed or empty range', () => {
+    expect(datesInRange('2026-09-17', '2026-09-15')).toEqual([]);
+    expect(datesInRange(null, null)).toEqual([]);
   });
 });
 

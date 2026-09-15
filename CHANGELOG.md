@@ -56,6 +56,12 @@ Dates are local working dates (GMT+8). Newest first.
   with peso ticks) axes. The cash reconciliation block clarifies that card /
   e-wallet sales settle separately and aren't in the till, so "expected in till"
   (opening + cash-method sales) reads distinctly from total revenue.
+- **Per-event day granularity.** Multi-day events get a day toggle on their
+  analytics (default "All days", then one pill per event day). The selected day
+  scopes every metric: KPIs, trend, payment split, pet mix, and top sellers (by
+  the order's Manila day). Single-day events show no toggle. New pure helper
+  `datesInRange`, unit-tested. The event header total and cash reconciliation
+  stay event-level (opening float is one per-event value).
 - **Events in the drawer nav.** Added an "Events" tab under the Overview group,
   right below Offline Sales (both the expanded accordion and the collapsed
   flyout). Active detection split so `/offline-sales` and `/offline-sales/events`
