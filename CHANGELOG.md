@@ -43,7 +43,9 @@ Dates are local working dates (GMT+8). Newest first.
   (left) and the daily-goal card (right) now sit side by side in a two-column row
   (stacked on mobile). The event card is a proper vertical tile (status icon +
   "All events" on top, event identity anchored at the bottom) so it fills its
-  column height cleanly instead of floating centered. Bumped section rhythm
+  column height cleanly instead of floating centered. The daily-goal card gets the
+  same fill-height treatment (header pinned at top, metrics anchored at the bottom)
+  so the two tiles read as a balanced pair. Bumped section rhythm
   throughout (page padding, header, KPI/pet/panel gaps) so the increasingly dense
   page reads more comfortably. The per-event analytics panel also got looser
   spacing (section gaps, KPI cards, legends, top-sellers rows, taller trend).

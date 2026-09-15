@@ -148,9 +148,9 @@ function FullBar({progress}: {progress: DailyProgress}) {
   const tier = TIER_UI[progress.tier];
 
   return (
-    <Card>
-      <CardContent className="py-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <Card className="h-full">
+      <CardContent className="flex h-full flex-col justify-between gap-4 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="flex size-7 items-center justify-center rounded-lg bg-muted">
               <Target className={cn('size-4', progress.hasTarget ? tier.text : 'text-muted-foreground')} />
@@ -174,25 +174,27 @@ function FullBar({progress}: {progress: DailyProgress}) {
           )}
         </div>
 
-        {progress.hasTarget ? (
-          <>
-            <div className="mb-2.5 flex items-end justify-between gap-3">
-              <div className="text-2xl font-semibold tabular-nums text-foreground">
-                {formatPeso(progress.revenue)}
-                <span className="ml-1.5 text-sm font-normal text-muted-foreground">of {formatPeso(progress.target)}</span>
+        <div>
+          {progress.hasTarget ? (
+            <>
+              <div className="mb-2.5 flex items-end justify-between gap-3">
+                <div className="text-2xl font-semibold tabular-nums text-foreground">
+                  {formatPeso(progress.revenue)}
+                  <span className="ml-1.5 text-sm font-normal text-muted-foreground">of {formatPeso(progress.target)}</span>
+                </div>
+                <div className={cn('text-lg font-semibold tabular-nums', tier.text)}>{Math.round(progress.rawPct)}%</div>
               </div>
-              <div className={cn('text-lg font-semibold tabular-nums', tier.text)}>{Math.round(progress.rawPct)}%</div>
-            </div>
-            <ProgressTrack progress={progress} thick />
-            <p className={cn('mt-2 text-sm font-medium', tier.text)}>
-              {progress.reached
-                ? `Goal reached. ${formatPeso(progress.revenue - progress.target)} over target, keep going.`
-                : `${formatPeso(progress.remaining)} to go before today's goal.`}
-            </p>
-          </>
-        ) : (
-          <p className="py-2 text-sm text-muted-foreground">No daily goal set yet. Set one to track today's sales against it.</p>
-        )}
+              <ProgressTrack progress={progress} thick />
+              <p className={cn('mt-2 text-sm font-medium', tier.text)}>
+                {progress.reached
+                  ? `Goal reached. ${formatPeso(progress.revenue - progress.target)} over target, keep going.`
+                  : `${formatPeso(progress.remaining)} to go before today's goal.`}
+              </p>
+            </>
+          ) : (
+            <p className="py-2 text-sm text-muted-foreground">No daily goal set yet. Set one to track today's sales against it.</p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
