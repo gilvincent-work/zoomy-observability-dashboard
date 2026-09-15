@@ -39,6 +39,11 @@ Dates are local working dates (GMT+8). Newest first.
   "those dates overlap another event" message). Date fields: the whole field
   opens the native picker on click (`showPicker`), and the picker icon follows
   dark mode (`color-scheme`) so it isn't black-on-black.
+- **Event spotlight on the Offline Sales home.** Replaced the small "Events"
+  button with a banner card that shows the event running today ("Happening now"),
+  else the next upcoming one, else an empty "No events scheduled" prompt. The
+  whole card links to the Events page. New pure helper `featuredEvent(events,
+  todayKey)` (current, else nearest upcoming, else null), unit-tested.
 - **Events in the drawer nav.** Added an "Events" tab under the Overview group,
   right below Offline Sales (both the expanded accordion and the collapsed
   flyout). Active detection split so `/offline-sales` and `/offline-sales/events`

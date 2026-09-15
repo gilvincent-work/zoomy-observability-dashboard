@@ -1,6 +1,6 @@
 import type {PosProductRow} from './pos-types';
 import type {ChannelFacts} from './health-types';
-import type {BundleSalesSummary, DailySales, DayMethodRevenue, EditEntry, EventRollup, PetMix, PetMixSegment, PosEvent, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
+import type {BundleSalesSummary, DailySales, DayMethodRevenue, EditEntry, EventRollup, FeaturedEvent, PetMix, PetMixSegment, PosEvent, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
 // server/client concerns so they're unit-testable and shared across pages.
@@ -114,6 +114,31 @@ export function eventRollups(events: PosEvent[], orders: PosOrder[]): EventRollu
     const expectedCash = event.opening_cash != null ? event.opening_cash + agg.cashSales : null;
     return {event, revenue: agg.revenue, orders: agg.orders, cashSales: agg.cashSales, expectedCash};
   });
+}
+
+/**
+ * Pick the event to spotlight on the Offline Sales home: the one covering today
+ * ('current'), else the nearest future one by start date ('upcoming'), else null.
+ * Uses the same single-bound-as-one-day semantics as POS detection, and ignores
+ * events with no dates. Overlaps shouldn't happen (blocked at write), but if two
+ * cover today the later-starting one wins, deterministically.
+ */
+export function featuredEvent(events: PosEvent[], todayKey: string): FeaturedEvent | null {
+  const dated = events.filter((e) => e.starts_on || e.ends_on);
+  const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
+  const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
+
+  const current = dated
+    .filter((e) => from(e) <= todayKey && todayKey <= to(e))
+    .sort((a, b) => from(b).localeCompare(from(a)));
+  if (current[0]) return {event: current[0], state: 'current'};
+
+  const upcoming = dated
+    .filter((e) => from(e) > todayKey)
+    .sort((a, b) => from(a).localeCompare(from(b)));
+  if (upcoming[0]) return {event: upcoming[0], state: 'upcoming'};
+
+  return null;
 }
 
 /** Group orders by Manila calendar day, ascending. Days with no sales omitted. */

@@ -145,6 +145,13 @@ export interface EventRollup {
   expectedCash: number | null; // opening_cash + cashSales, or null
 }
 
+/** The single event to spotlight on the Offline Sales home: the one running
+ *  today ('current'), else the nearest future one ('upcoming'). */
+export interface FeaturedEvent {
+  event: PosEvent;
+  state: 'current' | 'upcoming';
+}
+
 export interface DailySales {
   day: string; // YYYY-MM-DD
   revenue: number;

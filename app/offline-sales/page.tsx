@@ -1,14 +1,16 @@
 import type {PosOrder} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
-import {getPosOrders, getPosSyncLog} from '@/src/pos-sales';
+import {getPosEvents, getPosOrders, getPosSyncLog} from '@/src/pos-sales';
 import {getPosProducts, usingPosMock} from '@/src/pos-data';
 import {getDailyTarget} from '@/src/pos-target';
 import {progress as computeProgress, todaysRevenue} from '@/src/pos-target-compute';
 import {
   bundleSalesSummary,
   computeKpis,
+  featuredEvent,
   filterOrdersByRange,
   isSalesRange,
+  manilaDayKey,
   stockAlerts,
   topBundles,
   topProducts,
@@ -31,14 +33,22 @@ async function dailyProgress(orders: PosOrder[]): Promise<DailyProgress | null> 
 
 export default async function Page({searchParams}: {searchParams: {range?: string}}) {
   const range = isSalesRange(searchParams.range) ? searchParams.range : '30d';
-  const [allOrders, sync, products] = await Promise.all([getPosOrders(), getPosSyncLog(), getPosProducts()]);
+  const [allOrders, sync, products, events] = await Promise.all([
+    getPosOrders(),
+    getPosSyncLog(),
+    getPosProducts(),
+    getPosEvents(),
+  ]);
   const orders = filterOrdersByRange(allOrders, range);
   const progress = await dailyProgress(allOrders);
+  // Spotlight the event running today, else the next upcoming one (Manila day).
+  const featured = featuredEvent(events, manilaDayKey(new Date().toISOString()));
 
   return (
     <OfflineSalesView
       range={range}
       progress={progress}
+      featured={featured}
       kpis={computeKpis(orders)}
       top={topProducts(orders)}
       topByUnits={topProducts(orders, 5, 'units')}

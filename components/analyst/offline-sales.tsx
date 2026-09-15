@@ -2,9 +2,9 @@
 
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeftRight, CalendarClock, CalendarDays, ChevronDown, PackageX, Receipt, TriangleAlert} from 'lucide-react';
+import {ArrowLeftRight, CalendarClock, CalendarDays, ChevronDown, ChevronRight, PackageX, Receipt, TriangleAlert} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
-import type {BundleSalesSummary, DayMethodRevenue, PetMix, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
+import type {BundleSalesSummary, DayMethodRevenue, FeaturedEvent, PetMix, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
 import type {StockAlerts} from '@/src/pos-sales-compute';
 import {SALES_RANGES, computeKpis, orderMethod, petMix, presentMethods, salesByDayAndMethod} from '@/src/pos-sales-compute';
@@ -23,6 +23,7 @@ import {InfoTip} from './info-tip';
 type Props = {
   range: SalesRange;
   progress: DailyProgress | null; // today vs daily goal; null = hidden (fail-soft)
+  featured: FeaturedEvent | null; // event running today, else next upcoming, else null
   kpis: SalesKpis; // all-methods totals for the range
   top: TopProduct[]; // ranked by revenue
   topByUnits: TopProduct[]; // same products ranked by units sold
@@ -41,7 +42,7 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, progress, kpis, top, topByUnits, topBundles, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
+export function OfflineSalesView({range, progress, featured, kpis, top, topByUnits, topBundles, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
   // 'all' or a specific payment method. The method drives the KPI cards and
   // which segment of the stacked chart is highlighted. Computed client-side from
   // the range-filtered orders so switching is instant (no reload).
@@ -69,16 +70,13 @@ export function OfflineSalesView({range, progress, kpis, top, topByUnits, topBun
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Link
-            href="/offline-sales/events"
-            className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
-          >
-            <CalendarDays className="size-3.5 text-muted-foreground" />
-            Events
-          </Link>
           <RefreshControl fetchedAt={fetchedAt} />
           <RangeTabs active={range} />
         </div>
+      </div>
+
+      <div className="mb-4">
+        <EventStatusCard featured={featured} />
       </div>
 
       {usingMock && (
@@ -267,6 +265,59 @@ function RangeTabs({active}: {active: SalesRange}) {
 
 function Kpi({label, value, warn}: {label: string; value: string; warn?: boolean}) {
   return <Metric label={label} value={value} valueClassName={warn ? 'text-destructive' : undefined} />;
+}
+
+/** A compact event date range: "Sep 16", "Sep 16 – 18", "Sep 30 – Oct 1". */
+function eventDatesShort(startsOn: string | null, endsOn: string | null): string {
+  if (!startsOn && !endsOn) return 'No dates set';
+  if (!startsOn) return shortDay(endsOn as string);
+  if (!endsOn || endsOn === startsOn) return shortDay(startsOn);
+  return `${shortDay(startsOn)} – ${shortDay(endsOn)}`;
+}
+
+/** The event spotlight banner: the bazaar running today ("Happening now"), else
+ *  the next upcoming one, else an empty prompt to schedule. The whole card links
+ *  to the Events page (replacing the old plain "Events" button). */
+function EventStatusCard({featured}: {featured: FeaturedEvent | null}) {
+  const ev = featured?.event ?? null;
+  const current = featured?.state === 'current';
+  const place = ev ? [ev.venue, ev.city].filter(Boolean).join(', ') : '';
+  const meta = ev ? [place, eventDatesShort(ev.starts_on, ev.ends_on)].filter(Boolean).join(' · ') : '';
+
+  return (
+    <Link
+      href="/offline-sales/events"
+      className="group flex items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40"
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-lg',
+            current ? 'text-[var(--status-good)]' : 'text-muted-foreground',
+          )}
+          style={current ? {backgroundColor: 'color-mix(in oklab, var(--status-good) 14%, transparent)'} : {backgroundColor: 'var(--muted)'}}
+        >
+          {ev ? <CalendarClock className="size-4" /> : <CalendarDays className="size-4" />}
+        </span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider">
+            {current && <span className="size-1.5 rounded-full bg-[var(--status-good)]" aria-hidden />}
+            <span className={current ? 'text-[var(--status-good)]' : 'text-muted-foreground'}>
+              {ev ? (current ? 'Happening now' : 'Next event') : 'Events'}
+            </span>
+          </div>
+          <div className="truncate text-sm font-medium">{ev ? ev.name || 'Untitled event' : 'No events scheduled'}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {ev ? meta : 'Schedule a bazaar so the POS can tag that day’s sales.'}
+          </div>
+        </div>
+      </div>
+      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+        {ev ? 'All events' : 'Schedule'}
+        <ChevronRight className="size-3.5" />
+      </span>
+    </Link>
+  );
 }
 
 // Pet-mix segments. Colors are deliberately distinct from the ochre page accent
