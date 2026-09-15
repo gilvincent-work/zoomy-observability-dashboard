@@ -3,8 +3,10 @@ import {
   boundsFromMax,
   bundleSalesSummary,
   computeKpis,
+  eventRollups,
   manilaDayKey,
   orderMethod,
+  petMix,
   presentMethods,
   salesByDayAndMethod,
   topBundles,
@@ -25,7 +27,7 @@ import {
   stockAlerts,
   topProducts,
 } from '../src/pos-sales-compute';
-import type {PosOrder} from '../src/pos-sales-types';
+import type {PosEvent, PosOrder} from '../src/pos-sales-types';
 import type {PosProductRow} from '../src/pos-types';
 
 const NOW = new Date('2026-09-07T12:00:00.000Z');
@@ -43,6 +45,8 @@ function order(over: Partial<PosOrder> & {id: string; created_at: string}): PosO
     status: 'completed',
     remarks: null,
     edited_at: null,
+    event_id: null,
+    pet_type: null,
     items: [{product_id: 'A', name: 'A', qty: 1, unit_price: 100, line_total: 100}],
     ...over,
   };
@@ -618,5 +622,71 @@ describe('price bounds', () => {
   });
   it('derives bounds from the highest order total', () => {
     expect(priceBounds([order({id: 'a', created_at: '2026-09-07T10:00:00.000Z', total: 250})])).toEqual({min: 0, max: 300});
+  });
+});
+
+describe('petMix', () => {
+  const at = '2026-09-07T10:00:00.000Z';
+  it('splits revenue and orders 4 ways, untagged catching null', () => {
+    const orders = [
+      order({id: '1', created_at: at, total: 100, pet_type: 'dog'}),
+      order({id: '2', created_at: at, total: 50, pet_type: 'dog'}),
+      order({id: '3', created_at: at, total: 200, pet_type: 'cat'}),
+      order({id: '4', created_at: at, total: 70, pet_type: 'both'}),
+      order({id: '5', created_at: at, total: 30, pet_type: null}),
+    ];
+    expect(petMix(orders)).toEqual({
+      dog: {revenue: 150, orders: 2},
+      cat: {revenue: 200, orders: 1},
+      both: {revenue: 70, orders: 1},
+      untagged: {revenue: 30, orders: 1},
+    });
+  });
+  it('excludes voided sales', () => {
+    const orders = [
+      order({id: '1', created_at: at, total: 100, pet_type: 'dog'}),
+      order({id: '2', created_at: at, total: 999, pet_type: 'dog', status: 'voided'}),
+    ];
+    expect(petMix(orders).dog).toEqual({revenue: 100, orders: 1});
+  });
+  it('returns zeroed segments for no orders', () => {
+    expect(petMix([])).toEqual({
+      dog: {revenue: 0, orders: 0},
+      cat: {revenue: 0, orders: 0},
+      both: {revenue: 0, orders: 0},
+      untagged: {revenue: 0, orders: 0},
+    });
+  });
+});
+
+describe('eventRollups', () => {
+  const at = '2026-09-07T10:00:00.000Z';
+  function event(over: Partial<PosEvent> & {event_id: string}): PosEvent {
+    return {
+      name: over.event_id, venue: null, city: null, organizer: null,
+      starts_on: null, ends_on: null, opening_cash: null, cash_note: null,
+      closing_cash: null, status: 'active', created_by: null, created_at: null,
+      updated_at: null, ...over,
+    };
+  }
+  it('rolls sales into their event, cash reconciliation from opening_cash', () => {
+    const events = [event({event_id: 'e1', opening_cash: 500}), event({event_id: 'e2'})];
+    const orders = [
+      order({id: '1', created_at: at, total: 300, payment_method: 'cash', event_id: 'e1'}),
+      order({id: '2', created_at: at, total: 200, payment_method: 'gcash', event_id: 'e1'}),
+      order({id: '3', created_at: at, total: 999, payment_method: 'cash', event_id: 'e1', status: 'voided'}),
+      order({id: '4', created_at: at, total: 50, payment_method: 'cash', event_id: null}), // non-event day
+    ];
+    const rolls = eventRollups(events, orders);
+    expect(rolls[0]).toEqual({
+      event: events[0], revenue: 500, orders: 2, cashSales: 300, expectedCash: 800,
+    });
+    // e2 has no sales; opening_cash null -> expectedCash null.
+    expect(rolls[1]).toEqual({event: events[1], revenue: 0, orders: 0, cashSales: 0, expectedCash: null});
+  });
+  it('null payment_method counts as cash', () => {
+    const events = [event({event_id: 'e1', opening_cash: 0})];
+    const orders = [order({id: '1', created_at: at, total: 120, payment_method: null, event_id: 'e1'})];
+    expect(eventRollups(events, orders)[0]).toMatchObject({cashSales: 120, expectedCash: 120});
   });
 });

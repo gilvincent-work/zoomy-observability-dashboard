@@ -12,6 +12,30 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-15 — Offline Sales: Pet mix + Events — `feat(offline-sales)`
+
+- **Pet mix card on the Offline Sales home.** New card directly below the KPI row
+  showing a 4-way split (Dog / Cat / Both / Untagged) with revenue and order count
+  per segment, rendered as a revenue-proportional split bar plus a legend. It reads
+  from the same range- and payment-method-filtered orders the KPIs use, so it
+  reacts to the method toggle client-side. Colors are deliberately distinct from
+  the ochre accent and the payment-method hues (dog = blue, cat = purple,
+  both = green, untagged = neutral). Empty/all-zero renders a friendly note.
+  Reason: the owner wanted to see which pet drives sales at a glance.
+- **Events view.** New `/offline-sales/events` page (linked from the home header)
+  listing `pos_events` with per-event sales rollups (revenue, orders) and a cash
+  reconciliation line (opening float + cash sales = expected till; over/short once
+  a closed event's counted cash is recorded). Friendly empty state when no events
+  exist. `event_id` (null = normal non-event day) and `pet_type` were added to the
+  `pos_orders` read/type; new `getPosEvents()` read and `PosEvent` type.
+- **Data layer + pure helpers.** `petMix(orders)` and `eventRollups(events, orders)`
+  added to `pos-sales-compute` (both exclude voided sales); unit-tested (6 new
+  cases). Mock path updated: mock orders carry `pet_type`/`event_id` and two
+  `MOCK_POS_EVENTS` (one active, one closed) so both features render in mock mode.
+  Additive only, no schema changes here (the `pos_events` table, the two new
+  `pos_orders` columns, and the `upsert_pos_event`/`close_pos_event` RPCs shipped
+  to Staging separately). **Staging only.**
+
 ## 2026-09-14 — Offline Sales: Top products + Top bundles share one column — `style(offline-sales)`
 
 - **Merged the standalone full-width "Top bundles" card into the right column**,
