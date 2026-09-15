@@ -39,6 +39,15 @@ Dates are local working dates (GMT+8). Newest first.
   "those dates overlap another event" message). Date fields: the whole field
   opens the native picker on click (`showPicker`), and the picker icon follows
   dark mode (`color-scheme`) so it isn't black-on-black.
+- **Payment filter shows all methods, only enabled ones filter.** The Offline
+  Sales payment dropdown now lists every known method: those with sales in range
+  ("enabled") at the top and clickable, the rest greyed, unclickable, and tagged
+  "No sales", separated by a divider. New pure helper `paymentMethodOptions`
+  (enabled-first, canonical order), unit-tested.
+- **Sales over time card no longer stretches empty.** The two-column rows
+  (Sales/Top, Recent orders/Recently synced) top-align (`items-start`) so a
+  shorter card keeps its natural height instead of stretching to match the taller
+  column and leaving dead space below.
 - **Offline Sales layout: breathing room + 2-column top.** The event spotlight
   (left) and the daily-goal card (right) now sit side by side in a two-column row
   (stacked on mobile). The event card is a proper vertical tile (status icon +

@@ -8,6 +8,7 @@ import {
   paymentBreakdown,
   eventRevenueSeries,
   datesInRange,
+  paymentMethodOptions,
   manilaDayKey,
   orderMethod,
   petMix,
@@ -748,6 +749,26 @@ describe('paymentBreakdown', () => {
       {method: 'gcash', revenue: 600, orders: 1},
       {method: 'cash', revenue: 500, orders: 2},
     ]);
+  });
+});
+
+describe('paymentMethodOptions', () => {
+  const at = '2026-09-07T10:00:00.000Z';
+  it('lists methods with sales first (enabled), then the rest greyed (disabled)', () => {
+    const orders = [
+      order({id: '1', created_at: at, payment_method: 'gcash'}),
+      order({id: '2', created_at: at, payment_method: 'cash'}),
+    ];
+    const opts = paymentMethodOptions(orders);
+    // enabled group in canonical order (cash before gcash), then disabled rest.
+    expect(opts.filter((o) => o.enabled).map((o) => o.method)).toEqual(['cash', 'gcash']);
+    expect(opts.filter((o) => !o.enabled).map((o) => o.method)).toEqual(['qrph', 'maya', 'card', 'bpi', 'bank_transfer']);
+    // enabled all come before any disabled
+    const firstDisabled = opts.findIndex((o) => !o.enabled);
+    expect(opts.slice(0, firstDisabled).every((o) => o.enabled)).toBe(true);
+  });
+  it('marks everything disabled when there are no sales', () => {
+    expect(paymentMethodOptions([]).every((o) => !o.enabled)).toBe(true);
   });
 });
 
