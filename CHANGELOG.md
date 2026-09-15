@@ -39,6 +39,12 @@ Dates are local working dates (GMT+8). Newest first.
   "those dates overlap another event" message). Date fields: the whole field
   opens the native picker on click (`showPicker`), and the picker icon follows
   dark mode (`color-scheme`) so it isn't black-on-black.
+- **Offline Sales layout: breathing room + 2-column top.** The event spotlight
+  (left) and the daily-goal card (right) now sit side by side in a two-column row
+  (stacked on mobile), the event card stretching to match. Bumped section rhythm
+  throughout (page padding, header, KPI/pet/panel gaps) so the increasingly dense
+  page reads more comfortably. The per-event analytics panel also got looser
+  spacing (section gaps, KPI cards, legends, top-sellers rows, taller trend).
 - **Event spotlight on the Offline Sales home.** Replaced the small "Events"
   button with a banner card that shows the event running today ("Happening now"),
   else the next upcoming one, else an empty "No events scheduled" prompt. The

@@ -143,7 +143,7 @@ function EventCard({rollup, orders: eventOrders, spotlight, onEdit}: {rollup: Ev
 
   return (
     <Card className={cn(spotlight && 'border-transparent ring-1 ring-[var(--status-good)]/40')}>
-      <CardContent className="p-5">
+      <CardContent className={cn('p-6', spotlight && 'md:p-7')}>
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -204,8 +204,8 @@ function EventCard({rollup, orders: eventOrders, spotlight, onEdit}: {rollup: Ev
         </div>
 
         {(event.opening_cash != null || cashSales > 0) && (
-          <div className="mt-4 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-xs">
-            <div className="mb-1.5 font-semibold uppercase tracking-wider text-muted-foreground">Cash reconciliation</div>
+          <div className="mt-5 rounded-lg border border-dashed bg-muted/30 px-4 py-4 text-xs">
+            <div className="mb-2 font-semibold uppercase tracking-wider text-muted-foreground">Cash reconciliation</div>
             <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 tabular-nums text-foreground/80">
               <span>Opening {formatPeso(event.opening_cash ?? 0)}</span>
               <span className="text-muted-foreground">+</span>
@@ -214,7 +214,7 @@ function EventCard({rollup, orders: eventOrders, spotlight, onEdit}: {rollup: Ev
               <span className="font-medium text-foreground">{formatPeso(expectedCash ?? cashSales)} expected in till</span>
             </div>
             {revenue > cashSales && (
-              <p className="mt-1.5 text-muted-foreground">
+              <p className="mt-2 leading-relaxed text-muted-foreground">
                 Card &amp; e-wallet sales ({formatPeso(revenue - cashSales)}) settle to their wallets, so they&rsquo;re not
                 in the till. Total revenue is {formatPeso(revenue)}.
               </p>
@@ -237,9 +237,9 @@ function EventCard({rollup, orders: eventOrders, spotlight, onEdit}: {rollup: Ev
         )}
 
         {/* Analytics: expanded for the live event, collapsed-with-toggle for the rest. */}
-        <div className="mt-4 border-t pt-4">
+        <div className="mt-6 border-t pt-6">
           {open && (
-            <div className="mb-3">
+            <div className="mb-5">
               <EventAnalytics event={event} orders={eventOrders} />
             </div>
           )}

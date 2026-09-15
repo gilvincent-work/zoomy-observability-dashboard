@@ -69,7 +69,7 @@ export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrd
   const petTotal = (pets.dog.revenue + pets.cat.revenue + pets.both.revenue + pets.untagged.revenue) || 1;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {multiDay && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Day</span>
@@ -129,9 +129,9 @@ type AnalyticsBodyProps = {
 
 function AnalyticsBody({kpis, avgBasket, series, pay, payTotal, pets, petTotal, tops}: AnalyticsBodyProps) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-7">
       {/* Headline KPIs */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Revenue" value={formatPeso(kpis.revenue)} />
         <Stat label="Orders" value={String(kpis.orders)} />
         <Stat label="Units" value={String(kpis.units)} />
@@ -141,8 +141,8 @@ function AnalyticsBody({kpis, avgBasket, series, pay, payTotal, pets, petTotal, 
       {/* Cumulative revenue trend */}
       {series.length >= 2 && (
         <div>
-          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Revenue over time</div>
-          <ChartContainer config={chartConfig} className="h-[190px] w-full">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Revenue over time</div>
+          <ChartContainer config={chartConfig} className="h-[210px] w-full">
             <AreaChart data={series} margin={{left: 10, right: 12, top: 8, bottom: 20}}>
               <defs>
                 <linearGradient id="eventRevFill" x1="0" y1="0" x2="0" y2="1">
@@ -194,16 +194,16 @@ function AnalyticsBody({kpis, avgBasket, series, pay, payTotal, pets, petTotal, 
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-x-10 gap-y-8 md:grid-cols-2">
         {/* Payment split */}
         <div>
-          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Payment split</div>
-          <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Payment split</div>
+          <div className="flex h-3 overflow-hidden rounded-full bg-muted">
             {pay.map((p) => (
               <div key={p.method} style={{width: `${(p.revenue / payTotal) * 100}%`, backgroundColor: paymentMethodColor(p.method)}} />
             ))}
           </div>
-          <ul className="mt-2 flex flex-col gap-1">
+          <ul className="mt-3.5 flex flex-col gap-2.5">
             {pay.map((p) => (
               <li key={p.method} className="flex items-center gap-2 text-xs">
                 <span className="size-2 rounded-[3px]" style={{backgroundColor: paymentMethodColor(p.method)}} />
@@ -219,14 +219,14 @@ function AnalyticsBody({kpis, avgBasket, series, pay, payTotal, pets, petTotal, 
 
         {/* Pet mix */}
         <div>
-          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Pet mix</div>
-          <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Pet mix</div>
+          <div className="flex h-3 overflow-hidden rounded-full bg-muted">
             {PET_SEGMENTS.map((s) => {
               const rev = pets[s.key].revenue;
               return rev > 0 ? <div key={s.key} style={{width: `${(rev / petTotal) * 100}%`, backgroundColor: s.color}} /> : null;
             })}
           </div>
-          <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+          <ul className="mt-3.5 grid grid-cols-2 gap-x-8 gap-y-2.5">
             {PET_SEGMENTS.map((s) => (
               <li key={s.key} className="flex items-center gap-2 text-xs">
                 <span className="size-2 rounded-[3px]" style={{backgroundColor: s.color}} />
@@ -241,8 +241,8 @@ function AnalyticsBody({kpis, avgBasket, series, pay, payTotal, pets, petTotal, 
       {/* Top sellers */}
       {tops.length > 0 && (
         <div>
-          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Top sellers</div>
-          <ol className="flex flex-col gap-1">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Top sellers</div>
+          <ol className="flex flex-col gap-2.5">
             {tops.map((t, i) => (
               <li key={t.product_id ?? `${t.name}-${i}`} className="flex items-center gap-2.5 text-sm">
                 <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
@@ -260,9 +260,9 @@ function AnalyticsBody({kpis, avgBasket, series, pay, payTotal, pets, petTotal, 
 
 function Stat({label, value}: {label: string; value: string}) {
   return (
-    <div className="rounded-lg border bg-background/60 px-3 py-2">
+    <div className="rounded-lg border bg-background/60 px-4 py-3.5">
       <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-0.5 font-serif text-lg font-normal tabular-nums">{value}</div>
+      <div className="mt-1 font-serif text-xl font-normal tabular-nums">{value}</div>
     </div>
   );
 }
