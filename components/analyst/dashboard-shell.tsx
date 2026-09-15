@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, Boxes, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, Boxes, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -21,6 +21,7 @@ const OVERVIEW_CHILDREN: NavItem[] = [
   {href: '/health', label: 'Business Health', icon: Gauge},
   {href: '/?channel=all', label: 'Sales', icon: BarChart3},
   {href: '/offline-sales', label: 'Offline Sales', icon: Receipt},
+  {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
 ];
 const FLAT_TABS: NavItem[] = [
   {href: '/products', label: 'Products', icon: Boxes},
@@ -36,6 +37,15 @@ const FLAT_TABS: NavItem[] = [
 const leafActive = (href: string, pathname: string, channel: string | null) => {
   if (href === '/') return pathname === '/' && !channel;
   if (href === '/?channel=all') return pathname === '/' && Boolean(channel);
+  // Events lives under /offline-sales, so the two must not both light up: Offline
+  // Sales owns /offline-sales and its non-events subpaths; Events owns the events
+  // subtree. This makes the highlight transfer to Events when you open it from the
+  // Offline Sales "Events" button.
+  if (href === '/offline-sales') {
+    return pathname === '/offline-sales'
+      || (pathname.startsWith('/offline-sales/') && !pathname.startsWith('/offline-sales/events'));
+  }
+  if (href === '/offline-sales/events') return pathname.startsWith('/offline-sales/events');
   return pathname.startsWith(href.split('?')[0]);
 };
 

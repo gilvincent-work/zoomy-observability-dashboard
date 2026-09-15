@@ -37,6 +37,13 @@ Dates are local working dates (GMT+8). Newest first.
   schedules a bazaar's dates so the POS auto-detects and tags that day's sales.
   Overlapping date ranges are rejected (the RPC's guard; surfaced as a plain
   "those dates overlap another event" message).
+- **Events in the drawer nav.** Added an "Events" tab under the Overview group,
+  right below Offline Sales (both the expanded accordion and the collapsed
+  flyout). Active detection split so `/offline-sales` and `/offline-sales/events`
+  never both highlight: Offline Sales owns its page + non-events subpaths, Events
+  owns the events subtree, so the highlight transfers to Events when opened from
+  the Offline Sales "Events" button. The Overview group stays active/open on the
+  events page.
 - **Data layer + pure helpers.** `petMix(orders)` and `eventRollups(events, orders)`
   added to `pos-sales-compute` (both exclude voided sales); unit-tested (6 new
   cases). Mock path updated: mock orders carry `pet_type`/`event_id` and two
