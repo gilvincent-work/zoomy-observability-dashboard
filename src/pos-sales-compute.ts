@@ -236,6 +236,24 @@ export function presentMethods(orders: PosOrder[]): string[] {
   });
 }
 
+export interface PaymentMethodOption {
+  method: string;
+  enabled: boolean; // has sales in this data (filterable); false = greyed/unclickable
+}
+
+/** Payment methods for the filter dropdown: those with sales ("enabled",
+ *  filterable) first in canonical order, then the remaining known methods
+ *  ("disabled", shown greyed so the user sees the full set). */
+export function paymentMethodOptions(orders: PosOrder[]): PaymentMethodOption[] {
+  const present = presentMethods(orders);
+  const presentSet = new Set(present);
+  const disabled = PAYMENT_METHOD_ORDER.filter((m) => !presentSet.has(m));
+  return [
+    ...present.map((method) => ({method, enabled: true})),
+    ...disabled.map((method) => ({method, enabled: false})),
+  ];
+}
+
 /** Revenue per Manila day split by payment method, ascending by day. Days with
  *  no (non-voided) sales are omitted. Feeds the stacked sales-over-time chart. */
 export function salesByDayAndMethod(orders: PosOrder[]): DayMethodRevenue[] {
