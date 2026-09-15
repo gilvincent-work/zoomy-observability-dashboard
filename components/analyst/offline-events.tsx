@@ -1,13 +1,15 @@
 'use client';
 
+import {useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, CalendarDays, MapPin, Store} from 'lucide-react';
+import {ArrowLeft, CalendarDays, MapPin, Pencil, Plus, Store} from 'lucide-react';
 import type {EventRollup} from '@/src/pos-sales-types';
 import {formatPeso} from '@/src/pos-format';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Eyebrow, MockNote} from './sections';
 import {RefreshControl} from './refresh-control';
+import {EventForm} from './event-form';
 
 /** "2026-09-14" → "Sep 14, 2026". */
 function dayLabel(iso: string | null): string | null {
@@ -28,6 +30,9 @@ function eventDates(startsOn: string | null, endsOn: string | null): string | nu
 }
 
 export function OfflineEventsView({rollups, usingMock, fetchedAt}: {rollups: EventRollup[]; usingMock: boolean; fetchedAt: string}) {
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
       <Link href="/offline-sales" className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
@@ -36,9 +41,20 @@ export function OfflineEventsView({rollups, usingMock, fetchedAt}: {rollups: Eve
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <Eyebrow icon={CalendarDays}>Events</Eyebrow>
-          <p className="text-sm text-muted-foreground">Bazaars and markets the POS ran, with sales and cash reconciliation.</p>
+          <p className="text-sm text-muted-foreground">Schedule a bazaar so the POS auto-tags that day&rsquo;s sales. Sales and cash reconcile here.</p>
         </div>
-        <RefreshControl fetchedAt={fetchedAt} />
+        <div className="flex items-center gap-2">
+          <RefreshControl fetchedAt={fetchedAt} />
+          {!creating && (
+            <button
+              type="button"
+              onClick={() => { setEditingId(null); setCreating(true); }}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-transform duration-150 ease-out active:scale-95"
+            >
+              <Plus className="size-3.5" /> New event
+            </button>
+          )}
+        </div>
       </div>
 
       {usingMock && (
@@ -48,24 +64,35 @@ export function OfflineEventsView({rollups, usingMock, fetchedAt}: {rollups: Eve
         </MockNote>
       )}
 
-      {rollups.length === 0 ? (
+      {creating && (
+        <div className="mb-3">
+          <EventForm onDone={() => setCreating(false)} />
+        </div>
+      )}
+
+      {rollups.length === 0 && !creating ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No events yet. Events created at the POS will appear here with their sales and till reconciliation.
+            No events yet. Use &ldquo;New event&rdquo; to schedule a bazaar with its dates, location, and opening cash. Its
+            sales and till reconciliation appear here once the POS runs on those days.
           </CardContent>
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {rollups.map((r) => (
-            <EventCard key={r.event.event_id} rollup={r} />
-          ))}
+          {rollups.map((r) =>
+            editingId === r.event.event_id ? (
+              <EventForm key={r.event.event_id} initial={r.event} onDone={() => setEditingId(null)} />
+            ) : (
+              <EventCard key={r.event.event_id} rollup={r} onEdit={() => { setCreating(false); setEditingId(r.event.event_id); }} />
+            ),
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function EventCard({rollup}: {rollup: EventRollup}) {
+function EventCard({rollup, onEdit}: {rollup: EventRollup; onEdit: () => void}) {
   const {event, revenue, orders, cashSales, expectedCash} = rollup;
   const closed = event.status === 'closed';
   const dates = eventDates(event.starts_on, event.ends_on);
@@ -108,11 +135,21 @@ function EventCard({rollup}: {rollup: EventRollup}) {
               )}
             </div>
           </div>
-          <div className="text-right">
-            <div className="font-serif text-2xl font-normal leading-tight tracking-tight tabular-nums">{formatPeso(revenue)}</div>
-            <div className="text-xs text-muted-foreground">
-              {orders} {orders === 1 ? 'order' : 'orders'}
+          <div className="flex items-start gap-3">
+            <div className="text-right">
+              <div className="font-serif text-2xl font-normal leading-tight tracking-tight tabular-nums">{formatPeso(revenue)}</div>
+              <div className="text-xs text-muted-foreground">
+                {orders} {orders === 1 ? 'order' : 'orders'}
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              aria-label={`Edit ${event.name || 'event'}`}
+            >
+              <Pencil className="size-3" /> Edit
+            </button>
           </div>
         </div>
 

@@ -22,12 +22,21 @@ Dates are local working dates (GMT+8). Newest first.
   the ochre accent and the payment-method hues (dog = blue, cat = purple,
   both = green, untagged = neutral). Empty/all-zero renders a friendly note.
   Reason: the owner wanted to see which pet drives sales at a glance.
-- **Events view.** New `/offline-sales/events` page (linked from the home header)
-  listing `pos_events` with per-event sales rollups (revenue, orders) and a cash
-  reconciliation line (opening float + cash sales = expected till; over/short once
-  a closed event's counted cash is recorded). Friendly empty state when no events
-  exist. `event_id` (null = normal non-event day) and `pet_type` were added to the
-  `pos_orders` read/type; new `getPosEvents()` read and `PosEvent` type.
+- **Events view + scheduler.** New `/offline-sales/events` page (linked from the
+  home header) listing `pos_events` with per-event sales rollups (revenue, orders)
+  and a cash reconciliation line (opening float + cash sales = expected till;
+  over/short once a closed event's counted cash is recorded). Friendly empty state
+  when no events exist. `event_id` (null = normal non-event day) and `pet_type`
+  were added to the `pos_orders` read/type; new `getPosEvents()` read and `PosEvent`
+  type.
+- **Coop event scheduling form** (added later 2026-09-15). "New event" +
+  per-event "Edit" open an inline form (name, venue, city, organizer, start/end
+  dates, opening cash, note; edit adds status + counted-cash), writing through the
+  new `upsertEventAction` / `closeEventAction` server actions over the
+  `upsert_pos_event` / `close_pos_event` RPCs. This is the primary way Coop
+  schedules a bazaar's dates so the POS auto-detects and tags that day's sales.
+  Overlapping date ranges are rejected (the RPC's guard; surfaced as a plain
+  "those dates overlap another event" message).
 - **Data layer + pure helpers.** `petMix(orders)` and `eventRollups(events, orders)`
   added to `pos-sales-compute` (both exclude voided sales); unit-tested (6 new
   cases). Mock path updated: mock orders carry `pet_type`/`event_id` and two
