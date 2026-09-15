@@ -44,6 +44,14 @@ Dates are local working dates (GMT+8). Newest first.
   else the next upcoming one, else an empty "No events scheduled" prompt. The
   whole card links to the Events page. New pure helper `featuredEvent(events,
   todayKey)` (current, else nearest upcoming, else null), unit-tested.
+- **Events page: live spotlight + per-event analytics.** The event running today
+  floats to the top as a "Happening now" spotlight (ring accent, analytics
+  expanded). Every other event card is collapsed to its summary + cash line with
+  a "Show analytics" toggle. Analytics per event: headline KPIs (revenue, orders,
+  units, avg basket), an aesthetic cumulative-revenue trend line (area chart),
+  a payment split, the pet mix, and top sellers. New pure helpers
+  `paymentBreakdown` and `eventRevenueSeries` (both exclude voided), unit-tested;
+  the panel reuses `computeKpis` / `petMix` / `topProducts` scoped to the event.
 - **Events in the drawer nav.** Added an "Events" tab under the Overview group,
   right below Offline Sales (both the expanded accordion and the collapsed
   flyout). Active detection split so `/offline-sales` and `/offline-sales/events`
