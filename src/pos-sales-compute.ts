@@ -141,6 +141,24 @@ export function featuredEvent(events: PosEvent[], todayKey: string): FeaturedEve
   return null;
 }
 
+/** Inclusive list of calendar-day keys (YYYY-MM-DD) from start to end. A single
+ *  bound yields that one day; a reversed or empty range yields []. Capped so a
+ *  bad range can't loop. Used for the per-event day granularity toggle. */
+export function datesInRange(start: string | null, end: string | null): string[] {
+  if (!start && !end) return [];
+  const s = (start ?? end) as string;
+  const e = (end ?? start) as string;
+  if (e < s) return [];
+  const out: string[] = [];
+  let cur = new Date(`${s}T00:00:00Z`).getTime();
+  const last = new Date(`${e}T00:00:00Z`).getTime();
+  for (let guard = 0; cur <= last && guard < 400; guard++) {
+    out.push(new Date(cur).toISOString().slice(0, 10));
+    cur += 86_400_000;
+  }
+  return out;
+}
+
 export interface PaymentSlice {
   method: string; // 'cash' | 'gcash' | ...
   revenue: number;
