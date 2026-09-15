@@ -1,10 +1,11 @@
 'use client';
 
-import {useMemo} from 'react';
+import {useMemo, useState, type ReactNode} from 'react';
 import {Area, AreaChart, CartesianGrid, XAxis, YAxis} from 'recharts';
 import type {PetMix, PosEvent, PosOrder} from '@/src/pos-sales-types';
-import {computeKpis, eventRevenueSeries, paymentBreakdown, petMix, topProducts} from '@/src/pos-sales-compute';
+import {computeKpis, datesInRange, eventRevenueSeries, manilaDayKey, paymentBreakdown, petMix, topProducts} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
+import {cn} from '@/lib/utils';
 import {ChartContainer, ChartTooltip, type ChartConfig} from '@/components/ui/chart';
 
 const PET_SEGMENTS: {key: keyof PetMix; label: string; color: string}[] = [
@@ -29,34 +30,104 @@ function pesoTick(v: number): string {
 
 const axisLabelStyle = {fontSize: 10, fill: 'var(--muted-foreground)'} as const;
 
+/** "2026-09-15" → "Sep 15" for the day toggle. */
+function dayShort(key: string): string {
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+}
+
 /**
  * The per-event analytics panel: headline KPIs, a cumulative-revenue trend line,
  * a payment split, the pet mix, and top sellers. Pure-helper driven, all scoped
  * to this event's orders (its full lifetime, unfiltered by the home range tabs).
  */
 export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrder[]}) {
-  const kpis = useMemo(() => computeKpis(orders), [orders]);
-  const pay = useMemo(() => paymentBreakdown(orders), [orders]);
-  const pets = useMemo(() => petMix(orders), [orders]);
-  const tops = useMemo(() => topProducts(orders, 5), [orders]);
-  const multiDay = Boolean(event.starts_on && event.ends_on && event.starts_on !== event.ends_on);
-  const series = useMemo(
-    () => eventRevenueSeries(orders).map((p) => ({label: pointLabel(p.t, multiDay), revenue: p.revenue})),
-    [orders, multiDay],
+  // The event's own days; a toggle scopes every metric to one of them (or all).
+  const days = useMemo(() => datesInRange(event.starts_on, event.ends_on), [event.starts_on, event.ends_on]);
+  const multiDay = days.length > 1;
+  const [day, setDay] = useState<string | null>(null); // null = all days
+
+  // Everything below reflects the selected day (or the whole event when 'all').
+  const scoped = useMemo(
+    () => (day ? orders.filter((o) => manilaDayKey(o.created_at) === day) : orders),
+    [orders, day],
   );
 
-  if (kpis.orders === 0) {
-    return (
-      <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-center text-xs text-muted-foreground">
-        No sales tagged to this event yet.
-      </div>
-    );
-  }
+  const kpis = useMemo(() => computeKpis(scoped), [scoped]);
+  const pay = useMemo(() => paymentBreakdown(scoped), [scoped]);
+  const pets = useMemo(() => petMix(scoped), [scoped]);
+  const tops = useMemo(() => topProducts(scoped, 5), [scoped]);
+  // When one day is selected the x-axis is intra-day (time only); across all
+  // days of a multi-day event it also carries the date.
+  const labelWithDay = !day && multiDay;
+  const series = useMemo(
+    () => eventRevenueSeries(scoped).map((p) => ({label: pointLabel(p.t, labelWithDay), revenue: p.revenue})),
+    [scoped, labelWithDay],
+  );
 
-  const avgBasket = kpis.revenue / kpis.orders;
+  const avgBasket = kpis.orders ? kpis.revenue / kpis.orders : 0;
   const payTotal = pay.reduce((s, p) => s + p.revenue, 0) || 1;
   const petTotal = (pets.dog.revenue + pets.cat.revenue + pets.both.revenue + pets.untagged.revenue) || 1;
 
+  return (
+    <div className="flex flex-col gap-4">
+      {multiDay && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Day</span>
+          <DayPill active={day === null} onClick={() => setDay(null)}>All days</DayPill>
+          {days.map((d) => (
+            <DayPill key={d} active={day === d} onClick={() => setDay(d)}>{dayShort(d)}</DayPill>
+          ))}
+        </div>
+      )}
+
+      {kpis.orders === 0 ? (
+        <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-center text-xs text-muted-foreground">
+          {day ? `No sales on ${dayShort(day)}.` : 'No sales tagged to this event yet.'}
+        </div>
+      ) : (
+        <AnalyticsBody
+          kpis={kpis}
+          avgBasket={avgBasket}
+          series={series}
+          pay={pay}
+          payTotal={payTotal}
+          pets={pets}
+          petTotal={petTotal}
+          tops={tops}
+        />
+      )}
+    </div>
+  );
+}
+
+function DayPill({active, onClick, children}: {active: boolean; onClick: () => void; children: ReactNode}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+        active ? 'border-transparent bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+type AnalyticsBodyProps = {
+  kpis: {revenue: number; orders: number; units: number; oversells: number};
+  avgBasket: number;
+  series: {label: string; revenue: number}[];
+  pay: {method: string; revenue: number; orders: number}[];
+  payTotal: number;
+  pets: PetMix;
+  petTotal: number;
+  tops: {product_id: string; name: string; revenue: number; units: number}[];
+};
+
+function AnalyticsBody({kpis, avgBasket, series, pay, payTotal, pets, petTotal, tops}: AnalyticsBodyProps) {
   return (
     <div className="flex flex-col gap-4">
       {/* Headline KPIs */}
