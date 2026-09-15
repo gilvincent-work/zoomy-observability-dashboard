@@ -213,6 +213,12 @@ function EventCard({rollup, orders: eventOrders, spotlight, onEdit}: {rollup: Ev
               <span className="text-muted-foreground">=</span>
               <span className="font-medium text-foreground">{formatPeso(expectedCash ?? cashSales)} expected in till</span>
             </div>
+            {revenue > cashSales && (
+              <p className="mt-1.5 text-muted-foreground">
+                Card &amp; e-wallet sales ({formatPeso(revenue - cashSales)}) settle to their wallets, so they&rsquo;re not
+                in the till. Total revenue is {formatPeso(revenue)}.
+              </p>
+            )}
             {closed && event.closing_cash != null && (
               <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 tabular-nums text-foreground/80">
                 <span>Counted {formatPeso(event.closing_cash)}</span>
