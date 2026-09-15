@@ -291,35 +291,38 @@ function EventStatusCard({featured}: {featured: FeaturedEvent | null}) {
   return (
     <Link
       href="/offline-sales/events"
-      className="group flex h-full items-center justify-between gap-3 rounded-xl border bg-card px-4 py-4 transition-colors hover:bg-muted/40"
+      className="group flex h-full flex-col justify-between gap-5 rounded-xl border bg-card p-5 transition-colors hover:bg-muted/40"
     >
-      <div className="flex min-w-0 items-center gap-3">
+      {/* Top row: status icon (left) + the go-to-events affordance (right). */}
+      <div className="flex items-start justify-between gap-3">
         <span
           className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-lg',
+            'flex size-10 shrink-0 items-center justify-center rounded-lg',
             current ? 'text-[var(--status-good)]' : 'text-muted-foreground',
           )}
           style={current ? {backgroundColor: 'color-mix(in oklab, var(--status-good) 14%, transparent)'} : {backgroundColor: 'var(--muted)'}}
         >
-          {ev ? <CalendarClock className="size-4" /> : <CalendarDays className="size-4" />}
+          {ev ? <CalendarClock className="size-5" /> : <CalendarDays className="size-5" />}
         </span>
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider">
-            {current && <span className="size-1.5 rounded-full bg-[var(--status-good)]" aria-hidden />}
-            <span className={current ? 'text-[var(--status-good)]' : 'text-muted-foreground'}>
-              {ev ? (current ? 'Happening now' : 'Next event') : 'Events'}
-            </span>
-          </div>
-          <div className="truncate text-sm font-medium">{ev ? ev.name || 'Untitled event' : 'No events scheduled'}</div>
-          <div className="truncate text-xs text-muted-foreground">
-            {ev ? meta : 'Schedule a bazaar so the POS can tag that day’s sales.'}
-          </div>
+        <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+          {ev ? 'All events' : 'Schedule'}
+          <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+        </span>
+      </div>
+
+      {/* Identity, anchored to the bottom so the tile fills its column height. */}
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider">
+          {current && <span className="size-1.5 rounded-full bg-[var(--status-good)]" aria-hidden />}
+          <span className={current ? 'text-[var(--status-good)]' : 'text-muted-foreground'}>
+            {ev ? (current ? 'Happening now' : 'Next event') : 'Events'}
+          </span>
+        </div>
+        <div className="truncate text-lg font-semibold tracking-tight">{ev ? ev.name || 'Untitled event' : 'No events scheduled'}</div>
+        <div className="mt-0.5 truncate text-sm text-muted-foreground">
+          {ev ? meta : 'Schedule a bazaar so the POS can tag that day’s sales.'}
         </div>
       </div>
-      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-        {ev ? 'All events' : 'Schedule'}
-        <ChevronRight className="size-3.5" />
-      </span>
     </Link>
   );
 }

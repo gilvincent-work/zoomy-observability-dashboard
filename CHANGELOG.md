@@ -41,7 +41,9 @@ Dates are local working dates (GMT+8). Newest first.
   dark mode (`color-scheme`) so it isn't black-on-black.
 - **Offline Sales layout: breathing room + 2-column top.** The event spotlight
   (left) and the daily-goal card (right) now sit side by side in a two-column row
-  (stacked on mobile), the event card stretching to match. Bumped section rhythm
+  (stacked on mobile). The event card is a proper vertical tile (status icon +
+  "All events" on top, event identity anchored at the bottom) so it fills its
+  column height cleanly instead of floating centered. Bumped section rhythm
   throughout (page padding, header, KPI/pet/panel gaps) so the increasingly dense
   page reads more comfortably. The per-event analytics panel also got looser
   spacing (section gaps, KPI cards, legends, top-sellers rows, taller trend).
