@@ -3,6 +3,9 @@
 
 export type SalesRange = 'today' | '7d' | '30d' | 'all';
 
+/** The pet a sale was tagged for at the POS. null on an order = untagged. */
+export type PetType = 'dog' | 'cat' | 'both';
+
 export interface PosOrderLine {
   product_id: string | null; // SKU; null for a bundle header line
   bundle_id?: string | null; // set on a bundle header line (product_id is then null)
@@ -27,7 +30,31 @@ export interface PosOrder {
   remarks: string | null; // free-text note set from the POS
   created_at: string; // ISO
   edited_at: string | null; // ISO; set when the order was edited (null = never)
+  event_id: string | null; // POS event this sale belongs to; null = a normal non-event day
+  pet_type: PetType | null; // pet the sale was tagged for; null = untagged
   items: PosOrderLine[];
+}
+
+/**
+ * A bazaar / market event the POS ran, from pos_events. Sales made during the
+ * event carry its event_id. opening_cash + cash sales during the event reconciles
+ * against the counted closing_cash when the event is closed.
+ */
+export interface PosEvent {
+  event_id: string;
+  name: string | null;
+  venue: string | null;
+  city: string | null;
+  organizer: string | null;
+  starts_on: string | null; // YYYY-MM-DD
+  ends_on: string | null; // YYYY-MM-DD
+  opening_cash: number | null; // float cash on hand at open
+  cash_note: string | null;
+  closing_cash: number | null; // counted cash at close (set by close_pos_event)
+  status: string; // 'active' | 'closed'
+  created_by: string | null;
+  created_at: string | null; // ISO
+  updated_at: string | null; // ISO
 }
 
 /** Slim catalog entry for the edit-order product picker. */
@@ -88,6 +115,34 @@ export interface SalesKpis {
   orders: number;
   units: number;
   oversells: number;
+}
+
+/** Revenue + order count for one pet-mix segment. */
+export interface PetMixSegment {
+  revenue: number;
+  orders: number;
+}
+
+/** The 4-way split of sales by tagged pet. `untagged` collects null pet_type. */
+export interface PetMix {
+  dog: PetMixSegment;
+  cat: PetMixSegment;
+  both: PetMixSegment;
+  untagged: PetMixSegment;
+}
+
+/**
+ * One event with its sales rollup. `cashSales` is the sum of non-voided
+ * cash-method order totals during the event; `expectedCash` is opening_cash +
+ * cashSales (null when opening_cash wasn't recorded), i.e. what the till should
+ * hold at close before counting closing_cash.
+ */
+export interface EventRollup {
+  event: PosEvent;
+  revenue: number; // Σ non-voided order totals for the event
+  orders: number; // non-voided order count
+  cashSales: number; // Σ non-voided cash-method order totals
+  expectedCash: number | null; // opening_cash + cashSales, or null
 }
 
 export interface DailySales {
