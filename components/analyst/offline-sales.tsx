@@ -6,8 +6,8 @@ import {ArrowLeftRight, CalendarClock, CalendarDays, ChevronDown, ChevronRight, 
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
 import type {BundleSalesSummary, DayMethodRevenue, FeaturedEvent, PetMix, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
-import type {StockAlerts} from '@/src/pos-sales-compute';
-import {SALES_RANGES, computeKpis, orderMethod, petMix, presentMethods, salesByDayAndMethod} from '@/src/pos-sales-compute';
+import type {PaymentMethodOption, StockAlerts} from '@/src/pos-sales-compute';
+import {SALES_RANGES, computeKpis, orderMethod, paymentMethodOptions, petMix, presentMethods, salesByDayAndMethod} from '@/src/pos-sales-compute';
 import type {PosProductRow} from '@/src/pos-types';
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
@@ -48,6 +48,9 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
   // the range-filtered orders so switching is instant (no reload).
   const [method, setMethod] = useState<string>('all');
   const methods = useMemo(() => presentMethods(orders), [orders]);
+  // Full method list for the filter: enabled (has sales) first, then the rest
+  // greyed. The chart still uses `methods` (present only).
+  const methodOptions = useMemo(() => paymentMethodOptions(orders), [orders]);
   const stackData = useMemo(() => salesByDayAndMethod(orders), [orders]);
   // The orders the KPI cards summarize: the range-filtered set, narrowed to the
   // selected method (or all). Pet mix reads from the exact same set so the split
@@ -66,7 +69,7 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
           <Eyebrow icon={Receipt}>Offline Sales</Eyebrow>
           <p className="text-sm text-muted-foreground">Bazaar sales synced from the POS.</p>
           <div className="mt-2.5">
-            <PaymentMethodSelect value={method} methods={methods} onChange={setMethod} />
+            <PaymentMethodSelect value={method} options={methodOptions} onChange={setMethod} />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -107,7 +110,7 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
         <PetMixCard mix={mix} />
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2 md:items-start">
         <Panel title="Sales over time">
           {stackData.length === 0 ? (
             <Empty>No sales in this range.</Empty>
@@ -119,7 +122,7 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
         <TopSellersColumn byRevenue={top} byUnits={topByUnits} bundles={bundles} topBundles={topBundles} />
       </div>
 
-      <div className="mt-5 grid gap-5 md:grid-cols-2">
+      <div className="mt-5 grid gap-5 md:grid-cols-2 md:items-start">
         <Panel title="Recent orders" action={{label: 'View all', href: '/offline-sales/orders'}}>
           {orders.length === 0 ? (
             <Empty>No orders yet.</Empty>
@@ -600,10 +603,16 @@ function MethodTooltip({active, payload, label}: {active?: boolean; payload?: To
 }
 
 /** Color-coded payment-method dropdown. Default "All payment options". */
-function PaymentMethodSelect({value, methods, onChange}: {value: string; methods: string[]; onChange: (v: string) => void}) {
+function PaymentMethodSelect({value, options, onChange}: {value: string; options: PaymentMethodOption[]; onChange: (v: string) => void}) {
   const [open, setOpen] = useState(false);
-  const options = [{value: 'all', label: 'All payment options'}, ...methods.map((m) => ({value: m, label: paymentMethodLabel(m)}))];
-  const current = options.find((o) => o.value === value) ?? options[0];
+  const currentLabel = value === 'all' ? 'All payment options' : paymentMethodLabel(value);
+  // Index of the first greyed (no-sales) method, so a divider marks the split.
+  const firstDisabled = options.findIndex((o) => !o.enabled);
+
+  const select = (v: string) => {
+    onChange(v);
+    setOpen(false);
+  };
 
   return (
     <div className="relative inline-block">
@@ -615,7 +624,7 @@ function PaymentMethodSelect({value, methods, onChange}: {value: string; methods
         className="inline-flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
       >
         <MethodDot method={value} />
-        {current.label}
+        {currentLabel}
         <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
@@ -623,28 +632,59 @@ function PaymentMethodSelect({value, methods, onChange}: {value: string; methods
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
           <ul
             role="listbox"
-            className="absolute left-0 z-50 mt-1 min-w-[13rem] overflow-hidden rounded-lg border bg-background p-1 shadow-lg"
+            className="absolute left-0 z-50 mt-1 min-w-[14rem] overflow-hidden rounded-lg border bg-background p-1 shadow-lg"
           >
-            {options.map((o) => (
-              <li key={o.value}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={o.value === value}
-                  onClick={() => {
-                    onChange(o.value);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted',
-                    o.value === value ? 'font-medium text-foreground' : 'text-muted-foreground',
-                  )}
-                >
-                  <MethodDot method={o.value} />
-                  {o.label}
-                </button>
-              </li>
-            ))}
+            <li>
+              <button
+                type="button"
+                role="option"
+                aria-selected={value === 'all'}
+                onClick={() => select('all')}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted',
+                  value === 'all' ? 'font-medium text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                <MethodDot method="all" />
+                All payment options
+              </button>
+            </li>
+            {options.map((o, i) => {
+              const label = paymentMethodLabel(o.method);
+              if (!o.enabled) {
+                return (
+                  <li key={o.method}>
+                    {i === firstDisabled && <div className="mx-1 my-1 border-t border-border/70" role="separator" />}
+                    {/* No sales in range: shown for completeness, greyed + unclickable. */}
+                    <div
+                      aria-disabled="true"
+                      className="flex w-full cursor-not-allowed items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground opacity-50"
+                    >
+                      <MethodDot method={o.method} />
+                      {label}
+                      <span className="ml-auto text-[10px] font-medium uppercase tracking-wide">No sales</span>
+                    </div>
+                  </li>
+                );
+              }
+              return (
+                <li key={o.method}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={o.method === value}
+                    onClick={() => select(o.method)}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted',
+                      o.method === value ? 'font-medium text-foreground' : 'text-muted-foreground',
+                    )}
+                  >
+                    <MethodDot method={o.method} />
+                    {label}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}
