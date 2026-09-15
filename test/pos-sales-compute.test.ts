@@ -4,6 +4,7 @@ import {
   bundleSalesSummary,
   computeKpis,
   eventRollups,
+  featuredEvent,
   manilaDayKey,
   orderMethod,
   petMix,
@@ -688,5 +689,45 @@ describe('eventRollups', () => {
     const events = [event({event_id: 'e1', opening_cash: 0})];
     const orders = [order({id: '1', created_at: at, total: 120, payment_method: null, event_id: 'e1'})];
     expect(eventRollups(events, orders)[0]).toMatchObject({cashSales: 120, expectedCash: 120});
+  });
+});
+
+describe('featuredEvent', () => {
+  function event(over: Partial<PosEvent> & {event_id: string}): PosEvent {
+    return {
+      name: over.event_id, venue: null, city: null, organizer: null,
+      starts_on: null, ends_on: null, opening_cash: null, cash_note: null,
+      closing_cash: null, status: 'active', created_by: null, created_at: null,
+      updated_at: null, ...over,
+    };
+  }
+  const TODAY = '2026-09-17';
+
+  it('prefers the event running today (current), inclusive of both bounds', () => {
+    const events = [
+      event({event_id: 'past', starts_on: '2026-09-10', ends_on: '2026-09-12'}),
+      event({event_id: 'now', starts_on: '2026-09-16', ends_on: '2026-09-18'}),
+      event({event_id: 'future', starts_on: '2026-09-25', ends_on: '2026-09-26'}),
+    ];
+    expect(featuredEvent(events, TODAY)).toEqual({event: events[1], state: 'current'});
+  });
+
+  it('falls back to the nearest upcoming event when none is current', () => {
+    const events = [
+      event({event_id: 'soon', starts_on: '2026-09-20', ends_on: '2026-09-21'}),
+      event({event_id: 'later', starts_on: '2026-10-01', ends_on: '2026-10-02'}),
+      event({event_id: 'past', starts_on: '2026-09-01', ends_on: '2026-09-02'}),
+    ];
+    expect(featuredEvent(events, TODAY)).toEqual({event: events[0], state: 'upcoming'});
+  });
+
+  it('returns null when there is no current or upcoming event', () => {
+    const events = [event({event_id: 'past', starts_on: '2026-09-01', ends_on: '2026-09-02'})];
+    expect(featuredEvent(events, TODAY)).toBeNull();
+  });
+
+  it('ignores events with no dates', () => {
+    const events = [event({event_id: 'undated'})];
+    expect(featuredEvent(events, TODAY)).toBeNull();
   });
 });
