@@ -22,6 +22,13 @@ function pointLabel(iso: string, multiDay: boolean): string {
   return d.toLocaleString(undefined, multiDay ? {month: 'short', day: 'numeric', hour: 'numeric'} : {hour: 'numeric', minute: '2-digit'});
 }
 
+/** Compact peso for Y-axis ticks: ₱1.6k, ₱300. */
+function pesoTick(v: number): string {
+  return v >= 1000 ? `₱${(v / 1000).toFixed(1).replace(/\.0$/, '')}k` : `₱${v}`;
+}
+
+const axisLabelStyle = {fontSize: 10, fill: 'var(--muted-foreground)'} as const;
+
 /**
  * The per-event analytics panel: headline KPIs, a cumulative-revenue trend line,
  * a payment split, the pet mix, and top sellers. Pure-helper driven, all scoped
@@ -64,8 +71,8 @@ export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrd
       {series.length >= 2 && (
         <div>
           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Revenue over time</div>
-          <ChartContainer config={chartConfig} className="h-[160px] w-full">
-            <AreaChart data={series} margin={{left: 4, right: 8, top: 8, bottom: 0}}>
+          <ChartContainer config={chartConfig} className="h-[190px] w-full">
+            <AreaChart data={series} margin={{left: 10, right: 12, top: 8, bottom: 20}}>
               <defs>
                 <linearGradient id="eventRevFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--color-revenue)" stopOpacity={0.28} />
@@ -73,8 +80,24 @@ export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrd
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.4} />
-              <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={10} minTickGap={44} />
-              <YAxis hide domain={[0, 'dataMax']} />
+              <XAxis
+                dataKey="label"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                fontSize={10}
+                minTickGap={44}
+                label={{value: 'Order time', position: 'insideBottom', offset: -12, style: {...axisLabelStyle, textAnchor: 'middle'}}}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                width={52}
+                fontSize={10}
+                domain={[0, 'dataMax']}
+                tickFormatter={(v) => pesoTick(Number(v))}
+                label={{value: 'Cumulative revenue', angle: -90, position: 'insideLeft', offset: 2, style: {...axisLabelStyle, textAnchor: 'middle'}}}
+              />
               <ChartTooltip
                 cursor={{stroke: 'var(--color-revenue)', strokeOpacity: 0.3}}
                 content={({active, payload, label}) =>
