@@ -2,7 +2,7 @@ import 'server-only';
 import {cache} from 'react';
 import {unstable_noStore as noStore} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
-import type {PosOrder, PosOrderLine, PosOrdersFilter, PosSyncEntry, PriceBounds} from './pos-sales-types';
+import type {PetType, PosEvent, PosOrder, PosOrderLine, PosOrdersFilter, PosSyncEntry, PriceBounds} from './pos-sales-types';
 import {
   boundsFromMax,
   DEFAULT_ORDERS_FILTER,
@@ -11,7 +11,12 @@ import {
   priceBounds,
   type PageInfo,
 } from './pos-sales-compute';
-import {MOCK_POS_ORDERS, MOCK_POS_SYNC_LOG} from './pos-sales-mock';
+import {MOCK_POS_EVENTS, MOCK_POS_ORDERS, MOCK_POS_SYNC_LOG} from './pos-sales-mock';
+
+/** Normalize a raw pet_type cell to the union, unknown/absent -> null. */
+function normalizePetType(raw: unknown): PetType | null {
+  return raw === 'dog' || raw === 'cat' || raw === 'both' ? raw : null;
+}
 
 /**
  * The transactions filter expressed as PostgREST operations, so the exact same
@@ -58,7 +63,7 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
   const [ordersRes, itemsRes, productsRes, bundlesRes] = await Promise.all([
     supabase
       .from('pos_orders')
-      .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at')
+      .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at,event_id,pet_type')
       .order('created_at', {ascending: false}),
     supabase.from('pos_order_items').select('order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total'),
     supabase.from('pos_products').select('product_id,name'),
@@ -108,6 +113,8 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
     remarks: (o.remarks as string | null) ?? null,
     created_at: o.created_at as string,
     edited_at: (o.edited_at as string | null) ?? null,
+    event_id: (o.event_id as string | null) ?? null,
+    pet_type: normalizePetType(o.pet_type),
     items: itemsByOrder.get(o.id as string) ?? [],
   }));
 });
@@ -149,7 +156,7 @@ export const getPosOrdersPage = cache(async (
 
   let rowQuery = supabase
     .from('pos_orders')
-    .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at');
+    .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at,event_id,pet_type');
   for (const op of ops) {
     rowQuery = op[0] === 'or' ? rowQuery.or(op[1])
       : op[0] === 'eq' ? rowQuery.eq(op[1], op[2])
@@ -208,6 +215,8 @@ export const getPosOrdersPage = cache(async (
     remarks: (o.remarks as string | null) ?? null,
     created_at: o.created_at as string,
     edited_at: (o.edited_at as string | null) ?? null,
+    event_id: (o.event_id as string | null) ?? null,
+    pet_type: normalizePetType(o.pet_type),
     items: itemsByOrder.get(o.id as string) ?? [],
   }));
 
@@ -233,6 +242,39 @@ export const getPosOrdersPriceBounds = cache(async (): Promise<PriceBounds> => {
   if (error) throw new Error(`pos_orders price bounds failed: ${error.message}`);
 
   return boundsFromMax(Number(data?.[0]?.total ?? 0));
+});
+
+/**
+ * All POS events, newest first (by start date). Anon has SELECT on pos_events;
+ * here we read with the service role like the other pos_* reads. React-cached.
+ */
+export const getPosEvents = cache(async (): Promise<PosEvent[]> => {
+  noStore();
+  if (usingPosMock()) return MOCK_POS_EVENTS;
+
+  const supabase = posClient();
+  const {data, error} = await supabase
+    .from('pos_events')
+    .select('event_id,name,venue,city,organizer,starts_on,ends_on,opening_cash,cash_note,closing_cash,status,created_by,created_at,updated_at')
+    .order('starts_on', {ascending: false, nullsFirst: false});
+  if (error) throw new Error(`pos_events read failed: ${error.message}`);
+
+  return (data ?? []).map((e): PosEvent => ({
+    event_id: e.event_id as string,
+    name: (e.name as string | null) ?? null,
+    venue: (e.venue as string | null) ?? null,
+    city: (e.city as string | null) ?? null,
+    organizer: (e.organizer as string | null) ?? null,
+    starts_on: (e.starts_on as string | null) ?? null,
+    ends_on: (e.ends_on as string | null) ?? null,
+    opening_cash: e.opening_cash != null ? Number(e.opening_cash) : null,
+    cash_note: (e.cash_note as string | null) ?? null,
+    closing_cash: e.closing_cash != null ? Number(e.closing_cash) : null,
+    status: (e.status as string | null) === 'closed' ? 'closed' : 'active',
+    created_by: (e.created_by as string | null) ?? null,
+    created_at: (e.created_at as string | null) ?? null,
+    updated_at: (e.updated_at as string | null) ?? null,
+  }));
 });
 
 /** Recent sync-log entries (newest first), for the "recently synced" strip. */

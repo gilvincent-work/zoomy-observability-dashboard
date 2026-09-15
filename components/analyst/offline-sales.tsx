@@ -2,12 +2,12 @@
 
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeftRight, CalendarClock, ChevronDown, PackageX, Receipt, TriangleAlert} from 'lucide-react';
+import {ArrowLeftRight, CalendarClock, CalendarDays, ChevronDown, PackageX, Receipt, TriangleAlert} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
-import type {BundleSalesSummary, DayMethodRevenue, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
+import type {BundleSalesSummary, DayMethodRevenue, PetMix, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
 import type {StockAlerts} from '@/src/pos-sales-compute';
-import {SALES_RANGES, computeKpis, orderMethod, presentMethods, salesByDayAndMethod} from '@/src/pos-sales-compute';
+import {SALES_RANGES, computeKpis, orderMethod, petMix, presentMethods, salesByDayAndMethod} from '@/src/pos-sales-compute';
 import type {PosProductRow} from '@/src/pos-types';
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
@@ -48,10 +48,15 @@ export function OfflineSalesView({range, progress, kpis, top, topByUnits, topBun
   const [method, setMethod] = useState<string>('all');
   const methods = useMemo(() => presentMethods(orders), [orders]);
   const stackData = useMemo(() => salesByDayAndMethod(orders), [orders]);
-  const shownKpis = useMemo(
-    () => (method === 'all' ? kpis : computeKpis(orders.filter((o) => orderMethod(o) === method))),
-    [method, orders, kpis],
+  // The orders the KPI cards summarize: the range-filtered set, narrowed to the
+  // selected method (or all). Pet mix reads from the exact same set so the split
+  // reacts to the method toggle client-side, just like the KPIs above it.
+  const shownOrders = useMemo(
+    () => (method === 'all' ? orders : orders.filter((o) => orderMethod(o) === method)),
+    [method, orders],
   );
+  const shownKpis = useMemo(() => (method === 'all' ? kpis : computeKpis(shownOrders)), [method, kpis, shownOrders]);
+  const mix = useMemo(() => petMix(shownOrders), [shownOrders]);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
@@ -64,6 +69,13 @@ export function OfflineSalesView({range, progress, kpis, top, topByUnits, topBun
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/offline-sales/events"
+            className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
+          >
+            <CalendarDays className="size-3.5 text-muted-foreground" />
+            Events
+          </Link>
           <RefreshControl fetchedAt={fetchedAt} />
           <RangeTabs active={range} />
         </div>
@@ -87,6 +99,10 @@ export function OfflineSalesView({range, progress, kpis, top, topByUnits, topBun
         <Kpi label="Orders" value={String(shownKpis.orders)} />
         <Kpi label="Units" value={String(shownKpis.units)} />
         <Kpi label="Oversells" value={String(shownKpis.oversells)} warn={shownKpis.oversells > 0} />
+      </div>
+
+      <div className="mb-4">
+        <PetMixCard mix={mix} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -251,6 +267,64 @@ function RangeTabs({active}: {active: SalesRange}) {
 
 function Kpi({label, value, warn}: {label: string; value: string; warn?: boolean}) {
   return <Metric label={label} value={value} valueClassName={warn ? 'text-destructive' : undefined} />;
+}
+
+// Pet-mix segments. Colors are deliberately distinct from the ochre page accent
+// and from the payment-method hues: dog = blue, cat = purple, both = green,
+// untagged = a muted neutral so it reads as "not yet categorized".
+const PET_SEGMENTS: {key: keyof PetMix; label: string; color: string}[] = [
+  {key: 'dog', label: 'Dog', color: '#3b82f6'}, // blue-500
+  {key: 'cat', label: 'Cat', color: '#a855f7'}, // purple-500
+  {key: 'both', label: 'Both', color: '#22c55e'}, // green-500
+  {key: 'untagged', label: 'Untagged', color: '#a1a1aa'}, // zinc-400
+];
+
+/** Revenue + order split by tagged pet: a 4-segment bar over a per-segment
+ *  legend. Widths are revenue-proportional; the legend always lists all four so
+ *  a zero segment still reads. Empty (no orders) shows a friendly note. */
+function PetMixCard({mix}: {mix: PetMix}) {
+  const totalRevenue = PET_SEGMENTS.reduce((s, seg) => s + mix[seg.key].revenue, 0);
+  const totalOrders = PET_SEGMENTS.reduce((s, seg) => s + mix[seg.key].orders, 0);
+
+  return (
+    <Panel
+      title="Pet mix"
+      info="Sales split by the pet each order was tagged for at the POS. Untagged sales were recorded without a pet type. Honors the range and payment-option filters above."
+    >
+      {totalOrders === 0 ? (
+        <Empty>No sales in this range.</Empty>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted" role="img" aria-label="Revenue share by pet type">
+            {PET_SEGMENTS.map((seg) => {
+              const pct = totalRevenue > 0 ? (mix[seg.key].revenue / totalRevenue) * 100 : 0;
+              if (pct <= 0) return null;
+              return <div key={seg.key} style={{width: `${pct}%`, backgroundColor: seg.color}} />;
+            })}
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+            {PET_SEGMENTS.map((seg) => {
+              const s = mix[seg.key];
+              const pct = totalRevenue > 0 ? Math.round((s.revenue / totalRevenue) * 100) : 0;
+              return (
+                <div key={seg.key} className="flex flex-col gap-0.5">
+                  <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <span className="size-2 rounded-[3px]" style={{backgroundColor: seg.color}} aria-hidden />
+                    {seg.label}
+                    {totalRevenue > 0 && <span className="tabular-nums text-muted-foreground/60">{pct}%</span>}
+                  </span>
+                  <span className="text-sm font-medium tabular-nums">{formatPeso(s.revenue)}</span>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {s.orders} {s.orders === 1 ? 'order' : 'orders'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
 }
 
 /** Right column of the overview: Top products stacked over Top bundles, both

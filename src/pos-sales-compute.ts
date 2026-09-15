@@ -1,6 +1,6 @@
 import type {PosProductRow} from './pos-types';
 import type {ChannelFacts} from './health-types';
-import type {BundleSalesSummary, DailySales, DayMethodRevenue, EditEntry, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
+import type {BundleSalesSummary, DailySales, DayMethodRevenue, EditEntry, EventRollup, PetMix, PetMixSegment, PosEvent, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
 // server/client concerns so they're unit-testable and shared across pages.
@@ -73,6 +73,47 @@ export function computeKpis(orders: PosOrder[]): SalesKpis {
     for (const it of o.items) units += it.qty;
   }
   return {revenue, orders: count, units, oversells};
+}
+
+/**
+ * Split orders by the pet each sale was tagged for: dog / cat / both / untagged
+ * (null pet_type). Each segment carries revenue (Σ order total) and order count.
+ * Voided sales are excluded, consistent with every other revenue aggregation.
+ */
+export function petMix(orders: PosOrder[]): PetMix {
+  const seg = (): PetMixSegment => ({revenue: 0, orders: 0});
+  const mix: PetMix = {dog: seg(), cat: seg(), both: seg(), untagged: seg()};
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    const key: keyof PetMix =
+      o.pet_type === 'dog' || o.pet_type === 'cat' || o.pet_type === 'both' ? o.pet_type : 'untagged';
+    mix[key].revenue += o.total;
+    mix[key].orders += 1;
+  }
+  return mix;
+}
+
+/**
+ * Per-event sales rollups: revenue, order count, and cash-method sales for each
+ * event, plus the expected till (opening_cash + cash sales) for a reconciliation
+ * line. Orders with no event_id (normal non-event days) are ignored. Events with
+ * no sales still appear, with zeroed figures. Voided sales are excluded.
+ */
+export function eventRollups(events: PosEvent[], orders: PosOrder[]): EventRollup[] {
+  const byEvent = new Map<string, {revenue: number; orders: number; cashSales: number}>();
+  for (const o of orders) {
+    if (isVoided(o) || !o.event_id) continue;
+    const cur = byEvent.get(o.event_id) ?? {revenue: 0, orders: 0, cashSales: 0};
+    cur.revenue += o.total;
+    cur.orders += 1;
+    if (orderMethod(o) === 'cash') cur.cashSales += o.total;
+    byEvent.set(o.event_id, cur);
+  }
+  return events.map((event) => {
+    const agg = byEvent.get(event.event_id) ?? {revenue: 0, orders: 0, cashSales: 0};
+    const expectedCash = event.opening_cash != null ? event.opening_cash + agg.cashSales : null;
+    return {event, revenue: agg.revenue, orders: agg.orders, cashSales: agg.cashSales, expectedCash};
+  });
 }
 
 /** Group orders by Manila calendar day, ascending. Days with no sales omitted. */
