@@ -60,8 +60,8 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
   const mix = useMemo(() => petMix(shownOrders), [shownOrders]);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto max-w-5xl px-6 py-10 md:px-10">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Eyebrow icon={Receipt}>Offline Sales</Eyebrow>
           <p className="text-sm text-muted-foreground">Bazaar sales synced from the POS.</p>
@@ -75,35 +75,39 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
         </div>
       </div>
 
-      <div className="mb-4">
-        <EventStatusCard featured={featured} />
-      </div>
-
       {usingMock && (
-        <MockNote>
-          Mock sales. Set <code>SUPABASE_URL_ARCHIVE</code> / <code>SUPABASE_SERVICE_ROLE_KEY_ARCHIVE</code> to the
-          Staging project to load real <code>pos_orders</code>.
-        </MockNote>
-      )}
-
-      {progress && (
-        <div className="mb-4">
-          <DailyTargetBar progress={progress} variant="full" />
+        <div className="mb-6">
+          <MockNote>
+            Mock sales. Set <code>SUPABASE_URL_ARCHIVE</code> / <code>SUPABASE_SERVICE_ROLE_KEY_ARCHIVE</code> to the
+            Staging project to load real <code>pos_orders</code>.
+          </MockNote>
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+      {/* Event (left) + daily goal (right); the event card stretches to match. */}
+      {progress ? (
+        <div className="mb-6 grid gap-4 md:grid-cols-2">
+          <EventStatusCard featured={featured} />
+          <DailyTargetBar progress={progress} variant="full" />
+        </div>
+      ) : (
+        <div className="mb-6">
+          <EventStatusCard featured={featured} />
+        </div>
+      )}
+
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Kpi label="Revenue" value={formatPeso(shownKpis.revenue)} />
         <Kpi label="Orders" value={String(shownKpis.orders)} />
         <Kpi label="Units" value={String(shownKpis.units)} />
         <Kpi label="Oversells" value={String(shownKpis.oversells)} warn={shownKpis.oversells > 0} />
       </div>
 
-      <div className="mb-4">
+      <div className="mb-6">
         <PetMixCard mix={mix} />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2">
         <Panel title="Sales over time">
           {stackData.length === 0 ? (
             <Empty>No sales in this range.</Empty>
@@ -115,7 +119,7 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
         <TopSellersColumn byRevenue={top} byUnits={topByUnits} bundles={bundles} topBundles={topBundles} />
       </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="mt-5 grid gap-5 md:grid-cols-2">
         <Panel title="Recent orders" action={{label: 'View all', href: '/offline-sales/orders'}}>
           {orders.length === 0 ? (
             <Empty>No orders yet.</Empty>
@@ -170,7 +174,7 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
         </Panel>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-5">
         <StockAlertsCard alerts={alerts} />
       </div>
     </div>
@@ -287,7 +291,7 @@ function EventStatusCard({featured}: {featured: FeaturedEvent | null}) {
   return (
     <Link
       href="/offline-sales/events"
-      className="group flex items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40"
+      className="group flex h-full items-center justify-between gap-3 rounded-xl border bg-card px-4 py-4 transition-colors hover:bg-muted/40"
     >
       <div className="flex min-w-0 items-center gap-3">
         <span
