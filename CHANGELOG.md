@@ -52,6 +52,10 @@ Dates are local working dates (GMT+8). Newest first.
   a payment split, the pet mix, and top sellers. New pure helpers
   `paymentBreakdown` and `eventRevenueSeries` (both exclude voided), unit-tested;
   the panel reuses `computeKpis` / `petMix` / `topProducts` scoped to the event.
+  The trend chart now has labelled X ("Order time") and Y ("Cumulative revenue",
+  with peso ticks) axes. The cash reconciliation block clarifies that card /
+  e-wallet sales settle separately and aren't in the till, so "expected in till"
+  (opening + cash-method sales) reads distinctly from total revenue.
 - **Events in the drawer nav.** Added an "Events" tab under the Overview group,
   right below Offline Sales (both the expanded accordion and the collapsed
   flyout). Active detection split so `/offline-sales` and `/offline-sales/events`
