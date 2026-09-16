@@ -290,3 +290,64 @@ export async function deleteBundleAction(bundle_id: string): Promise<ActionResul
   revalidatePath('/inventory');
   return {ok: true};
 }
+
+/**
+ * Edit a Buy-Any-N bundle's scope: the pick count and which product lines qualify.
+ * Direct column update on pos_bundles (line_categories is jsonb), same path as the
+ * other co-edits; the POS mirrors it on its next catalog pull.
+ */
+export async function setBundleScopeAction(bundle_id: string, pickCount: number, lineCategories: string[]): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  if (!(pickCount >= 1)) return {ok: false, error: 'Pick count must be at least 1.'};
+  if (lineCategories.length === 0) return {ok: false, error: 'Choose at least one eligible line.'};
+  const {error} = await posClient()
+    .from('pos_bundles')
+    .update({pick_count: pickCount, line_categories: lineCategories, updated_at: new Date().toISOString()})
+    .eq('bundle_id', bundle_id);
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/inventory');
+  return {ok: true};
+}
+
+export interface NewBundleInput {
+  name: string;
+  emoji?: string;
+  price: string;
+  pickCount: number;
+  lineCategories: string[];
+}
+
+/**
+ * Create a "Buy Any N" bundle from Coop, through the shared apply_pos_bundle RPC
+ * (the same write path the POS uses). Coop mints the bundle_id; the POS picks it up
+ * on its next catalog pull, so it lands on every device. Buy-Any-N only for now:
+ * pick_count + eligible lines, no fixed item list.
+ */
+export async function createBundleAction(input: NewBundleInput): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const name = input.name.trim();
+  if (!name) return {ok: false, error: 'Give the bundle a name.'};
+  const parsed = parsePrice(input.price);
+  if ('error' in parsed) return {ok: false, error: parsed.error};
+  if (!(input.pickCount >= 1)) return {ok: false, error: 'Pick count must be at least 1.'};
+  if (input.lineCategories.length === 0) return {ok: false, error: 'Choose at least one eligible line.'};
+  const emoji = input.emoji ? parseEmoji(input.emoji) : {value: null as string | null};
+  if ('error' in emoji) return {ok: false, error: emoji.error};
+
+  const {error} = await posClient().rpc('apply_pos_bundle', {
+    p_bundle: {
+      bundle_id: crypto.randomUUID(),
+      name,
+      price: parsed.value,
+      active: true,
+      bundle_type: 'pick',
+      pick_count: input.pickCount,
+      line_categories: input.lineCategories,
+      emoji: emoji.value,
+    },
+    p_items: [],
+  });
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/inventory');
+  return {ok: true};
+}

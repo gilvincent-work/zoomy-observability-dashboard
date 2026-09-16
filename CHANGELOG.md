@@ -39,6 +39,24 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Bundles: create + edit scope from Coop — `feat(inventory)`
+
+Coop could co-edit a bundle's emoji, name, price, and listing, but not its
+**scope** (which product lines it covers and the "Buy any N" count), and couldn't
+**create** one at all. Both added, reusing the existing `apply_pos_bundle` RPC and a
+direct `pos_bundles` update, so **no schema change**.
+
+- **Edit scope** (`setBundleScopeAction`): the scope summary on each Buy-Any-N row
+  ("Buy any 3 · Freeze Dried, Meaty Treats, Tasty Treats") is now a click target
+  that opens a scope editor, pick count + eligible-line chips. Writes `pick_count` +
+  `line_categories`; the POS mirrors it on its next catalog pull.
+- **New bundle** (`createBundleAction`): a header button opens a create dialog
+  (name, emoji, price, pick count, eligible lines) that mints a bundle_id and calls
+  `apply_pos_bundle`. Buy-Any-N only for now (fixed item-list bundles stay POS-built).
+- Emoji, name, price, and listing stay inline-editable in the row as before.
+- Copy updated to reflect that bundles can now be created in Coop too. tsc clean,
+  183 tests green, build compiles, design detector clean.
+
 ## 2026-09-17 — Product detail chart rebuilt to the PO mockup — `feat(inventory)`
 
 Replaced the single overlaid recharts chart with a bespoke two-panel SVG built to
