@@ -2,89 +2,53 @@ import Link from 'next/link';
 import {getDigests} from '@/src/data';
 import {getBrief} from '@/src/salesSignals';
 import {pickIndex} from '@/src/week';
-import {usingPosMock} from '@/src/pos-data';
-import {getStockForecast} from '@/src/pos-forecast-data';
-import {getStockReceipts} from '@/src/pos-stock-intake';
+import {getPosBundles} from '@/src/pos-data';
+import {getInventoryPageData} from '@/src/pos-inventory-data';
 import {cn} from '@/lib/utils';
 import {InventoryTab} from '@/components/analyst/tabs';
-import {InventoryForecast} from '@/components/analyst/inventory-forecast';
+import {InventoryView} from '@/components/analyst/inventory-view';
 
 export const dynamic = 'force-dynamic';
 
-type Channel = 'all' | 'online' | 'offline';
-const CHANNELS: {value: Channel; label: string; hint: string}[] = [
-  {value: 'all', label: 'All', hint: ''},
-  {value: 'offline', label: 'Offline', hint: 'POS'},
-  {value: 'online', label: 'Online', hint: 'market'},
-];
-
-function parseChannel(v: string | undefined): Channel {
-  return v === 'online' || v === 'offline' ? v : 'all';
+// D12: the URL param stays `channel`; `offline`/`stratpoint`/`all` alias the merged
+// Stratpoint (Offline) catalog (the default), and `online`/`boxme` the BoxMe/online
+// scope. This keeps the low-stock email CTA and the Offline Sales "View all"
+// snapshot (both deep-linking `?channel=offline`) working with no cross-repo change.
+function isOnline(channel: string | undefined): boolean {
+  return channel === 'online' || channel === 'boxme';
 }
 
-export default async function Page({searchParams}: {searchParams: {channel?: string; week?: string}}) {
-  // Default landing scope is All (Q8); the Offline Sales "View all" deep-links to
-  // ?channel=offline. Online keeps the existing marketplace (digest) view (Q7).
-  const channel = parseChannel(searchParams.channel);
-  const week = searchParams.week;
-
-  return (
-    <div>
-      <div className="mx-auto flex max-w-5xl items-center justify-end px-6 pt-6 md:px-10">
-        <ChannelTabs channel={channel} week={week} />
-      </div>
-      {channel === 'online' ? <OnlineInventory week={week} /> : <OfflineInventory channel={channel} />}
-    </div>
-  );
-}
-
-async function OfflineInventory({channel}: {channel: Exclude<Channel, 'online'>}) {
-  const [forecast, receipts] = await Promise.all([getStockForecast(), safeReceipts()]);
-  const props = forecast ? {rows: forecast.rows, config: forecast.config, plan: forecast.plan} : null;
-  return <InventoryForecast forecast={props} receipts={receipts} scope={channel} usingMock={usingPosMock()} />;
-}
-
-// Fail-soft: history is a secondary panel, so a read hiccup just yields an empty
-// list rather than taking down the forecast.
-async function safeReceipts() {
-  try {
-    return await getStockReceipts();
-  } catch {
-    return [];
+export default async function Page({searchParams}: {searchParams: {channel?: string; tab?: string; venue?: string; week?: string}}) {
+  if (isOnline(searchParams.channel)) {
+    return <OnlineInventory week={searchParams.week} />;
   }
+  const tab = searchParams.tab === 'summary' ? 'summary' : 'all';
+  const venue = searchParams.venue ?? 'all';
+  const [data, bundles] = await Promise.all([getInventoryPageData(venue), getPosBundles()]);
+  return <InventoryView data={data} bundles={bundles} tab={tab} channel="offline" venue={data.activeVenue} />;
 }
 
+// D13: the Online scope KEEPS the existing marketplace analytics (digest-driven
+// InventoryTab) and adds a BoxMe stock stub above it — nothing is removed.
 async function OnlineInventory({week}: {week?: string}) {
   const digests = await getDigests();
   const row = digests[pickIndex(digests, week)];
-  if (!row) return <div className="p-10 text-muted-foreground">No digests archived yet.</div>;
-  return <InventoryTab brief={getBrief()} row={row} />;
-}
-
-function ChannelTabs({channel, week}: {channel: Channel; week?: string}) {
-  const href = (c: Channel) => {
-    const p = new URLSearchParams();
-    if (c !== 'all') p.set('channel', c);
-    if (week) p.set('week', week);
-    const qs = p.toString();
-    return qs ? `/inventory?${qs}` : '/inventory';
-  };
   return (
-    <div className="inline-flex rounded-md border p-0.5">
-      {CHANNELS.map((c) => (
-        <Link
-          key={c.value}
-          href={href(c.value)}
-          scroll={false}
-          className={cn(
-            'flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors',
-            c.value === channel ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {c.label}
-          {c.hint && <span className="font-mono text-[9px] opacity-70">{c.hint}</span>}
-        </Link>
-      ))}
+    <div>
+      <div className="mx-auto max-w-5xl px-6 pt-8 md:px-10">
+        <div className="mb-4 inline-flex rounded-md border p-0.5">
+          <Link href="/inventory" scroll={false} className="rounded px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground">Stratpoint <span className="font-mono text-[9px] opacity-70">offline</span></Link>
+          <span className={cn('flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium', 'bg-primary text-primary-foreground')}>BoxMe <span className="font-mono text-[9px] opacity-70">online</span></span>
+        </div>
+        <div className="mb-2 flex items-start gap-2 rounded-lg border border-dashed bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          <span aria-hidden>🛰️</span>
+          <span>
+            <b className="font-medium text-foreground">BoxMe online stock isn&apos;t connected yet.</b> Until a feed lands, this shows the marketplace analytics below.
+            {/* TODO: real online (BoxMe) stock feed — replace this stub with live per-SKU online inventory. */}
+          </span>
+        </div>
+      </div>
+      {row ? <InventoryTab brief={getBrief()} row={row} /> : <div className="mx-auto max-w-5xl px-6 py-6 text-muted-foreground md:px-10">No marketplace digest archived yet.</div>}
     </div>
   );
 }
