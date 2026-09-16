@@ -21,7 +21,6 @@ async function actor(): Promise<string> {
 
 function revalidateStockSurfaces() {
   revalidatePath('/inventory');
-  revalidatePath('/products');
   revalidatePath('/offline-sales');
 }
 
