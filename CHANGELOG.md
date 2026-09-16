@@ -39,6 +39,31 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Product detail chart rebuilt to the PO mockup — `feat(inventory)`
+
+Replaced the single overlaid recharts chart with a bespoke two-panel SVG built to
+the PO's mockup (`components/analyst/stock-sales-chart.tsx`). Recharts dropped from
+this route (First Load JS 222 kB to 111 kB).
+
+- **Window: last 3 real + next 3 forecast months** (was 6 real + 3). A dotted
+  "forecast" divider splits them; the current month is boxed on the axis.
+- **Top panel: pieces sold** as bars (solid = real, dashed hollow = forecast) with a
+  connecting line (solid then dashed) and value labels (`34`, `~32`). Forecast now
+  follows last year's monthly pattern when data exists, else recent pace.
+- **Bottom panel: stock on hand** as a blue line + area, with delivery ▲ markers
+  (`+qty`, from `receipt` movements), hollow forecast circles, a "last counted ~N
+  wks ago" note (from `recount` movements), and a red "runs out" marker.
+- **Rich hover tooltips** per element: real/forecast sold, real/projected stock
+  points, and deliveries ("Delivery May 20 / 62 pcs arrived").
+- **vs last year toggle** overlays last year's sold as a muted comparison line;
+  **greyed and non-clickable when the product has no last-year data** (so on Staging,
+  which has no 2025 history, it's disabled).
+- **"Counts matched the register" footer** derived from `recount` deltas over the
+  last 3 months (hidden when the product was never counted).
+- Data layer (`pos-product-detail.ts`) reworked for the 3+3 window, per-month
+  deliveries, last-year series, and the count-reconciliation facts. Light + dark via
+  theme tokens. tsc clean, 183 tests green, build compiles; design detector clean.
+
 ## 2026-09-17 — Inventory rows are fully clickable — `feat(inventory)`
 
 The whole product row now opens the detail page (not just the name), with a subtle

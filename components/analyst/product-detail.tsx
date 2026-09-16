@@ -1,15 +1,16 @@
 'use client';
 
-// Per-product detail page: KPI cards, a six-month sales + stock chart (real:
-// green bars = units sold, blue line = reconstructed end-of-month Stock Qty), the
-// sold-by-month table, and this SKU's stock-in history. Reached by tapping a row
-// on the merged Inventory page.
+// Per-product detail page: KPI cards, a year-over-year headline, the two-panel
+// sales + stock chart (3 real + 3 forecast months, with a vs-last-year overlay),
+// the sold-by-month table, and this SKU's stock-in history. Reached by tapping a
+// row on the merged Inventory page.
 
+import {useState} from 'react';
 import Link from 'next/link';
-import {Bar, ComposedChart, Line, CartesianGrid, XAxis, YAxis} from 'recharts';
-import {ChartContainer, ChartTooltip, type ChartConfig} from '@/components/ui/chart';
+import {Check, TriangleAlert} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {formatPeso} from '@/src/pos-format';
+import {StockSalesChart} from './stock-sales-chart';
 import type {ProductDetail} from '@/src/pos-product-detail';
 import type {ForecastStatus} from '@/src/pos-forecast-compute';
 
@@ -18,19 +19,14 @@ const STATUS: Record<ForecastStatus, {label: string; text: string}> = {
   low: {label: 'Low', text: 'text-amber-600 dark:text-amber-400'},
   out: {label: 'Out', text: 'text-red-600 dark:text-red-400'},
 };
-const chartConfig: ChartConfig = {
-  sold: {label: 'Sold', color: 'var(--color-emerald-500, #10b981)'},
-  soldForecast: {label: 'Forecast sold', color: 'var(--color-emerald-500, #10b981)'},
-  stockEnd: {label: 'Stock Qty', color: '#3b6ea5'},
-  stockForecast: {label: 'Projected stock', color: '#3b6ea5'},
-};
 const when = (iso: string) => new Date(iso).toLocaleString('en-US', {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
 export function ProductDetailView({detail}: {detail: ProductDetail}) {
-  const {product, forecast, series, chart, yoy, runsOutLabel, receipts} = detail;
+  const {product, forecast, series, chart, yoy, hasLastYear, lastCountedWeeksAgo, countsMatched, latestRealLabel, runsOutLabel, receipts} = detail;
   const status = (forecast?.status ?? (product.stock <= 0 ? 'out' : 'healthy')) as ForecastStatus;
   const s = STATUS[status];
   const lastMonthSold = series.length >= 2 ? series[series.length - 2].sold : 0;
+  const [vsLastYear, setVsLastYear] = useState(false);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
@@ -50,38 +46,45 @@ export function ProductDetailView({detail}: {detail: ProductDetail}) {
       {yoy && <YoyStrip yoy={yoy} />}
 
       <div className="mt-5 rounded-xl border bg-card p-5">
-        <h2 className="text-sm font-semibold">Sales and stock, month by month</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">Bars: units sold (solid = real, hollow = forecast). Blue line: Stock Qty at each month end (solid = reconstructed, dashed = running down if nothing is ordered).</p>
-        <ChartContainer config={chartConfig} className="mt-4 h-[240px] w-full">
-          <ComposedChart data={chart} margin={{left: 4, right: 8, top: 8, bottom: 0}}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-            <YAxis tickLine={false} axisLine={false} width={28} fontSize={11} />
-            <ChartTooltip />
-            <Bar dataKey="sold" fill="var(--color-sold)" radius={[3, 3, 0, 0]} maxBarSize={34} />
-            <Bar dataKey="soldForecast" fill="var(--color-soldForecast)" fillOpacity={0.28} radius={[3, 3, 0, 0]} maxBarSize={34} />
-            <Line dataKey="stockEnd" stroke="var(--color-stockEnd)" strokeWidth={2.5} dot={{r: 3}} connectNulls />
-            <Line dataKey="stockForecast" stroke="var(--color-stockForecast)" strokeWidth={2.5} strokeDasharray="5 4" dot={{r: 3}} connectNulls />
-          </ComposedChart>
-        </ChartContainer>
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="text-sm font-semibold">Sales and stock, month by month</h2>
+          <VsLastYearToggle on={vsLastYear} disabled={!hasLastYear} onChange={setVsLastYear} />
+        </div>
+        <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+          Bars are pieces sold: solid is real (latest data: {latestRealLabel}), dashed is our forecast (recent pace, adjusted
+          by last year&apos;s pattern when we have it). The blue line is stock on hand: a delivery pushes it up, and the dotted
+          part shows it running down if nothing is ordered.
+        </p>
+        <div className="mt-4">
+          <StockSalesChart data={chart} vsLastYear={vsLastYear && hasLastYear} lastCountedWeeksAgo={lastCountedWeeksAgo} />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
           <span>Lasts {forecast?.coverEventDays != null ? `~${Math.round(forecast.coverEventDays * 10) / 10} events` : '—'} · {forecast?.runsOutLabel ?? '—'}.</span>
           {runsOutLabel && <span className="font-semibold text-red-600 dark:text-red-400">{runsOutLabel}</span>}
         </div>
+        {countsMatched != null && (
+          <div className={cn('mt-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs',
+            countsMatched ? 'border-emerald-600/20 bg-emerald-500/[0.06] text-emerald-700 dark:text-emerald-300' : 'border-amber-600/20 bg-amber-500/[0.06] text-amber-700 dark:text-amber-300')}>
+            {countsMatched ? <Check className="size-3.5 shrink-0" /> : <TriangleAlert className="size-3.5 shrink-0" />}
+            {countsMatched
+              ? 'Store counts matched the register in each of the last 3 months.'
+              : 'A store count differed from the register in the last 3 months.'}
+          </div>
+        )}
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-3 text-sm font-semibold">How many sold</h2>
           {series.every((m) => m.sold === 0) ? (
-            <p className="text-sm text-muted-foreground">No sales in the last six months.</p>
+            <p className="text-sm text-muted-foreground">No sales in the last three months.</p>
           ) : (
             <table className="w-full text-sm">
               <tbody>
                 {[...series].reverse().map((m) => (
                   <tr key={m.month} className="border-b last:border-0">
                     <td className="py-2 font-mono text-xs text-muted-foreground">{m.month}</td>
-                    <td className="py-2 text-right tabular-nums font-medium">{m.sold}</td>
+                    <td className="py-2 text-right font-medium tabular-nums">{m.sold}</td>
                   </tr>
                 ))}
               </tbody>
@@ -114,6 +117,28 @@ export function ProductDetailView({detail}: {detail: ProductDetail}) {
   );
 }
 
+function VsLastYearToggle({on, disabled, onChange}: {on: boolean; disabled: boolean; onChange: (v: boolean) => void}) {
+  return (
+    <label
+      title={disabled ? 'No last-year data for this product yet' : undefined}
+      className={cn('inline-flex shrink-0 select-none items-center gap-2 text-xs font-medium',
+        disabled ? 'cursor-not-allowed text-muted-foreground/50' : 'cursor-pointer text-muted-foreground hover:text-foreground')}>
+      <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)}
+        className="size-3.5 rounded border-muted-foreground/40 accent-primary disabled:cursor-not-allowed disabled:opacity-40" />
+      vs last year
+    </label>
+  );
+}
+
+function Kpi({big, lbl, small, tone, toneClass}: {big: string; lbl: string; small?: boolean; tone?: 'crit' | 'good'; toneClass?: string}) {
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className={cn('font-bold leading-none', small ? 'text-base' : 'text-2xl', tone === 'crit' && 'text-red-600 dark:text-red-400', tone === 'good' && 'text-emerald-600 dark:text-emerald-400', toneClass)}>{big}</div>
+      <div className="mt-1.5 text-xs text-muted-foreground">{lbl}</div>
+    </div>
+  );
+}
+
 // Year-over-year callout: this month's units against the same month one year ago.
 // Shown only when there is a baseline (detail.yoy set). Green up / red down.
 function YoyStrip({yoy}: {yoy: NonNullable<ProductDetail['yoy']>}) {
@@ -123,17 +148,8 @@ function YoyStrip({yoy}: {yoy: NonNullable<ProductDetail['yoy']>}) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border bg-card px-4 py-3 text-sm">
       <span className="font-semibold">Year over year</span>
-      <span className="text-muted-foreground">this month <span className="font-mono font-semibold text-foreground tabular-nums">{yoy.thisMonth}</span> vs {yoy.monthLabel} <span className="font-mono font-semibold text-foreground tabular-nums">{yoy.lastYearSold}</span></span>
+      <span className="text-muted-foreground">this month <span className="font-mono font-semibold tabular-nums text-foreground">{yoy.thisMonth}</span> vs {yoy.monthLabel} <span className="font-mono font-semibold tabular-nums text-foreground">{yoy.lastYearSold}</span></span>
       <span className={cn('font-mono text-xs font-bold tabular-nums', cls)}>{flat ? '±' : up ? '▲' : '▼'}{Math.abs(d)}%</span>
-    </div>
-  );
-}
-
-function Kpi({big, lbl, small, tone, toneClass}: {big: string; lbl: string; small?: boolean; tone?: 'crit' | 'good'; toneClass?: string}) {
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className={cn('font-bold leading-none', small ? 'text-base' : 'text-2xl', tone === 'crit' && 'text-red-600 dark:text-red-400', tone === 'good' && 'text-emerald-600 dark:text-emerald-400', toneClass)}>{big}</div>
-      <div className="mt-1.5 text-xs text-muted-foreground">{lbl}</div>
     </div>
   );
 }
