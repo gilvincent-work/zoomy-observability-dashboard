@@ -20,12 +20,14 @@ const STATUS: Record<ForecastStatus, {label: string; text: string}> = {
 };
 const chartConfig: ChartConfig = {
   sold: {label: 'Sold', color: 'var(--color-emerald-500, #10b981)'},
+  soldForecast: {label: 'Forecast sold', color: 'var(--color-emerald-500, #10b981)'},
   stockEnd: {label: 'Stock Qty', color: '#3b6ea5'},
+  stockForecast: {label: 'Projected stock', color: '#3b6ea5'},
 };
 const when = (iso: string) => new Date(iso).toLocaleString('en-US', {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
 export function ProductDetailView({detail}: {detail: ProductDetail}) {
-  const {product, forecast, series, receipts} = detail;
+  const {product, forecast, series, chart, runsOutLabel, receipts} = detail;
   const status = (forecast?.status ?? (product.stock <= 0 ? 'out' : 'healthy')) as ForecastStatus;
   const s = STATUS[status];
   const lastMonthSold = series.length >= 2 ? series[series.length - 2].sold : 0;
@@ -47,18 +49,23 @@ export function ProductDetailView({detail}: {detail: ProductDetail}) {
 
       <div className="mt-5 rounded-xl border bg-card p-5">
         <h2 className="text-sm font-semibold">Sales and stock, month by month</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">Green bars: units sold. Blue line: Stock Qty at each month end, reconstructed from the movement ledger.</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">Bars: units sold (solid = real, hollow = forecast). Blue line: Stock Qty at each month end (solid = reconstructed, dashed = running down if nothing is ordered).</p>
         <ChartContainer config={chartConfig} className="mt-4 h-[240px] w-full">
-          <ComposedChart data={series} margin={{left: 4, right: 8, top: 8, bottom: 0}}>
+          <ComposedChart data={chart} margin={{left: 4, right: 8, top: 8, bottom: 0}}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
             <YAxis tickLine={false} axisLine={false} width={28} fontSize={11} />
             <ChartTooltip />
             <Bar dataKey="sold" fill="var(--color-sold)" radius={[3, 3, 0, 0]} maxBarSize={34} />
+            <Bar dataKey="soldForecast" fill="var(--color-soldForecast)" fillOpacity={0.28} radius={[3, 3, 0, 0]} maxBarSize={34} />
             <Line dataKey="stockEnd" stroke="var(--color-stockEnd)" strokeWidth={2.5} dot={{r: 3}} connectNulls />
+            <Line dataKey="stockForecast" stroke="var(--color-stockForecast)" strokeWidth={2.5} strokeDasharray="5 4" dot={{r: 3}} connectNulls />
           </ComposedChart>
         </ChartContainer>
-        <p className="mt-2 text-[11px] text-muted-foreground">Lasts {forecast?.coverEventDays != null ? `~${Math.round(forecast.coverEventDays * 10) / 10} events` : '—'} · {forecast?.runsOutLabel ?? '—'}. Forward-looking forecast overlay lands in a later pass.</p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+          <span>Lasts {forecast?.coverEventDays != null ? `~${Math.round(forecast.coverEventDays * 10) / 10} events` : '—'} · {forecast?.runsOutLabel ?? '—'}.</span>
+          {runsOutLabel && <span className="font-semibold text-red-600 dark:text-red-400">{runsOutLabel}</span>}
+        </div>
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">

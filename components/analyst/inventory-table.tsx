@@ -16,6 +16,7 @@ import {Card, CardContent} from '@/components/ui/card';
 import {POS_CATEGORIES, POS_SUBCATEGORIES, SUBCATEGORY_CATEGORY, formatPeso} from '@/src/pos-format';
 import {compareByCategory} from '@/src/pos-inventory-compute';
 import {renameProductAction, repriceProductAction, setListingAction} from '@/src/pos-actions';
+import {addStockAction, voidLastAddAction} from '@/src/pos-stock-intake-actions';
 import type {InventoryRow} from '@/src/pos-inventory-data';
 import type {ForecastStatus} from '@/src/pos-forecast-compute';
 
@@ -40,6 +41,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'category', dir: 1});
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [editing, setEditing] = useState<{row: InventoryRow; field: 'name' | 'price'} | null>(null);
+  const [addStockRow, setAddStockRow] = useState<InventoryRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -133,7 +135,8 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                     <Row key={r.product_id} r={r} menuOpen={menuFor === r.product_id}
                       onMenu={() => setMenuFor((m) => (m === r.product_id ? null : r.product_id))}
                       onClose={() => setMenuFor(null)}
-                      onEdit={(field) => {setMenuFor(null); setEditing({row: r, field});}} />
+                      onEdit={(field) => {setMenuFor(null); setEditing({row: r, field});}}
+                      onAddStock={() => {setMenuFor(null); setAddStockRow(r);}} />
                   ))}
                 </tbody>
               </table>
@@ -147,12 +150,17 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
           onClose={() => setEditing(null)}
           onSaved={(patch) => {setRows((rs) => rs.map((r) => (r.product_id === editing.row.product_id ? {...r, ...patch} : r))); setEditing(null);}} />
       )}
+      {addStockRow && (
+        <AddStockDialog row={addStockRow} usingMock={usingMock}
+          onClose={() => setAddStockRow(null)}
+          onDone={(added) => {setRows((rs) => rs.map((r) => (r.product_id === addStockRow.product_id ? {...r, stock: r.stock + added} : r))); setAddStockRow(null);}} />
+      )}
     </div>
   );
 }
 
-function Row({r, menuOpen, onMenu, onClose, onEdit}: {
-  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void;
+function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock}: {
+  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onAddStock: () => void;
 }) {
   const s = STATUS[r.status];
   const [pending, startTransition] = useTransition();
@@ -160,6 +168,13 @@ function Row({r, menuOpen, onMenu, onClose, onEdit}: {
   function toggleListing() {
     startTransition(async () => {
       await setListingAction(r.product_id, !r.active);
+      onClose();
+      router.refresh();
+    });
+  }
+  function undoLastAdd() {
+    startTransition(async () => {
+      await voidLastAddAction(r.product_id);
       onClose();
       router.refresh();
     });
@@ -201,7 +216,8 @@ function Row({r, menuOpen, onMenu, onClose, onEdit}: {
         <button onClick={onMenu} aria-label="Row actions" className="rounded p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></button>
         {menuOpen && (
           <RowMenu sku={r.product_id} active={r.active} pending={pending}
-            onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing} onClose={onClose} />
+            onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
+            onAddStock={onAddStock} onUndo={undoLastAdd} onClose={onClose} />
         )}
       </td>
     </tr>
@@ -223,8 +239,8 @@ function Badge({tone, children}: {tone: 'crit' | 'warn' | 'ok'; children: React.
   return <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', cls)}>{children}</span>;
 }
 
-function RowMenu({sku, active, pending, onRename, onReprice, onToggleListing, onClose}: {
-  sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onClose: () => void;
+function RowMenu({sku, active, pending, onRename, onReprice, onToggleListing, onAddStock, onUndo, onClose}: {
+  sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onAddStock: () => void; onUndo: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -235,6 +251,8 @@ function RowMenu({sku, active, pending, onRename, onReprice, onToggleListing, on
   return (
     <div ref={ref} className="absolute right-2 top-9 z-20 w-48 overflow-hidden rounded-xl border bg-popover text-left shadow-lg">
       <MenuItem href={`/inventory/${sku}`}>View detail</MenuItem>
+      <MenuItem onClick={onAddStock}>Add stock</MenuItem>
+      <MenuItem onClick={onUndo} disabled={pending}>Undo last add</MenuItem>
       <MenuItem onClick={onRename}>Rename</MenuItem>
       <MenuItem onClick={onReprice}>Change price</MenuItem>
       <MenuItem onClick={onToggleListing} disabled={pending}>{active ? 'Unlist' : 'List'}</MenuItem>
@@ -299,6 +317,62 @@ function EditDialog({row, field, usingMock, onClose, onSaved}: {
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">Cancel</button>
           <button onClick={save} disabled={pending || usingMock} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{pending ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function AddStockDialog({row, usingMock, onClose, onDone}: {
+  row: InventoryRow; usingMock: boolean; onClose: () => void; onDone: (added: number) => void;
+}) {
+  const [value, setValue] = useState('');
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {if (e.key === 'Escape') onClose();};
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  function save() {
+    setError(null);
+    const qty = Math.round(Number(value));
+    if (!Number.isFinite(qty) || qty <= 0) {setError('Enter a quantity greater than zero.'); return;}
+    startTransition(async () => {
+      const res = await addStockAction([{sku: row.product_id, qty}]);
+      if (res.ok) {
+        onDone(qty);
+        router.refresh();
+      } else setError(res.error);
+    });
+  }
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button type="button" aria-label="Cancel" onClick={onClose} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
+      <div className="relative w-full max-w-sm rounded-xl border bg-popover p-5 shadow-lg">
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Add stock</h2>
+          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <p className="mb-3 font-mono text-[11px] text-muted-foreground">{row.name} · {row.product_id} · {row.stock} on hand</p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">+</span>
+          <input type="text" inputMode="numeric" value={value} autoFocus
+            onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ''))}
+            onKeyDown={(e) => {if (e.key === 'Enter') save();}}
+            className="w-32 rounded-md border bg-background px-2 py-1.5 text-sm tabular-nums outline-none focus-visible:border-ring" />
+          <span className="text-xs text-muted-foreground">units</span>
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">Logged to the stock ledger. Undo the last add from the row menu.</p>
+        {usingMock && <p className="mt-2 text-xs text-muted-foreground">Demo mode — set the Supabase pos_* env to add stock.</p>}
+        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">Cancel</button>
+          <button onClick={save} disabled={pending || usingMock} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{pending ? 'Adding…' : 'Add stock'}</button>
         </div>
       </div>
     </div>,
