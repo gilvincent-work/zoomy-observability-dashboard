@@ -17,10 +17,11 @@ import {createProductAction} from '@/src/pos-actions';
 import {AddStockButton} from './add-stock-button';
 import {InventoryTable} from './inventory-table';
 import {InventorySummary} from './inventory-summary';
+import {BundleControls} from './bundle-controls';
 import type {InventoryPageData} from '@/src/pos-inventory-data';
 import type {PosBundleRow} from '@/src/pos-types';
 
-type Tab = 'all' | 'summary';
+type Tab = 'all' | 'bundles' | 'summary';
 
 export function InventoryView({data, bundles, tab, channel, venue}: {
   data: InventoryPageData; bundles: PosBundleRow[]; tab: Tab; channel: string; venue: string;
@@ -61,6 +62,7 @@ export function InventoryView({data, bundles, tab, channel, venue}: {
       {/* Tabs */}
       <div className="mb-4 inline-flex gap-1 rounded-lg border bg-muted/40 p-1">
         <TabLink href={href({tab: 'all'})} active={tab === 'all'}>All products</TabLink>
+        <TabLink href={href({tab: 'bundles'})} active={tab === 'bundles'}>Bundles</TabLink>
         <TabLink href={href({tab: 'summary'})} active={tab === 'summary'}>Summary</TabLink>
       </div>
 
@@ -82,8 +84,10 @@ export function InventoryView({data, bundles, tab, channel, venue}: {
 
       {tab === 'all' ? (
         <InventoryTable rows={data.rows} usingMock={data.usingMock} />
+      ) : tab === 'bundles' ? (
+        <BundleControls bundles={bundles} />
       ) : (
-        <InventorySummary summary={data.summary} forecastRows={data.forecastRows} config={data.config} plan={data.plan} bundles={bundles} usingMock={data.usingMock} />
+        <InventorySummary summary={data.summary} forecastRows={data.forecastRows} config={data.config} plan={data.plan} usingMock={data.usingMock} />
       )}
 
       {creating && <NewProductDialog usingMock={data.usingMock} onClose={() => setCreating(false)} onCreated={() => {setCreating(false); router.refresh();}} />}

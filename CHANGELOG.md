@@ -39,6 +39,26 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Numbered pagination + inventory polish — `feat(inventory)`
+
+- **Bundles → its own tab.** It was buried under *Summary* beneath the forecast
+  settings, reading as unrelated. Now `All products · Bundles · Summary`, so the
+  bundle catalog is a separate concern.
+- **Lasts pill no longer wraps.** The cover badge ("~26.4 events") wrapped and
+  clipped its background in the narrow column; `whitespace-nowrap` on the badge +
+  cell keeps it on one line.
+- **Numbered pager `‹ [1] [2] [3] … ›`.** New shared `components/analyst/pagination.tsx`
+  — clickable page numbers (jump straight to a page) with `…` ellipses (always
+  first/last + current±1) and prev/next arrows disabled at the ends. Works both
+  URL-driven (server tables, renders `<Link>`) and client-state-driven (renders
+  `<button>`). Keyboard-focusable, `aria-current` on the active page.
+  - **Inventory table** now paginates client-side (12/page) with a "Showing X–Y of
+    Z" line; page snaps back to 1 on any filter/search/sort change and clamps when
+    a filter shrinks the set.
+  - **Offline Sales → Orders** retrofitted from arrow-only ("Previous / Next /
+    Page X of Y") to the same numbered pager (still `?page=N` server-driven, 10/page).
+    Removed the file-local `PageLink` helper.
+
 ## 2026-09-17 — Inventory revamp Phase 2b: year-over-year comparison — `feat(inventory)`
 
 Closes the last doable Phase 1 deferral: same-month-last-year context, so a busy

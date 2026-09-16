@@ -22,7 +22,7 @@ export default async function Page({searchParams}: {searchParams: {channel?: str
   if (isOnline(searchParams.channel)) {
     return <OnlineInventory week={searchParams.week} />;
   }
-  const tab = searchParams.tab === 'summary' ? 'summary' : 'all';
+  const tab = searchParams.tab === 'summary' ? 'summary' : searchParams.tab === 'bundles' ? 'bundles' : 'all';
   const venue = searchParams.venue ?? 'all';
   const [data, bundles] = await Promise.all([getInventoryPageData(venue), getPosBundles()]);
   return <InventoryView data={data} bundles={bundles} tab={tab} channel="offline" venue={data.activeVenue} />;
