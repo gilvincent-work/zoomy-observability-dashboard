@@ -17,10 +17,13 @@ import {POS_CATEGORIES, POS_SUBCATEGORIES, SUBCATEGORY_CATEGORY, formatPeso} fro
 import {compareByCategory} from '@/src/pos-inventory-compute';
 import {renameProductAction, repriceProductAction, setListingAction} from '@/src/pos-actions';
 import {addStockAction, voidLastAddAction} from '@/src/pos-stock-intake-actions';
+import {Pagination} from './pagination';
 import type {InventoryRow} from '@/src/pos-inventory-data';
 import type {ForecastStatus} from '@/src/pos-forecast-compute';
 
 type SortKey = 'category' | 'name' | 'status' | 'price' | 'thisMonth' | 'lastMonth' | 'threeMo' | 'stock' | 'cover' | 'reorder';
+
+const PAGE_SIZE = 12; // rows per page on the merged product table
 
 const STATUS: Record<ForecastStatus, {label: string; dot: string; text: string; bg: string}> = {
   healthy: {label: 'Healthy', dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10'},
@@ -42,6 +45,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [editing, setEditing] = useState<{row: InventoryRow; field: 'name' | 'price'} | null>(null);
   const [addStockRow, setAddStockRow] = useState<InventoryRow | null>(null);
+  const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -79,6 +83,15 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
       return a.name.localeCompare(b.name);
     });
   }, [filtered, sort]);
+
+  // Paginate the filtered+sorted rows client-side. Snap back to page 1 whenever the
+  // result set changes (filter/search/sort), and clamp so a shrunk set never leaves
+  // us stranded past the last page.
+  useEffect(() => setPage(1), [line, sub, status, search, sort]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const from = (safePage - 1) * PAGE_SIZE;
+  const paged = sorted.slice(from, from + PAGE_SIZE);
 
   // Numeric/severity columns default high-to-low (dir -1); name/category low-to-high.
   function toggleSort(key: SortKey) {
@@ -131,7 +144,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((r) => (
+                  {paged.map((r) => (
                     <Row key={r.product_id} r={r} menuOpen={menuFor === r.product_id}
                       onMenu={() => setMenuFor((m) => (m === r.product_id ? null : r.product_id))}
                       onClose={() => setMenuFor(null)}
@@ -144,6 +157,15 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
           )}
         </CardContent>
       </Card>
+
+      {sorted.length > 0 && (
+        <div className="mt-4 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
+          <p className="text-xs text-muted-foreground tabular-nums">
+            Showing {from + 1}–{Math.min(from + PAGE_SIZE, sorted.length)} of {sorted.length}
+          </p>
+          <Pagination page={safePage} pageCount={pageCount} onPage={setPage} label="Products pagination" />
+        </div>
+      )}
 
       {editing && (
         <EditDialog row={editing.row} field={editing.field} usingMock={usingMock}

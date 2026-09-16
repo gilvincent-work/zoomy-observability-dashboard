@@ -3,7 +3,7 @@
 import {useState, useTransition} from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
-import {ArrowLeft, Ban, ChevronLeft, ChevronRight, PawPrint, Pencil, Plus, Receipt, RotateCcw, TriangleAlert, X} from 'lucide-react';
+import {ArrowLeft, Ban, PawPrint, Pencil, Plus, Receipt, RotateCcw, TriangleAlert, X} from 'lucide-react';
 import type {PosOrder, PosOrdersFilter, PriceBounds, PosCatalogItem, PosBundleDef, EditEntry} from '@/src/pos-sales-types';
 import {isFilterActive, orderToEntries, type PageInfo} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodLabel, paymentMethodBadgeClass} from '@/src/pos-format';
@@ -15,6 +15,7 @@ import {Button} from '@/components/ui/button';
 import {Eyebrow, MockNote} from './sections';
 import {TransactionFilters} from './transaction-filters';
 import {RefreshControl} from './refresh-control';
+import {Pagination} from './pagination';
 
 // Methods offered in the edit form's payment-method picker.
 const EDIT_METHODS = ['cash', 'qrph', 'gcash', 'maya', 'card'];
@@ -221,19 +222,7 @@ export function OfflineOrdersView({
         />
       )}
 
-      {totalPages > 1 && (
-        <nav className="mt-4 flex items-center justify-between" aria-label="Transactions pagination">
-          <PageLink href={pageHref(page - 1)} disabled={page <= 1}>
-            <ChevronLeft className="size-3.5" /> Previous
-          </PageLink>
-          <span className="text-xs text-muted-foreground tabular-nums">
-            Page {page} of {totalPages}
-          </span>
-          <PageLink href={pageHref(page + 1)} disabled={page >= totalPages}>
-            Next <ChevronRight className="size-3.5" />
-          </PageLink>
-        </nav>
-      )}
+      <Pagination page={page} pageCount={totalPages} hrefFor={pageHref} className="mt-4" label="Transactions pagination" />
     </div>
   );
 }
@@ -576,14 +565,3 @@ function BundleEntryCard({
   );
 }
 
-function PageLink({href, disabled, children}: {href: string; disabled: boolean; children: React.ReactNode}) {
-  const cls = 'inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-medium';
-  if (disabled) {
-    return <span className={`${cls} cursor-not-allowed border-border/60 text-muted-foreground/40`}>{children}</span>;
-  }
-  return (
-    <Link href={href} scroll={false} className={`${cls} border-border text-foreground hover:border-primary hover:text-primary`}>
-      {children}
-    </Link>
-  );
-}
