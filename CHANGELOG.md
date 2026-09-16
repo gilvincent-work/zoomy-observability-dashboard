@@ -12,6 +12,33 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-16 — Stock Forecast (Phase 4): low-stock email alerts — `feat(alerts)`
+
+The email half of the Stock Forecast. Immediate alerts are **event-driven**; the
+daily digest is a scheduled recap. Alert code lives in `zoomy-observability`
+(job + Edge Function); this dashboard's role is capturing recipients (below) and
+being the deep-link target. Verified end-to-end on Staging (real POS sale ->
+email in seconds, to two captured recipients).
+
+- **Immediate alerts are instant, not polled.** A DB trigger on
+  `pos_stock_movements` calls a Supabase Edge Function (`stock-alert`) via
+  `pg_net` the moment a sale crosses a product into low/out. The function
+  recomputes that product's band, dedupes against `pos_stock_alert_log` (fire
+  once per crossing, escalate low->out, resolve on recovery), and emails via
+  Resend. Trigger is fail-soft + async, so alerting can never block or break a
+  POS sale. Resend key is a **function secret**, never in the DB.
+- **Daily digest** stays on the GitHub Actions cron (08:00 Manila) as the full
+  recap + surge-shortfall summary. The old hourly cron was removed (the trigger
+  replaces it).
+- **Recipients** = captured dashboard sign-ins (`pos_dashboard_users`) unioned
+  with an `EMAIL_TO` fallback. **Environments** emulated with suffixed secrets
+  (`*_STAGING` / `*_PRODUCTION`) since native GitHub Environments need a paid
+  plan on this private repo; production leg scaffolded but dormant.
+- **Verified on Staging:** a live POS sale of Yoghurt Cubes fired the low email,
+  then out (escalation) at 0; Cat Grass Cubes fired low then auto-resolved on
+  restock. All via the trigger, no manual calls. Poppins email template (system
+  fallback in Gmail), no em/en dashes.
+
 ## 2026-09-16 — Capture dashboard sign-ins for alert recipients — `feat(auth)`
 
 Supports the low-stock email (in `zoomy-observability`): the alert needs to reach
