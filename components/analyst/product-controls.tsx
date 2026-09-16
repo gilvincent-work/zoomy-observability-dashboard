@@ -39,10 +39,12 @@ export function ProductControls({
   products,
   usingMock,
   fetchedAt,
+  headerAction,
 }: {
   products: PosProductRow[];
   usingMock: boolean;
   fetchedAt: string;
+  headerAction?: React.ReactNode; // extra action rendered in the header (e.g. Add stock)
 }) {
   // Mirror the server data locally so edits can apply optimistically (instant),
   // then reconcile. revalidatePath in each action re-renders this tree with fresh
@@ -184,6 +186,7 @@ export function ProductControls({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <RefreshControl fetchedAt={fetchedAt} />
+          {headerAction}
           <Button size="sm" onClick={() => setCreating((c) => !c)}>
             {creating ? <X /> : <Plus />}
             {creating ? 'Cancel' : 'New product'}
