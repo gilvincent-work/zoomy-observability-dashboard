@@ -39,6 +39,28 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Inventory revamp Phase 2: forecast overlay + per-row stock — `feat(inventory)`
+
+Closes the two deferrals from Phase 1's ⋯ — the detail chart now looks forward,
+and stock is addable/undoable per row without leaving the table. Pure frontend:
+no schema change, reusing the existing `add_pos_stock` / `void_last_stock_add`
+RPCs (Phase 3) and the movement ledger the chart already reads.
+
+- **Forward forecast on the detail chart** (`pos-product-detail.ts` +
+  `product-detail.tsx`): the six real months now extend three months out. Monthly
+  **pace** = mean of the months that actually sold (recent burst, not diluted by
+  dead months); stock runs down from today's on-hand if nothing is ordered. Drawn
+  as **dashed** forecast bars (hollow) + a **dashed projected-stock line**, seeded
+  at the last real point so it connects. A red **"Runs out ~<month>"** label
+  appears when the projection hits zero.
+- **Per-row Add stock + Undo** (`inventory-table.tsx`): the ⋯ menu gains **Add
+  stock** (a small qty popover calling `addStockAction([{sku, qty}])`, optimistic
+  on-hand bump + `router.refresh()`) and **Undo last add** (`voidLastAddAction`).
+  The header **Add stock** action stays for batch adds; this is the single-SKU
+  path. Demo-mode guarded, logged to the stock ledger like the header flow.
+- **Verified:** typecheck clean, **172 tests** green, production build compiles
+  `/inventory` (12.5 kB), `/inventory/[sku]` (4.82 kB).
+
 ## 2026-09-17 — Inventory revamp Phase 1: merge Products + Inventory — `feat(inventory)`
 
 Merges the Products and Inventory pages into one, restyled after the PO's mockup.

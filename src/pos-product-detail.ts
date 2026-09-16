@@ -19,12 +19,25 @@ export interface MonthPoint {
   stockEnd: number | null; // reconstructed on-hand at month end
 }
 
+// One point on the chart: past months carry real sold + reconstructed stockEnd;
+// future months carry the dashed forecast (soldForecast) and the stock running
+// down if nothing is ordered (stockForecast).
+export interface ChartPoint {
+  label: string;
+  sold: number | null;
+  stockEnd: number | null;
+  soldForecast: number | null;
+  stockForecast: number | null;
+}
+
 export interface ProductDetail {
   product: PosProductRow;
   forecast: ForecastRow | null;
-  series: MonthPoint[]; // oldest → newest, 6 months
-  receipts: StockReceipt[]; // this SKU's stock-in history
+  series: MonthPoint[]; // oldest → newest, 6 real months (for the table)
+  chart: ChartPoint[]; // 6 real + 3 forecast months (for the chart)
+  runsOutLabel: string | null; // e.g. 'Runs out ~Aug' when the projection hits 0
   usingMock: boolean;
+  receipts: StockReceipt[]; // this SKU's stock-in history
 }
 
 function monthLabel(key: string): string {
@@ -77,13 +90,42 @@ export async function getProductDetail(sku: string, now: Date = new Date()): Pro
     return {month: mk, label: monthLabel(mk), sold: soldByMonth.get(mk) ?? 0, stockEnd};
   });
 
+  // Forecast the next 3 months: monthly pace = mean of the months that actually
+  // sold (recent burst, not diluted by dead months); the stock runs down from the
+  // current on-hand if nothing is ordered. Dashed on the chart.
+  const soldMonths = series.map((m) => m.sold).filter((v) => v > 0);
+  const pace = soldMonths.length ? Math.round(soldMonths.reduce((a, b) => a + b, 0) / soldMonths.length) : 0;
+  const future = nextThreeMonths(now);
+  let projStock = product.stock;
+  let runsOutLabel: string | null = null;
+  const chart: ChartPoint[] = series.map((m, i) => ({
+    label: m.label, sold: m.sold, stockEnd: m.stockEnd,
+    soldForecast: null,
+    // seed the dashed stock line at the last real point so it connects
+    stockForecast: i === series.length - 1 ? m.stockEnd : null,
+  }));
+  for (const mk of future) {
+    const before = projStock;
+    projStock = Math.max(0, projStock - pace);
+    if (before > 0 && projStock === 0 && !runsOutLabel) runsOutLabel = `Runs out ~${monthLabel(mk)}`;
+    chart.push({label: monthLabel(mk), sold: null, stockEnd: null, soldForecast: pace, stockForecast: projStock});
+  }
+
   return {
     product,
     forecast: (forecast?.rows ?? []).find((r) => r.product_id === sku) ?? null,
     series,
-    receipts,
+    chart,
+    runsOutLabel,
     usingMock: usingPosMock(),
+    receipts,
   };
+}
+
+function nextThreeMonths(now: Date): string[] {
+  const cur = manilaMonthKey(now.toISOString());
+  const [y, m] = cur.split('-').map(Number);
+  return [1, 2, 3].map((i) => new Date(Date.UTC(y, m - 1 + i, 1)).toISOString().slice(0, 7));
 }
 
 /** All stock movements for one SKU (any reason), for the stock reconstruction. */
