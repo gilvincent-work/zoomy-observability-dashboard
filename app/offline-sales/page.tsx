@@ -1,7 +1,9 @@
 import type {PosOrder} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
-import {getPosEvents, getPosOrders, getPosSyncLog} from '@/src/pos-sales';
+import {getPosEvents, getPosOrders} from '@/src/pos-sales';
 import {getPosProducts, usingPosMock} from '@/src/pos-data';
+import {getStockForecast} from '@/src/pos-forecast-data';
+import {urgentForecastRows} from '@/src/pos-forecast-compute';
 import {getDailyTarget} from '@/src/pos-target';
 import {progress as computeProgress, todaysRevenue} from '@/src/pos-target-compute';
 import {
@@ -33,14 +35,16 @@ async function dailyProgress(orders: PosOrder[]): Promise<DailyProgress | null> 
 
 export default async function Page({searchParams}: {searchParams: {range?: string}}) {
   const range = isSalesRange(searchParams.range) ? searchParams.range : '30d';
-  const [allOrders, sync, products, events] = await Promise.all([
+  const [allOrders, products, events] = await Promise.all([
     getPosOrders(),
-    getPosSyncLog(),
     getPosProducts(),
     getPosEvents(),
   ]);
   const orders = filterOrdersByRange(allOrders, range);
   const progress = await dailyProgress(allOrders);
+  // Stock snapshot for the panel that replaces "Recently synced" — fail-soft.
+  const forecast = await getStockForecast();
+  const stock = forecast ? {urgent: urgentForecastRows(forecast.rows), summary: forecast.summary} : null;
   // Spotlight the event running today, else the next upcoming one (Manila day).
   const featured = featuredEvent(events, manilaDayKey(new Date().toISOString()));
 
@@ -55,7 +59,7 @@ export default async function Page({searchParams}: {searchParams: {range?: strin
       topBundles={topBundles(orders)}
       bundles={bundleSalesSummary(orders)}
       orders={orders}
-      sync={sync}
+      stock={stock}
       alerts={stockAlerts(products)}
       usingMock={usingPosMock()}
       fetchedAt={new Date().toISOString()}

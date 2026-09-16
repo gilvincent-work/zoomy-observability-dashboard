@@ -2,13 +2,14 @@
 
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeftRight, CalendarClock, CalendarDays, ChevronDown, ChevronRight, PackageX, Receipt, TriangleAlert} from 'lucide-react';
+import {CalendarClock, CalendarDays, ChevronDown, ChevronRight, PackageX, Receipt, TriangleAlert} from 'lucide-react';
 import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
-import type {BundleSalesSummary, DayMethodRevenue, FeaturedEvent, PetMix, PosOrder, PosSyncEntry, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
+import type {BundleSalesSummary, DayMethodRevenue, FeaturedEvent, PetMix, PosOrder, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
 import type {PaymentMethodOption, StockAlerts} from '@/src/pos-sales-compute';
 import {SALES_RANGES, computeKpis, orderMethod, paymentMethodOptions, petMix, presentMethods, salesByDayAndMethod} from '@/src/pos-sales-compute';
 import type {PosProductRow} from '@/src/pos-types';
+import type {ForecastRow, ForecastSummary, ForecastStatus} from '@/src/pos-forecast-compute';
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
@@ -30,7 +31,7 @@ type Props = {
   topBundles: TopBundle[]; // bundles sold by name (from bundle_id lines)
   bundles: BundleSalesSummary; // reconciles itemized product revenue with the KPI
   orders: PosOrder[]; // filtered, newest first
-  sync: PosSyncEntry[];
+  stock: {urgent: ForecastRow[]; summary: ForecastSummary} | null; // snapshot for the Stock panel; null = fail-soft
   alerts: StockAlerts;
   usingMock: boolean;
   fetchedAt: string; // ISO; when the server loaded this data
@@ -42,7 +43,7 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, progress, featured, kpis, top, topByUnits, topBundles, bundles, orders, sync, alerts, usingMock, fetchedAt}: Props) {
+export function OfflineSalesView({range, progress, featured, kpis, top, topByUnits, topBundles, bundles, orders, stock, alerts, usingMock, fetchedAt}: Props) {
   // 'all' or a specific payment method. The method drives the KPI cards and
   // which segment of the stacked chart is highlighted. Computed client-side from
   // the range-filtered orders so switching is instant (no reload).
@@ -156,31 +157,53 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
           )}
         </Panel>
 
-        <Panel title="Recently synced">
-          {sync.length === 0 ? (
-            <Empty>Nothing synced yet.</Empty>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {sync.map((s, i) => (
-                <li key={i} className="flex items-center gap-2 text-sm">
-                  <ArrowLeftRight className="size-3.5 text-muted-foreground" />
-                  <span className="capitalize">{s.direction}</span>
-                  <span className="text-muted-foreground">{s.entity}</span>
-                  {typeof s.summary?.count === 'number' && (
-                    <span className="text-xs text-muted-foreground">· {s.summary.count}</span>
-                  )}
-                  <span className="ml-auto text-xs text-muted-foreground">{timeLabel(s.synced_at)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
+        <StockSnapshot stock={stock} />
       </div>
 
       <div className="mt-5">
         <StockAlertsCard alerts={alerts} />
       </div>
     </div>
+  );
+}
+
+const SNAPSHOT_STATUS: Record<ForecastStatus, {label: string; dot: string; text: string}> = {
+  healthy: {label: 'Healthy', dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400'},
+  low: {label: 'Low', dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400'},
+  out: {label: 'Out', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400'},
+};
+
+// Replaces "Recently synced" — a live pulse on what needs restocking, deep-linking
+// into the Inventory forecast with Offline preselected.
+function StockSnapshot({stock}: {stock: {urgent: ForecastRow[]; summary: ForecastSummary} | null}) {
+  return (
+    <Panel title="Stock" action={{label: 'View all →', href: '/inventory?channel=offline'}}>
+      {!stock || stock.summary.total === 0 ? (
+        <Empty>No stock data yet.</Empty>
+      ) : stock.urgent.length === 0 ? (
+        <Empty>All good — nothing low or out.</Empty>
+      ) : (
+        <ul className="flex flex-col gap-2.5">
+          {stock.urgent.map((r) => {
+            const s = SNAPSHOT_STATUS[r.status];
+            return (
+              <li key={r.product_id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate font-medium">{r.name}</span>
+                <span className={cn('inline-flex shrink-0 items-center gap-1.5 text-xs font-medium', s.text)}>
+                  <span className={cn('size-1.5 rounded-full', s.dot)} />
+                  {r.status === 'out' ? 'Out' : `${r.stock} · ${s.label}`}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {stock && stock.summary.total > 0 && (
+        <div className="mt-3 border-t pt-3 font-mono text-[11px] text-muted-foreground">
+          {stock.summary.healthy} healthy · {stock.summary.low} low · {stock.summary.out} out
+        </div>
+      )}
+    </Panel>
   );
 }
 
