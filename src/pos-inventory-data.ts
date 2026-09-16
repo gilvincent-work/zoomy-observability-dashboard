@@ -3,8 +3,10 @@ import {getPosProducts, usingPosMock} from './pos-data';
 import {getPosOrders, getPosEvents} from './pos-sales';
 import {getStockForecast} from './pos-forecast-data';
 import {salesByProductMonth, compareByCategory, emptyMonthlySales, monthKeyOffset, monthKeyLabel, soldInMonth, yoyDeltaPct, type MonthlySales} from './pos-inventory-compute';
+import {resolveOrderEvents} from './pos-sales-compute';
 import type {ForecastStatus, ForecastConfig, NextEventPlan, SurgeSummary, SurgeRow, ForecastRow} from './pos-forecast-compute';
 import type {PosProductRow} from './pos-types';
+import type {PosEvent} from './pos-sales-types';
 
 // SERVER-ONLY. Assembles the merged Inventory page: catalog (pos_products) +
 // event-aware forecast (status, cover, reorder) + monthly sell-through, narrowed
@@ -48,19 +50,14 @@ export interface InventoryPageData {
 }
 
 /** Distinct venues from past events, each with its event_ids, plus All + Unattributed. */
-async function loadVenues(): Promise<{options: VenueOption[]; eventsByVenue: Map<string, Set<string>>}> {
+function buildVenues(events: PosEvent[]): {options: VenueOption[]; eventsByVenue: Map<string, Set<string>>} {
   const eventsByVenue = new Map<string, Set<string>>();
-  try {
-    const events = await getPosEvents();
-    for (const e of events) {
-      const v = (e.venue ?? '').trim();
-      if (!v) continue;
-      const set = eventsByVenue.get(v) ?? new Set<string>();
-      set.add(e.event_id);
-      eventsByVenue.set(v, set);
-    }
-  } catch {
-    // no venues; the filter simply offers "All" only
+  for (const e of events) {
+    const v = (e.venue ?? '').trim();
+    if (!v) continue;
+    const set = eventsByVenue.get(v) ?? new Set<string>();
+    set.add(e.event_id);
+    eventsByVenue.set(v, set);
   }
   const options: VenueOption[] = [{key: 'all', label: 'All venues', eventCount: 0}];
   for (const [venue, ids] of [...eventsByVenue.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -75,11 +72,16 @@ export async function getInventoryPageData(
   now: Date = new Date(),
 ): Promise<InventoryPageData> {
   const products: PosProductRow[] = await getPosProducts(); // throws only on a hard failure; page catches
-  const [forecast, orders, venueData] = await Promise.all([
+  const [forecast, rawOrders, events] = await Promise.all([
     getStockForecast(now).catch(() => null),
     getPosOrders().catch(() => [] as Awaited<ReturnType<typeof getPosOrders>>),
-    loadVenues(),
+    getPosEvents().catch(() => [] as PosEvent[]),
   ]);
+
+  // Attribute untagged past-day sales to any event now covering their date, then
+  // scope by venue through the (resolved) event_id (automatic, read-time).
+  const orders = resolveOrderEvents(rawOrders, events);
+  const venueData = buildVenues(events);
 
   // Resolve the venue filter to the set of events it covers.
   const activeVenue = venueData.options.some((o) => o.key === venueKey) ? venueKey : 'all';

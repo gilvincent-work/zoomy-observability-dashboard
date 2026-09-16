@@ -4,6 +4,8 @@ import {
   bundleSalesSummary,
   computeKpis,
   eventRollups,
+  effectiveEventId,
+  resolveOrderEvents,
   featuredEvent,
   paymentBreakdown,
   eventRevenueSeries,
@@ -693,6 +695,53 @@ describe('eventRollups', () => {
     const events = [event({event_id: 'e1', opening_cash: 0})];
     const orders = [order({id: '1', created_at: at, total: 120, payment_method: null, event_id: 'e1'})];
     expect(eventRollups(events, orders)[0]).toMatchObject({cashSales: 120, expectedCash: 120});
+  });
+});
+
+describe('effectiveEventId / resolveOrderEvents', () => {
+  function event(over: Partial<PosEvent> & {event_id: string}): PosEvent {
+    return {
+      name: over.event_id, venue: null, city: null, organizer: null,
+      starts_on: null, ends_on: null, opening_cash: null, cash_note: null,
+      closing_cash: null, status: 'active', created_by: null, created_at: null,
+      updated_at: null, ...over,
+    };
+  }
+  // 2026-09-17 04:00Z = 2026-09-17 12:00 Manila; 2026-09-16 20:00Z = 2026-09-17 04:00 Manila.
+  const day17 = '2026-09-17T04:00:00.000Z';
+  const day18 = '2026-09-18T04:00:00.000Z';
+  const day20 = '2026-09-20T04:00:00.000Z';
+  const events = [event({event_id: 'e1', starts_on: '2026-09-17', ends_on: '2026-09-18'})];
+
+  it('keeps a POS-stamped event_id untouched (authoritative)', () => {
+    expect(effectiveEventId({event_id: 'ePOS', created_at: day20}, events)).toBe('ePOS');
+  });
+  it('attributes an untagged sale to the event covering its Manila date', () => {
+    expect(effectiveEventId({event_id: null, created_at: day17}, events)).toBe('e1');
+    expect(effectiveEventId({event_id: null, created_at: day18}, events)).toBe('e1');
+  });
+  it('leaves an untagged sale outside every event as a walk-in (null)', () => {
+    expect(effectiveEventId({event_id: null, created_at: day20}, events)).toBeNull();
+  });
+  it('a single-bound event covers exactly that one day', () => {
+    const oneDay = [event({event_id: 'e9', starts_on: '2026-09-18', ends_on: null})];
+    expect(effectiveEventId({event_id: null, created_at: day18}, oneDay)).toBe('e9');
+    expect(effectiveEventId({event_id: null, created_at: day17}, oneDay)).toBeNull();
+  });
+  it('the scenario: extending an event to cover day 1 folds in the day-1 sales', () => {
+    // Day-1 (Sep 17) sale was logged untagged; the event now spans Sep 17-18.
+    const orders = [
+      order({id: '1', created_at: day17, event_id: null}), // day 1, was a "normal day"
+      order({id: '2', created_at: day18, event_id: 'e1'}), // day 2, tagged live by the POS
+      order({id: '3', created_at: day20, event_id: null}), // genuinely outside -> stays walk-in
+    ];
+    const resolved = resolveOrderEvents(orders, events);
+    expect(resolved.map((o) => o.event_id)).toEqual(['e1', 'e1', null]);
+    expect(resolved[1]).toBe(orders[1]); // unchanged orders keep their identity (no needless copy)
+  });
+  it('with no dated events, returns the input array as-is', () => {
+    const orders = [order({id: '1', created_at: day17, event_id: null})];
+    expect(resolveOrderEvents(orders, [event({event_id: 'x'})])).toBe(orders);
   });
 });
 

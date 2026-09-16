@@ -39,6 +39,32 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Retroactive event attribution (automatic, read-time) — `feat(events)`
+
+Answers "a sale was logged on a normal day; the team later decides that day was
+part of an event — does Coop count it?" Now: **yes, automatically.** Before, a
+sale's `event_id` was frozen by the POS at checkout and no dashboard path could
+change it, so extending an event's dates never reached already-logged sales.
+
+- **Fill-the-blanks resolver** (`pos-sales-compute.ts`): `effectiveEventId` /
+  `resolveOrderEvents`. A POS-stamped `event_id` stays **authoritative**; only an
+  **untagged** (null) sale is attributed — by its Manila date landing inside a
+  dated event's `starts_on..ends_on` (single-bound = that one day, later-starting
+  wins on overlap — same rule as `featuredEvent` / the POS's `pickEventForDate`).
+  Decisions locked with the PO: automatic (no confirm gate), POS tag wins / dates
+  only fill blanks, silent (totals just widen).
+- **Read-time only, Coop-side.** Nothing writes `pos_orders.event_id`; the DB row
+  and the POS app still show the original stamp. Applied where Coop groups by
+  event/venue: the **Events dashboard** (`/offline-sales/events` rollups + per-event
+  analytics) and the **Inventory venue filter**. The forecast is unaffected (it
+  keys off the Fri/Sat/Sun event-day calendar, not per-order `event_id`). The
+  "No venue (walk-in)" bucket shrinks accordingly. **No schema change, no POS change.**
+- **Caveat:** cash reconciliation on a multi-day event can look off if opening/
+  closing cash was recorded for only some of the days now in range.
+- **Verified:** 6 new unit tests (182 total, all green), tsc clean, build compiles.
+  On Staging, "Sample Event" (Sep 15-16) picks up 1 previously-untagged sale
+  (15 -> 16 orders), confirming the fold-in against real data.
+
 ## 2026-09-17 — Numbered pagination + inventory polish — `feat(inventory)`
 
 - **Bundles → its own tab.** It was buried under *Summary* beneath the forecast
