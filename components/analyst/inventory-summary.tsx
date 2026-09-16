@@ -1,9 +1,9 @@
 'use client';
 
 // The Summary tab of the merged Inventory page: status counts, the next-event
-// surge planner (interactive, recomputed client-side + persisted), the stock
-// forecast settings, and the bundle controls. The heavy per-product work lives on
-// the All products tab; this is the at-a-glance panel.
+// surge planner (interactive, recomputed client-side + persisted), and the stock
+// forecast settings. The heavy per-product work lives on the All products tab and
+// bundles have their own tab; this is the at-a-glance panel.
 
 import {useMemo, useState, useTransition} from 'react';
 import {TrendingUp} from 'lucide-react';
@@ -11,22 +11,18 @@ import {cn} from '@/lib/utils';
 import {computeSurge, type ForecastRow, type ForecastConfig, type NextEventPlan} from '@/src/pos-forecast-compute';
 import {setNextEventPlanAction} from '@/src/pos-stock-settings-actions';
 import {StockSettingsForm} from './stock-settings-form';
-import {BundleControls} from './bundle-controls';
-import type {PosBundleRow} from '@/src/pos-types';
 
 export function InventorySummary({
   summary,
   forecastRows,
   config,
   plan: initialPlan,
-  bundles,
   usingMock,
 }: {
   summary: {healthy: number; low: number; out: number; unlisted: number; total: number};
   forecastRows: ForecastRow[];
   config: ForecastConfig | null;
   plan: NextEventPlan | null;
-  bundles: PosBundleRow[];
   usingMock: boolean;
 }) {
   const [plan, setPlan] = useState<NextEventPlan>(initialPlan ?? {eventThisWeekend: true, multiplier: 1, byCategory: {}, byProduct: {}});
@@ -91,8 +87,6 @@ export function InventorySummary({
       )}
 
       {config && <StockSettingsForm config={config} usingMock={usingMock} />}
-
-      <BundleControls bundles={bundles} />
     </div>
   );
 }

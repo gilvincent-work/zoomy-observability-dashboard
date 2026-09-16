@@ -211,7 +211,7 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock}: {
       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.monthly.lastMonth}</td>
       <td className="px-4 py-3 text-right tabular-nums">{r.monthly.threeMonthTotal}</td>
       <td className="px-4 py-3 text-right tabular-nums font-medium">{r.stock}</td>
-      <td className="px-4 py-3">
+      <td className="whitespace-nowrap px-4 py-3">
         <LastsBadge row={r} />
       </td>
       <td className="px-4 py-3 text-right tabular-nums">{r.reorderQty != null ? r.reorderQty : <span className="text-muted-foreground">—</span>}</td>
@@ -253,7 +253,7 @@ function Badge({tone, children}: {tone: 'crit' | 'warn' | 'ok'; children: React.
   const cls = tone === 'crit' ? 'bg-red-500/10 text-red-600 dark:text-red-400'
     : tone === 'warn' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
     : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
-  return <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', cls)}>{children}</span>;
+  return <span className={cn('inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold', cls)}>{children}</span>;
 }
 
 function RowMenu({sku, active, pending, onRename, onReprice, onToggleListing, onAddStock, onUndo, onClose}: {
