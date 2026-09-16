@@ -39,6 +39,14 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Inventory rows are fully clickable — `feat(inventory)`
+
+The whole product row now opens the detail page (not just the name), with a subtle
+hover highlight so it reads as clickable. `onClick` on the `<tr>` routes to
+`/inventory/[sku]`; `cursor-pointer` + `hover:bg-muted/50`. The inner controls keep
+their own behavior via `stopPropagation` — the name link (still a real anchor for
+open-in-new-tab / keyboard), the editable Price, the ⋯ button, and the ⋯ menu.
+
 ## 2026-09-17 — Event attribution: persist to DB + overlap UX — `feat(events)`
 
 Follow-ups to the read-time attribution below, so the DB (and the POS app) agree,
