@@ -6,6 +6,7 @@ import {
   eventRollups,
   effectiveEventId,
   resolveOrderEvents,
+  overlappingEvent,
   featuredEvent,
   paymentBreakdown,
   eventRevenueSeries,
@@ -742,6 +743,22 @@ describe('effectiveEventId / resolveOrderEvents', () => {
   it('with no dated events, returns the input array as-is', () => {
     const orders = [order({id: '1', created_at: day17, event_id: null})];
     expect(resolveOrderEvents(orders, [event({event_id: 'x'})])).toBe(orders);
+  });
+
+  it('overlappingEvent flags a clashing range and excludes self when editing', () => {
+    const existing = [event({event_id: 'a', name: 'Bazaar A', starts_on: '2026-09-17', ends_on: '2026-09-18'})];
+    // A new range that intersects -> clash.
+    expect(overlappingEvent(existing, '2026-09-18', '2026-09-19')?.event_id).toBe('a');
+    // A range that abuts but does not intersect -> free.
+    expect(overlappingEvent(existing, '2026-09-19', '2026-09-20')).toBeNull();
+    // Editing event 'a' itself never clashes with itself.
+    expect(overlappingEvent(existing, '2026-09-17', '2026-09-18', 'a')).toBeNull();
+    // No dates proposed -> nothing to clash.
+    expect(overlappingEvent(existing, null, null)).toBeNull();
+    // Single-bound existing event counts as that one day.
+    const oneDay = [event({event_id: 'b', starts_on: '2026-09-20', ends_on: null})];
+    expect(overlappingEvent(oneDay, '2026-09-20', '2026-09-20')?.event_id).toBe('b');
+    expect(overlappingEvent(oneDay, '2026-09-21', '2026-09-21')).toBeNull();
   });
 });
 

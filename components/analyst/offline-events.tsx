@@ -66,6 +66,9 @@ export function OfflineEventsView({
     return [...current, ...rest];
   }, [rollups, currentEventId]);
 
+  // Every event, for the form's live overlap check.
+  const allEvents = useMemo(() => rollups.map((r) => r.event), [rollups]);
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
       <Link href="/offline-sales" className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
@@ -99,7 +102,7 @@ export function OfflineEventsView({
 
       {creating && (
         <div className="mb-3">
-          <EventForm onDone={() => setCreating(false)} />
+          <EventForm events={allEvents} onDone={() => setCreating(false)} />
         </div>
       )}
 
@@ -114,7 +117,7 @@ export function OfflineEventsView({
         <div className="flex flex-col gap-3">
           {ordered.map((r) =>
             editingId === r.event.event_id ? (
-              <EventForm key={r.event.event_id} initial={r.event} onDone={() => setEditingId(null)} />
+              <EventForm key={r.event.event_id} initial={r.event} events={allEvents} onDone={() => setEditingId(null)} />
             ) : (
               <EventCard
                 key={r.event.event_id}

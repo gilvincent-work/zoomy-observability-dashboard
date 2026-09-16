@@ -1,11 +1,21 @@
 'use client';
 
-import {useState, useTransition} from 'react';
+import {useMemo, useState, useTransition} from 'react';
 import {useRouter} from 'next/navigation';
-import {Check, X} from 'lucide-react';
+import {Check, TriangleAlert, X} from 'lucide-react';
 import type {PosEvent} from '@/src/pos-sales-types';
+import {overlappingEvent} from '@/src/pos-sales-compute';
 import {upsertEventAction, type EventInput} from '@/src/pos-events-actions';
 import {Card, CardContent} from '@/components/ui/card';
+
+/** "Sep 17" or "Sep 17 to Sep 18" for a clash message; blank bounds coalesce. */
+function formatEventDates(startsOn: string | null, endsOn: string | null): string {
+  const fmt = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+  const from = startsOn ?? endsOn;
+  const to = endsOn ?? startsOn;
+  if (!from) return '';
+  return from === to ? fmt(from) : `${fmt(from)} to ${fmt(to as string)}`;
+}
 
 /** Parse an optional peso field: blank -> null, invalid/negative -> error. */
 function parseOptionalAmount(v: string): {value: number | null} | {error: string} {
@@ -42,7 +52,7 @@ function openNativePicker(el: HTMLInputElement) {
  * form, matching the daily-target editor's pattern (useTransition + router
  * refresh). `initial` present = edit mode (adds status + closing-cash fields).
  */
-export function EventForm({initial, onDone}: {initial?: PosEvent; onDone: () => void}) {
+export function EventForm({initial, events = [], onDone}: {initial?: PosEvent; events?: PosEvent[]; onDone: () => void}) {
   const editing = Boolean(initial);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -59,6 +69,16 @@ export function EventForm({initial, onDone}: {initial?: PosEvent; onDone: () => 
   const [closed, setClosed] = useState(initial?.status === 'closed');
   const [closingCash, setClosingCash] = useState(initial?.closing_cash != null ? String(initial.closing_cash) : '');
 
+  // Live overlap check: warn the moment the dates clash with another event, before
+  // Save hits the DB guard. Same rule the server enforces (overlappingEvent).
+  const clash = useMemo(
+    () => overlappingEvent(events, startsOn || null, endsOn || null, initial?.event_id),
+    [events, startsOn, endsOn, initial?.event_id],
+  );
+  const clashMessage = clash
+    ? `Those dates overlap "${clash.name}"${formatEventDates(clash.starts_on, clash.ends_on) ? ` (${formatEventDates(clash.starts_on, clash.ends_on)})` : ''}. Pick a range that does not clash.`
+    : null;
+
   function submit() {
     setError(null);
     if (name.trim() === '') {
@@ -67,6 +87,10 @@ export function EventForm({initial, onDone}: {initial?: PosEvent; onDone: () => 
     }
     if (startsOn && endsOn && endsOn < startsOn) {
       setError('The end date is before the start date.');
+      return;
+    }
+    if (clashMessage) {
+      setError(clashMessage);
       return;
     }
     const opening = parseOptionalAmount(openingCash);
@@ -170,10 +194,15 @@ export function EventForm({initial, onDone}: {initial?: PosEvent; onDone: () => 
           )}
         </div>
 
+        {clashMessage && !error && (
+          <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+            <TriangleAlert className="mt-px size-3.5 shrink-0" /> {clashMessage}
+          </p>
+        )}
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
 
         <div className="mt-4 flex items-center gap-2">
-          <button type="button" onClick={submit} disabled={pending}
+          <button type="button" onClick={submit} disabled={pending || Boolean(clash)}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-transform duration-150 ease-out active:scale-95 disabled:opacity-50">
             <Check className="size-3.5" /> {editing ? 'Save changes' : 'Create event'}
           </button>

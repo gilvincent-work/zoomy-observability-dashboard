@@ -153,6 +153,27 @@ export function resolveOrderEvents<T extends {event_id: string | null; created_a
 }
 
 /**
+ * The first event whose dates clash with a proposed [startsOn, endsOn] range, or
+ * null if the range is free. Mirrors the DB overlap guard exactly (single bound =
+ * that one day via coalesce; ranges intersect when each starts on/before the
+ * other ends), so the form can warn live before upsert_pos_event rejects it. Pass
+ * selfId when editing so an event never clashes with itself.
+ */
+export function overlappingEvent(events: PosEvent[], startsOn: string | null, endsOn: string | null, selfId?: string): PosEvent | null {
+  if (!startsOn && !endsOn) return null;
+  const from = (startsOn ?? endsOn) as string;
+  const to = (endsOn ?? startsOn) as string;
+  for (const e of events) {
+    if (e.event_id === selfId) continue;
+    const eFrom = e.starts_on ?? e.ends_on;
+    const eTo = e.ends_on ?? e.starts_on;
+    if (!eFrom || !eTo) continue;
+    if (eFrom <= to && from <= eTo) return e;
+  }
+  return null;
+}
+
+/**
  * Pick the event to spotlight on the Offline Sales home: the one covering today
  * ('current'), else the nearest future one by start date ('upcoming'), else null.
  * Uses the same single-bound-as-one-day semantics as POS detection, and ignores
