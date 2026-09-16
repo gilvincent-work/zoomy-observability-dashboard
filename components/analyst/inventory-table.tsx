@@ -202,10 +202,13 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock}: {
     });
   }
   const max = Math.max(1, ...r.monthly.trend);
+  // The whole row navigates to the product detail; inner controls (name link, price
+  // edit, the ⋯ menu) stopPropagation so they keep their own behavior.
   return (
-    <tr className={cn('border-b last:border-0', !r.active && 'opacity-55')}>
+    <tr onClick={() => router.push(`/inventory/${r.product_id}`)}
+      className={cn('cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50', !r.active && 'opacity-55')}>
       <td className="px-4 py-3">
-        <Link href={`/inventory/${r.product_id}`} className="font-medium transition-colors hover:text-primary">{r.name}</Link>
+        <Link href={`/inventory/${r.product_id}`} onClick={(e) => e.stopPropagation()} className="font-medium transition-colors hover:text-primary">{r.name}</Link>
         <div className="font-mono text-[10px] text-muted-foreground">{r.product_id}{!r.active && ' · unlisted'}</div>
       </td>
       <td className="px-4 py-3">
@@ -214,7 +217,7 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock}: {
         </span>
       </td>
       <td className="px-4 py-3 text-right">
-        <button onClick={() => onEdit('price')} className="inline-flex items-center gap-1.5 tabular-nums transition-colors hover:text-primary" title="Change price">
+        <button onClick={(e) => {e.stopPropagation(); onEdit('price');}} className="inline-flex items-center gap-1.5 tabular-nums transition-colors hover:text-primary" title="Change price">
           {formatPeso(r.price)} <Pencil className="size-3 text-muted-foreground" />
         </button>
       </td>
@@ -238,7 +241,7 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock}: {
       </td>
       <td className="px-4 py-3 text-right tabular-nums">{r.reorderQty != null ? r.reorderQty : <span className="text-muted-foreground">—</span>}</td>
       <td className="relative px-2 py-3 text-right">
-        <button onClick={onMenu} aria-label="Row actions" className="rounded p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></button>
+        <button onClick={(e) => {e.stopPropagation(); onMenu();}} aria-label="Row actions" className="rounded p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></button>
         {menuOpen && (
           <RowMenu sku={r.product_id} active={r.active} pending={pending}
             onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
@@ -288,7 +291,7 @@ function RowMenu({sku, active, pending, onRename, onReprice, onToggleListing, on
     return () => document.removeEventListener('mousedown', h);
   }, [onClose]);
   return (
-    <div ref={ref} className="absolute right-2 top-9 z-20 w-48 overflow-hidden rounded-xl border bg-popover text-left shadow-lg">
+    <div ref={ref} onClick={(e) => e.stopPropagation()} className="absolute right-2 top-9 z-20 w-48 overflow-hidden rounded-xl border bg-popover text-left shadow-lg">
       <MenuItem href={`/inventory/${sku}`}>View detail</MenuItem>
       <MenuItem onClick={onAddStock}>Add stock</MenuItem>
       <MenuItem onClick={onUndo} disabled={pending}>Undo last add</MenuItem>
