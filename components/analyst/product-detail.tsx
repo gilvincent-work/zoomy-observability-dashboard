@@ -27,7 +27,7 @@ const chartConfig: ChartConfig = {
 const when = (iso: string) => new Date(iso).toLocaleString('en-US', {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
 export function ProductDetailView({detail}: {detail: ProductDetail}) {
-  const {product, forecast, series, chart, runsOutLabel, receipts} = detail;
+  const {product, forecast, series, chart, yoy, runsOutLabel, receipts} = detail;
   const status = (forecast?.status ?? (product.stock <= 0 ? 'out' : 'healthy')) as ForecastStatus;
   const s = STATUS[status];
   const lastMonthSold = series.length >= 2 ? series[series.length - 2].sold : 0;
@@ -46,6 +46,8 @@ export function ProductDetailView({detail}: {detail: ProductDetail}) {
         <Kpi big={String(lastMonthSold)} lbl="sold last month" />
         <Kpi big={forecast?.reorderQty != null ? String(forecast.reorderQty) : '—'} lbl="suggested order" tone={forecast?.reorderQty ? 'good' : undefined} />
       </div>
+
+      {yoy && <YoyStrip yoy={yoy} />}
 
       <div className="mt-5 rounded-xl border bg-card p-5">
         <h2 className="text-sm font-semibold">Sales and stock, month by month</h2>
@@ -108,6 +110,21 @@ export function ProductDetailView({detail}: {detail: ProductDetail}) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Year-over-year callout: this month's units against the same month one year ago.
+// Shown only when there is a baseline (detail.yoy set). Green up / red down.
+function YoyStrip({yoy}: {yoy: NonNullable<ProductDetail['yoy']>}) {
+  const d = yoy.deltaPct ?? 0;
+  const up = d > 0, flat = d === 0;
+  const cls = flat ? 'text-muted-foreground' : up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border bg-card px-4 py-3 text-sm">
+      <span className="font-semibold">Year over year</span>
+      <span className="text-muted-foreground">this month <span className="font-mono font-semibold text-foreground tabular-nums">{yoy.thisMonth}</span> vs {yoy.monthLabel} <span className="font-mono font-semibold text-foreground tabular-nums">{yoy.lastYearSold}</span></span>
+      <span className={cn('font-mono text-xs font-bold tabular-nums', cls)}>{flat ? '±' : up ? '▲' : '▼'}{Math.abs(d)}%</span>
     </div>
   );
 }

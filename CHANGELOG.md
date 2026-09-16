@@ -39,6 +39,28 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Inventory revamp Phase 2b: year-over-year comparison — `feat(inventory)`
+
+Closes the last doable Phase 1 deferral: same-month-last-year context, so a busy
+month reads against its own seasonality, not just the trailing three. Pure
+frontend + compute, no schema change; both data layers already load full order
+history so the baseline is a free lookup.
+
+- **Compute** (`pos-inventory-compute.ts`, +4 tests): `monthKeyOffset` /
+  `monthKeyLabel` (YYYY-MM math + a "Sep '25" label), `soldInMonth` (units for one
+  arbitrary Manila month, venue-filterable, same counting rules as the 3-month
+  rollup), and `yoyDeltaPct` — **null when last year sold zero** so we never show a
+  fake "+100% from nothing".
+- **Table** (`inventory-table.tsx`): a small ▲/▼ **"…% YoY"** under the *This month*
+  number (green up / red down), with a hover title spelling out `vs Sep '25: 38`.
+- **Detail** (`/inventory/[sku]`): a **Year-over-year** strip under the KPIs —
+  `this month 50 vs Sep '25 38  ▲32%`.
+- **Fail-soft / dormant on Staging.** Shown only when a real baseline exists;
+  Staging currently has just 2026-09 data (no 2025-09), so it renders nothing until
+  12 months accrue — verified against the DB. Active path covered by unit tests.
+- **Verified:** typecheck clean, **176 tests** green (+4), build compiles
+  `/inventory` (12.7 kB), `/inventory/[sku]` (5.02 kB).
+
 ## 2026-09-17 — Inventory revamp Phase 2: forecast overlay + per-row stock — `feat(inventory)`
 
 Closes the two deferrals from Phase 1's ⋯ — the detail chart now looks forward,

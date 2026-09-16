@@ -2,7 +2,7 @@ import 'server-only';
 import {getPosProducts, usingPosMock} from './pos-data';
 import {getPosOrders, getPosEvents} from './pos-sales';
 import {getStockForecast} from './pos-forecast-data';
-import {salesByProductMonth, compareByCategory, emptyMonthlySales, type MonthlySales} from './pos-inventory-compute';
+import {salesByProductMonth, compareByCategory, emptyMonthlySales, monthKeyOffset, monthKeyLabel, soldInMonth, yoyDeltaPct, type MonthlySales} from './pos-inventory-compute';
 import type {ForecastStatus, ForecastConfig, NextEventPlan, SurgeSummary, SurgeRow, ForecastRow} from './pos-forecast-compute';
 import type {PosProductRow} from './pos-types';
 
@@ -25,6 +25,7 @@ export interface InventoryRow {
   runsOutLabel: string;
   reorderQty: number | null;
   monthly: MonthlySales;
+  yoy: {lastYearSold: number; deltaPct: number | null; monthLabel: string} | null; // this month vs same month last year (null if no baseline)
 }
 
 export interface VenueOption {
@@ -87,11 +88,18 @@ export async function getInventoryPageData(
   else if (activeVenue !== 'all') venueFilter = venueData.eventsByVenue.get(activeVenue);
 
   const monthly = salesByProductMonth(orders, now, venueFilter);
+  // Same month, one year back — the year-over-year baseline. Only meaningful once
+  // there are 12+ months of history; before that lastYearSold is 0 and yoy is null.
+  const lastYearKey = monthKeyOffset(now, 12);
+  const lastYearLabel = monthKeyLabel(lastYearKey);
+  const lastYearSold = soldInMonth(orders, lastYearKey, venueFilter);
   const forecastById = new Map((forecast?.rows ?? []).map((r) => [r.product_id, r]));
 
   const rows: InventoryRow[] = products
     .map((p): InventoryRow => {
       const f = forecastById.get(p.product_id);
+      const m = monthly.get(p.product_id) ?? emptyMonthlySales();
+      const ly = lastYearSold.get(p.product_id) ?? 0;
       return {
         product_id: p.product_id,
         name: p.name,
@@ -105,7 +113,8 @@ export async function getInventoryPageData(
         coverEventDays: f?.coverEventDays ?? null,
         runsOutLabel: f?.runsOutLabel ?? (p.stock <= 0 ? 'Now' : 'No recent sales'),
         reorderQty: f?.reorderQty ?? null,
-        monthly: monthly.get(p.product_id) ?? emptyMonthlySales(),
+        monthly: m,
+        yoy: ly > 0 ? {lastYearSold: ly, deltaPct: yoyDeltaPct(m.thisMonth, ly), monthLabel: lastYearLabel} : null,
       };
     })
     .sort(compareByCategory); // default: Category order
