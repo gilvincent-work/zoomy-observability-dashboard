@@ -39,6 +39,27 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Event attribution: persist to DB + overlap UX — `feat(events)`
+
+Follow-ups to the read-time attribution below, so the DB (and the POS app) agree,
+and so date clashes are caught earlier and more clearly.
+
+- **Persist the fold-in** (`attribute_untagged_orders_to_event` RPC, mirrored to
+  `pos_schema.sql`): saving an event now stamps `event_id` onto untagged sales whose
+  Manila date falls in its range, in the DB. **Fills blanks only** (never re-tags a
+  POS-stamped sale, never un-stamps), idempotent, SECURITY DEFINER granted to
+  `service_role` (Coop-only; the POS never calls it). Wired into `upsertEventAction`
+  (best-effort after the event saves) + revalidates `/inventory`. Verified on
+  Staging: "Sample Event" attaches 1 then 0 (15 -> 16 tagged). The read-time resolver
+  still backs Coop's own views; this makes the stored data match.
+- **Overlap handling, upgraded** (was: generic error only on Save):
+  - **Names the culprit** — the message now reads *Those dates overlap "Bazaar A"
+    (Sep 17 to Sep 18)* instead of a generic line, both live and from the server
+    guard (parsed from the RPC's `check_violation`).
+  - **Live inline warning** — `overlappingEvent` (same rule as the DB guard) flags a
+    clash the moment the dates are entered, shows an amber warning, and disables Save
+    before it ever hits the server. Events passed into `EventForm` from the events view.
+
 ## 2026-09-17 — Retroactive event attribution (automatic, read-time) — `feat(events)`
 
 Answers "a sale was logged on a normal day; the team later decides that day was

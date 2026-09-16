@@ -60,17 +60,31 @@ export async function upsertEventAction(input: EventInput): Promise<ActionResult
   if (input.status) p_event.status = input.status;
   if (input.closing_cash !== undefined) p_event.closing_cash = input.closing_cash;
 
-  const {error} = await posClient().rpc('upsert_pos_event', {p_event});
+  const {data, error} = await posClient().rpc('upsert_pos_event', {p_event});
   if (error) {
-    // The overlap guard raises check_violation (23514); surface it plainly.
+    // The overlap guard raises check_violation (23514) as "…overlap an existing
+    // event: <name>". Surface it plainly, naming the clashing event when we can.
     if (error.code === '23514' || /overlap/i.test(error.message)) {
-      return {ok: false, error: 'Those dates overlap another event. Pick a range that does not clash.'};
+      const who = /overlap[^:]*:\s*(.+)$/i.exec(error.message)?.[1]?.trim();
+      return {ok: false, error: who ? `Those dates overlap "${who}". Pick a range that does not clash.` : 'Those dates overlap another event. Pick a range that does not clash.'};
     }
     return {ok: false, error: error.message};
   }
 
+  // Persist the read-time attribution: attach untagged sales whose date now falls
+  // in this event's range, so the DB (and the POS app) match Coop's reporting. The
+  // event already saved, so a hiccup here shouldn't fail the save (read-time still
+  // covers Coop's own views).
+  const eventId = typeof data === 'string' ? data : input.event_id;
+  if (eventId) {
+    // Best-effort: the RPC returns its error rather than throwing, so a hiccup here
+    // never fails the (already-committed) event save.
+    await posClient().rpc('attribute_untagged_orders_to_event', {p_event_id: eventId});
+  }
+
   revalidatePath('/offline-sales/events');
   revalidatePath('/offline-sales');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
