@@ -12,6 +12,124 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-16 — Capture dashboard sign-ins for alert recipients — `feat(auth)`
+
+Supports the low-stock email (in `zoomy-observability`): the alert needs to reach
+the people who use Coop, but Google SSO stores no user list (JWT sessions, no DB
+adapter). So we now record each sign-in.
+
+- **`auth.ts` `events.signIn`** upserts the signer's email into a new
+  `pos_dashboard_users` table (Staging; service-role only; mirrored to
+  `../zoomy-pos/supabase/pos_schema.sql`). Fail-soft: a logging hiccup never blocks
+  login. Uses a direct PostgREST upsert with the archive service-role key (no
+  server-only import, so the edge middleware bundle stays clean). The upsert sends
+  only `{email, last_seen}`, so `first_seen` is preserved across logins (verified on
+  Staging). The email job unions this list with its `EMAIL_TO` fallback.
+- Typecheck + build clean (middleware unaffected).
+
+## 2026-09-16 — Stock Forecast (Phase 3): Add stock + history + undo — `feat(inventory)`
+
+Adds a first-class, traceable way to receive stock into Coop, with a stock-in
+history and a one-click undo. Additive schema on Staging (mirrored to
+`../zoomy-pos/supabase/pos_schema.sql`, **not on prod**). Landed on `develop`.
+
+- **Schema (Staging):** two new SECURITY DEFINER RPCs — `add_pos_stock(p_lines, p_by)`
+  receives several products in **one transaction** (all-or-nothing, Q18), each line a
+  `receipt` movement stamped with the signed-in Coop user; `void_last_stock_add(sku,
+  p_by)` reverses a product's latest receipt with an **offsetting `add-void` row**
+  (history preserved, clamped to what's still on hand — Q20). `receive_lot` untouched;
+  advisor shows only the same expected SECURITY DEFINER WARN as the other pos_* RPCs.
+- **Add-stock form** (`add-stock-button.tsx`): a button on **both** the Inventory
+  forecast and Products. Click **Add product** → a line with its own product picker
+  (chosen products drop out of the other lines' menus — no duplicates); qty takes
+  numbers-only keyboard input plus −20/−10/−5/−1 / +1/+5/+10/+20 quick-steps.
+  **Update** commits the batch all-or-nothing via `addStockAction`.
+- **Stock history** (`stock-history.tsx`, Q19): a **global panel** under the forecast
+  (recent adds: product · +qty · who · when) and a **per-product drawer** opened by
+  clicking any forecast row (that SKU's adds, running total, and **Undo last add** on
+  the most recent receipt). Reads `pos_stock_movements` (receipt / add-void); stock-ins
+  only.
+- **Data layer:** `src/pos-stock-intake.ts` (fail-soft receipts reader + mock) and
+  `src/pos-stock-intake-actions.ts` (`addStockAction` all-or-nothing, `voidLastAddAction`;
+  actor = signed-in Coop email, revalidates inventory/products/offline-sales).
+- **Verified on Staging:** batch add of 2 lines (atomic — a bad SKU rolled the whole
+  batch back), the actor recorded on each receipt, void posted the offsetting row and
+  restored on-hand, and the history query returns real receipts with names. All test
+  artifacts cleaned up. Typecheck clean, **163 tests green**, build compiles `/inventory`
+  (7.79 kB) + `/products` (12.6 kB).
+- **Deferred:** the low-stock email job (`run-stock-check.mjs` + Resend + cron) is the
+  next phase — separate repo (`zoomy-observability`), needs a Resend key + cron config.
+
+## 2026-09-16 — Stock Forecast (Phase 2): configurable + surge planner — `feat(inventory)`
+
+Makes the forecast configurable and adds the next-event surge planner. Additive
+schema on Staging (mirrored into `../zoomy-pos/supabase/pos_schema.sql`, **not on
+prod**). Landed on `develop`.
+
+- **Schema (Staging):** two new `pos_settings` keys — `stock_forecast_config`
+  (threshold, per-SKU `threshold_overrides`, target cover, lead time, early-warning,
+  velocity mode, event days) and `next_event_plan` (event-this-weekend, global
+  multiplier, per-category + per-product overrides) — each with a SECURITY DEFINER
+  upsert RPC (`set_pos_stock_config` / `set_pos_next_event_plan`), same anon-grant
+  posture as `set_pos_daily_target`. Advisor: no new findings.
+- **Config is live, threshold 10 is now editable.** `src/pos-stock-settings.ts`
+  reads both keys **fail-soft to the Phase-1 defaults**; `getStockForecast` feeds
+  the config into the compute so bands/reorder honor it. A **Stock forecast
+  settings** panel on the Products page (`stock-settings-form.tsx`) edits the global
+  threshold + cover/lead/early-warning via `set_pos_stock_config`.
+- **Next-event surge planner** on the Offline forecast: an "event this weekend?"
+  check (off → forecasts the next weekend) + an expected-volume **× multiplier**,
+  and a per-product **Next event · needs** column — the multiplier pre-fills each
+  cell, or type a product's absolute expected units (amber = manually set). Shows
+  **"N products won't sustain · restock by <date>"**. Recomputed **client-side** for
+  instant what-if; each committed change persists via `set_pos_next_event_plan`
+  (actor = signed-in Coop email, Q22).
+- **Compute** `src/pos-forecast-compute.ts` gains `effectiveThreshold` (per-SKU),
+  `effectiveMultiplier` (category vs global), `nextEventDay` (this vs next weekend),
+  and `computeSurge`. **8 new unit tests** (overrides, multiplier resolution,
+  weekend roll, shortfall/sustain) — **163 tests green**.
+- **Verified on Staging:** config + plan with a per-SKU threshold override, category
+  multiplier, and per-product absolute all round-trip in the exact parser shape;
+  seed defaults restored after. Typecheck clean, production build compiles
+  `/inventory` (4.8 kB) + `/products` (11.1 kB).
+- **Deferred:** per-product low-threshold override has a UI-less data path for now
+  (RPC + compute support it; the global panel covers the main ask). Add-stock form +
+  history + email is Phase 3.
+
+## 2026-09-16 — Stock Forecast (Phase 1): Offline scope on `/inventory` — `feat(inventory)`
+
+First slice of the Stock Forecast feature (full plan + 22 PO decisions in
+`../COOP_INTEGRATION_PLAN.md` and the plan artifact). **Dashboard-only, no schema
+change** — reads existing `pos_*` data. Landed on `develop`.
+
+- **`/inventory` gains an All / Online / Offline channel toggle.** Default landing
+  is **All** (Q8); **Online** keeps the existing marketplace/digest `InventoryTab`
+  untouched (Q7); **Offline** is the new forecast. `?channel=offline` deep-links
+  straight to it (used by the Offline Sales snapshot).
+- **Offline stock forecast** (`components/analyst/inventory-forecast.tsx`): per-SKU
+  on-hand, **event-aware** sold/day (÷ distinct selling days, not calendar days),
+  **event-day** cover, weekend-snapped run-out, suggested reorder + "reorder by",
+  and **Healthy / Low / Out** status (Q16 — Critical dropped). Line + (Freeze-Dried)
+  subcategory filter pills mirroring the Products page.
+- **Pure engine** `src/pos-forecast-compute.ts` (unit-tested, 11 cases) — the same
+  module the low-stock email will reuse in Phase 3. Config (threshold 10, 14-day
+  cover, 3-day lead, Fri/Sat/Sun) is constants this phase; Phase 2 makes it
+  `pos_settings`-backed.
+- **Data layer** `src/pos-forecast-data.ts` reads `pos_stock_movements`
+  (`reason='sale'`, trailing 60 days) → velocity; **fail-soft** (any read error
+  renders an empty state, never 500s); deterministic mock when the Supabase env is
+  unset.
+- **Offline Sales page**: the low-signal **"Recently synced"** panel is replaced by
+  a **Stock snapshot** (most-urgent SKUs, worst-first, + `18 healthy · N low · N out`
+  line) with a **View all →** to `/inventory?channel=offline`.
+- **Verified on Staging** against real `pos_stock_movements`: the compute reproduces
+  a sane mix (2 out · 2 low · 26 healthy of 30), velocity/cover math matches the
+  TypeScript exactly. Typecheck clean, **155 tests green**, production build compiles
+  `/inventory` (2.6 kB) and `/offline-sales`.
+- **Deferred to later phases:** the surge planner + configurable settings (Phase 2),
+  Add-stock form + history + low-stock email (Phase 3), real Online inventory +
+  prod promotion (Phase 4). Near-expiry stays deferred (Q13).
+
 ## 2026-09-15 — Offline Sales: Pet mix + Events — `feat(offline-sales)`
 
 - **Pet mix card on the Offline Sales home.** New card directly below the KPI row
