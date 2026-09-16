@@ -22,6 +22,7 @@ import {setNextEventPlanAction} from '@/src/pos-stock-settings-actions';
 import type {StockReceipt} from '@/src/pos-stock-intake';
 import {AddStockButton, type IntakeProduct} from './add-stock-button';
 import {StockHistoryPanel, StockHistoryDrawer} from './stock-history';
+import {StockSettingsForm} from './stock-settings-form';
 
 type Scope = 'all' | 'offline';
 
@@ -217,6 +218,8 @@ export function InventoryForecast({
           </p>
 
           <StockHistoryPanel receipts={receipts} />
+
+          <StockSettingsForm config={config} usingMock={usingMock} />
         </>
       )}
 
