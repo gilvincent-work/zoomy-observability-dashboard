@@ -3,7 +3,7 @@ import {posClient, usingPosMock, getPosProducts} from './pos-data';
 import {getPosOrders} from './pos-sales';
 import {getStockForecast} from './pos-forecast-data';
 import {getStockReceipts, type StockReceipt} from './pos-stock-intake';
-import {manilaMonthKey} from './pos-inventory-compute';
+import {manilaMonthKey, monthKeyOffset, monthKeyLabel, yoyDeltaPct} from './pos-inventory-compute';
 import type {PosProductRow} from './pos-types';
 import type {ForecastRow} from './pos-forecast-compute';
 
@@ -35,6 +35,7 @@ export interface ProductDetail {
   forecast: ForecastRow | null;
   series: MonthPoint[]; // oldest → newest, 6 real months (for the table)
   chart: ChartPoint[]; // 6 real + 3 forecast months (for the chart)
+  yoy: {thisMonth: number; lastYearSold: number; deltaPct: number | null; monthLabel: string} | null; // this month vs same month last year (null if no baseline)
   runsOutLabel: string | null; // e.g. 'Runs out ~Aug' when the projection hits 0
   usingMock: boolean;
   receipts: StockReceipt[]; // this SKU's stock-in history
@@ -90,6 +91,16 @@ export async function getProductDetail(sku: string, now: Date = new Date()): Pro
     return {month: mk, label: monthLabel(mk), sold: soldByMonth.get(mk) ?? 0, stockEnd};
   });
 
+  // Year-over-year: this Manila month vs the same month one year back. soldByMonth
+  // spans all history, so both are direct lookups. Null when there is no baseline.
+  const thisMonthKey = manilaMonthKey(now.toISOString());
+  const lastYearKey = monthKeyOffset(now, 12);
+  const thisMonthSold = soldByMonth.get(thisMonthKey) ?? 0;
+  const lastYearSold = soldByMonth.get(lastYearKey) ?? 0;
+  const yoy = lastYearSold > 0
+    ? {thisMonth: thisMonthSold, lastYearSold, deltaPct: yoyDeltaPct(thisMonthSold, lastYearSold), monthLabel: monthKeyLabel(lastYearKey)}
+    : null;
+
   // Forecast the next 3 months: monthly pace = mean of the months that actually
   // sold (recent burst, not diluted by dead months); the stock runs down from the
   // current on-hand if nothing is ordered. Dashed on the chart.
@@ -116,6 +127,7 @@ export async function getProductDetail(sku: string, now: Date = new Date()): Pro
     forecast: (forecast?.rows ?? []).find((r) => r.product_id === sku) ?? null,
     series,
     chart,
+    yoy,
     runsOutLabel,
     usingMock: usingPosMock(),
     receipts,

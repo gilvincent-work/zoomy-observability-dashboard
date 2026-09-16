@@ -204,7 +204,10 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock}: {
           ))}
         </span>
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">{r.monthly.thisMonth}</td>
+      <td className="px-4 py-3 text-right tabular-nums">
+        <span>{r.monthly.thisMonth}</span>
+        <YoyDelta yoy={r.yoy} thisMonth={r.monthly.thisMonth} />
+      </td>
       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.monthly.lastMonth}</td>
       <td className="px-4 py-3 text-right tabular-nums">{r.monthly.threeMonthTotal}</td>
       <td className="px-4 py-3 text-right tabular-nums font-medium">{r.stock}</td>
@@ -224,6 +227,20 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock}: {
   );
 }
 
+// Small year-over-year indicator under the "This month" number: ▲/▼ vs the same
+// month last year. Only shown when there is a real baseline (yoy set); before 12
+// months of history exists there is nothing to compare, so it renders nothing.
+function YoyDelta({yoy, thisMonth}: {yoy: InventoryRow['yoy']; thisMonth: number}) {
+  if (!yoy || yoy.deltaPct == null) return null;
+  const up = yoy.deltaPct > 0, flat = yoy.deltaPct === 0;
+  const cls = flat ? 'text-muted-foreground' : up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+  return (
+    <span className={cn('mt-0.5 block text-[10px] font-medium tabular-nums', cls)}
+      title={`vs ${yoy.monthLabel}: ${yoy.lastYearSold} (this month ${thisMonth})`}>
+      {flat ? '±' : up ? '▲' : '▼'}{Math.abs(yoy.deltaPct)}% YoY
+    </span>
+  );
+}
 function LastsBadge({row}: {row: InventoryRow}) {
   const {status, coverEventDays, monthly, runsOutLabel} = row;
   if (status === 'out') return <Badge tone="crit">runs out</Badge>;

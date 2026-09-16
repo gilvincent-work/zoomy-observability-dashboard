@@ -5,6 +5,10 @@ import {
   categoryRank,
   subcategoryRank,
   compareByCategory,
+  monthKeyOffset,
+  monthKeyLabel,
+  soldInMonth,
+  yoyDeltaPct,
 } from '../src/pos-inventory-compute';
 import type {PosOrder} from '../src/pos-sales-types';
 
@@ -69,6 +73,35 @@ describe('salesByProductMonth', () => {
       order({created_at: '2026-05-12T04:00:00Z', event_id: null, items: [line('A', 7)]}),
     ];
     expect(salesByProductMonth(mixed, NOW, 'unattributed').get('A')!.thisMonth).toBe(7);
+  });
+});
+
+describe('year-over-year', () => {
+  it('monthKeyOffset walks back whole months across a year boundary', () => {
+    expect(monthKeyOffset(NOW, 0)).toBe('2026-05');
+    expect(monthKeyOffset(NOW, 12)).toBe('2025-05'); // same month, one year back
+    expect(monthKeyOffset(NOW, 5)).toBe('2025-12'); // crosses into the prior year
+  });
+  it('monthKeyLabel renders a short "Mon \'YY" label', () => {
+    expect(monthKeyLabel('2025-09')).toBe("Sep '25");
+    expect(monthKeyLabel('2026-01')).toBe("Jan '26");
+  });
+  it('soldInMonth totals a single month per product, venue-filterable', () => {
+    const orders = [
+      order({created_at: '2025-05-10T04:00:00Z', items: [line('A', 12), line('B', 4)]}), // last-year May
+      order({created_at: '2025-05-11T04:00:00Z', event_id: 'e1', items: [line('A', 3)]}),
+      order({created_at: '2026-05-10T04:00:00Z', items: [line('A', 99)]}), // this year, excluded by month key
+      order({created_at: '2025-05-12T04:00:00Z', status: 'voided', items: [line('A', 5)]}), // voided, skip
+    ];
+    expect(soldInMonth(orders, '2025-05').get('A')).toBe(15);
+    expect(soldInMonth(orders, '2025-05').get('B')).toBe(4);
+    expect(soldInMonth(orders, '2025-05', new Set(['e1'])).get('A')).toBe(3);
+  });
+  it('yoyDeltaPct: percent change, null when no baseline', () => {
+    expect(yoyDeltaPct(50, 38)).toBe(32);
+    expect(yoyDeltaPct(20, 40)).toBe(-50);
+    expect(yoyDeltaPct(10, 0)).toBeNull(); // no baseline -> no fake growth
+    expect(yoyDeltaPct(0, 0)).toBeNull();
   });
 });
 

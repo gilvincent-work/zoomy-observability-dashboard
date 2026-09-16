@@ -76,6 +76,62 @@ export function salesByProductMonth(
   return out;
 }
 
+// ── Year-over-year (same Manila month, one year back) ─────────────────────────
+
+/** The Manila YYYY-MM key `monthsBack` whole months before `now`. */
+export function monthKeyOffset(now: Date, monthsBack: number): string {
+  const cur = manilaMonthKey(now.toISOString());
+  const [y, m] = cur.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 - monthsBack, 1));
+  return d.toISOString().slice(0, 7);
+}
+
+/** Short label for a YYYY-MM key, e.g. '2025-09' -> "Sep '25". */
+export function monthKeyLabel(key: string): string {
+  const [y, m] = key.split('-').map(Number);
+  const mon = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', {month: 'short', timeZone: 'UTC'});
+  return `${mon} '${String(y).slice(2)}`;
+}
+
+/**
+ * Units sold per product in one specific Manila month. Same counting rules as
+ * salesByProductMonth (completed orders, item lines, venue-filterable) but for a
+ * single arbitrary month — used for the same-month-last-year comparison.
+ */
+export function soldInMonth(
+  orders: PosOrder[],
+  monthKey: string,
+  venueEventIds?: Set<string> | 'unattributed' | null,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const o of orders) {
+    if (o.status === 'voided') continue;
+    if (venueEventIds === 'unattributed') {
+      if (o.event_id) continue;
+    } else if (venueEventIds) {
+      if (!o.event_id || !venueEventIds.has(o.event_id)) continue;
+    }
+    if (manilaMonthKey(o.created_at) !== monthKey) continue;
+    for (const line of o.items) {
+      if (!line.product_id) continue; // skip bundle header lines
+      const qty = Number(line.qty ?? 0);
+      if (!(qty > 0)) continue;
+      out.set(line.product_id, (out.get(line.product_id) ?? 0) + qty);
+    }
+  }
+  return out;
+}
+
+/**
+ * Percent change of this month vs the same month last year. Null when there is no
+ * baseline (last year sold zero) — a "% up from nothing" is meaningless, so callers
+ * show nothing rather than a fake +100%/∞.
+ */
+export function yoyDeltaPct(thisMonth: number, lastYear: number): number | null {
+  if (!(lastYear > 0)) return null;
+  return Math.round(((thisMonth - lastYear) / lastYear) * 100);
+}
+
 // ── Default Category sort (matches the Line/Type filter pills) ────────────────
 const UNCATEGORIZED_RANK = POS_CATEGORIES.length; // sorts after all known lines
 
