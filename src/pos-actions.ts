@@ -105,7 +105,7 @@ export async function createProductAction(input: {
     if (lotErr) return {ok: false, error: `Product created, but stock failed: ${lotErr.message}`};
   }
 
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -121,7 +121,7 @@ export async function setStockAction(product_id: string, qty: string): Promise<A
     p_by: ACTOR,
   });
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -136,7 +136,7 @@ export async function setEmojiAction(product_id: string, emoji: string): Promise
     .update({emoji: parsed.value, updated_at: new Date().toISOString()})
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -151,7 +151,7 @@ export async function setLineAction(product_id: string, line: string): Promise<A
     .update({product_line: trimmed || null, updated_at: new Date().toISOString()})
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -173,7 +173,7 @@ export async function setCategoryAction(product_id: string, category: string, su
     .update({category: cat || null, subcategory: sub || null, updated_at: new Date().toISOString()})
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -188,7 +188,7 @@ export async function renameProductAction(product_id: string, name: string): Pro
     p_by: ACTOR,
   });
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -204,7 +204,7 @@ export async function repriceProductAction(product_id: string, price: string): P
     p_by: ACTOR,
   });
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -217,7 +217,7 @@ export async function setListingAction(product_id: string, active: boolean): Pro
     p_by: ACTOR,
   });
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -238,7 +238,7 @@ export async function setBundleEmojiAction(bundle_id: string, emoji: string): Pr
     .update({emoji: parsed.value, updated_at: new Date().toISOString()})
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -250,7 +250,7 @@ export async function setBundleActiveAction(bundle_id: string, active: boolean):
     .update({active, updated_at: new Date().toISOString()})
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -264,7 +264,7 @@ export async function renameBundleAction(bundle_id: string, name: string): Promi
     .update({name: trimmed, updated_at: new Date().toISOString()})
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -278,7 +278,7 @@ export async function repriceBundleAction(bundle_id: string, price: string): Pro
     .update({price: parsed.value, updated_at: new Date().toISOString()})
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }
 
@@ -287,6 +287,6 @@ export async function deleteBundleAction(bundle_id: string): Promise<ActionResul
   if (usingPosMock()) return mockBlocked();
   const {error} = await posClient().rpc('delete_pos_bundle', {p_bundle_id: bundle_id});
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
   return {ok: true};
 }

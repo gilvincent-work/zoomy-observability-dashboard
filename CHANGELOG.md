@@ -39,6 +39,46 @@ email in seconds, to two captured recipients).
   restock. All via the trigger, no manual calls. Poppins email template (system
   fallback in Gmail), no em/en dashes.
 
+## 2026-09-17 — Inventory revamp Phase 1: merge Products + Inventory — `feat(inventory)`
+
+Merges the Products and Inventory pages into one, restyled after the PO's mockup.
+Plan + 13 locked decisions + a regression review are in the artifact and
+`../COOP_INTEGRATION_PLAN.md`. On `feat/inventory-revamp`; Staging-verified data.
+
+- **One page, two tabs.** `/inventory` now hosts **All products** (the merged
+  table) and **Summary**. The `Products` nav item is removed and `/products`
+  redirects in (D9). No feature is lost.
+- **All products table** (`inventory-table.tsx`): Product · Status · editable Price ·
+  Trend · This mo / Last mo / 3mo · Stock Qty · Lasts · Suggested · ⋯. **Sortable
+  columns**, default **Category** order (Freeze Dried + subcategories first,
+  matching the filter pills; uncategorized sorts last — guardrail 4). Line/Status
+  filters + search. Catalog edits (rename, reprice, list/unlist) live in a per-row
+  **⋯ menu** reusing the existing server actions (D5); price edits log to
+  `pos_price_changes` so past sales keep their price (D6).
+- **Summary tab** (`inventory-summary.tsx`): status counts, the interactive
+  next-event surge planner, stock forecast settings, and bundle controls.
+- **Channel + venue.** Stratpoint (Offline) / BoxMe (Online) segment; a **venue
+  dropdown** (from `pos_events.venue`) scopes the monthly-sold columns. The
+  **Online scope keeps** the existing marketplace analytics and **adds** a BoxMe
+  stub (D13). The `channel` param keeps `offline`/`online` as aliases (D12), so the
+  low-stock email CTA + Offline Sales "View all" links work with **zero cross-repo
+  change** (guardrail 1).
+- **Per-product detail** `/inventory/[sku]` (`product-detail.tsx`): KPI cards, a
+  six-month **sales + stock chart** (recharts; green bars = units sold, blue line =
+  end-of-month Stock Qty reconstructed from the movement ledger), sold-by-month
+  table, and stock history.
+- **New compute** `src/pos-inventory-compute.ts` (monthly rollup, venue filter,
+  category sort — 9 unit tests) + data layers `pos-inventory-data.ts` /
+  `pos-product-detail.ts` (fail-soft). Guardrails 2 (nav-chrome exclusion) + 3
+  (repoint 15 `revalidatePath('/products')` → `/inventory`) wired. Dead
+  `inventory-forecast.tsx` removed.
+- **Verified:** typecheck clean, **172 tests** green (+9), production build compiles
+  `/inventory` (12.1 kB), `/inventory/[sku]` (4.72 kB), `/products` (redirect);
+  monthly-sold numbers reconciled against real Staging orders.
+- **Deferred (Phase 2/3):** the forward-looking forecast overlay on the detail
+  chart, real BoxMe online stock, last-year comparison, and per-row Add-stock/Undo
+  in the ⋯ menu (Add stock stays a header action; Undo lives on the detail history).
+
 ## 2026-09-16 — Capture dashboard sign-ins for alert recipients — `feat(auth)`
 
 Supports the low-stock email (in `zoomy-observability`): the alert needs to reach

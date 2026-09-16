@@ -41,7 +41,6 @@ export async function setStockConfigAction(config: ForecastConfig): Promise<Acti
   if (error) return {ok: false, error: error.message};
 
   revalidatePath('/inventory');
-  revalidatePath('/products');
   revalidatePath('/offline-sales');
   return {ok: true};
 }

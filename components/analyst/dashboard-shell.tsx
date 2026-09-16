@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, Boxes, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -24,7 +24,7 @@ const OVERVIEW_CHILDREN: NavItem[] = [
   {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
 ];
 const FLAT_TABS: NavItem[] = [
-  {href: '/products', label: 'Products', icon: Boxes},
+  // Products merged into Inventory (feat/inventory-revamp); /products redirects in.
   {href: '/inventory', label: 'Inventory', icon: Package},
   {href: '/customers', label: 'Customers', icon: Users},
   {href: '/traffic', label: 'Traffic', icon: Activity},
@@ -104,6 +104,9 @@ export function DashboardShell({
     !pathname.startsWith('/health') &&
     !pathname.startsWith('/repricer') &&
     !pathname.startsWith('/products') &&
+    // Inventory is now the merged live catalog (Products folded in), not a
+    // period-scoped report, so it has no week picker (guardrail 2).
+    !pathname.startsWith('/inventory') &&
     !pathname.startsWith('/offline-sales');
 
   const [periodOpen, setPeriodOpen] = useState(false);
