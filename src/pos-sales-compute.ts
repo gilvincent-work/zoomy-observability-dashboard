@@ -117,6 +117,42 @@ export function eventRollups(events: PosEvent[], orders: PosOrder[]): EventRollu
 }
 
 /**
+ * The event a sale effectively belongs to for Coop reporting. A POS-stamped
+ * event_id is authoritative and kept as-is; an untagged sale (event_id null) is
+ * attributed by its Manila calendar date — if a dated event's starts_on..ends_on
+ * covers that day it becomes that event's, else it stays a walk-in (null). Single
+ * bound = that one day; on the (write-blocked) chance two events cover a day, the
+ * later-starting one wins — the same rule as featuredEvent / the POS's
+ * pickEventForDate. Read-time only: this never writes pos_orders.event_id, so the
+ * DB row and the POS app still show the original stamp.
+ */
+export function effectiveEventId(order: {event_id: string | null; created_at: string}, events: PosEvent[]): string | null {
+  if (order.event_id) return order.event_id;
+  const day = manilaDayKey(order.created_at);
+  const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
+  const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
+  const covering = events
+    .filter((e) => (e.starts_on || e.ends_on) && from(e) <= day && day <= to(e))
+    .sort((a, b) => from(b).localeCompare(from(a)));
+  return covering[0]?.event_id ?? null;
+}
+
+/**
+ * Attribute untagged sales to their covering event (automatic, read-time,
+ * fill-the-blanks). POS-tagged orders pass through untouched; only a null-event
+ * sale that now resolves to an event gets a fresh object with that event_id. With
+ * no dated events, returns the input as-is. Coop-side reporting only.
+ */
+export function resolveOrderEvents<T extends {event_id: string | null; created_at: string}>(orders: T[], events: PosEvent[]): T[] {
+  if (!events.some((e) => e.starts_on || e.ends_on)) return orders;
+  return orders.map((o) => {
+    if (o.event_id) return o;
+    const ev = effectiveEventId(o, events);
+    return ev ? {...o, event_id: ev} : o;
+  });
+}
+
+/**
  * Pick the event to spotlight on the Offline Sales home: the one covering today
  * ('current'), else the nearest future one by start date ('upcoming'), else null.
  * Uses the same single-bound-as-one-day semantics as POS detection, and ignores
