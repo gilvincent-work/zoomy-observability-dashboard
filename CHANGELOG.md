@@ -12,6 +12,15 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-17 — Compare-days chart: hourly hover points — `fix(events)`
+
+Follow-up to the compare-days overlay. The lines were plotted at each order's exact
+minute, so hovering jumped between sparse times (10 AM, then 3 PM) and the tooltip
+could only resolve the day that owned that minute. `eventDayPacingSeries` now samples
+on an even **hourly grid** across the event window: each hour holds every day's running
+total through that hour's end (null outside a day's own selling hours). Hovering now
+steps hour by hour and shows every active day's pace at that clock hour. Tests updated.
+
 ## 2026-09-17 — Event revenue: compare each day's pace on one chart — `feat(events)`
 
 The event detail "Revenue over time" chart gets a **Combined / Compare days** toggle
