@@ -57,6 +57,15 @@ direct `pos_bundles` update, so **no schema change**.
 - Copy updated to reflect that bundles can now be created in Coop too. tsc clean,
   183 tests green, build compiles, design detector clean.
 
+## 2026-09-17 — vs-last-year as "same month last year" bars — `fix(inventory)`
+
+The vs-last-year overlay was a muted dashed line; the PO mockup wants **grey bars**
+("Same month last year") behind each month's bar. Replaced the line with a grey bar
+per month (`soldLastYear`), drawn behind this year's solid/dashed bar and a touch
+wider so a **hoverable sliver** always peeks out even where they overlap. Hovering
+it shows **"JUN last year / 40 pcs sold"**. Added the matching **legend entry**
+(shown only when the toggle is on). tsc clean, 183 tests, build + detector clean.
+
 ## 2026-09-17 — Product detail chart rebuilt to the PO mockup — `feat(inventory)`
 
 Replaced the single overlaid recharts chart with a bespoke two-panel SVG built to
