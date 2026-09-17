@@ -1,8 +1,9 @@
 import 'server-only';
 import {cache} from 'react';
-import {unstable_noStore as noStore} from 'next/cache';
+import {unstable_cache} from 'next/cache';
 import {posClient, usingPosMock, getPosProducts} from './pos-data';
 import {manilaDayKey} from './pos-sales-compute';
+import {POS_TAGS, POS_CACHE_REVALIDATE} from './pos-cache';
 import {MOCK_POS_PRODUCTS} from './pos-mock';
 import {getStockConfig, getNextEventPlan} from './pos-stock-settings';
 import {
@@ -24,10 +25,13 @@ import {
 // Mirrors pos-data.ts: service-role env, or a deterministic mock when unset.
 
 /** Sale movements over the trailing window, resolved to units + Manila day. */
-export const getSaleMovements = cache(async (): Promise<SaleMovement[]> => {
-  noStore();
-  if (usingPosMock()) return mockSaleMovements();
+export const getSaleMovements = cache((): Promise<SaleMovement[]> =>
+  usingPosMock() ? Promise.resolve(mockSaleMovements()) : saleMovementsCached(),
+);
 
+// Sale ledger drives the forecast velocity; a new sale (order write) revalidates
+// POS_TAGS.orders, so this stays in step with getPosOrders.
+const saleMovementsCached = unstable_cache(async (): Promise<SaleMovement[]> => {
   const supabase = posClient();
   const since = new Date(Date.now() - FORECAST_WINDOW_DAYS * 86_400_000).toISOString();
   const {data, error} = await supabase
@@ -42,7 +46,7 @@ export const getSaleMovements = cache(async (): Promise<SaleMovement[]> => {
     qty: Math.abs(Number(m.delta ?? 0)),
     day: manilaDayKey(m.created_at as string),
   }));
-});
+}, ['pos-sale-movements'], {tags: [POS_TAGS.orders], revalidate: POS_CACHE_REVALIDATE});
 
 export interface StockForecast {
   rows: ForecastRow[];

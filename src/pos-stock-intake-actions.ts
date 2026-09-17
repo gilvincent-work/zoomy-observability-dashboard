@@ -1,6 +1,7 @@
 'use server';
 
-import {revalidatePath} from 'next/cache';
+import {revalidatePath, revalidateTag} from 'next/cache';
+import {POS_TAGS} from './pos-cache';
 import {auth} from '@/auth';
 import {posClient, usingPosMock} from './pos-data';
 import type {ActionResult} from './pos-actions';
@@ -22,6 +23,7 @@ async function actor(): Promise<string> {
 function revalidateStockSurfaces() {
   revalidatePath('/inventory');
   revalidatePath('/offline-sales');
+  revalidateTag(POS_TAGS.catalog);
 }
 
 export interface StockLine {

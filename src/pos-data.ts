@@ -1,9 +1,10 @@
 import 'server-only';
 import {cache} from 'react';
-import {unstable_noStore as noStore} from 'next/cache';
+import {unstable_cache} from 'next/cache';
 import {createClient, type SupabaseClient} from '@supabase/supabase-js';
 import type {PosProductRow, PosBundleRow} from './pos-types';
 import {MOCK_POS_PRODUCTS, MOCK_POS_BUNDLES} from './pos-mock';
+import {POS_TAGS, POS_CACHE_REVALIDATE} from './pos-cache';
 
 // SERVER-ONLY. pos_* lives in the SAME Supabase project as the digest archive
 // (see COOP_INTEGRATION_PLAN.md, "shared project"), so we reuse the archive
@@ -31,10 +32,12 @@ export function posClient(): SupabaseClient {
  * read separately and merged by product_id in JS. React-cached so a page and its
  * layout don't double-fetch.
  */
-export const getPosProducts = cache(async (): Promise<PosProductRow[]> => {
-  noStore(); // catalog edits must show immediately, never a stale Data Cache read
-  if (usingPosMock()) return MOCK_POS_PRODUCTS;
+export const getPosProducts = cache((): Promise<PosProductRow[]> =>
+  usingPosMock() ? Promise.resolve(MOCK_POS_PRODUCTS) : posProductsCached(),
+);
 
+// Cached across navigations/prefetches; catalog writes revalidate POS_TAGS.catalog.
+const posProductsCached = unstable_cache(async (): Promise<PosProductRow[]> => {
   const supabase = posClient();
 
   const [productsRes, inventoryRes] = await Promise.all([
@@ -75,16 +78,17 @@ export const getPosProducts = cache(async (): Promise<PosProductRow[]> => {
       next_expiry: inv?.next_expiry ?? null,
     };
   });
-});
+}, ['pos-products'], {tags: [POS_TAGS.catalog], revalidate: POS_CACHE_REVALIDATE});
 
 /**
  * Read all bundles synced from the POS (pos_bundles) with their fixed-item
  * contents, product names resolved. Ordered by name. Mocks when env is unset.
  */
-export const getPosBundles = cache(async (): Promise<PosBundleRow[]> => {
-  noStore();
-  if (usingPosMock()) return MOCK_POS_BUNDLES;
+export const getPosBundles = cache((): Promise<PosBundleRow[]> =>
+  usingPosMock() ? Promise.resolve(MOCK_POS_BUNDLES) : posBundlesCached(),
+);
 
+const posBundlesCached = unstable_cache(async (): Promise<PosBundleRow[]> => {
   const supabase = posClient();
   const [bundlesRes, itemsRes, productsRes] = await Promise.all([
     supabase.from('pos_bundles').select('bundle_id,name,price,active,bundle_type,pick_count,line_categories,emoji').order('name', {ascending: true}),
@@ -118,7 +122,7 @@ export const getPosBundles = cache(async (): Promise<PosBundleRow[]> => {
     emoji: (b.emoji as string | null) ?? null,
     items: itemsByBundle.get(b.bundle_id as string) ?? [],
   }));
-});
+}, ['pos-bundles'], {tags: [POS_TAGS.catalog], revalidate: POS_CACHE_REVALIDATE});
 
 function pickOne<T>(embedded: T | T[] | null | undefined): T | null {
   if (Array.isArray(embedded)) return embedded[0] ?? null;
