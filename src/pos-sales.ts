@@ -1,7 +1,8 @@
 import 'server-only';
 import {cache} from 'react';
-import {unstable_noStore as noStore} from 'next/cache';
+import {unstable_noStore as noStore, unstable_cache} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
+import {POS_TAGS, POS_CACHE_REVALIDATE} from './pos-cache';
 import type {PetType, PosEvent, PosOrder, PosOrderLine, PosOrdersFilter, PosSyncEntry, PriceBounds} from './pos-sales-types';
 import {
   boundsFromMax,
@@ -55,10 +56,13 @@ function orderFilterOps(filter: PosOrdersFilter): OrderFilterOp[] {
  * All POS orders (newest first) with their line items, product names resolved
  * from pos_products. React-cached so a page and its layout don't double-fetch.
  */
-export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
-  noStore();
-  if (usingPosMock()) return MOCK_POS_ORDERS;
+export const getPosOrders = cache((): Promise<PosOrder[]> =>
+  usingPosMock() ? Promise.resolve(MOCK_POS_ORDERS) : posOrdersCached(),
+);
 
+// Cached across navigations/prefetches; order writes revalidate POS_TAGS.orders,
+// POS-originated sales heal within the window.
+const posOrdersCached = unstable_cache(async (): Promise<PosOrder[]> => {
   const supabase = posClient();
   const [ordersRes, itemsRes, productsRes, bundlesRes] = await Promise.all([
     supabase
@@ -117,7 +121,7 @@ export const getPosOrders = cache(async (): Promise<PosOrder[]> => {
     pet_type: normalizePetType(o.pet_type),
     items: itemsByOrder.get(o.id as string) ?? [],
   }));
-});
+}, ['pos-orders'], {tags: [POS_TAGS.orders], revalidate: POS_CACHE_REVALIDATE});
 
 /**
  * One page of orders (newest first) with server-side pagination. Reads a total
@@ -130,14 +134,21 @@ export const getPosOrdersPage = cache(async (
   filter: PosOrdersFilter = DEFAULT_ORDERS_FILTER,
   pageSize?: number,
 ): Promise<{orders: PosOrder[]; pageInfo: PageInfo}> => {
-  noStore();
-
   if (usingPosMock()) {
     const filtered = filterOrders(MOCK_POS_ORDERS, filter);
     const info = paginate(filtered.length, page, pageSize);
     return {orders: filtered.slice(info.from, info.to + 1), pageInfo: info};
   }
+  return posOrdersPageCached(page, filter, pageSize);
+});
 
+// unstable_cache keys on the page/filter/pageSize args, so each filter combo caches
+// independently; order writes revalidate POS_TAGS.orders.
+const posOrdersPageCached = unstable_cache(async (
+  page: number,
+  filter: PosOrdersFilter,
+  pageSize?: number,
+): Promise<{orders: PosOrder[]; pageInfo: PageInfo}> => {
   const supabase = posClient();
   const ops = orderFilterOps(filter);
 
@@ -221,7 +232,7 @@ export const getPosOrdersPage = cache(async (
   }));
 
   return {orders, pageInfo: info};
-});
+}, ['pos-orders-page'], {tags: [POS_TAGS.orders], revalidate: POS_CACHE_REVALIDATE});
 
 /**
  * Inclusive price bounds for the transactions filter slider, from the single
@@ -248,10 +259,11 @@ export const getPosOrdersPriceBounds = cache(async (): Promise<PriceBounds> => {
  * All POS events, newest first (by start date). Anon has SELECT on pos_events;
  * here we read with the service role like the other pos_* reads. React-cached.
  */
-export const getPosEvents = cache(async (): Promise<PosEvent[]> => {
-  noStore();
-  if (usingPosMock()) return MOCK_POS_EVENTS;
+export const getPosEvents = cache((): Promise<PosEvent[]> =>
+  usingPosMock() ? Promise.resolve(MOCK_POS_EVENTS) : posEventsCached(),
+);
 
+const posEventsCached = unstable_cache(async (): Promise<PosEvent[]> => {
   const supabase = posClient();
   const {data, error} = await supabase
     .from('pos_events')
@@ -275,7 +287,7 @@ export const getPosEvents = cache(async (): Promise<PosEvent[]> => {
     created_at: (e.created_at as string | null) ?? null,
     updated_at: (e.updated_at as string | null) ?? null,
   }));
-});
+}, ['pos-events'], {tags: [POS_TAGS.events], revalidate: POS_CACHE_REVALIDATE});
 
 /** Recent sync-log entries (newest first), for the "recently synced" strip. */
 export const getPosSyncLog = cache(async (limit = 8): Promise<PosSyncEntry[]> => {

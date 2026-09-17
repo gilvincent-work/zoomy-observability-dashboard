@@ -1,6 +1,7 @@
 'use server';
 
-import {revalidatePath} from 'next/cache';
+import {revalidatePath, revalidateTag} from 'next/cache';
+import {POS_TAGS} from './pos-cache';
 import {posClient, usingPosMock} from './pos-data';
 import type {ActionResult} from './pos-actions';
 
@@ -85,6 +86,8 @@ export async function upsertEventAction(input: EventInput): Promise<ActionResult
   revalidatePath('/offline-sales/events');
   revalidatePath('/offline-sales');
   revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.events);
+  revalidateTag(POS_TAGS.orders); // attribute_untagged_orders may re-tag orders' event_id
   return {ok: true};
 }
 
@@ -101,5 +104,6 @@ export async function closeEventAction(eventId: string, closingCash: number | nu
 
   revalidatePath('/offline-sales/events');
   revalidatePath('/offline-sales');
+  revalidateTag(POS_TAGS.events);
   return {ok: true};
 }

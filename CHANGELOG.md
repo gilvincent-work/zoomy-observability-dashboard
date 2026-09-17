@@ -57,6 +57,32 @@ direct `pos_bundles` update, so **no schema change**.
 - Copy updated to reflect that bundles can now be created in Coop too. tsc clean,
   183 tests green, build compiles, design detector clean.
 
+## 2026-09-17 — Cache the hot pos_* reads (faster navigation) — `perf(pos)`
+
+Navigations felt slow because every page is dynamic and every data reader called
+`noStore()`, so each navigation **and every Next link prefetch** re-ran the full
+Supabase query set (the `getPosOrders` whale fetches all orders + items + products
++ bundles). The trace was dominated by RSC round-trips waiting on those queries
+(and inflated further by a Fast 4G devtools throttle).
+
+- **Short-lived Data Cache with tag invalidation.** The heavy readers
+  (`getPosProducts`, `getPosBundles`, `getPosOrders`, `getPosOrdersPage`,
+  `getPosEvents`, `getSaleMovements`) are wrapped in `unstable_cache` with a **30 s**
+  revalidate and coarse tags (`pos-orders` / `pos-catalog` / `pos-events`), replacing
+  `noStore()`. Repeat navigations and prefetches now serve cached data instead of
+  re-querying.
+- **Writes stay instant.** Every mutation action (`revalidateTag`) busts the
+  relevant tag, so a Coop edit shows immediately; POS-originated writes (new sales,
+  POS stock/event edits) heal within the 30 s window. New shared config in
+  `src/pos-cache.ts`.
+- **Not changed on purpose:** `getPosOrders` is *not* bounded to a recent window,
+  because YoY / vs-last-year / "all time" need full history. Pages stay
+  `force-dynamic` (the data cache is the win); making routes themselves cacheable is
+  a possible later step.
+- **Infra note (separate):** if the Vercel function region differs from the Supabase
+  region, each DB round-trip pays cross-region latency, worth matching them.
+- tsc clean, 183 tests, build compiles.
+
 ## 2026-09-17 — Fix row ⋯ menu clipping on bottom rows — `fix(inventory)`
 
 The per-row actions menu was absolutely positioned inside the table's

@@ -1,6 +1,7 @@
 'use server';
 
-import {revalidatePath} from 'next/cache';
+import {revalidatePath, revalidateTag} from 'next/cache';
+import {POS_TAGS} from './pos-cache';
 import {posClient, usingPosMock} from './pos-data';
 import type {ActionResult} from './pos-actions';
 import type {EditEntry} from './pos-sales-types';
@@ -24,6 +25,8 @@ export async function voidOrderAction(clientUuid: string): Promise<ActionResult>
   // The overview KPIs exclude voided sales, so refresh both surfaces.
   revalidatePath('/offline-sales/orders');
   revalidatePath('/offline-sales');
+  revalidateTag(POS_TAGS.orders);
+  revalidateTag(POS_TAGS.catalog); // a void/edit can restock, changing on-hand
   return {ok: true};
 }
 
@@ -48,6 +51,8 @@ export async function unvoidOrderAction(clientUuid: string): Promise<ActionResul
   // Restores the sale to the KPIs and revenue-by-method, so refresh both surfaces.
   revalidatePath('/offline-sales/orders');
   revalidatePath('/offline-sales');
+  revalidateTag(POS_TAGS.orders);
+  revalidateTag(POS_TAGS.catalog); // a void/edit can restock, changing on-hand
   return {ok: true};
 }
 
@@ -98,5 +103,7 @@ export async function editOrderAction(
 
   revalidatePath('/offline-sales/orders');
   revalidatePath('/offline-sales');
+  revalidateTag(POS_TAGS.orders);
+  revalidateTag(POS_TAGS.catalog); // a void/edit can restock, changing on-hand
   return {ok: true};
 }
