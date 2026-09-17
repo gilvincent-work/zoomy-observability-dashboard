@@ -189,6 +189,33 @@ function DayPacingChart({pacing}: {pacing: DayPacingSeries}) {
     days.map((d, i) => [d, {label: dayShort(d), color: dayLineStyle(i, n).stroke}]),
   );
 
+  // Lines are drawn from each day's own (sparse) points, but the tooltip must
+  // report EVERY day's running total at the hovered time, not just the day that
+  // happens to own that x-point. Step lookup: each day's cumulative as of the
+  // last order at or before a given time (null before the day's first sale).
+  const steps = useMemo(() => {
+    const m = new Map<string, {tod: number; val: number}[]>();
+    for (const d of days) m.set(d, []);
+    for (const row of rows) {
+      for (const d of days) {
+        const v = row[d];
+        if (v != null) m.get(d)!.push({tod: row.tod, val: v});
+      }
+    }
+    return m;
+  }, [days, rows]);
+
+  const valueAt = (day: string, tod: number): number | null => {
+    const pts = steps.get(day);
+    if (!pts?.length) return null;
+    let val: number | null = null;
+    for (const p of pts) {
+      if (p.tod <= tod) val = p.val;
+      else break;
+    }
+    return val;
+  };
+
   return (
     <>
       <ChartContainer config={config} className="h-[210px] w-full">
@@ -217,24 +244,28 @@ function DayPacingChart({pacing}: {pacing: DayPacingSeries}) {
           />
           <ChartTooltip
             cursor={{stroke: 'var(--muted-foreground)', strokeOpacity: 0.3}}
-            content={({active, payload, label}) =>
-              active && payload?.length ? (
+            content={({active, label}) => {
+              if (!active || label == null) return null;
+              const tod = Number(label);
+              const entries = days
+                .map((d, i) => ({day: d, style: dayLineStyle(i, n), latest: i === n - 1, val: valueAt(d, tod)}))
+                .filter((e) => e.val != null);
+              if (!entries.length) return null;
+              return (
                 <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md">
-                  <div className="mb-1 text-muted-foreground">{todLabel(Number(label))}</div>
+                  <div className="mb-1 text-muted-foreground">{todLabel(tod)}</div>
                   <div className="flex flex-col gap-1">
-                    {payload
-                      .filter((p) => p.value != null)
-                      .map((p) => (
-                        <div key={String(p.dataKey)} className="flex items-center gap-2 tabular-nums">
-                          <span className="size-2 rounded-[3px]" style={{backgroundColor: p.color}} />
-                          <span className="text-muted-foreground">{dayShort(String(p.dataKey))}</span>
-                          <span className="ml-auto font-medium">{formatPeso(Number(p.value))}</span>
-                        </div>
-                      ))}
+                    {entries.map((e) => (
+                      <div key={e.day} className="flex items-center gap-2 tabular-nums">
+                        <span className="size-2 rounded-[3px]" style={{backgroundColor: e.style.stroke, opacity: e.style.opacity}} />
+                        <span className={cn(e.latest ? 'text-foreground' : 'text-muted-foreground')}>{dayShort(e.day)}</span>
+                        <span className="ml-auto font-medium">{formatPeso(Number(e.val))}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ) : null
-            }
+              );
+            }}
           />
           {days.map((d, i) => {
             const s = dayLineStyle(i, n);
