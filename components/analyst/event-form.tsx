@@ -1,0 +1,217 @@
+'use client';
+
+import {useMemo, useState, useTransition} from 'react';
+import {useRouter} from 'next/navigation';
+import {Check, TriangleAlert, X} from 'lucide-react';
+import type {PosEvent} from '@/src/pos-sales-types';
+import {overlappingEvent} from '@/src/pos-sales-compute';
+import {upsertEventAction, type EventInput} from '@/src/pos-events-actions';
+import {Card, CardContent} from '@/components/ui/card';
+
+/** "Sep 17" or "Sep 17 to Sep 18" for a clash message; blank bounds coalesce. */
+function formatEventDates(startsOn: string | null, endsOn: string | null): string {
+  const fmt = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+  const from = startsOn ?? endsOn;
+  const to = endsOn ?? startsOn;
+  if (!from) return '';
+  return from === to ? fmt(from) : `${fmt(from)} to ${fmt(to as string)}`;
+}
+
+/** Parse an optional peso field: blank -> null, invalid/negative -> error. */
+function parseOptionalAmount(v: string): {value: number | null} | {error: string} {
+  const t = v.trim();
+  if (t === '') return {value: null};
+  const n = Number(t.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(n) || n < 0) return {error: 'Enter a valid amount.'};
+  return {value: n};
+}
+
+const inputCls =
+  'w-full rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring';
+// Date fields: make the whole field clickable (cursor) and force the native
+// picker's color-scheme to follow dark mode, so the calendar icon is visible
+// instead of black-on-black. (Scoped here rather than app-wide.)
+const dateInputCls = `${inputCls} cursor-pointer dark:[color-scheme:dark]`;
+const labelCls = 'mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+
+/** Open the browser's native date picker on click, so tapping anywhere in the
+ *  field (not just the small icon) shows the calendar. Guarded: showPicker needs
+ *  a user gesture and isn't in every engine. */
+function openNativePicker(el: HTMLInputElement) {
+  const input = el as HTMLInputElement & {showPicker?: () => void};
+  try {
+    input.showPicker?.();
+  } catch {
+    /* unsupported or blocked outside a user gesture; typing still works */
+  }
+}
+
+/**
+ * Coop event scheduler. Create a new bazaar or edit an existing one, writing
+ * through upsertEventAction (which enforces the no-overlap rule). Inline card
+ * form, matching the daily-target editor's pattern (useTransition + router
+ * refresh). `initial` present = edit mode (adds status + closing-cash fields).
+ */
+export function EventForm({initial, events = [], onDone}: {initial?: PosEvent; events?: PosEvent[]; onDone: () => void}) {
+  const editing = Boolean(initial);
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const [name, setName] = useState(initial?.name ?? '');
+  const [venue, setVenue] = useState(initial?.venue ?? '');
+  const [city, setCity] = useState(initial?.city ?? '');
+  const [organizer, setOrganizer] = useState(initial?.organizer ?? '');
+  const [startsOn, setStartsOn] = useState(initial?.starts_on ?? '');
+  const [endsOn, setEndsOn] = useState(initial?.ends_on ?? '');
+  const [openingCash, setOpeningCash] = useState(initial?.opening_cash != null ? String(initial.opening_cash) : '');
+  const [cashNote, setCashNote] = useState(initial?.cash_note ?? '');
+  const [closed, setClosed] = useState(initial?.status === 'closed');
+  const [closingCash, setClosingCash] = useState(initial?.closing_cash != null ? String(initial.closing_cash) : '');
+
+  // Live overlap check: warn the moment the dates clash with another event, before
+  // Save hits the DB guard. Same rule the server enforces (overlappingEvent).
+  const clash = useMemo(
+    () => overlappingEvent(events, startsOn || null, endsOn || null, initial?.event_id),
+    [events, startsOn, endsOn, initial?.event_id],
+  );
+  const clashMessage = clash
+    ? `Those dates overlap "${clash.name}"${formatEventDates(clash.starts_on, clash.ends_on) ? ` (${formatEventDates(clash.starts_on, clash.ends_on)})` : ''}. Pick a range that does not clash.`
+    : null;
+
+  function submit() {
+    setError(null);
+    if (name.trim() === '') {
+      setError('Give the event a name.');
+      return;
+    }
+    if (startsOn && endsOn && endsOn < startsOn) {
+      setError('The end date is before the start date.');
+      return;
+    }
+    if (clashMessage) {
+      setError(clashMessage);
+      return;
+    }
+    const opening = parseOptionalAmount(openingCash);
+    if ('error' in opening) return setError(opening.error);
+    const closing = parseOptionalAmount(closingCash);
+    if ('error' in closing) return setError(closing.error);
+
+    const input: EventInput = {
+      event_id: initial?.event_id,
+      name: name.trim(),
+      venue,
+      city,
+      organizer,
+      starts_on: startsOn || null,
+      ends_on: endsOn || null,
+      opening_cash: opening.value,
+      cash_note: cashNote,
+    };
+    if (editing) {
+      input.status = closed ? 'closed' : 'active';
+      input.closing_cash = closing.value;
+    }
+
+    startTransition(async () => {
+      const res = await upsertEventAction(input);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      router.refresh();
+      onDone();
+    });
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <h3 className="mb-3 text-sm font-semibold tracking-tight">{editing ? 'Edit event' : 'New event'}</h3>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className={labelCls} htmlFor="ev-name">Event name</label>
+            <input id="ev-name" className={inputCls} value={name} autoFocus
+              onChange={(e) => setName(e.target.value)} placeholder="Pet Bazaar · Weekend 3" />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="ev-venue">Venue / mall</label>
+            <input id="ev-venue" className={inputCls} value={venue}
+              onChange={(e) => setVenue(e.target.value)} placeholder="SM Megamall" />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="ev-city">City</label>
+            <input id="ev-city" className={inputCls} value={city}
+              onChange={(e) => setCity(e.target.value)} placeholder="Mandaluyong" />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="ev-org">Organizer <span className="font-normal normal-case text-muted-foreground">optional</span></label>
+            <input id="ev-org" className={inputCls} value={organizer}
+              onChange={(e) => setOrganizer(e.target.value)} placeholder="Pet Express" />
+          </div>
+          <div />
+          <div>
+            <label className={labelCls} htmlFor="ev-start">Start date</label>
+            <input id="ev-start" type="date" className={dateInputCls} value={startsOn}
+              onClick={(e) => openNativePicker(e.currentTarget)}
+              onChange={(e) => setStartsOn(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="ev-end">End date</label>
+            <input id="ev-end" type="date" className={dateInputCls} value={endsOn}
+              onClick={(e) => openNativePicker(e.currentTarget)}
+              onChange={(e) => setEndsOn(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="ev-open">Opening cash float</label>
+            <input id="ev-open" type="number" inputMode="decimal" min={0} className={`${inputCls} tabular-nums`}
+              value={openingCash} onChange={(e) => setOpeningCash(e.target.value)} placeholder="2000" />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="ev-note">Cash note <span className="font-normal normal-case text-muted-foreground">optional</span></label>
+            <input id="ev-note" className={inputCls} value={cashNote}
+              onChange={(e) => setCashNote(e.target.value)} placeholder="Mostly 20s and 50s" />
+          </div>
+
+          {editing && (
+            <>
+              <div>
+                <label className={labelCls} htmlFor="ev-status">Status</label>
+                <select id="ev-status" className={inputCls} value={closed ? 'closed' : 'active'}
+                  onChange={(e) => setClosed(e.target.value === 'closed')}>
+                  <option value="active">Active</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelCls} htmlFor="ev-close">Counted at close <span className="font-normal normal-case text-muted-foreground">optional</span></label>
+                <input id="ev-close" type="number" inputMode="decimal" min={0} className={`${inputCls} tabular-nums`}
+                  value={closingCash} onChange={(e) => setClosingCash(e.target.value)} placeholder="20300" />
+              </div>
+            </>
+          )}
+        </div>
+
+        {clashMessage && !error && (
+          <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+            <TriangleAlert className="mt-px size-3.5 shrink-0" /> {clashMessage}
+          </p>
+        )}
+        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+
+        <div className="mt-4 flex items-center gap-2">
+          <button type="button" onClick={submit} disabled={pending || Boolean(clash)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-transform duration-150 ease-out active:scale-95 disabled:opacity-50">
+            <Check className="size-3.5" /> {editing ? 'Save changes' : 'Create event'}
+          </button>
+          <button type="button" onClick={onDone} disabled={pending}
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-transform duration-150 ease-out hover:text-foreground active:scale-95">
+            <X className="size-3.5" /> Cancel
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

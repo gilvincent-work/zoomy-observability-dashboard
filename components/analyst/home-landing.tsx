@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import {Activity, ArrowRight, Check, Globe, Megaphone} from 'lucide-react';
 import type {DigestArchiveRow, DigestRec} from '../../src/types';
+import type {DailyProgress} from '../../src/pos-target-types';
 import {fmtRange} from '../../src/week';
 import {Card, CardContent} from '@/components/ui/card';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {ActionsStat} from './playbook';
 import {InfoTip} from './info-tip';
+import {DailyTargetBar} from './daily-target-bar';
 
 // The Coop "daily brief" home — a calm landing that mirrors the video's
 // "What should we do today?" screen, tailored to Zoomy's real channels. Each
@@ -66,7 +68,7 @@ function Stat({label, value, hint}: {label: string; value: string; hint?: string
   );
 }
 
-export function HomeLanding({row}: {row: DigestArchiveRow}) {
+export function HomeLanding({row, progress}: {row: DigestArchiveRow; progress?: DailyProgress | null}) {
   const range = fmtRange(row.window_from, row.window_to, row.digest.window.label);
   const present = [row.digest.shopee, row.digest.lazada, row.digest.sales || row.digest.customers].filter(Boolean).length;
   const week = row.window_from;
@@ -78,6 +80,12 @@ export function HomeLanding({row}: {row: DigestArchiveRow}) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
       <h1 className="mb-8 text-[30px] font-semibold tracking-tight text-foreground">What should we do today?</h1>
+
+      {progress && (
+        <div className="mb-6">
+          <DailyTargetBar progress={progress} variant="compact" />
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-6 md:p-7">

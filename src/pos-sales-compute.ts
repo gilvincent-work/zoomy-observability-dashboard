@@ -1,6 +1,6 @@
 import type {PosProductRow} from './pos-types';
 import type {ChannelFacts} from './health-types';
-import type {DailySales, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopProduct} from './pos-sales-types';
+import type {BundleSalesSummary, DailySales, DayMethodRevenue, EditEntry, EventRollup, FeaturedEvent, PetMix, PetMixSegment, PosEvent, PosOrder, PosOrdersFilter, PriceBounds, SalesKpis, SalesRange, TopBundle, TopProduct} from './pos-sales-types';
 
 // Pure aggregation helpers for the Offline (POS) reporting surfaces. No
 // server/client concerns so they're unit-testable and shared across pages.
@@ -16,13 +16,31 @@ export function isSalesRange(v: string | undefined): v is SalesRange {
   return v === 'today' || v === '7d' || v === '30d' || v === 'all';
 }
 
-/** Inclusive lower bound (ISO) for a range, or null for 'all'. */
+// Asia/Manila is UTC+8 year-round (no DST). Sales are reported on the Manila
+// calendar day so "Today" and the daily chart match how an owner thinks about a
+// bazaar day (and match the Daily target bar). A Manila day begins at 16:00 UTC
+// the previous day.
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** The UTC instant at which the current Asia/Manila calendar day began. */
+export function manilaDayStart(now: Date = new Date()): Date {
+  const shifted = new Date(now.getTime() + MANILA_OFFSET_MS);
+  shifted.setUTCHours(0, 0, 0, 0);
+  return new Date(shifted.getTime() - MANILA_OFFSET_MS);
+}
+
+/** The Manila calendar day (YYYY-MM-DD) an instant falls on. */
+export function manilaDayKey(iso: string): string {
+  return new Date(new Date(iso).getTime() + MANILA_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Inclusive lower bound (ISO) for a range, or null for 'all'. 'today' is the
+ *  Manila calendar day; 7d/30d are rolling 7x/30x-24h windows. */
 export function rangeStart(range: SalesRange, now: Date = new Date()): string | null {
   if (range === 'all') return null;
+  if (range === 'today') return manilaDayStart(now).toISOString();
   const d = new Date(now);
-  if (range === 'today') {
-    d.setUTCHours(0, 0, 0, 0);
-  } else if (range === '7d') {
+  if (range === '7d') {
     d.setUTCDate(d.getUTCDate() - 7);
   } else if (range === '30d') {
     d.setUTCDate(d.getUTCDate() - 30);
@@ -57,12 +75,192 @@ export function computeKpis(orders: PosOrder[]): SalesKpis {
   return {revenue, orders: count, units, oversells};
 }
 
-/** Group orders by UTC calendar day, ascending. Days with no sales are omitted. */
+/**
+ * Split orders by the pet each sale was tagged for: dog / cat / both / untagged
+ * (null pet_type). Each segment carries revenue (Σ order total) and order count.
+ * Voided sales are excluded, consistent with every other revenue aggregation.
+ */
+export function petMix(orders: PosOrder[]): PetMix {
+  const seg = (): PetMixSegment => ({revenue: 0, orders: 0});
+  const mix: PetMix = {dog: seg(), cat: seg(), both: seg(), untagged: seg()};
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    const key: keyof PetMix =
+      o.pet_type === 'dog' || o.pet_type === 'cat' || o.pet_type === 'both' ? o.pet_type : 'untagged';
+    mix[key].revenue += o.total;
+    mix[key].orders += 1;
+  }
+  return mix;
+}
+
+/**
+ * Per-event sales rollups: revenue, order count, and cash-method sales for each
+ * event, plus the expected till (opening_cash + cash sales) for a reconciliation
+ * line. Orders with no event_id (normal non-event days) are ignored. Events with
+ * no sales still appear, with zeroed figures. Voided sales are excluded.
+ */
+export function eventRollups(events: PosEvent[], orders: PosOrder[]): EventRollup[] {
+  const byEvent = new Map<string, {revenue: number; orders: number; cashSales: number}>();
+  for (const o of orders) {
+    if (isVoided(o) || !o.event_id) continue;
+    const cur = byEvent.get(o.event_id) ?? {revenue: 0, orders: 0, cashSales: 0};
+    cur.revenue += o.total;
+    cur.orders += 1;
+    if (orderMethod(o) === 'cash') cur.cashSales += o.total;
+    byEvent.set(o.event_id, cur);
+  }
+  return events.map((event) => {
+    const agg = byEvent.get(event.event_id) ?? {revenue: 0, orders: 0, cashSales: 0};
+    const expectedCash = event.opening_cash != null ? event.opening_cash + agg.cashSales : null;
+    return {event, revenue: agg.revenue, orders: agg.orders, cashSales: agg.cashSales, expectedCash};
+  });
+}
+
+/**
+ * The event a sale effectively belongs to for Coop reporting. A POS-stamped
+ * event_id is authoritative and kept as-is; an untagged sale (event_id null) is
+ * attributed by its Manila calendar date — if a dated event's starts_on..ends_on
+ * covers that day it becomes that event's, else it stays a walk-in (null). Single
+ * bound = that one day; on the (write-blocked) chance two events cover a day, the
+ * later-starting one wins — the same rule as featuredEvent / the POS's
+ * pickEventForDate. Read-time only: this never writes pos_orders.event_id, so the
+ * DB row and the POS app still show the original stamp.
+ */
+export function effectiveEventId(order: {event_id: string | null; created_at: string}, events: PosEvent[]): string | null {
+  if (order.event_id) return order.event_id;
+  const day = manilaDayKey(order.created_at);
+  const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
+  const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
+  const covering = events
+    .filter((e) => (e.starts_on || e.ends_on) && from(e) <= day && day <= to(e))
+    .sort((a, b) => from(b).localeCompare(from(a)));
+  return covering[0]?.event_id ?? null;
+}
+
+/**
+ * Attribute untagged sales to their covering event (automatic, read-time,
+ * fill-the-blanks). POS-tagged orders pass through untouched; only a null-event
+ * sale that now resolves to an event gets a fresh object with that event_id. With
+ * no dated events, returns the input as-is. Coop-side reporting only.
+ */
+export function resolveOrderEvents<T extends {event_id: string | null; created_at: string}>(orders: T[], events: PosEvent[]): T[] {
+  if (!events.some((e) => e.starts_on || e.ends_on)) return orders;
+  return orders.map((o) => {
+    if (o.event_id) return o;
+    const ev = effectiveEventId(o, events);
+    return ev ? {...o, event_id: ev} : o;
+  });
+}
+
+/**
+ * The first event whose dates clash with a proposed [startsOn, endsOn] range, or
+ * null if the range is free. Mirrors the DB overlap guard exactly (single bound =
+ * that one day via coalesce; ranges intersect when each starts on/before the
+ * other ends), so the form can warn live before upsert_pos_event rejects it. Pass
+ * selfId when editing so an event never clashes with itself.
+ */
+export function overlappingEvent(events: PosEvent[], startsOn: string | null, endsOn: string | null, selfId?: string): PosEvent | null {
+  if (!startsOn && !endsOn) return null;
+  const from = (startsOn ?? endsOn) as string;
+  const to = (endsOn ?? startsOn) as string;
+  for (const e of events) {
+    if (e.event_id === selfId) continue;
+    const eFrom = e.starts_on ?? e.ends_on;
+    const eTo = e.ends_on ?? e.starts_on;
+    if (!eFrom || !eTo) continue;
+    if (eFrom <= to && from <= eTo) return e;
+  }
+  return null;
+}
+
+/**
+ * Pick the event to spotlight on the Offline Sales home: the one covering today
+ * ('current'), else the nearest future one by start date ('upcoming'), else null.
+ * Uses the same single-bound-as-one-day semantics as POS detection, and ignores
+ * events with no dates. Overlaps shouldn't happen (blocked at write), but if two
+ * cover today the later-starting one wins, deterministically.
+ */
+export function featuredEvent(events: PosEvent[], todayKey: string): FeaturedEvent | null {
+  const dated = events.filter((e) => e.starts_on || e.ends_on);
+  const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
+  const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
+
+  const current = dated
+    .filter((e) => from(e) <= todayKey && todayKey <= to(e))
+    .sort((a, b) => from(b).localeCompare(from(a)));
+  if (current[0]) return {event: current[0], state: 'current'};
+
+  const upcoming = dated
+    .filter((e) => from(e) > todayKey)
+    .sort((a, b) => from(a).localeCompare(from(b)));
+  if (upcoming[0]) return {event: upcoming[0], state: 'upcoming'};
+
+  return null;
+}
+
+/** Inclusive list of calendar-day keys (YYYY-MM-DD) from start to end. A single
+ *  bound yields that one day; a reversed or empty range yields []. Capped so a
+ *  bad range can't loop. Used for the per-event day granularity toggle. */
+export function datesInRange(start: string | null, end: string | null): string[] {
+  if (!start && !end) return [];
+  const s = (start ?? end) as string;
+  const e = (end ?? start) as string;
+  if (e < s) return [];
+  const out: string[] = [];
+  let cur = new Date(`${s}T00:00:00Z`).getTime();
+  const last = new Date(`${e}T00:00:00Z`).getTime();
+  for (let guard = 0; cur <= last && guard < 400; guard++) {
+    out.push(new Date(cur).toISOString().slice(0, 10));
+    cur += 86_400_000;
+  }
+  return out;
+}
+
+export interface PaymentSlice {
+  method: string; // 'cash' | 'gcash' | ...
+  revenue: number;
+  orders: number;
+}
+
+/** Revenue + order count per payment method for a set of orders (voided
+ *  excluded), richest first. Powers the event payment split. */
+export function paymentBreakdown(orders: PosOrder[]): PaymentSlice[] {
+  const by = new Map<string, {revenue: number; orders: number}>();
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    const key = orderMethod(o);
+    const cur = by.get(key) ?? {revenue: 0, orders: 0};
+    cur.revenue += o.total;
+    cur.orders += 1;
+    by.set(key, cur);
+  }
+  return [...by.entries()]
+    .map(([method, v]) => ({method, revenue: v.revenue, orders: v.orders}))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+export interface RevenuePoint {
+  t: string; // ISO instant of the order
+  revenue: number; // running (cumulative) revenue up to and including this order
+}
+
+/** Cumulative revenue over time for an event's orders (voided excluded), oldest
+ *  first: a smooth rising series for the trend line. Each order adds a point. */
+export function eventRevenueSeries(orders: PosOrder[]): RevenuePoint[] {
+  const sorted = orders.filter((o) => !isVoided(o)).slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
+  let running = 0;
+  return sorted.map((o) => {
+    running += o.total;
+    return {t: o.created_at, revenue: running};
+  });
+}
+
+/** Group orders by Manila calendar day, ascending. Days with no sales omitted. */
 export function salesByDay(orders: PosOrder[]): DailySales[] {
   const byDay = new Map<string, {revenue: number; orders: number}>();
   for (const o of orders) {
     if (isVoided(o)) continue;
-    const day = o.created_at.slice(0, 10); // YYYY-MM-DD (UTC)
+    const day = manilaDayKey(o.created_at); // YYYY-MM-DD (Asia/Manila)
     const cur = byDay.get(day) ?? {revenue: 0, orders: 0};
     cur.revenue += o.total;
     cur.orders += 1;
@@ -73,21 +271,242 @@ export function salesByDay(orders: PosOrder[]): DailySales[] {
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
-/** Top products by revenue (units as tiebreak), from order line items. */
-export function topProducts(orders: PosOrder[], limit = 5): TopProduct[] {
+// ── Payment-method breakdown ──────────────────────────────────────────────
+// Canonical display order for methods (matches the POS pay control + badges).
+// A null/legacy payment_method reads as cash, consistent with the label helper.
+const PAYMENT_METHOD_ORDER = ['cash', 'qrph', 'gcash', 'maya', 'card', 'bpi', 'bank_transfer'];
+
+/** An order's payment method, with null/legacy normalized to 'cash'. */
+export function orderMethod(o: PosOrder): string {
+  return o.payment_method ?? 'cash';
+}
+
+/** Distinct payment methods present in these orders (voided excluded), in
+ *  canonical order, with any unknown method appended alphabetically. */
+export function presentMethods(orders: PosOrder[]): string[] {
+  const set = new Set<string>();
+  for (const o of orders) if (!isVoided(o)) set.add(orderMethod(o));
+  return Array.from(set).sort((a, b) => {
+    const ia = PAYMENT_METHOD_ORDER.indexOf(a);
+    const ib = PAYMENT_METHOD_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+}
+
+export interface PaymentMethodOption {
+  method: string;
+  enabled: boolean; // has sales in this data (filterable); false = greyed/unclickable
+}
+
+/** Payment methods for the filter dropdown: those with sales ("enabled",
+ *  filterable) first in canonical order, then the remaining known methods
+ *  ("disabled", shown greyed so the user sees the full set). */
+export function paymentMethodOptions(orders: PosOrder[]): PaymentMethodOption[] {
+  const present = presentMethods(orders);
+  const presentSet = new Set(present);
+  const disabled = PAYMENT_METHOD_ORDER.filter((m) => !presentSet.has(m));
+  return [
+    ...present.map((method) => ({method, enabled: true})),
+    ...disabled.map((method) => ({method, enabled: false})),
+  ];
+}
+
+/** Revenue per Manila day split by payment method, ascending by day. Days with
+ *  no (non-voided) sales are omitted. Feeds the stacked sales-over-time chart. */
+export function salesByDayAndMethod(orders: PosOrder[]): DayMethodRevenue[] {
+  const byDay = new Map<string, Record<string, number>>();
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    const day = manilaDayKey(o.created_at);
+    const method = orderMethod(o);
+    const rec = byDay.get(day) ?? {};
+    rec[method] = (rec[method] ?? 0) + o.total;
+    byDay.set(day, rec);
+  }
+  return Array.from(byDay.entries())
+    .map(([day, byMethod]) => ({day, byMethod}))
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+/** How the Top products list is ranked: by itemized revenue or by units sold. */
+export type TopProductSort = 'revenue' | 'units';
+
+/** Top products from order line items, ranked by revenue (default) or units,
+ *  each with the other as tiebreak. */
+export function topProducts(orders: PosOrder[], limit = 5, sortBy: TopProductSort = 'revenue'): TopProduct[] {
   const byProduct = new Map<string, TopProduct>();
   for (const o of orders) {
     if (isVoided(o)) continue;
     for (const it of o.items) {
       if (!it.product_id) continue; // skip bundle-only lines with no SKU
-      const cur = byProduct.get(it.product_id) ?? {product_id: it.product_id, name: it.name, revenue: 0, units: 0};
+      const cur = byProduct.get(it.product_id) ?? {product_id: it.product_id, name: it.name, revenue: 0, units: 0, bundledUnits: 0};
       cur.revenue += it.line_total;
       cur.units += it.qty;
+      // A ₱0 line is a bundle pick: it moved stock but its value sits on the
+      // order header (see the RCA in COOP_INTEGRATION_PLAN.md), so it adds units
+      // without adding revenue.
+      if (it.line_total === 0) cur.bundledUnits += it.qty;
       byProduct.set(it.product_id, cur);
     }
   }
+  const byRevenue = (a: TopProduct, b: TopProduct) => b.revenue - a.revenue || b.units - a.units;
+  const byUnits = (a: TopProduct, b: TopProduct) => b.units - a.units || b.revenue - a.revenue;
   return Array.from(byProduct.values())
-    .sort((a, b) => b.revenue - a.revenue || b.units - a.units)
+    .sort(sortBy === 'units' ? byUnits : byRevenue)
+    .slice(0, limit);
+}
+
+/**
+ * A bundle order carries a "bundle premium": money on the order total that no
+ * product line accounts for (a "Buy Any N for ₱X" deal records its picks as ₱0
+ * component lines and puts ₱X only on the order header). There's no bundle flag
+ * on pos_orders, so this premium — total exceeding the sum of product line totals
+ * — is the reliable signal. Such orders are NOT safe to edit line-by-line: the
+ * edit RPC recomputes total from the line totals, which would wipe the premium.
+ * (A plain discounted order has total <= line sum, so it's never misflagged.)
+ */
+export function isBundleOrder(order: PosOrder): boolean {
+  let productLineSum = 0;
+  for (const it of order.items) if (it.product_id) productLineSum += it.line_total;
+  return order.total - productLineSum > 0.005;
+}
+
+/** Minimal bundle facts orderToEntries needs to re-link / price a bundle group. */
+export type BundleMatch = {bundle_id: string; bundle_type: 'pick' | 'fixed'; pick_count: number | null; price: number};
+
+type BundleEntry = Extract<EditEntry, {kind: 'bundle'}>;
+type ItemEntry = Extract<EditEntry, {kind: 'item'}>;
+
+/**
+ * Reconstruct an order's stored lines into editable entries (individual items +
+ * bundle groups), so editing shows the sale's real content on first load. Groups
+ * are rebuilt from bundle_group: a header row (product_id null) gives the price
+ * and, when present, the bundle_id; the ₱0 product rows in the group are its
+ * picks. Each group stays its own bundle (two bundles show as two), never merged.
+ *
+ * Older or unresolvable sales may carry ₱0 picks without a header (the price sat
+ * only on the order total). Such groups reconstruct as custom bundles; a group's
+ * bundle is auto-identified by matching its pick quantity to a bundle's pick_count
+ * (unique), and any leftover premium is defaulted onto the ₱0-priced bundles (a
+ * matched bundle takes its list price first, the remainder lands on the first).
+ * A truly ungrouped legacy bundle (loose ₱0 items + premium) folds into one
+ * custom bundle. Everything stays editable; saving self-heals into grouped shape.
+ */
+export function orderToEntries(order: PosOrder, defs: BundleMatch[] = []): EditEntry[] {
+  const out: EditEntry[] = [];
+  const groupIndex = new Map<string, number>();
+  for (const l of order.items) {
+    const grp = l.bundle_group ?? null;
+    if (grp != null) {
+      let idx = groupIndex.get(grp);
+      if (idx === undefined) {
+        idx = out.length;
+        groupIndex.set(grp, idx);
+        out.push({kind: 'bundle', bundle_id: '', price: 0, picks: []});
+      }
+      const e = out[idx] as BundleEntry;
+      if (l.product_id == null) {
+        // Header line (real bundle header or a custom premium line): carries price.
+        e.price = l.line_total;
+        if (l.bundle_id) e.bundle_id = l.bundle_id;
+      } else {
+        e.picks.push({product_id: l.product_id, qty: l.qty});
+      }
+    } else if (l.bundle_id && l.product_id == null) {
+      out.push({kind: 'bundle', bundle_id: l.bundle_id, price: l.line_total, picks: []});
+    } else if (l.product_id) {
+      out.push({kind: 'item', product_id: l.product_id, qty: l.qty, unit_price: l.unit_price});
+    }
+  }
+
+  const defById = new Map(defs.map((d) => [d.bundle_id, d]));
+  // Auto-identify unlinked bundle groups by matching pick quantity to a pick_count.
+  for (const e of out) {
+    if (e.kind === 'bundle' && !e.bundle_id) {
+      const pickQty = e.picks.reduce((s, p) => s + p.qty, 0);
+      const matches = defs.filter((d) => d.bundle_type === 'pick' && d.pick_count === pickQty);
+      if (matches.length === 1) e.bundle_id = matches[0].bundle_id;
+    }
+  }
+
+  // Default prices for any bundle group that lacks one (no header recorded).
+  const sumAmounts = () => out.reduce((s, e) => s + (e.kind === 'item' ? e.qty * e.unit_price : e.price), 0);
+  let leftover = order.total - sumAmounts();
+  if (leftover > 0.005) {
+    for (const e of out) {
+      if (e.kind === 'bundle' && e.price === 0) {
+        const def = defById.get(e.bundle_id);
+        if (def && def.price > 0 && def.price <= leftover) {
+          e.price = def.price;
+          leftover -= def.price;
+        }
+      }
+    }
+    if (leftover > 0.005) {
+      const t = out.find((e): e is BundleEntry => e.kind === 'bundle' && e.price === 0);
+      if (t) {
+        t.price += leftover;
+        leftover = 0;
+      }
+    }
+  }
+
+  // Truly ungrouped legacy bundle: loose ₱0 items with a premium on the total.
+  if (leftover > 0.005) {
+    const zeros = out.filter((e): e is ItemEntry => e.kind === 'item' && e.unit_price === 0);
+    if (zeros.length > 0) {
+      const rest = out.filter((e) => !(e.kind === 'item' && e.unit_price === 0));
+      const pickQty = zeros.reduce((s, e) => s + e.qty, 0);
+      const matches = defs.filter((d) => d.bundle_type === 'pick' && d.pick_count === pickQty);
+      rest.push({kind: 'bundle', bundle_id: matches.length === 1 ? matches[0].bundle_id : '', price: leftover, picks: zeros.map((e) => ({product_id: e.product_id, qty: e.qty}))});
+      return rest;
+    }
+  }
+  return out;
+}
+
+/**
+ * Reconcile itemized (per-product) revenue with the Revenue KPI. Bundle revenue
+ * is everything NOT attributed to a product line, whether it sits on a bundle_id
+ * line (post write-path fix) or only on the order header (pre-fix / offline
+ * retries). So itemizedRevenue sums product lines only, and bundleRevenue is the
+ * remainder; itemizedRevenue + bundleRevenue == totalRevenue by construction.
+ */
+export function bundleSalesSummary(orders: PosOrder[]): BundleSalesSummary {
+  let itemizedRevenue = 0;
+  let totalRevenue = 0;
+  let bundleOrders = 0;
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    totalRevenue += o.total;
+    let productLineSum = 0;
+    for (const it of o.items) if (it.product_id) productLineSum += it.line_total;
+    itemizedRevenue += productLineSum;
+    if (o.total - productLineSum > 0) bundleOrders += 1;
+  }
+  return {itemizedRevenue, bundleRevenue: totalRevenue - itemizedRevenue, bundleOrders, totalRevenue};
+}
+
+/**
+ * Top bundles by revenue, from bundle_id lines. Only sales recorded with a real
+ * bundle line appear here (online sales after the write-path fix); pre-fix and
+ * offline-retried bundle sales carry no bundle_id, so they don't show by name
+ * but are still counted in bundleSalesSummary's bundleRevenue. Voided excluded.
+ */
+export function topBundles(orders: PosOrder[], limit = 5): TopBundle[] {
+  const byBundle = new Map<string, TopBundle>();
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    for (const it of o.items) {
+      if (!it.bundle_id) continue;
+      const cur = byBundle.get(it.bundle_id) ?? {bundle_id: it.bundle_id, name: it.name, revenue: 0, orders: 0};
+      cur.revenue += it.line_total;
+      cur.orders += 1;
+      byBundle.set(it.bundle_id, cur);
+    }
+  }
+  return Array.from(byBundle.values())
+    .sort((a, b) => b.revenue - a.revenue || b.orders - a.orders)
     .slice(0, limit);
 }
 

@@ -6,7 +6,10 @@ import {HomeLanding} from '@/components/analyst/home-landing';
 import {OfflineChannelCard} from '@/components/analyst/offline-channel-card';
 import {getPosOrders} from '@/src/pos-sales';
 import {computeKpis, filterOrdersByRange, offlineCompareMetrics} from '@/src/pos-sales-compute';
+import {getDailyTarget} from '@/src/pos-target';
+import {progress as computeProgress, todaysRevenue} from '@/src/pos-target-compute';
 import type {SalesKpis} from '@/src/pos-sales-types';
+import type {DailyProgress} from '@/src/pos-target-types';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
@@ -40,6 +43,18 @@ async function offlineCompare(): Promise<ReturnType<typeof offlineCompareMetrics
   }
 }
 
+// Today's revenue (Manila day) vs the owner-set goal, for the landing's compact
+// health bar. Same fail-soft contract: null on any error hides the bar.
+// getPosOrders is React-cached, so this shares the fetch with offlineKpis().
+async function offlineDailyProgress(): Promise<DailyProgress | null> {
+  try {
+    const target = await getDailyTarget();
+    return computeProgress(todaysRevenue(await getPosOrders()), target.amount);
+  } catch {
+    return null;
+  }
+}
+
 export default async function Page({searchParams}: {searchParams: {week?: string; channel?: string}}) {
   // Customer PII is masked inside getDigests() (server-only) rather than here, so
   // every route is fail-closed — see src/data.ts + src/pii.ts.
@@ -54,10 +69,10 @@ export default async function Page({searchParams}: {searchParams: {week?: string
   // starts filtered to it (drills into its detail).
   const ch = searchParams.channel;
   if (!ch) {
-    const kpis = await offlineKpis();
+    const [kpis, progress] = await Promise.all([offlineKpis(), offlineDailyProgress()]);
     return (
       <>
-        <HomeLanding row={row} />
+        <HomeLanding row={row} progress={progress} />
         {kpis && (
           <div className="mx-auto -mt-6 max-w-5xl px-6 pb-12 md:px-10">
             <OfflineChannelCard kpis={kpis} />

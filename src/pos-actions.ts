@@ -1,7 +1,9 @@
 'use server';
 
-import {revalidatePath} from 'next/cache';
+import {revalidatePath, revalidateTag} from 'next/cache';
+import {auth} from '@/auth';
 import {posClient, usingPosMock} from './pos-data';
+import {POS_TAGS} from './pos-cache';
 import {parseEmoji, parsePrice, parseQty, POS_CATEGORIES, POS_SUBCATEGORIES, PRODUCT_LINES} from './pos-format';
 
 // Server actions for Product Controls. Coop co-owns name / price / listing with
@@ -12,6 +14,16 @@ import {parseEmoji, parsePrice, parseQty, POS_CATEGORIES, POS_SUBCATEGORIES, PRO
 // All actions are online-only; there is no offline queue on the Coop side.
 
 const ACTOR = 'coop';
+
+/** The signed-in Coop user's email (for the audit trail), or 'coop' as a fallback. */
+async function actor(): Promise<string> {
+  try {
+    const session = await auth();
+    return session?.user?.email ?? ACTOR;
+  } catch {
+    return ACTOR;
+  }
+}
 
 export type ActionResult = {ok: true} | {ok: false; error: string};
 
@@ -105,7 +117,8 @@ export async function createProductAction(input: {
     if (lotErr) return {ok: false, error: `Product created, but stock failed: ${lotErr.message}`};
   }
 
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -118,10 +131,12 @@ export async function setStockAction(product_id: string, qty: string): Promise<A
   const {error} = await posClient().rpc('set_product_stock', {
     p_product_id: product_id,
     p_new_qty: parsed.value,
-    p_by: ACTOR,
+    p_by: await actor(),
   });
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidatePath(`/inventory/${product_id}`);
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -136,7 +151,8 @@ export async function setEmojiAction(product_id: string, emoji: string): Promise
     .update({emoji: parsed.value, updated_at: new Date().toISOString()})
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -151,7 +167,8 @@ export async function setLineAction(product_id: string, line: string): Promise<A
     .update({product_line: trimmed || null, updated_at: new Date().toISOString()})
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -173,7 +190,8 @@ export async function setCategoryAction(product_id: string, category: string, su
     .update({category: cat || null, subcategory: sub || null, updated_at: new Date().toISOString()})
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -188,7 +206,8 @@ export async function renameProductAction(product_id: string, name: string): Pro
     p_by: ACTOR,
   });
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -204,7 +223,8 @@ export async function repriceProductAction(product_id: string, price: string): P
     p_by: ACTOR,
   });
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -217,7 +237,8 @@ export async function setListingAction(product_id: string, active: boolean): Pro
     p_by: ACTOR,
   });
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -238,7 +259,8 @@ export async function setBundleEmojiAction(bundle_id: string, emoji: string): Pr
     .update({emoji: parsed.value, updated_at: new Date().toISOString()})
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -250,7 +272,8 @@ export async function setBundleActiveAction(bundle_id: string, active: boolean):
     .update({active, updated_at: new Date().toISOString()})
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -264,7 +287,8 @@ export async function renameBundleAction(bundle_id: string, name: string): Promi
     .update({name: trimmed, updated_at: new Date().toISOString()})
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -278,7 +302,8 @@ export async function repriceBundleAction(bundle_id: string, price: string): Pro
     .update({price: parsed.value, updated_at: new Date().toISOString()})
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }
 
@@ -287,6 +312,70 @@ export async function deleteBundleAction(bundle_id: string): Promise<ActionResul
   if (usingPosMock()) return mockBlocked();
   const {error} = await posClient().rpc('delete_pos_bundle', {p_bundle_id: bundle_id});
   if (error) return {ok: false, error: error.message};
-  revalidatePath('/products');
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
+  return {ok: true};
+}
+
+/**
+ * Edit a Buy-Any-N bundle's scope: the pick count and which product lines qualify.
+ * Direct column update on pos_bundles (line_categories is jsonb), same path as the
+ * other co-edits; the POS mirrors it on its next catalog pull.
+ */
+export async function setBundleScopeAction(bundle_id: string, pickCount: number, lineCategories: string[]): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  if (!(pickCount >= 1)) return {ok: false, error: 'Pick count must be at least 1.'};
+  if (lineCategories.length === 0) return {ok: false, error: 'Choose at least one eligible line.'};
+  const {error} = await posClient()
+    .from('pos_bundles')
+    .update({pick_count: pickCount, line_categories: lineCategories, updated_at: new Date().toISOString()})
+    .eq('bundle_id', bundle_id);
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
+  return {ok: true};
+}
+
+export interface NewBundleInput {
+  name: string;
+  emoji?: string;
+  price: string;
+  pickCount: number;
+  lineCategories: string[];
+}
+
+/**
+ * Create a "Buy Any N" bundle from Coop, through the shared apply_pos_bundle RPC
+ * (the same write path the POS uses). Coop mints the bundle_id; the POS picks it up
+ * on its next catalog pull, so it lands on every device. Buy-Any-N only for now:
+ * pick_count + eligible lines, no fixed item list.
+ */
+export async function createBundleAction(input: NewBundleInput): Promise<ActionResult> {
+  if (usingPosMock()) return mockBlocked();
+  const name = input.name.trim();
+  if (!name) return {ok: false, error: 'Give the bundle a name.'};
+  const parsed = parsePrice(input.price);
+  if ('error' in parsed) return {ok: false, error: parsed.error};
+  if (!(input.pickCount >= 1)) return {ok: false, error: 'Pick count must be at least 1.'};
+  if (input.lineCategories.length === 0) return {ok: false, error: 'Choose at least one eligible line.'};
+  const emoji = input.emoji ? parseEmoji(input.emoji) : {value: null as string | null};
+  if ('error' in emoji) return {ok: false, error: emoji.error};
+
+  const {error} = await posClient().rpc('apply_pos_bundle', {
+    p_bundle: {
+      bundle_id: crypto.randomUUID(),
+      name,
+      price: parsed.value,
+      active: true,
+      bundle_type: 'pick',
+      pick_count: input.pickCount,
+      line_categories: input.lineCategories,
+      emoji: emoji.value,
+    },
+    p_items: [],
+  });
+  if (error) return {ok: false, error: error.message};
+  revalidatePath('/inventory');
+  revalidateTag(POS_TAGS.catalog);
   return {ok: true};
 }

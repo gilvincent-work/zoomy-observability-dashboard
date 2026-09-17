@@ -1,9 +1,27 @@
 import {describe, it, expect} from 'vitest';
 import {
   boundsFromMax,
+  bundleSalesSummary,
   computeKpis,
+  eventRollups,
+  effectiveEventId,
+  resolveOrderEvents,
+  overlappingEvent,
+  featuredEvent,
+  paymentBreakdown,
+  eventRevenueSeries,
+  datesInRange,
+  paymentMethodOptions,
+  manilaDayKey,
+  orderMethod,
+  petMix,
+  presentMethods,
+  salesByDayAndMethod,
+  topBundles,
   filterOrders,
   filterOrdersByRange,
+  isBundleOrder,
+  orderToEntries,
   isFilterActive,
   isSalesRange,
   offlineChannelFacts,
@@ -17,7 +35,7 @@ import {
   stockAlerts,
   topProducts,
 } from '../src/pos-sales-compute';
-import type {PosOrder} from '../src/pos-sales-types';
+import type {PosEvent, PosOrder} from '../src/pos-sales-types';
 import type {PosProductRow} from '../src/pos-types';
 
 const NOW = new Date('2026-09-07T12:00:00.000Z');
@@ -34,6 +52,9 @@ function order(over: Partial<PosOrder> & {id: string; created_at: string}): PosO
     customer_handle: null,
     status: 'completed',
     remarks: null,
+    edited_at: null,
+    event_id: null,
+    pet_type: null,
     items: [{product_id: 'A', name: 'A', qty: 1, unit_price: 100, line_total: 100}],
     ...over,
   };
@@ -47,7 +68,9 @@ describe('isSalesRange / rangeStart', () => {
   });
   it('computes an inclusive start, null for all', () => {
     expect(rangeStart('all', NOW)).toBeNull();
-    expect(rangeStart('today', NOW)).toBe('2026-09-07T00:00:00.000Z');
+    // 'today' is the Manila calendar day: NOW is Sep 7 20:00 Manila, so the day
+    // began Sep 7 00:00 Manila = Sep 6 16:00 UTC.
+    expect(rangeStart('today', NOW)).toBe('2026-09-06T16:00:00.000Z');
     expect(rangeStart('7d', NOW)).toBe('2026-08-31T12:00:00.000Z');
     expect(rangeStart('30d', NOW)).toBe('2026-08-08T12:00:00.000Z');
   });
@@ -95,6 +118,117 @@ describe('computeKpis', () => {
   });
 });
 
+describe('isBundleOrder', () => {
+  it('flags an order whose total exceeds its product-line sum (bundle premium)', () => {
+    // A "Buy Any 4 for ₱570" sale: ₱0 component picks, premium on the header.
+    const o = order({
+      id: 'b1', created_at: '2026-09-07T00:00:00.000Z', total: 570,
+      items: [{product_id: 'CGC', name: 'Cat Grass Cubes', qty: 4, unit_price: 0, line_total: 0}],
+    });
+    expect(isBundleOrder(o)).toBe(true);
+  });
+  it('does not flag a plain order where total equals the line sum', () => {
+    const o = order({
+      id: 'p1', created_at: '2026-09-07T00:00:00.000Z', total: 400,
+      items: [{product_id: 'A', name: 'A', qty: 2, unit_price: 200, line_total: 400}],
+    });
+    expect(isBundleOrder(o)).toBe(false);
+  });
+  it('does not flag a discounted order (total below the line sum)', () => {
+    const o = order({
+      id: 'd1', created_at: '2026-09-07T00:00:00.000Z', total: 350, discount: 50,
+      items: [{product_id: 'A', name: 'A', qty: 2, unit_price: 200, line_total: 400}],
+    });
+    expect(isBundleOrder(o)).toBe(false);
+  });
+});
+
+describe('orderToEntries', () => {
+  const L = (over: Partial<PosOrder['items'][number]>): PosOrder['items'][number] => ({
+    product_id: null, bundle_id: null, bundle_group: null, name: 'x', qty: 1, unit_price: 0, line_total: 0, ...over,
+  });
+
+  it('rebuilds a bundle group (header + ₱0 picks) alongside an individual item', () => {
+    const o = order({
+      id: 'm1', created_at: '2026-09-07T00:00:00.000Z', total: 800,
+      items: [
+        L({product_id: 'BEEF', qty: 1, unit_price: 200, line_total: 200}),
+        L({bundle_id: 'B3', bundle_group: '1', unit_price: 600, line_total: 600}),
+        L({product_id: 'CGC', bundle_group: '1', qty: 1}),
+        L({product_id: 'SLM', bundle_group: '1', qty: 1}),
+      ],
+    });
+    expect(orderToEntries(o)).toEqual([
+      {kind: 'item', product_id: 'BEEF', qty: 1, unit_price: 200},
+      {kind: 'bundle', bundle_id: 'B3', price: 600, picks: [{product_id: 'CGC', qty: 1}, {product_id: 'SLM', qty: 1}]},
+    ]);
+  });
+
+  it('treats a legacy fixed-bundle header (no group) as a bundle with no picks', () => {
+    const o = order({
+      id: 'm2', created_at: '2026-09-07T00:00:00.000Z', total: 300,
+      items: [L({bundle_id: 'FIX', unit_price: 300, line_total: 300})],
+    });
+    expect(orderToEntries(o)).toEqual([{kind: 'bundle', bundle_id: 'FIX', price: 300, picks: []}]);
+  });
+
+  it('keeps an orphan group (picks, no header) as its own custom bundle', () => {
+    const o = order({
+      id: 'm3', created_at: '2026-09-07T00:00:00.000Z', total: 0,
+      items: [L({product_id: 'CGC', bundle_group: '9', qty: 2})],
+    });
+    expect(orderToEntries(o)).toEqual([{kind: 'bundle', bundle_id: '', price: 0, picks: [{product_id: 'CGC', qty: 2}]}]);
+  });
+
+  it('folds a legacy bundle (₱0 picks + premium on total) into a bundle, auto-linked by pick_count', () => {
+    // A "Buy Any 4 for ₱570" recorded the old way: 4 ₱0 picks, premium on total,
+    // plus a ₱170 individual item. Total 740; premium = 740 - 170 = 570.
+    const o = order({
+      id: 'm4', created_at: '2026-09-07T00:00:00.000Z', total: 740,
+      items: [
+        L({product_id: 'SLM', qty: 1}), L({product_id: 'CHK', qty: 1}),
+        L({product_id: 'BEEF', qty: 1}), L({product_id: 'STICK', qty: 1}),
+        L({product_id: 'CGC', qty: 1, unit_price: 170, line_total: 170}),
+      ],
+    });
+    const defs = [{bundle_id: 'B4', bundle_type: 'pick' as const, pick_count: 4, price: 650}, {bundle_id: 'B3', bundle_type: 'pick' as const, pick_count: 3, price: 500}];
+    expect(orderToEntries(o, defs)).toEqual([
+      {kind: 'item', product_id: 'CGC', qty: 1, unit_price: 170},
+      {kind: 'bundle', bundle_id: 'B4', price: 570, picks: [
+        {product_id: 'SLM', qty: 1}, {product_id: 'CHK', qty: 1}, {product_id: 'BEEF', qty: 1}, {product_id: 'STICK', qty: 1},
+      ]},
+    ]);
+  });
+
+  it('leaves a legacy bundle unlinked (empty bundle_id) when no pick_count matches', () => {
+    const o = order({
+      id: 'm5', created_at: '2026-09-07T00:00:00.000Z', total: 500,
+      items: [L({product_id: 'A', qty: 1}), L({product_id: 'B', qty: 1})],
+    });
+    const out = orderToEntries(o, [{bundle_id: 'B4', bundle_type: 'pick', pick_count: 4, price: 650}]);
+    expect(out).toEqual([{kind: 'bundle', bundle_id: '', price: 500, picks: [{product_id: 'A', qty: 1}, {product_id: 'B', qty: 1}]}]);
+  });
+
+  it('shows two orphan bundle groups (no headers) as two separate bundles, not one merged', () => {
+    // A sale of two bundles whose Coop ids didn\'t resolve: picks grouped but no
+    // header, premium (1120) on the total. Group 1 (4 picks) auto-links to B4 and
+    // takes its list price (650); the remainder (470) lands on the unlinked group 2.
+    const o = order({
+      id: 'm6', created_at: '2026-09-07T00:00:00.000Z', total: 1120,
+      items: [
+        L({product_id: 'A', bundle_group: '1', qty: 1}), L({product_id: 'B', bundle_group: '1', qty: 1}),
+        L({product_id: 'C', bundle_group: '1', qty: 1}), L({product_id: 'D', bundle_group: '1', qty: 1}),
+        L({product_id: 'E', bundle_group: '2', qty: 1}), L({product_id: 'F', bundle_group: '2', qty: 1}),
+      ],
+    });
+    const defs = [{bundle_id: 'B4', bundle_type: 'pick' as const, pick_count: 4, price: 650}];
+    expect(orderToEntries(o, defs)).toEqual([
+      {kind: 'bundle', bundle_id: 'B4', price: 650, picks: [{product_id: 'A', qty: 1}, {product_id: 'B', qty: 1}, {product_id: 'C', qty: 1}, {product_id: 'D', qty: 1}]},
+      {kind: 'bundle', bundle_id: '', price: 470, picks: [{product_id: 'E', qty: 1}, {product_id: 'F', qty: 1}]},
+    ]);
+  });
+});
+
 describe('void exclusion in aggregations', () => {
   it('drops voided sales from salesByDay and topProducts', () => {
     const orders = [
@@ -102,20 +236,58 @@ describe('void exclusion in aggregations', () => {
       order({id: '2', created_at: '2026-09-07T10:00:00.000Z', total: 900, status: 'voided', items: [{product_id: 'A', name: 'A', qty: 9, unit_price: 100, line_total: 900}]}),
     ];
     expect(salesByDay(orders)).toEqual([{day: '2026-09-07', revenue: 100, orders: 1}]);
-    expect(topProducts(orders)).toEqual([{product_id: 'A', name: 'A', revenue: 100, units: 1}]);
+    expect(topProducts(orders)).toEqual([{product_id: 'A', name: 'A', revenue: 100, units: 1, bundledUnits: 0}]);
+  });
+});
+
+describe('payment-method breakdown', () => {
+  it('normalizes null/legacy payment_method to cash', () => {
+    expect(orderMethod(order({id: '1', created_at: NOW.toISOString(), payment_method: null}))).toBe('cash');
+    expect(orderMethod(order({id: '2', created_at: NOW.toISOString(), payment_method: 'gcash'}))).toBe('gcash');
+  });
+
+  it('lists present methods in canonical order, excluding voided', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), payment_method: 'gcash'}),
+      order({id: '2', created_at: NOW.toISOString(), payment_method: null}), // cash
+      order({id: '3', created_at: NOW.toISOString(), payment_method: 'card'}),
+      order({id: '4', created_at: NOW.toISOString(), payment_method: 'maya', status: 'voided'}),
+    ];
+    expect(presentMethods(orders)).toEqual(['cash', 'gcash', 'card']);
+  });
+
+  it('splits revenue by Manila day and method, excluding voided', () => {
+    const orders = [
+      order({id: '1', created_at: '2026-09-07T09:00:00Z', total: 100, payment_method: 'cash'}), // Sep 7 Manila
+      order({id: '2', created_at: '2026-09-07T10:00:00Z', total: 200, payment_method: 'gcash'}), // Sep 7 Manila
+      order({id: '3', created_at: '2026-09-07T20:00:00Z', total: 50, payment_method: 'cash'}), // Sep 8 Manila (crosses midnight)
+      order({id: '4', created_at: '2026-09-07T11:00:00Z', total: 999, payment_method: 'cash', status: 'voided'}),
+    ];
+    expect(salesByDayAndMethod(orders)).toEqual([
+      {day: '2026-09-07', byMethod: {cash: 100, gcash: 200}},
+      {day: '2026-09-08', byMethod: {cash: 50}},
+    ]);
+  });
+});
+
+describe('manilaDayKey', () => {
+  it('returns the Manila calendar day for an instant', () => {
+    expect(manilaDayKey('2026-09-07T09:00:00Z')).toBe('2026-09-07'); // 17:00 Manila
+    expect(manilaDayKey('2026-09-07T20:00:00Z')).toBe('2026-09-08'); // 04:00 Manila next day
   });
 });
 
 describe('salesByDay', () => {
-  it('groups by UTC day ascending', () => {
+  it('groups by Manila calendar day ascending', () => {
     const orders = [
-      order({id: '1', created_at: '2026-09-07T09:00:00.000Z', total: 100}),
-      order({id: '2', created_at: '2026-09-07T20:00:00.000Z', total: 50}),
-      order({id: '3', created_at: '2026-09-05T09:00:00.000Z', total: 200}),
+      order({id: '1', created_at: '2026-09-07T09:00:00.000Z', total: 100}), // Sep 7 17:00 Manila
+      order({id: '2', created_at: '2026-09-07T20:00:00.000Z', total: 50}), // Sep 8 04:00 Manila (crosses midnight)
+      order({id: '3', created_at: '2026-09-05T09:00:00.000Z', total: 200}), // Sep 5 17:00 Manila
     ];
     expect(salesByDay(orders)).toEqual([
       {day: '2026-09-05', revenue: 200, orders: 1},
-      {day: '2026-09-07', revenue: 150, orders: 2},
+      {day: '2026-09-07', revenue: 100, orders: 1},
+      {day: '2026-09-08', revenue: 50, orders: 1},
     ]);
   });
 });
@@ -134,10 +306,115 @@ describe('topProducts', () => {
     ];
     const top = topProducts(orders, 5);
     expect(top).toEqual([
-      {product_id: 'B', name: 'Beta', revenue: 250, units: 5},
-      {product_id: 'A', name: 'Alpha', revenue: 300, units: 3},
+      {product_id: 'B', name: 'Beta', revenue: 250, units: 5, bundledUnits: 0},
+      {product_id: 'A', name: 'Alpha', revenue: 300, units: 3, bundledUnits: 0},
     ].sort((a, b) => b.revenue - a.revenue));
     expect(topProducts(orders, 1)).toHaveLength(1);
+  });
+
+  it('ranks by units when sortBy is "units" (revenue as tiebreak)', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), items: [
+        {product_id: 'A', name: 'Alpha', qty: 1, unit_price: 1000, line_total: 1000}, // high revenue, low units
+        {product_id: 'B', name: 'Beta', qty: 10, unit_price: 50, line_total: 500}, // low revenue, high units
+      ]}),
+    ];
+    expect(topProducts(orders, 5, 'revenue').map((t) => t.product_id)).toEqual(['A', 'B']);
+    expect(topProducts(orders, 5, 'units').map((t) => t.product_id)).toEqual(['B', 'A']);
+  });
+
+  it('counts ₱0 (bundle-pick) lines as units but not revenue', () => {
+    // The Cat Grass case from prod: 5 sold at 170 (real revenue) + 4 given as
+    // bundle picks at 0 -> 9 units, 850 revenue, 4 of them bundled.
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 5, unit_price: 170, line_total: 850},
+      ]}),
+      order({id: '2', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 4, unit_price: 0, line_total: 0},
+      ]}),
+    ];
+    expect(topProducts(orders)).toEqual([{product_id: 'CG', name: 'Cat Grass', revenue: 850, units: 9, bundledUnits: 4}]);
+  });
+});
+
+describe('bundleSalesSummary', () => {
+  it('reconciles itemized product revenue with the Revenue KPI', () => {
+    const orders = [
+      // à la carte: order total equals its line sum -> no bundle revenue
+      order({id: '1', created_at: NOW.toISOString(), total: 850, items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 5, unit_price: 170, line_total: 850},
+      ]}),
+      // a "Buy Any 4" bundle: 570 on the header, all component lines ₱0
+      order({id: '2', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 1, unit_price: 0, line_total: 0},
+        {product_id: 'BL', name: 'Beef Liver', qty: 1, unit_price: 0, line_total: 0},
+        {product_id: 'DB', name: 'Duck Breast', qty: 1, unit_price: 0, line_total: 0},
+        {product_id: 'CH', name: 'Chicken', qty: 1, unit_price: 0, line_total: 0},
+      ]}),
+    ];
+    const s = bundleSalesSummary(orders);
+    expect(s).toEqual({itemizedRevenue: 850, bundleRevenue: 570, bundleOrders: 1, totalRevenue: 1420});
+    // The invariant the reconciliation line relies on:
+    expect(s.itemizedRevenue + s.bundleRevenue).toBe(s.totalRevenue);
+  });
+
+  it('excludes voided orders and reports no bundle revenue for pure à-la-carte data', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 200, items: [
+        {product_id: 'A', name: 'A', qty: 1, unit_price: 200, line_total: 200},
+      ]}),
+      order({id: '2', created_at: NOW.toISOString(), total: 570, status: 'voided', items: [
+        {product_id: 'A', name: 'A', qty: 1, unit_price: 0, line_total: 0},
+      ]}),
+    ];
+    expect(bundleSalesSummary(orders)).toEqual({itemizedRevenue: 200, bundleRevenue: 0, bundleOrders: 0, totalRevenue: 200});
+  });
+
+  it('keeps bundle-line revenue out of itemized (post write-path fix)', () => {
+    // A bundle recorded the new way: a bundle_id line carries the price, picks ride at ₱0.
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: null, bundle_id: 'buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+        {product_id: 'A', name: 'A', qty: 1, unit_price: 0, line_total: 0},
+        {product_id: 'B', name: 'B', qty: 1, unit_price: 0, line_total: 0},
+      ]}),
+    ];
+    // itemized excludes the bundle line, so bundleRevenue lands on the bundle, not products.
+    expect(bundleSalesSummary(orders)).toEqual({itemizedRevenue: 0, bundleRevenue: 570, bundleOrders: 1, totalRevenue: 570});
+  });
+});
+
+describe('topBundles', () => {
+  it('ranks bundles by revenue from bundle_id lines, ignoring product and voided lines', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: null, bundle_id: 'buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+        {product_id: 'A', name: 'A', qty: 1, unit_price: 0, line_total: 0},
+      ]}),
+      order({id: '2', created_at: NOW.toISOString(), total: 550, items: [
+        {product_id: null, bundle_id: 'buy-any-2', name: 'Buy Any 2', qty: 1, unit_price: 550, line_total: 550},
+      ]}),
+      order({id: '3', created_at: NOW.toISOString(), total: 570, items: [
+        {product_id: null, bundle_id: 'buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+      ]}),
+      order({id: '4', created_at: NOW.toISOString(), total: 570, status: 'voided', items: [
+        {product_id: null, bundle_id: 'buy-any-4', name: 'Buy Any 4', qty: 1, unit_price: 570, line_total: 570},
+      ]}),
+    ];
+    expect(topBundles(orders)).toEqual([
+      {bundle_id: 'buy-any-4', name: 'Buy Any 4', revenue: 1140, orders: 2},
+      {bundle_id: 'buy-any-2', name: 'Buy Any 2', revenue: 550, orders: 1},
+    ]);
+  });
+
+  it('is empty when no order has a bundle line (pre-fix / offline data)', () => {
+    const orders = [
+      order({id: '1', created_at: NOW.toISOString(), total: 850, items: [
+        {product_id: 'CG', name: 'Cat Grass', qty: 5, unit_price: 170, line_total: 850},
+      ]}),
+    ];
+    expect(topBundles(orders)).toEqual([]);
   });
 });
 
@@ -353,5 +630,244 @@ describe('price bounds', () => {
   });
   it('derives bounds from the highest order total', () => {
     expect(priceBounds([order({id: 'a', created_at: '2026-09-07T10:00:00.000Z', total: 250})])).toEqual({min: 0, max: 300});
+  });
+});
+
+describe('petMix', () => {
+  const at = '2026-09-07T10:00:00.000Z';
+  it('splits revenue and orders 4 ways, untagged catching null', () => {
+    const orders = [
+      order({id: '1', created_at: at, total: 100, pet_type: 'dog'}),
+      order({id: '2', created_at: at, total: 50, pet_type: 'dog'}),
+      order({id: '3', created_at: at, total: 200, pet_type: 'cat'}),
+      order({id: '4', created_at: at, total: 70, pet_type: 'both'}),
+      order({id: '5', created_at: at, total: 30, pet_type: null}),
+    ];
+    expect(petMix(orders)).toEqual({
+      dog: {revenue: 150, orders: 2},
+      cat: {revenue: 200, orders: 1},
+      both: {revenue: 70, orders: 1},
+      untagged: {revenue: 30, orders: 1},
+    });
+  });
+  it('excludes voided sales', () => {
+    const orders = [
+      order({id: '1', created_at: at, total: 100, pet_type: 'dog'}),
+      order({id: '2', created_at: at, total: 999, pet_type: 'dog', status: 'voided'}),
+    ];
+    expect(petMix(orders).dog).toEqual({revenue: 100, orders: 1});
+  });
+  it('returns zeroed segments for no orders', () => {
+    expect(petMix([])).toEqual({
+      dog: {revenue: 0, orders: 0},
+      cat: {revenue: 0, orders: 0},
+      both: {revenue: 0, orders: 0},
+      untagged: {revenue: 0, orders: 0},
+    });
+  });
+});
+
+describe('eventRollups', () => {
+  const at = '2026-09-07T10:00:00.000Z';
+  function event(over: Partial<PosEvent> & {event_id: string}): PosEvent {
+    return {
+      name: over.event_id, venue: null, city: null, organizer: null,
+      starts_on: null, ends_on: null, opening_cash: null, cash_note: null,
+      closing_cash: null, status: 'active', created_by: null, created_at: null,
+      updated_at: null, ...over,
+    };
+  }
+  it('rolls sales into their event, cash reconciliation from opening_cash', () => {
+    const events = [event({event_id: 'e1', opening_cash: 500}), event({event_id: 'e2'})];
+    const orders = [
+      order({id: '1', created_at: at, total: 300, payment_method: 'cash', event_id: 'e1'}),
+      order({id: '2', created_at: at, total: 200, payment_method: 'gcash', event_id: 'e1'}),
+      order({id: '3', created_at: at, total: 999, payment_method: 'cash', event_id: 'e1', status: 'voided'}),
+      order({id: '4', created_at: at, total: 50, payment_method: 'cash', event_id: null}), // non-event day
+    ];
+    const rolls = eventRollups(events, orders);
+    expect(rolls[0]).toEqual({
+      event: events[0], revenue: 500, orders: 2, cashSales: 300, expectedCash: 800,
+    });
+    // e2 has no sales; opening_cash null -> expectedCash null.
+    expect(rolls[1]).toEqual({event: events[1], revenue: 0, orders: 0, cashSales: 0, expectedCash: null});
+  });
+  it('null payment_method counts as cash', () => {
+    const events = [event({event_id: 'e1', opening_cash: 0})];
+    const orders = [order({id: '1', created_at: at, total: 120, payment_method: null, event_id: 'e1'})];
+    expect(eventRollups(events, orders)[0]).toMatchObject({cashSales: 120, expectedCash: 120});
+  });
+});
+
+describe('effectiveEventId / resolveOrderEvents', () => {
+  function event(over: Partial<PosEvent> & {event_id: string}): PosEvent {
+    return {
+      name: over.event_id, venue: null, city: null, organizer: null,
+      starts_on: null, ends_on: null, opening_cash: null, cash_note: null,
+      closing_cash: null, status: 'active', created_by: null, created_at: null,
+      updated_at: null, ...over,
+    };
+  }
+  // 2026-09-17 04:00Z = 2026-09-17 12:00 Manila; 2026-09-16 20:00Z = 2026-09-17 04:00 Manila.
+  const day17 = '2026-09-17T04:00:00.000Z';
+  const day18 = '2026-09-18T04:00:00.000Z';
+  const day20 = '2026-09-20T04:00:00.000Z';
+  const events = [event({event_id: 'e1', starts_on: '2026-09-17', ends_on: '2026-09-18'})];
+
+  it('keeps a POS-stamped event_id untouched (authoritative)', () => {
+    expect(effectiveEventId({event_id: 'ePOS', created_at: day20}, events)).toBe('ePOS');
+  });
+  it('attributes an untagged sale to the event covering its Manila date', () => {
+    expect(effectiveEventId({event_id: null, created_at: day17}, events)).toBe('e1');
+    expect(effectiveEventId({event_id: null, created_at: day18}, events)).toBe('e1');
+  });
+  it('leaves an untagged sale outside every event as a walk-in (null)', () => {
+    expect(effectiveEventId({event_id: null, created_at: day20}, events)).toBeNull();
+  });
+  it('a single-bound event covers exactly that one day', () => {
+    const oneDay = [event({event_id: 'e9', starts_on: '2026-09-18', ends_on: null})];
+    expect(effectiveEventId({event_id: null, created_at: day18}, oneDay)).toBe('e9');
+    expect(effectiveEventId({event_id: null, created_at: day17}, oneDay)).toBeNull();
+  });
+  it('the scenario: extending an event to cover day 1 folds in the day-1 sales', () => {
+    // Day-1 (Sep 17) sale was logged untagged; the event now spans Sep 17-18.
+    const orders = [
+      order({id: '1', created_at: day17, event_id: null}), // day 1, was a "normal day"
+      order({id: '2', created_at: day18, event_id: 'e1'}), // day 2, tagged live by the POS
+      order({id: '3', created_at: day20, event_id: null}), // genuinely outside -> stays walk-in
+    ];
+    const resolved = resolveOrderEvents(orders, events);
+    expect(resolved.map((o) => o.event_id)).toEqual(['e1', 'e1', null]);
+    expect(resolved[1]).toBe(orders[1]); // unchanged orders keep their identity (no needless copy)
+  });
+  it('with no dated events, returns the input array as-is', () => {
+    const orders = [order({id: '1', created_at: day17, event_id: null})];
+    expect(resolveOrderEvents(orders, [event({event_id: 'x'})])).toBe(orders);
+  });
+
+  it('overlappingEvent flags a clashing range and excludes self when editing', () => {
+    const existing = [event({event_id: 'a', name: 'Bazaar A', starts_on: '2026-09-17', ends_on: '2026-09-18'})];
+    // A new range that intersects -> clash.
+    expect(overlappingEvent(existing, '2026-09-18', '2026-09-19')?.event_id).toBe('a');
+    // A range that abuts but does not intersect -> free.
+    expect(overlappingEvent(existing, '2026-09-19', '2026-09-20')).toBeNull();
+    // Editing event 'a' itself never clashes with itself.
+    expect(overlappingEvent(existing, '2026-09-17', '2026-09-18', 'a')).toBeNull();
+    // No dates proposed -> nothing to clash.
+    expect(overlappingEvent(existing, null, null)).toBeNull();
+    // Single-bound existing event counts as that one day.
+    const oneDay = [event({event_id: 'b', starts_on: '2026-09-20', ends_on: null})];
+    expect(overlappingEvent(oneDay, '2026-09-20', '2026-09-20')?.event_id).toBe('b');
+    expect(overlappingEvent(oneDay, '2026-09-21', '2026-09-21')).toBeNull();
+  });
+});
+
+describe('featuredEvent', () => {
+  function event(over: Partial<PosEvent> & {event_id: string}): PosEvent {
+    return {
+      name: over.event_id, venue: null, city: null, organizer: null,
+      starts_on: null, ends_on: null, opening_cash: null, cash_note: null,
+      closing_cash: null, status: 'active', created_by: null, created_at: null,
+      updated_at: null, ...over,
+    };
+  }
+  const TODAY = '2026-09-17';
+
+  it('prefers the event running today (current), inclusive of both bounds', () => {
+    const events = [
+      event({event_id: 'past', starts_on: '2026-09-10', ends_on: '2026-09-12'}),
+      event({event_id: 'now', starts_on: '2026-09-16', ends_on: '2026-09-18'}),
+      event({event_id: 'future', starts_on: '2026-09-25', ends_on: '2026-09-26'}),
+    ];
+    expect(featuredEvent(events, TODAY)).toEqual({event: events[1], state: 'current'});
+  });
+
+  it('falls back to the nearest upcoming event when none is current', () => {
+    const events = [
+      event({event_id: 'soon', starts_on: '2026-09-20', ends_on: '2026-09-21'}),
+      event({event_id: 'later', starts_on: '2026-10-01', ends_on: '2026-10-02'}),
+      event({event_id: 'past', starts_on: '2026-09-01', ends_on: '2026-09-02'}),
+    ];
+    expect(featuredEvent(events, TODAY)).toEqual({event: events[0], state: 'upcoming'});
+  });
+
+  it('returns null when there is no current or upcoming event', () => {
+    const events = [event({event_id: 'past', starts_on: '2026-09-01', ends_on: '2026-09-02'})];
+    expect(featuredEvent(events, TODAY)).toBeNull();
+  });
+
+  it('ignores events with no dates', () => {
+    const events = [event({event_id: 'undated'})];
+    expect(featuredEvent(events, TODAY)).toBeNull();
+  });
+});
+
+describe('paymentBreakdown', () => {
+  const at = '2026-09-07T10:00:00.000Z';
+  it('sums revenue + orders per method, richest first, voided excluded', () => {
+    const orders = [
+      order({id: '1', created_at: at, total: 300, payment_method: 'cash'}),
+      order({id: '2', created_at: at, total: 600, payment_method: 'gcash'}),
+      order({id: '3', created_at: at, total: 200, payment_method: 'cash'}),
+      order({id: '4', created_at: at, total: 999, payment_method: 'cash', status: 'voided'}),
+    ];
+    expect(paymentBreakdown(orders)).toEqual([
+      {method: 'gcash', revenue: 600, orders: 1},
+      {method: 'cash', revenue: 500, orders: 2},
+    ]);
+  });
+});
+
+describe('paymentMethodOptions', () => {
+  const at = '2026-09-07T10:00:00.000Z';
+  it('lists methods with sales first (enabled), then the rest greyed (disabled)', () => {
+    const orders = [
+      order({id: '1', created_at: at, payment_method: 'gcash'}),
+      order({id: '2', created_at: at, payment_method: 'cash'}),
+    ];
+    const opts = paymentMethodOptions(orders);
+    // enabled group in canonical order (cash before gcash), then disabled rest.
+    expect(opts.filter((o) => o.enabled).map((o) => o.method)).toEqual(['cash', 'gcash']);
+    expect(opts.filter((o) => !o.enabled).map((o) => o.method)).toEqual(['qrph', 'maya', 'card', 'bpi', 'bank_transfer']);
+    // enabled all come before any disabled
+    const firstDisabled = opts.findIndex((o) => !o.enabled);
+    expect(opts.slice(0, firstDisabled).every((o) => o.enabled)).toBe(true);
+  });
+  it('marks everything disabled when there are no sales', () => {
+    expect(paymentMethodOptions([]).every((o) => !o.enabled)).toBe(true);
+  });
+});
+
+describe('datesInRange', () => {
+  it('lists inclusive days for a multi-day range', () => {
+    expect(datesInRange('2026-09-15', '2026-09-17')).toEqual(['2026-09-15', '2026-09-16', '2026-09-17']);
+  });
+  it('yields the single day when start equals end or only one bound is set', () => {
+    expect(datesInRange('2026-09-15', '2026-09-15')).toEqual(['2026-09-15']);
+    expect(datesInRange('2026-09-15', null)).toEqual(['2026-09-15']);
+    expect(datesInRange(null, '2026-09-15')).toEqual(['2026-09-15']);
+  });
+  it('returns [] for a reversed or empty range', () => {
+    expect(datesInRange('2026-09-17', '2026-09-15')).toEqual([]);
+    expect(datesInRange(null, null)).toEqual([]);
+  });
+});
+
+describe('eventRevenueSeries', () => {
+  it('builds a cumulative series oldest-first, voided excluded', () => {
+    const orders = [
+      order({id: '2', created_at: '2026-09-07T11:00:00.000Z', total: 200}),
+      order({id: '1', created_at: '2026-09-07T10:00:00.000Z', total: 300}),
+      order({id: '3', created_at: '2026-09-07T12:00:00.000Z', total: 999, status: 'voided'}),
+      order({id: '4', created_at: '2026-09-07T13:00:00.000Z', total: 100}),
+    ];
+    expect(eventRevenueSeries(orders)).toEqual([
+      {t: '2026-09-07T10:00:00.000Z', revenue: 300},
+      {t: '2026-09-07T11:00:00.000Z', revenue: 500},
+      {t: '2026-09-07T13:00:00.000Z', revenue: 600},
+    ]);
+  });
+  it('is empty when there are no (non-voided) orders', () => {
+    expect(eventRevenueSeries([])).toEqual([]);
   });
 });

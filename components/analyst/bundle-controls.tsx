@@ -1,17 +1,21 @@
 'use client';
 
 import {useEffect, useState, useTransition} from 'react';
-import {Boxes, Check, Pencil, Trash2} from 'lucide-react';
+import {createPortal} from 'react-dom';
+import {useRouter} from 'next/navigation';
+import {Boxes, Check, Pencil, Plus, Trash2, X} from 'lucide-react';
 import type {PosBundleRow} from '@/src/pos-types';
 import type {ActionResult} from '@/src/pos-actions';
 import {
+  createBundleAction,
   deleteBundleAction,
   renameBundleAction,
   repriceBundleAction,
   setBundleActiveAction,
   setBundleEmojiAction,
+  setBundleScopeAction,
 } from '@/src/pos-actions';
-import {formatPeso} from '@/src/pos-format';
+import {formatPeso, POS_CATEGORIES} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
 import {cn} from '@/lib/utils';
 import {Eyebrow} from './sections';
@@ -32,6 +36,8 @@ export function BundleControls({bundles}: {bundles: PosBundleRow[]}) {
   useEffect(() => setRows(bundles), [bundles]);
   const [status, setStatus] = useState<Record<string, {saved?: boolean; error?: string}>>({});
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+  const [dialog, setDialog] = useState<{mode: 'create'} | {mode: 'scope'; bundle: PosBundleRow} | null>(null);
 
   function flash(id: string) {
     setStatus((s) => ({...s, [id]: {saved: true}}));
@@ -73,12 +79,18 @@ export function BundleControls({bundles}: {bundles: PosBundleRow[]}) {
 
   return (
     <div className="mx-auto mt-8 max-w-6xl px-6 md:px-10">
-      <div className="mb-4">
-        <Eyebrow icon={Boxes}>Bundles</Eyebrow>
-        <p className="text-sm text-muted-foreground">
-          {rows.length} bundle{rows.length !== 1 ? 's' : ''} synced from the POS. Edit the emoji, price, name, or listing;
-          create new bundles in the POS. Edits sync back to every device.
-        </p>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Eyebrow icon={Boxes}>Bundles</Eyebrow>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            {rows.length} bundle{rows.length !== 1 ? 's' : ''}, shared with the POS. Create one here or on the POS, and edit
+            its emoji, name, price, listing, and scope (the lines it covers and how many). Edits sync back to every device.
+          </p>
+        </div>
+        <button type="button" onClick={() => setDialog({mode: 'create'})}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+          <Plus className="size-3.5" /> New bundle
+        </button>
       </div>
 
       <Card>
@@ -118,6 +130,7 @@ export function BundleControls({bundles}: {bundles: PosBundleRow[]}) {
                       }}
                       onToggle={(active) => mutate(b.bundle_id, {active}, () => setBundleActiveAction(b.bundle_id, active))}
                       onDelete={() => remove(b.bundle_id, b.name)}
+                      onEditScope={b.bundle_type === 'pick' ? () => setDialog({mode: 'scope', bundle: b}) : undefined}
                     />
                   ))
                 )}
@@ -127,6 +140,10 @@ export function BundleControls({bundles}: {bundles: PosBundleRow[]}) {
         </CardContent>
       </Card>
       {isPending && <span className="sr-only">Saving…</span>}
+
+      {dialog && (
+        <BundleDialog dialog={dialog} onClose={() => setDialog(null)} onDone={() => {setDialog(null); router.refresh();}} />
+      )}
     </div>
   );
 }
@@ -143,6 +160,7 @@ function BundleRow({
   onReprice,
   onToggle,
   onDelete,
+  onEditScope,
 }: {
   row: PosBundleRow;
   saved?: boolean;
@@ -153,6 +171,7 @@ function BundleRow({
   onReprice: (price: string) => void;
   onToggle: (active: boolean) => void;
   onDelete: () => void;
+  onEditScope?: () => void;
 }) {
   const [editing, setEditing] = useState<EditField>(null);
   const [draft, setDraft] = useState('');
@@ -197,7 +216,15 @@ function BundleRow({
           )}
           {error && <span className="text-[11px] text-destructive">{error}</span>}
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
+        {onEditScope ? (
+          <button type="button" onClick={onEditScope}
+            className="group mt-0.5 inline-flex items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-primary">
+            <span>{summary}</span>
+            <Pencil className="size-3 opacity-40 transition-opacity group-hover:opacity-80" />
+          </button>
+        ) : (
+          <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
+        )}
       </td>
       <td className="px-4 py-2.5">
         <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
@@ -247,5 +274,108 @@ function BundleRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+// Create a new Buy-Any-N bundle, or edit an existing bundle's scope (the eligible
+// lines + pick count). Name / emoji / price are only in create mode; on an existing
+// bundle those stay inline-editable in the row.
+function BundleDialog({dialog, onClose, onDone}: {
+  dialog: {mode: 'create'} | {mode: 'scope'; bundle: PosBundleRow};
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const creating = dialog.mode === 'create';
+  const bundle = creating ? null : dialog.bundle;
+  const [name, setName] = useState(bundle?.name ?? '');
+  const [emoji, setEmoji] = useState(bundle?.emoji ?? '');
+  const [price, setPrice] = useState(bundle?.price != null ? String(bundle.price) : '');
+  const [pickCount, setPickCount] = useState(bundle?.pick_count ?? 2);
+  const [lines, setLines] = useState<string[]>(bundle?.line_categories ?? []);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {if (e.key === 'Escape') onClose();};
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  function toggleLine(c: string) {
+    setLines((ls) => (ls.includes(c) ? ls.filter((x) => x !== c) : [...ls, c]));
+  }
+  function save() {
+    setError(null);
+    startTransition(async () => {
+      const res = creating
+        ? await createBundleAction({name, emoji, price, pickCount, lineCategories: lines})
+        : await setBundleScopeAction(dialog.bundle.bundle_id, pickCount, lines);
+      if (res.ok) onDone();
+      else setError(res.error);
+    });
+  }
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button type="button" aria-label="Cancel" onClick={onClose} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
+      <div className="relative w-full max-w-md rounded-xl border bg-popover p-5 shadow-lg">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">{creating ? 'New bundle' : `Edit scope · ${bundle?.name}`}</h2>
+          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {creating && (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium">Name</span>
+                <input value={name} autoFocus onChange={(e) => setName(e.target.value)} placeholder="Buy Any 3" className="rounded-md border bg-background px-2 py-1.5 text-sm outline-none focus-visible:border-ring" />
+              </label>
+              <div className="flex gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Emoji</span>
+                  <div className="pt-0.5"><EmojiPicker value={emoji} onCommit={(e) => setEmoji(e)} ariaLabel="Bundle emoji" /></div>
+                </label>
+                <label className="flex flex-1 flex-col gap-1">
+                  <span className="text-xs font-medium">Price</span>
+                  <div className="flex items-center gap-1"><span className="text-sm text-muted-foreground">₱</span>
+                    <input value={price} inputMode="decimal" onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))} className="w-full rounded-md border bg-background px-2 py-1.5 text-sm tabular-nums outline-none focus-visible:border-ring" /></div>
+                </label>
+              </div>
+            </>
+          )}
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium">Buy any (pick count)</span>
+            <input type="number" min={1} value={pickCount} onChange={(e) => setPickCount(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+              className="w-24 rounded-md border bg-background px-2 py-1.5 text-sm tabular-nums outline-none focus-visible:border-ring" />
+          </label>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium">Eligible lines <span className="font-normal text-muted-foreground">a customer may pick from these</span></span>
+            <div className="flex flex-wrap gap-2">
+              {POS_CATEGORIES.map((c) => {
+                const on = lines.includes(c as string);
+                return (
+                  <button key={c} type="button" onClick={() => toggleLine(c as string)}
+                    className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', on ? 'border-primary bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">Cancel</button>
+          <button onClick={save} disabled={pending} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            {pending ? 'Saving…' : creating ? 'Create bundle' : 'Save scope'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
