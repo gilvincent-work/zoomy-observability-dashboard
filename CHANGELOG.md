@@ -12,6 +12,12 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-17 — v1.2.2: ship compare-days event chart to prod — `chore(release)`
+
+**Version bumped to 1.2.2** (was 1.2.0). Promotes the event "Revenue over time"
+compare-days overlay (per-day pacing on one hourly-sampled chart) and the low-stock
+email STAGING tagging to prod. POS bumped to 1.2.2 in lockstep.
+
 ## 2026-09-17 — Compare-days chart: hourly hover points — `fix(events)`
 
 Follow-up to the compare-days overlay. The lines were plotted at each order's exact
