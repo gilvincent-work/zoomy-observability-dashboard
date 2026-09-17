@@ -884,22 +884,26 @@ describe('manilaMinuteOfDay', () => {
 
 describe('eventDayPacingSeries', () => {
   const orders = [
-    // Sep 11 (Manila): 10:00 → 100, 14:00 → cumulative 150
+    // Sep 11 (Manila): 10:00 → 100, 12:00 → cumulative 150
     order({id: 'a', created_at: '2026-09-11T02:00:00.000Z', total: 100}),
-    order({id: 'b', created_at: '2026-09-11T06:00:00.000Z', total: 50}),
-    // Sep 12 (Manila): 10:00 → 200 (resets, does not carry Sep 11)
+    order({id: 'b', created_at: '2026-09-11T04:00:00.000Z', total: 50}),
+    // Sep 12 (Manila): 10:00 → 200, 11:00 → 260 (resets, does not carry Sep 11)
     order({id: 'c', created_at: '2026-09-12T02:00:00.000Z', total: 200}),
+    order({id: 'e', created_at: '2026-09-12T03:00:00.000Z', total: 60}),
     // voided Sep 12 sale is excluded
-    order({id: 'd', created_at: '2026-09-12T04:00:00.000Z', total: 999, status: 'voided'}),
+    order({id: 'd', created_at: '2026-09-12T05:00:00.000Z', total: 999, status: 'voided'}),
   ];
 
-  it('gives each day its own cumulative, aligned by time of day, resetting daily', () => {
+  it('gives each day an hourly running total, aligned by clock hour, resetting daily', () => {
     const {days, rows} = eventDayPacingSeries(orders);
     expect(days).toEqual(['2026-09-11', '2026-09-12']);
-    // rows ascending by tod: 600 (both days), 840 (Sep 11 only)
+    // One row per clock hour 10:00–12:00 (tod = hour*60). Each holds the total
+    // through that hour's end; Sep 11 holds 100 at 11:00 (no 11:00 sale), Sep 12
+    // is null at 12:00 (past its last sale hour of 11:00).
     expect(rows).toEqual([
       {tod: 600, '2026-09-11': 100, '2026-09-12': 200},
-      {tod: 840, '2026-09-11': 150, '2026-09-12': null},
+      {tod: 660, '2026-09-11': 100, '2026-09-12': 260},
+      {tod: 720, '2026-09-11': 150, '2026-09-12': null},
     ]);
   });
 
