@@ -10,6 +10,8 @@ import {
   featuredEvent,
   paymentBreakdown,
   eventRevenueSeries,
+  eventDayPacingSeries,
+  manilaMinuteOfDay,
   datesInRange,
   paymentMethodOptions,
   manilaDayKey,
@@ -869,5 +871,39 @@ describe('eventRevenueSeries', () => {
   });
   it('is empty when there are no (non-voided) orders', () => {
     expect(eventRevenueSeries([])).toEqual([]);
+  });
+});
+
+describe('manilaMinuteOfDay', () => {
+  it('converts a UTC instant to Manila (UTC+8) minutes since midnight', () => {
+    expect(manilaMinuteOfDay('2026-09-11T02:00:00.000Z')).toBe(600); // 10:00 Manila
+    expect(manilaMinuteOfDay('2026-09-11T06:00:00.000Z')).toBe(840); // 14:00 Manila
+    expect(manilaMinuteOfDay('2026-09-10T16:00:00.000Z')).toBe(0); // Manila midnight
+  });
+});
+
+describe('eventDayPacingSeries', () => {
+  const orders = [
+    // Sep 11 (Manila): 10:00 → 100, 14:00 → cumulative 150
+    order({id: 'a', created_at: '2026-09-11T02:00:00.000Z', total: 100}),
+    order({id: 'b', created_at: '2026-09-11T06:00:00.000Z', total: 50}),
+    // Sep 12 (Manila): 10:00 → 200 (resets, does not carry Sep 11)
+    order({id: 'c', created_at: '2026-09-12T02:00:00.000Z', total: 200}),
+    // voided Sep 12 sale is excluded
+    order({id: 'd', created_at: '2026-09-12T04:00:00.000Z', total: 999, status: 'voided'}),
+  ];
+
+  it('gives each day its own cumulative, aligned by time of day, resetting daily', () => {
+    const {days, rows} = eventDayPacingSeries(orders);
+    expect(days).toEqual(['2026-09-11', '2026-09-12']);
+    // rows ascending by tod: 600 (both days), 840 (Sep 11 only)
+    expect(rows).toEqual([
+      {tod: 600, '2026-09-11': 100, '2026-09-12': 200},
+      {tod: 840, '2026-09-11': 150, '2026-09-12': null},
+    ]);
+  });
+
+  it('is empty when there are no (non-voided) orders', () => {
+    expect(eventDayPacingSeries([])).toEqual({days: [], rows: []});
   });
 });
