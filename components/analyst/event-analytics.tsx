@@ -46,16 +46,19 @@ function todLabel(min: number): string {
   });
 }
 
+// Distinct per-day line colors so a multi-day event reads as more than "gold + gray".
+// Cool-leaning, mutually distinct hues that hold up on both the light and dark card;
+// the latest (live) day is kept on the warm ochre accent below so "today" still pops.
+const DAY_COLORS = ['#4E9A87', '#5E8BD0', '#A87FB0', '#6E9E80', '#7C93A6', '#C98A5A'];
+
 /**
- * Stroke for a day's pacing line. The latest day (last, usually the live one)
- * gets the solid ochre accent so "today vs history" reads at a glance; earlier
- * days recede into graduated warm gray, oldest faintest.
+ * Stroke for a day's pacing line. The latest day (last, usually the live one) gets
+ * the solid ochre accent and a thicker line so "today vs history" reads at a glance;
+ * each earlier day gets its own distinct hue from DAY_COLORS.
  */
 function dayLineStyle(index: number, total: number): {stroke: string; width: number; opacity: number} {
   if (index === total - 1) return {stroke: 'var(--chart-4)', width: 2.5, opacity: 1};
-  const pastCount = total - 1;
-  const t = pastCount <= 1 ? 1 : index / (pastCount - 1); // 0 = oldest … 1 = most recent past
-  return {stroke: 'var(--muted-foreground)', width: 1.75, opacity: 0.42 + t * 0.3};
+  return {stroke: DAY_COLORS[index % DAY_COLORS.length], width: 1.75, opacity: 1};
 }
 
 /**

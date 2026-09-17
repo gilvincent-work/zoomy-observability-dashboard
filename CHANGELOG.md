@@ -12,6 +12,13 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-17 — Compare-days chart: distinct color per day — `fix(events)`
+
+Earlier days were all drawn from one gray at different opacities, so a 3-day event
+read as basically two colors. Each earlier day now gets its own distinct hue (cool
+palette that holds up on light + dark); the latest/live day stays on the ochre accent
+and thicker line so "today" still stands out. Legend + tooltip pick up the new colors.
+
 ## 2026-09-17 — v1.2.2: ship compare-days event chart to prod — `chore(release)`
 
 **Version bumped to 1.2.2** (was 1.2.0). Promotes the event "Revenue over time"
