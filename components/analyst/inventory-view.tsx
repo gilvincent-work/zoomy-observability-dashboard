@@ -47,9 +47,15 @@ export function InventoryView({data, bundles, tab, channel, venue}: {
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            <Package className="size-3.5" /> Stratpoint · Offline {data.usingMock && <span className="text-amber-600 dark:text-amber-400">· demo data</span>}
+            <Package className="size-3.5" /> Offline inventory {data.usingMock && <span className="text-amber-600 dark:text-amber-400">· demo data</span>}
           </div>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Inventory</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight">Inventory</h1>
+            <div className="inline-flex rounded-md border p-0.5">
+              <ChannelLink href={href({channel: 'offline'})} active={channel === 'offline'}>Stratpoint <span className="font-mono text-[9px] opacity-70">offline</span></ChannelLink>
+              <ChannelLink href={href({channel: 'online'})} active={false}>BoxMe <span className="font-mono text-[9px] opacity-70">online</span></ChannelLink>
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setCreating(true)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
@@ -66,13 +72,9 @@ export function InventoryView({data, bundles, tab, channel, venue}: {
         <TabLink href={href({tab: 'summary'})} active={tab === 'summary'}>Summary</TabLink>
       </div>
 
-      {/* Channel segment + venue (only meaningful on All products) */}
+      {/* Venue (only meaningful on All products) */}
       {tab === 'all' && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-md border p-0.5">
-            <ChannelLink href={href({channel: 'offline'})} active={channel === 'offline'}>Stratpoint <span className="font-mono text-[9px] opacity-70">offline</span></ChannelLink>
-            <ChannelLink href={href({channel: 'online'})} active={false}>BoxMe <span className="font-mono text-[9px] opacity-70">online</span></ChannelLink>
-          </div>
           <label className="inline-flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-xs">
             <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Venue</span>
             <select value={venue} onChange={(e) => router.push(href({venue: e.target.value}))} aria-label="Filter by venue" className="bg-transparent font-medium outline-none">
