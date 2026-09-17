@@ -12,6 +12,37 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-17 — v1.2.2: ship compare-days event chart to prod — `chore(release)`
+
+**Version bumped to 1.2.2** (was 1.2.0). Promotes the event "Revenue over time"
+compare-days overlay (per-day pacing on one hourly-sampled chart) and the low-stock
+email STAGING tagging to prod. POS bumped to 1.2.2 in lockstep.
+
+## 2026-09-17 — Compare-days chart: hourly hover points — `fix(events)`
+
+Follow-up to the compare-days overlay. The lines were plotted at each order's exact
+minute, so hovering jumped between sparse times (10 AM, then 3 PM) and the tooltip
+could only resolve the day that owned that minute. `eventDayPacingSeries` now samples
+on an even **hourly grid** across the event window: each hour holds every day's running
+total through that hour's end (null outside a day's own selling hours). Hovering now
+steps hour by hour and shows every active day's pace at that clock hour. Tests updated.
+
+## 2026-09-17 — Event revenue: compare each day's pace on one chart — `feat(events)`
+
+The event detail "Revenue over time" chart gets a **Combined / Compare days** toggle
+(multi-day events only, on "All days"). Combined keeps the familiar single cumulative
+line. Compare days overlays one line per event day, each resetting to ₱0 and aligned by
+**time of day**, so you can see at a glance whether today is pacing ahead of or behind
+the previous days at the same clock time.
+
+- The latest (usually live) day draws in the ochre accent (`--chart-4`); earlier days
+  recede into graduated muted gray, oldest faintest. A small legend labels each day and
+  marks the latest.
+- New pure helpers in `pos-sales-compute.ts`: `manilaMinuteOfDay` (time-of-day in Manila
+  minutes) and `eventDayPacingSeries` (per-day intraday cumulative, aligned by time of
+  day, voided excluded, each day resetting). Covered by unit tests.
+- Single-day events are unchanged; the toggle only appears when two or more days have sales.
+
 ## 2026-09-17 — v1.2.0: align with POS prod promotion — `chore(release)`
 
 **Version bumped to 1.2.0** (`package.json`; was 1.1.0) in lockstep with the POS

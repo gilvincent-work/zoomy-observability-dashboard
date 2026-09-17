@@ -255,6 +255,90 @@ export function eventRevenueSeries(orders: PosOrder[]): RevenuePoint[] {
   });
 }
 
+/** Minutes since Manila midnight (0..1439) for an ISO instant. Time-of-day only,
+ *  so orders from different calendar days line up on one axis. */
+export function manilaMinuteOfDay(iso: string): number {
+  const min = Math.floor(new Date(iso).getTime() / 60_000) + MANILA_OFFSET_MS / 60_000;
+  return ((min % 1440) + 1440) % 1440;
+}
+
+/** One row per clock hour of the event window; each event day is a numeric column
+ *  holding that day's cumulative revenue through the END of that hour, or null for
+ *  hours outside the day's own selling window (so a line spans only its real hours,
+ *  never faking the future). `tod` is minutes since Manila midnight at the hour. */
+export interface DayPacingRow {
+  tod: number;
+  [dayKey: string]: number | null;
+}
+
+export interface DayPacingSeries {
+  days: string[]; // day keys (YYYY-MM-DD) that actually had sales, ascending
+  rows: DayPacingRow[];
+}
+
+/** Per-day intraday cumulative revenue on a shared HOURLY grid, aligned by Manila
+ *  time-of-day, for the "compare days" overlay: each day resets to 0 and climbs, so
+ *  a later day's pace reads directly against earlier days at the same clock hour.
+ *  One point per hour means an even hover step (10 AM, 11 AM, …) instead of jumping
+ *  between sparse order times. Each hour holds the running total through that hour's
+ *  end; hours before a day's first sale or after its last are null. Voided excluded. */
+export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
+  const byDay = new Map<string, PosOrder[]>();
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    const key = manilaDayKey(o.created_at);
+    const arr = byDay.get(key) ?? [];
+    arr.push(o);
+    byDay.set(key, arr);
+  }
+  const days = Array.from(byDay.keys()).sort();
+  if (days.length === 0) return {days: [], rows: []};
+
+  // Per day: ascending cumulative points (one per selling minute) + its window.
+  const perDay = new Map<string, {points: {tod: number; val: number}[]; firstHour: number; lastHour: number}>();
+  let startHour = Infinity;
+  let endHour = -Infinity;
+  for (const d of days) {
+    const sorted = byDay.get(d)!.slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const points: {tod: number; val: number}[] = [];
+    let running = 0;
+    for (const o of sorted) {
+      running += o.total;
+      const tod = manilaMinuteOfDay(o.created_at);
+      const last = points[points.length - 1];
+      if (last && last.tod === tod) last.val = running; // same minute keeps the latest total
+      else points.push({tod, val: running});
+    }
+    const firstHour = Math.floor(points[0].tod / 60);
+    const lastHour = Math.floor(points[points.length - 1].tod / 60);
+    perDay.set(d, {points, firstHour, lastHour});
+    startHour = Math.min(startHour, firstHour);
+    endHour = Math.max(endHour, lastHour);
+  }
+
+  const rows: DayPacingRow[] = [];
+  for (let h = startHour; h <= endHour; h++) {
+    const cutoff = h * 60 + 59; // through the end of this clock hour
+    const row: DayPacingRow = {tod: h * 60};
+    for (const d of days) {
+      const info = perDay.get(d)!;
+      if (h < info.firstHour || h > info.lastHour) {
+        row[d] = null;
+        continue;
+      }
+      let val = 0;
+      for (const p of info.points) {
+        if (p.tod <= cutoff) val = p.val;
+        else break;
+      }
+      row[d] = val;
+    }
+    rows.push(row);
+  }
+
+  return {days, rows};
+}
+
 /** Group orders by Manila calendar day, ascending. Days with no sales omitted. */
 export function salesByDay(orders: PosOrder[]): DailySales[] {
   const byDay = new Map<string, {revenue: number; orders: number}>();

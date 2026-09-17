@@ -10,6 +10,8 @@ import {
   featuredEvent,
   paymentBreakdown,
   eventRevenueSeries,
+  eventDayPacingSeries,
+  manilaMinuteOfDay,
   datesInRange,
   paymentMethodOptions,
   manilaDayKey,
@@ -869,5 +871,43 @@ describe('eventRevenueSeries', () => {
   });
   it('is empty when there are no (non-voided) orders', () => {
     expect(eventRevenueSeries([])).toEqual([]);
+  });
+});
+
+describe('manilaMinuteOfDay', () => {
+  it('converts a UTC instant to Manila (UTC+8) minutes since midnight', () => {
+    expect(manilaMinuteOfDay('2026-09-11T02:00:00.000Z')).toBe(600); // 10:00 Manila
+    expect(manilaMinuteOfDay('2026-09-11T06:00:00.000Z')).toBe(840); // 14:00 Manila
+    expect(manilaMinuteOfDay('2026-09-10T16:00:00.000Z')).toBe(0); // Manila midnight
+  });
+});
+
+describe('eventDayPacingSeries', () => {
+  const orders = [
+    // Sep 11 (Manila): 10:00 → 100, 12:00 → cumulative 150
+    order({id: 'a', created_at: '2026-09-11T02:00:00.000Z', total: 100}),
+    order({id: 'b', created_at: '2026-09-11T04:00:00.000Z', total: 50}),
+    // Sep 12 (Manila): 10:00 → 200, 11:00 → 260 (resets, does not carry Sep 11)
+    order({id: 'c', created_at: '2026-09-12T02:00:00.000Z', total: 200}),
+    order({id: 'e', created_at: '2026-09-12T03:00:00.000Z', total: 60}),
+    // voided Sep 12 sale is excluded
+    order({id: 'd', created_at: '2026-09-12T05:00:00.000Z', total: 999, status: 'voided'}),
+  ];
+
+  it('gives each day an hourly running total, aligned by clock hour, resetting daily', () => {
+    const {days, rows} = eventDayPacingSeries(orders);
+    expect(days).toEqual(['2026-09-11', '2026-09-12']);
+    // One row per clock hour 10:00–12:00 (tod = hour*60). Each holds the total
+    // through that hour's end; Sep 11 holds 100 at 11:00 (no 11:00 sale), Sep 12
+    // is null at 12:00 (past its last sale hour of 11:00).
+    expect(rows).toEqual([
+      {tod: 600, '2026-09-11': 100, '2026-09-12': 200},
+      {tod: 660, '2026-09-11': 100, '2026-09-12': 260},
+      {tod: 720, '2026-09-11': 150, '2026-09-12': null},
+    ]);
+  });
+
+  it('is empty when there are no (non-voided) orders', () => {
+    expect(eventDayPacingSeries([])).toEqual({days: [], rows: []});
   });
 });
