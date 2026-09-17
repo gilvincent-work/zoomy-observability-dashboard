@@ -1,6 +1,7 @@
 'use server';
 
 import {revalidatePath} from 'next/cache';
+import {auth} from '@/auth';
 import {posClient, usingPosMock} from './pos-data';
 import {parseEmoji, parsePrice, parseQty, POS_CATEGORIES, POS_SUBCATEGORIES, PRODUCT_LINES} from './pos-format';
 
@@ -12,6 +13,16 @@ import {parseEmoji, parsePrice, parseQty, POS_CATEGORIES, POS_SUBCATEGORIES, PRO
 // All actions are online-only; there is no offline queue on the Coop side.
 
 const ACTOR = 'coop';
+
+/** The signed-in Coop user's email (for the audit trail), or 'coop' as a fallback. */
+async function actor(): Promise<string> {
+  try {
+    const session = await auth();
+    return session?.user?.email ?? ACTOR;
+  } catch {
+    return ACTOR;
+  }
+}
 
 export type ActionResult = {ok: true} | {ok: false; error: string};
 
@@ -118,10 +129,11 @@ export async function setStockAction(product_id: string, qty: string): Promise<A
   const {error} = await posClient().rpc('set_product_stock', {
     p_product_id: product_id,
     p_new_qty: parsed.value,
-    p_by: ACTOR,
+    p_by: await actor(),
   });
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
+  revalidatePath(`/inventory/${product_id}`);
   return {ok: true};
 }
 
