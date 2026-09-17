@@ -98,13 +98,13 @@ export function ProductDetailView({detail}: {detail: ProductDetail}) {
           ) : (
             <div className="flex flex-col">
               {receipts.slice(0, 8).map((r) => (
-                <div key={r.id} className="flex items-center justify-between gap-3 border-b py-2.5 text-sm last:border-0">
-                  <span className="font-medium">{r.reason === 'add-void' ? 'Reversed add' : 'Added stock'}</span>
-                  <span className={cn('font-mono text-sm font-bold tabular-nums', r.reason === 'add-void' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                <div key={r.id} className="flex items-center gap-3 border-b py-2.5 text-sm last:border-0">
+                  <span className="shrink-0 font-medium">{r.reason === 'add-void' ? 'Reversed add' : 'Added stock'}</span>
+                  <span className={cn('shrink-0 font-mono text-sm font-bold tabular-nums', r.reason === 'add-void' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}>
                     {r.reason === 'add-void' ? '' : '+'}{r.delta}
                   </span>
-                  <span className="w-36 text-right font-mono text-[10.5px] leading-tight text-muted-foreground">
-                    <span className="block font-semibold text-foreground/80">{r.created_by ?? 'unknown'}</span>
+                  <span className="ml-auto min-w-0 text-right font-mono text-[10.5px] leading-tight text-muted-foreground">
+                    <span className="block truncate font-semibold text-foreground/80" title={r.created_by ?? 'unknown'}>{r.created_by ?? 'unknown'}</span>
                     {when(r.created_at)}
                   </span>
                 </div>
