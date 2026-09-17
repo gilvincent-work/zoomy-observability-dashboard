@@ -23,7 +23,7 @@ const STOCK_TOP = 288; // y at stock max
 const STOCK_BOTTOM = 340; // y at stock = 0
 const AXIS_Y = 376;
 
-type Tone = 'green' | 'blue' | 'red';
+type Tone = 'green' | 'blue' | 'red' | 'grey';
 type Hover = {xPct: number; yPct: number; title: string; lines: string[]; tone: Tone} | null;
 
 export function StockSalesChart({data, vsLastYear, lastCountedWeeksAgo}: {
@@ -94,6 +94,24 @@ export function StockSalesChart({data, vsLastYear, lastCountedWeeksAgo}: {
         <line x1={dividerX} x2={dividerX} y1={SOLD_TOP - 18} y2={STOCK_BOTTOM} className="text-border" stroke="currentColor" strokeWidth={1} strokeDasharray="3 4" />
         <text x={dividerX + 6} y={SOLD_TOP - 8} className="fill-muted-foreground text-[10px] font-medium">forecast →</text>
 
+        {/* vs-last-year: a "same month last year" bar behind each month's bar. Drawn
+            first so this year's solid/dashed bar sits in front; it's a touch wider so
+            a sliver always peeks out and stays hoverable even where they overlap. */}
+        {vsLastYear && (
+          <g className="text-muted-foreground">
+            {data.map((d, i) => {
+              if (d.soldLastYear == null) return null;
+              const y = sy(d.soldLastYear);
+              const w = barW + colW * 0.22;
+              return (
+                <rect key={d.key} x={cx(i) - w / 2} y={y} width={w} height={Math.max(0, SOLD_BOTTOM - y)} rx={2.5}
+                  fill="currentColor" fillOpacity={0.3} className="cursor-pointer"
+                  onMouseEnter={() => show(i, y, `${d.label} last year`, [`${d.soldLastYear} pcs sold`], 'grey')} onMouseLeave={clear} />
+              );
+            })}
+          </g>
+        )}
+
         {/* Sold bars */}
         <g className="text-emerald-600 dark:text-emerald-400">
           {data.map((d, i) => {
@@ -123,17 +141,6 @@ export function StockSalesChart({data, vsLastYear, lastCountedWeeksAgo}: {
             return <text key={d.key} x={cx(i)} y={sy(v) - 8} textAnchor="middle" className={d.isForecast ? 'fill-muted-foreground' : ''}>{d.isForecast ? `~${v}` : v}</text>;
           })}
         </g>
-
-        {/* vs-last-year overlay (muted comparison line) */}
-        {vsLastYear && (
-          <g className="text-muted-foreground">
-            <polyline points={data.filter((d) => d.soldLastYear != null).map((d) => `${cx(data.indexOf(d))},${sy(d.soldLastYear as number)}`).join(' ')}
-              fill="none" stroke="currentColor" strokeWidth={1.5} strokeDasharray="2 3" strokeOpacity={0.7} />
-            {data.map((d, i) => d.soldLastYear == null ? null : (
-              <circle key={d.key} cx={cx(i)} cy={sy(d.soldLastYear)} r={2.5} fill="currentColor" fillOpacity={0.7} />
-            ))}
-          </g>
-        )}
 
         {/* Stock panel label */}
         <text x={plotL} y={STOCK_LABEL_Y} className="fill-foreground text-[11px] font-semibold">Stock on hand</text>
@@ -227,6 +234,7 @@ export function StockSalesChart({data, vsLastYear, lastCountedWeeksAgo}: {
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-[3px] bg-emerald-600 dark:bg-emerald-400" /> Sold this year</span>
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-[3px] border border-dashed border-emerald-600 dark:border-emerald-400" /> Forecast</span>
+        {vsLastYear && <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-[3px] bg-muted-foreground/30" /> Same month last year</span>}
         <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded bg-blue-600 dark:bg-blue-400" /> Stock on hand</span>
         <span className="inline-flex items-center gap-1.5"><Triangle /> Delivery arrived</span>
       </div>
