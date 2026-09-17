@@ -57,6 +57,23 @@ direct `pos_bundles` update, so **no schema change**.
 - Copy updated to reflect that bundles can now be created in Coop too. tsc clean,
   183 tests green, build compiles, design detector clean.
 
+## 2026-09-17 — Forecast cover reads "selling days", not "events" — `fix(inventory)`
+
+PO feedback: "~23 events" in the Lasts column is unintuitive (and "event" collides
+with the bazaar `pos_events` concept). Since the unit is really event-*days* (the
+Fri/Sat/Sun the store sells), relabel it to **"selling days"** everywhere it means
+cover. **Pure wording change, no math or config conversion** (a selling day is an
+event-day, so ~23 stays ~23 and stored settings are unchanged).
+
+- Lasts column badge, detail-chart footer, and the settings hints (Target cover,
+  Early warning) now say "selling days". Lead time stays plain "days" (real
+  calendar lead time). The low-stock email's "event-day sell through" line updated
+  to match (`zoomy-observability`).
+- **Left alone (correctly):** bazaar "events" wording, the Events page/nav, and
+  internal names (`coverEventDays`, `EVENT_WEEKDAYS`) — those mean an actual bazaar.
+- The engine stays event-day based (sales cluster on weekends; a per-calendar-day
+  rate would be wrong). tsc clean, 183 tests, build compiles.
+
 ## 2026-09-17 — vs-last-year as "same month last year" bars — `fix(inventory)`
 
 The vs-last-year overlay was a muted dashed line; the PO mockup wants **grey bars**

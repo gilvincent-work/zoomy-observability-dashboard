@@ -272,7 +272,7 @@ function LastsBadge({row}: {row: InventoryRow}) {
   if (monthly.threeMonthTotal === 0 && coverEventDays == null) return <Badge tone="warn">not selling</Badge>;
   if (coverEventDays == null) return <span className="text-xs text-muted-foreground">{runsOutLabel}</span>;
   const tone = coverEventDays <= 2 ? 'crit' : 'ok';
-  return <Badge tone={tone}>~{fmt1(coverEventDays)} events</Badge>;
+  return <Badge tone={tone}>~{fmt1(coverEventDays)} selling days</Badge>;
 }
 function Badge({tone, children}: {tone: 'crit' | 'warn' | 'ok'; children: React.ReactNode}) {
   const cls = tone === 'crit' ? 'bg-red-500/10 text-red-600 dark:text-red-400'
