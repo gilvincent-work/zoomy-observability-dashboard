@@ -48,9 +48,9 @@ export function StockSettingsForm({config, usingMock}: {config: ForecastConfig; 
 
         <div className="flex flex-wrap gap-4">
           <Field label="Low-stock threshold" hint="units" value={threshold} onChange={setThreshold} />
-          <Field label="Target cover" hint="event-days" value={cover} onChange={setCover} />
+          <Field label="Target cover" hint="selling days" value={cover} onChange={setCover} />
           <Field label="Lead time" hint="days" value={lead} onChange={setLead} />
-          <Field label="Early warning" hint="events" value={warn} onChange={setWarn} />
+          <Field label="Early warning" hint="selling days" value={warn} onChange={setWarn} />
         </div>
 
         <div className="mt-4 flex items-center gap-3">
