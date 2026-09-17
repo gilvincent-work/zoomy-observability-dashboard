@@ -12,6 +12,12 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-17 — v1.2.3: distinct per-day colors to prod — `chore(release)`
+
+**Version bumped to 1.2.3** (dashboard only; POS unchanged at 1.2.2). Ships the
+per-day color fix below. Distinct hues for up to 7 days before the earlier-day
+palette repeats; latest day always the ochre accent.
+
 ## 2026-09-17 — Compare-days chart: distinct color per day — `fix(events)`
 
 Earlier days were all drawn from one gray at different opacities, so a 3-day event
