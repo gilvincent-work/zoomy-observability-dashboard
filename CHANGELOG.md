@@ -57,6 +57,25 @@ direct `pos_bundles` update, so **no schema change**.
 - Copy updated to reflect that bundles can now be created in Coop too. tsc clean,
   183 tests green, build compiles, design detector clean.
 
+## 2026-09-17 — Edit stock (set to an exact count) + traceable history — `feat(inventory)`
+
+Add an **Edit stock** action alongside Add stock: set a product's on-hand to an
+absolute number, not just add. No schema change (the `set_product_stock` RPC and
+`setStockAction` already existed, just unwired from the revamped page).
+
+- **Edit stock** in the row ⋯ menu opens a dialog prefilled with the current count;
+  saving writes the exact on-hand via `set_product_stock`, which logs one `recount`
+  movement carrying the signed delta (previous vs new).
+- **Traceable Stock history.** The detail page's Stock history is now built from the
+  movement ledger (adds, reversals, **and edits**), reconstructing the running
+  on-hand so an edit reads **"Edited stock  50 → 45  (−5)"** — previous, new, and
+  difference — with who and when. `getProductDetail` returns a `history` list; the
+  chart's delivery markers now read the same ledger.
+- **Audit "who".** `setStockAction` now stamps the signed-in Coop user (like
+  add-stock) instead of a constant, so edits are attributable.
+- Verified on Staging: a 50 -> 45 edit logged a `recount` of −5 by the actor; ledger
+  sum equals on-hand (reconstruction is exact). tsc clean, 183 tests, build + detector clean.
+
 ## 2026-09-17 — Forecast cover reads "selling days", not "events" — `fix(inventory)`
 
 PO feedback: "~23 events" in the Lasts column is unintuitive (and "event" collides

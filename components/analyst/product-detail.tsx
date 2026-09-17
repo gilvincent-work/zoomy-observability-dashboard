@@ -22,7 +22,7 @@ const STATUS: Record<ForecastStatus, {label: string; text: string}> = {
 const when = (iso: string) => new Date(iso).toLocaleString('en-US', {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
 export function ProductDetailView({detail}: {detail: ProductDetail}) {
-  const {product, forecast, series, chart, yoy, hasLastYear, lastCountedWeeksAgo, countsMatched, latestRealLabel, runsOutLabel, receipts} = detail;
+  const {product, forecast, series, chart, yoy, hasLastYear, lastCountedWeeksAgo, countsMatched, latestRealLabel, runsOutLabel, history} = detail;
   const status = (forecast?.status ?? (product.stock <= 0 ? 'out' : 'healthy')) as ForecastStatus;
   const s = STATUS[status];
   const lastMonthSold = series.length >= 2 ? series[series.length - 2].sold : 0;
@@ -93,22 +93,31 @@ export function ProductDetailView({detail}: {detail: ProductDetail}) {
         </div>
         <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-3 text-sm font-semibold">Stock history</h2>
-          {receipts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No stock adds recorded for this product.</p>
+          {history.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No stock changes recorded for this product.</p>
           ) : (
             <div className="flex flex-col">
-              {receipts.slice(0, 8).map((r) => (
-                <div key={r.id} className="flex items-center gap-3 border-b py-2.5 text-sm last:border-0">
-                  <span className="shrink-0 font-medium">{r.reason === 'add-void' ? 'Reversed add' : 'Added stock'}</span>
-                  <span className={cn('shrink-0 font-mono text-sm font-bold tabular-nums', r.reason === 'add-void' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}>
-                    {r.reason === 'add-void' ? '' : '+'}{r.delta}
-                  </span>
-                  <span className="ml-auto min-w-0 text-right font-mono text-[10.5px] leading-tight text-muted-foreground">
-                    <span className="block truncate font-semibold text-foreground/80" title={r.created_by ?? 'unknown'}>{r.created_by ?? 'unknown'}</span>
-                    {when(r.created_at)}
-                  </span>
-                </div>
-              ))}
+              {history.map((h) => {
+                const label = h.kind === 'recount' ? 'Edited stock' : h.kind === 'add-void' ? 'Reversed add' : 'Added stock';
+                const positive = h.delta > 0;
+                return (
+                  <div key={h.id} className="flex items-center gap-3 border-b py-2.5 text-sm last:border-0">
+                    <span className="shrink-0">
+                      <span className="block font-medium">{label}</span>
+                      {h.kind === 'recount' && (
+                        <span className="block font-mono text-[10.5px] tabular-nums text-muted-foreground">{h.before} → {h.after}</span>
+                      )}
+                    </span>
+                    <span className={cn('shrink-0 font-mono text-sm font-bold tabular-nums', positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
+                      {positive ? '+' : ''}{h.delta}
+                    </span>
+                    <span className="ml-auto min-w-0 text-right font-mono text-[10.5px] leading-tight text-muted-foreground">
+                      <span className="block truncate font-semibold text-foreground/80" title={h.created_by ?? 'unknown'}>{h.created_by ?? 'unknown'}</span>
+                      {when(h.created_at)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

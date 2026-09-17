@@ -2,7 +2,6 @@ import 'server-only';
 import {posClient, usingPosMock, getPosProducts} from './pos-data';
 import {getPosOrders} from './pos-sales';
 import {getStockForecast} from './pos-forecast-data';
-import {getStockReceipts, type StockReceipt} from './pos-stock-intake';
 import {manilaMonthKey, monthKeyOffset, monthKeyLabel, yoyDeltaPct} from './pos-inventory-compute';
 import type {PosProductRow} from './pos-types';
 import type {ForecastRow} from './pos-forecast-compute';
@@ -56,10 +55,23 @@ export interface ProductDetail {
   countsMatched: boolean | null; // last 3 months all reconciled (recount delta 0); null if never counted
   runsOutLabel: string | null; // e.g. 'Runs out ~Aug'
   usingMock: boolean;
-  receipts: StockReceipt[]; // this SKU's stock-in history
+  history: StockHistoryEntry[]; // this SKU's manual stock changes (adds, reversals, edits)
 }
 
-type Movement = {delta: number; created_at: string; reason: string};
+// One traceable manual stock change: an add ('receipt'), its reversal ('add-void'),
+// or an edit ('recount' = set-to-absolute). before/after are the on-hand around the
+// change so an edit shows previous -> new; delta is the signed difference.
+export interface StockHistoryEntry {
+  id: number;
+  kind: 'receipt' | 'add-void' | 'recount';
+  delta: number;
+  before: number;
+  after: number;
+  created_by: string | null;
+  created_at: string; // ISO
+}
+
+type Movement = {id: number; delta: number; created_at: string; reason: string; created_by: string | null};
 
 function monthLabel(key: string): string {
   return new Date(key + '-01T00:00:00Z').toLocaleDateString('en-US', {month: 'short', timeZone: 'UTC'});
@@ -91,12 +103,26 @@ export async function getProductDetail(sku: string, now: Date = new Date()): Pro
   const product = products.find((p) => p.product_id === sku);
   if (!product) return null;
 
-  const [forecast, orders, receipts, movements] = await Promise.all([
+  const [forecast, orders, movements] = await Promise.all([
     getStockForecast(now).catch(() => null),
     getPosOrders().catch(() => []),
-    getStockReceipts(200).then((r) => r.filter((x) => x.product_id === sku)).catch(() => [] as StockReceipt[]),
     loadAllMovements(sku).catch(() => [] as Movement[]),
   ]);
+
+  // Traceable stock history: run the full ledger forward (sales included so the
+  // running on-hand is right, but not shown) and keep the manual changes — adds,
+  // reversals, and edits — newest first. Each carries before/after, so an edit
+  // reads previous -> new with the difference.
+  let running = 0;
+  const history: StockHistoryEntry[] = [];
+  for (const m of movements) {
+    const before = running;
+    running += m.delta;
+    if (m.reason === 'receipt' || m.reason === 'add-void' || m.reason === 'recount') {
+      history.push({id: m.id, kind: m.reason, delta: m.delta, before, after: running, created_by: m.created_by, created_at: m.created_at});
+    }
+  }
+  history.reverse();
 
   const real = lastThreeMonths(now);
   const future = nextThreeMonths(now);
@@ -111,9 +137,9 @@ export async function getProductDetail(sku: string, now: Date = new Date()): Pro
       soldByMonth.set(mk, (soldByMonth.get(mk) ?? 0) + Number(line.qty ?? 0));
     }
   }
-  // Deliveries (receipts) aggregated per Manila month.
+  // Deliveries (receipt movements) aggregated per Manila month.
   const deliveryByMonth = new Map<string, {qty: number; latest: string}>();
-  for (const r of receipts) {
+  for (const r of movements) {
     if (r.reason !== 'receipt' || !(r.delta > 0)) continue;
     const mk = manilaMonthKey(r.created_at);
     const cur = deliveryByMonth.get(mk) ?? {qty: 0, latest: r.created_at};
@@ -224,18 +250,26 @@ export async function getProductDetail(sku: string, now: Date = new Date()): Pro
     countsMatched,
     runsOutLabel,
     usingMock: usingPosMock(),
-    receipts,
+    history: history.slice(0, 12),
   };
 }
 
-/** All stock movements for one SKU (any reason), for reconstruction + counts. */
+/** All stock movements for one SKU (any reason), for reconstruction + counts +
+ *  history. Ordered chronologically so a forward run gives the running on-hand. */
 async function loadAllMovements(sku: string): Promise<Movement[]> {
   if (usingPosMock()) return [];
   const {data, error} = await posClient()
     .from('pos_stock_movements')
-    .select('delta,created_at,reason')
+    .select('id,delta,created_at,reason,created_by')
     .eq('product_id', sku)
-    .order('created_at', {ascending: true});
+    .order('created_at', {ascending: true})
+    .order('id', {ascending: true});
   if (error) throw new Error(error.message);
-  return (data ?? []).map((m) => ({delta: Number(m.delta ?? 0), created_at: m.created_at as string, reason: (m.reason as string) ?? ''}));
+  return (data ?? []).map((m) => ({
+    id: Number(m.id),
+    delta: Number(m.delta ?? 0),
+    created_at: m.created_at as string,
+    reason: (m.reason as string) ?? '',
+    created_by: (m.created_by as string | null) ?? null,
+  }));
 }
