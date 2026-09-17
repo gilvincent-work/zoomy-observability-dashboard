@@ -255,6 +255,68 @@ export function eventRevenueSeries(orders: PosOrder[]): RevenuePoint[] {
   });
 }
 
+/** Minutes since Manila midnight (0..1439) for an ISO instant. Time-of-day only,
+ *  so orders from different calendar days line up on one axis. */
+export function manilaMinuteOfDay(iso: string): number {
+  const min = Math.floor(new Date(iso).getTime() / 60_000) + MANILA_OFFSET_MS / 60_000;
+  return ((min % 1440) + 1440) % 1440;
+}
+
+/** One row per distinct time-of-day; each event day is a numeric column holding
+ *  that day's cumulative revenue as of that minute, or null where the day has no
+ *  point (so a line spans only its own selling window, never faking the future).
+ *  `tod` is minutes since Manila midnight. */
+export interface DayPacingRow {
+  tod: number;
+  [dayKey: string]: number | null;
+}
+
+export interface DayPacingSeries {
+  days: string[]; // day keys (YYYY-MM-DD) that actually had sales, ascending
+  rows: DayPacingRow[];
+}
+
+/** Per-day intraday cumulative revenue, aligned by Manila time-of-day, for the
+ *  "compare days" overlay: each day resets to 0 and climbs, so a later day's pace
+ *  reads directly against earlier days at the same clock time. Voided excluded;
+ *  same-minute orders collapse to that minute's running total. */
+export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
+  const byDay = new Map<string, PosOrder[]>();
+  for (const o of orders) {
+    if (isVoided(o)) continue;
+    const key = manilaDayKey(o.created_at);
+    const arr = byDay.get(key) ?? [];
+    arr.push(o);
+    byDay.set(key, arr);
+  }
+  const days = Array.from(byDay.keys()).sort();
+
+  const tods = new Set<number>();
+  const perDay = new Map<string, Map<number, number>>();
+  for (const d of days) {
+    const sorted = byDay.get(d)!.slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const atMinute = new Map<number, number>();
+    let running = 0;
+    for (const o of sorted) {
+      running += o.total;
+      const tod = manilaMinuteOfDay(o.created_at);
+      atMinute.set(tod, running); // same minute keeps the latest running total
+      tods.add(tod);
+    }
+    perDay.set(d, atMinute);
+  }
+
+  const rows: DayPacingRow[] = Array.from(tods)
+    .sort((a, b) => a - b)
+    .map((tod) => {
+      const row: DayPacingRow = {tod};
+      for (const d of days) row[d] = perDay.get(d)!.get(tod) ?? null;
+      return row;
+    });
+
+  return {days, rows};
+}
+
 /** Group orders by Manila calendar day, ascending. Days with no sales omitted. */
 export function salesByDay(orders: PosOrder[]): DailySales[] {
   const byDay = new Map<string, {revenue: number; orders: number}>();
