@@ -57,6 +57,15 @@ direct `pos_bundles` update, so **no schema change**.
 - Copy updated to reflect that bundles can now be created in Coop too. tsc clean,
   183 tests green, build compiles, design detector clean.
 
+## 2026-09-17 — Fix row ⋯ menu clipping on bottom rows — `fix(inventory)`
+
+The per-row actions menu was absolutely positioned inside the table's
+`overflow-x-auto` container (which also clips vertically), so on the last rows it
+was cut off at the card's edge. Render it in a **portal with fixed positioning**
+anchored to the ⋯ button instead: it escapes the overflow container and **flips
+above the button** when there isn't room below. Closes on outside-click, scroll, or
+resize. Two-pass measure so it never flashes in the wrong spot. tsc clean, 183 tests.
+
 ## 2026-09-17 — Edit stock (set to an exact count) + traceable history — `feat(inventory)`
 
 Add an **Edit stock** action alongside Add stock: set a product's on-hand to an

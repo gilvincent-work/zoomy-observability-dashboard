@@ -6,7 +6,7 @@
 // reprice, list/unlist) via the existing server actions. Read-first by design;
 // editing opens a small popover so the wide table stays scannable.
 
-import {useMemo, useState, useTransition, useEffect, useRef} from 'react';
+import {useMemo, useState, useTransition, useEffect, useLayoutEffect, useRef} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
@@ -194,6 +194,7 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
   const s = STATUS[r.status];
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
   function toggleListing() {
     startTransition(async () => {
       await setListingAction(r.product_id, !r.active);
@@ -247,10 +248,10 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
         <LastsBadge row={r} />
       </td>
       <td className="px-4 py-3 text-right tabular-nums">{r.reorderQty != null ? r.reorderQty : <span className="text-muted-foreground">—</span>}</td>
-      <td className="relative px-2 py-3 text-right">
-        <button onClick={(e) => {e.stopPropagation(); onMenu();}} aria-label="Row actions" className="rounded p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></button>
+      <td className="px-2 py-3 text-right">
+        <button ref={menuBtnRef} onClick={(e) => {e.stopPropagation(); onMenu();}} aria-label="Row actions" className="rounded p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></button>
         {menuOpen && (
-          <RowMenu sku={r.product_id} active={r.active} pending={pending}
+          <RowMenu anchor={menuBtnRef.current} sku={r.product_id} active={r.active} pending={pending}
             onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
             onAddStock={onAddStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
         )}
@@ -288,17 +289,49 @@ function Badge({tone, children}: {tone: 'crit' | 'warn' | 'ok'; children: React.
   return <span className={cn('inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold', cls)}>{children}</span>;
 }
 
-function RowMenu({sku, active, pending, onRename, onReprice, onToggleListing, onAddStock, onEditStock, onUndo, onClose}: {
-  sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onAddStock: () => void; onEditStock: () => void; onUndo: () => void; onClose: () => void;
+// Rendered in a portal with fixed positioning anchored to the ⋯ button, so it
+// escapes the table's overflow container (which would otherwise clip it) and flips
+// above the button when there isn't room below (bottom rows near the viewport edge).
+function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleListing, onAddStock, onEditStock, onUndo, onClose}: {
+  anchor: HTMLElement | null; sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onAddStock: () => void; onEditStock: () => void; onUndo: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{left: number; top: number} | null>(null);
+
+  useLayoutEffect(() => {
+    if (!anchor || !ref.current) return;
+    const a = anchor.getBoundingClientRect();
+    const m = ref.current.getBoundingClientRect();
+    const gap = 6, pad = 8;
+    const left = Math.max(pad, Math.min(a.right - m.width, window.innerWidth - m.width - pad));
+    let top = a.bottom + gap;
+    if (top + m.height > window.innerHeight - pad) {
+      const above = a.top - gap - m.height;
+      top = above >= pad ? above : Math.max(pad, window.innerHeight - m.height - pad);
+    }
+    setPos({left, top});
+  }, [anchor]);
+
   useEffect(() => {
-    const h = (e: MouseEvent) => {if (ref.current && !ref.current.contains(e.target as Node)) onClose();};
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [onClose]);
-  return (
-    <div ref={ref} onClick={(e) => e.stopPropagation()} className="absolute right-2 top-9 z-20 w-48 overflow-hidden rounded-xl border bg-popover text-left shadow-lg">
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node) && anchor && !anchor.contains(e.target as Node)) onClose();
+    };
+    const dismiss = () => onClose();
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('resize', dismiss);
+    window.addEventListener('scroll', dismiss, true); // capture inner scroll containers too
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('resize', dismiss);
+      window.removeEventListener('scroll', dismiss, true);
+    };
+  }, [anchor, onClose]);
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div ref={ref} onClick={(e) => e.stopPropagation()}
+      style={{position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? 'visible' : 'hidden'}}
+      className="z-50 w-48 overflow-hidden rounded-xl border bg-popover text-left shadow-lg">
       <MenuItem href={`/inventory/${sku}`}>View detail</MenuItem>
       <MenuItem onClick={onAddStock}>Add stock</MenuItem>
       <MenuItem onClick={onEditStock}>Edit stock</MenuItem>
@@ -306,7 +339,8 @@ function RowMenu({sku, active, pending, onRename, onReprice, onToggleListing, on
       <MenuItem onClick={onRename}>Rename</MenuItem>
       <MenuItem onClick={onReprice}>Change price</MenuItem>
       <MenuItem onClick={onToggleListing} disabled={pending}>{active ? 'Unlist' : 'List'}</MenuItem>
-    </div>
+    </div>,
+    document.body,
   );
 }
 function MenuItem({children, onClick, href, disabled}: {children: React.ReactNode; onClick?: () => void; href?: string; disabled?: boolean}) {
