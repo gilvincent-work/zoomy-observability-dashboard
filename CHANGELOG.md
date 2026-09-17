@@ -12,6 +12,16 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-17 — v1.2.0: align with POS prod promotion — `chore(release)`
+
+**Version bumped to 1.2.0** (`package.json`; was 1.1.0) in lockstep with the POS
+app, marking the prod cutover of the shared `pos_*` features the dashboard reads
+and writes: events/cash/pet-tag, Coop stock intake, stock-forecast config, order
+edit/void, and low-stock email alerts. No dashboard code change in this bump; the
+schema promotion is driven from `../zoomy-pos/supabase/prod_promotion_2026-09-17.sql`
+(prod `qkxbwzdxhwcbwgriwipi`, additive-only, existing sales data untouched). Prod
+deploy of `main` is the co-worker's Vercel project.
+
 ## 2026-09-16 — Stock Forecast (Phase 4): low-stock email alerts — `feat(alerts)`
 
 The email half of the Stock Forecast. Immediate alerts are **event-driven**; the
