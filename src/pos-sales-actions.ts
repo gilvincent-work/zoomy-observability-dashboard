@@ -67,7 +67,7 @@ export async function unvoidOrderAction(clientUuid: string): Promise<ActionResul
  */
 export async function editOrderAction(
   clientUuid: string,
-  patch: {payment_method?: string; customer_handle?: string | null},
+  patch: {payment_method?: string; customer_handle?: string | null; pet_type?: string | null},
   entries: EditEntry[],
 ): Promise<ActionResult> {
   if (usingPosMock()) {
@@ -90,6 +90,8 @@ export async function editOrderAction(
   const p_patch: Record<string, string> = {};
   if (patch.payment_method) p_patch.payment_method = patch.payment_method;
   if (patch.customer_handle !== undefined) p_patch.customer_handle = patch.customer_handle ?? '';
+  // pet_type: '' clears back to untagged, a value ('dog'|'cat'|'both') sets it.
+  if (patch.pet_type !== undefined) p_patch.pet_type = patch.pet_type ?? '';
 
   const {data, error} = await posClient().rpc('edit_pos_order', {
     p_client_uuid: clientUuid,

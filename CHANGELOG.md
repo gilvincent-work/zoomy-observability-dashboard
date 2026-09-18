@@ -12,6 +12,21 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-18 — v1.2.5: pet-type editing to prod — `chore(release)`
+
+**Version bumped to 1.2.5** (was 1.2.4). Ships the pet-type edit control below, and
+the `edit_pos_order` RPC's `pet_type` patch was applied to the Coop prod DB. Paired
+with POS 1.2.3.
+
+## 2026-09-18 — Edit an order's pet type from Coop — `feat(orders)`
+
+The offline-orders edit modal gains a Pet type control (Dog / Cat / Both, click the
+active chip to clear back to untagged), matching the POS cart chips. It threads
+`pet_type` through `editOrderAction` into the shared `edit_pos_order` RPC, which now
+patches `pet_type` (same partial-patch pattern as payment method / handle; `''`
+clears to untagged). Colors match the Pet mix legend. Paired with the POS-side edit
+in `../zoomy-pos`. Verified end-to-end on Staging (set + clear, total preserved).
+
 ## 2026-09-18 — v1.2.4: event Top sellers bundle breakdown to prod — `chore(release)`
 
 **Version bumped to 1.2.4** (dashboard only). Promotes the event Top sellers bundle
