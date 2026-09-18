@@ -20,6 +20,14 @@ import {Pagination} from './pagination';
 // Methods offered in the edit form's payment-method picker.
 const EDIT_METHODS = ['cash', 'qrph', 'gcash', 'maya', 'card'];
 
+// Pet-type chips in the edit form. Colors match the Pet mix legend (dog blue,
+// cat purple, both green). Clicking the active chip clears back to untagged.
+const PET_OPTIONS: {key: 'dog' | 'cat' | 'both'; emoji: string; label: string; color: string}[] = [
+  {key: 'dog', emoji: '🐶', label: 'Dog', color: '#3b82f6'},
+  {key: 'cat', emoji: '🐱', label: 'Cat', color: '#a855f7'},
+  {key: 'both', emoji: '🐶🐱', label: 'Both', color: '#22c55e'},
+];
+
 const timeLabel = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
@@ -263,6 +271,9 @@ function EditOrderModal({
 
   const [method, setMethod] = useState(order.payment_method ?? 'cash');
   const [handle, setHandle] = useState(order.customer_handle ?? '');
+  const [petType, setPetType] = useState<'dog' | 'cat' | 'both' | null>(
+    (order.pet_type as 'dog' | 'cat' | 'both' | null) ?? null,
+  );
   const [entries, setEntries] = useState<DraftEntry[]>(() =>
     orderToEntries(order, bundles.map((b) => ({bundle_id: b.bundle_id, bundle_type: b.bundle_type, pick_count: b.pick_count, price: b.price}))).map((e): DraftEntry =>
       e.kind === 'item'
@@ -318,7 +329,7 @@ function EditOrderModal({
         : {kind: 'bundle', bundle_id: e.bundle_id, price: Number(e.price) || 0, picks: e.picks.map((p) => ({product_id: p.product_id, qty: Number(p.qty) || 0}))},
     );
     startTransition(async () => {
-      const res = await editOrderAction(order.client_uuid, {payment_method: method, customer_handle: handle.trim()}, payload);
+      const res = await editOrderAction(order.client_uuid, {payment_method: method, customer_handle: handle.trim(), pet_type: petType}, payload);
       if (!res.ok) setError(res.error);
       else onSaved();
     });
@@ -358,6 +369,31 @@ function EditOrderModal({
                 className="h-8 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring"
               />
             </label>
+          </div>
+
+          <div className="mb-4 flex flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Pet type</span>
+            <div className="flex gap-1.5">
+              {PET_OPTIONS.map((opt) => {
+                const active = petType === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    // Click the active chip to clear back to untagged (matches the POS cart).
+                    onClick={() => setPetType(active ? null : opt.key)}
+                    aria-pressed={active}
+                    className={cn(
+                      'inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors',
+                      active ? 'border-transparent text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                    style={active ? {backgroundColor: opt.color} : undefined}
+                  >
+                    <span aria-hidden>{opt.emoji}</span> {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Items &amp; bundles</span>
