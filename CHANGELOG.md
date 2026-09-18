@@ -12,6 +12,12 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-18 — v1.2.5: pet-type editing to prod — `chore(release)`
+
+**Version bumped to 1.2.5** (was 1.2.4). Ships the pet-type edit control below, and
+the `edit_pos_order` RPC's `pet_type` patch was applied to the Coop prod DB. Paired
+with POS 1.2.3.
+
 ## 2026-09-18 — Edit an order's pet type from Coop — `feat(orders)`
 
 The offline-orders edit modal gains a Pet type control (Dog / Cat / Both, click the
