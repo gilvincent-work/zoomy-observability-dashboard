@@ -12,6 +12,12 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-18 — v1.2.4: event Top sellers bundle breakdown to prod — `chore(release)`
+
+**Version bumped to 1.2.4** (dashboard only). Promotes the event Top sellers bundle
+breakdown + reconciliation below. Presentational only — no schema or data-layer
+change, consistent with features-only production promotion (no stock/product sync).
+
 ## 2026-09-18 — Event Top sellers: bundle breakdown + reconciliation — `feat(events)`
 
 The per-event **Top sellers** list now mirrors the Offline Sales "Top products"
