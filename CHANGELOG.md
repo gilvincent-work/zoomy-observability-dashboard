@@ -12,6 +12,18 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-18 — Event Top sellers: bundle breakdown + reconciliation — `feat(events)`
+
+The per-event **Top sellers** list now mirrors the Offline Sales "Top products"
+card. Each product shows a `{n} individual · {n} bundled` breakdown under its name
+(individual = total units minus bundle-picked units), so it's clear how many units
+moved on their own vs. inside a bundle. Below the list, a **Bundle deals** row
+(order count + set price) plus the reconciliation line "Itemized … plus bundles …
+matching Revenue above" ties the itemized per-product total back to the event's
+Revenue KPI. Purely presentational — reuses the existing `topProducts` (`bundledUnits`
+was already computed) and `bundleSalesSummary` helpers, scoped to the event's orders
+(and the selected day). No schema or data-layer change.
+
 ## 2026-09-17 — v1.2.3: distinct per-day colors to prod — `chore(release)`
 
 **Version bumped to 1.2.3** (dashboard only; POS unchanged at 1.2.2). Ships the

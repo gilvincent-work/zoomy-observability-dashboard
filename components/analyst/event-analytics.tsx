@@ -2,8 +2,8 @@
 
 import {useMemo, useState, type ReactNode} from 'react';
 import {Area, AreaChart, CartesianGrid, Line, LineChart, XAxis, YAxis} from 'recharts';
-import type {PetMix, PosEvent, PosOrder} from '@/src/pos-sales-types';
-import {computeKpis, datesInRange, eventDayPacingSeries, eventRevenueSeries, manilaDayKey, paymentBreakdown, petMix, topProducts, type DayPacingSeries} from '@/src/pos-sales-compute';
+import type {BundleSalesSummary, PetMix, PosEvent, PosOrder, TopProduct} from '@/src/pos-sales-types';
+import {bundleSalesSummary, computeKpis, datesInRange, eventDayPacingSeries, eventRevenueSeries, manilaDayKey, paymentBreakdown, petMix, topProducts, type DayPacingSeries} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {cn} from '@/lib/utils';
 import {ChartContainer, ChartTooltip, type ChartConfig} from '@/components/ui/chart';
@@ -89,6 +89,7 @@ export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrd
   const pay = useMemo(() => paymentBreakdown(scoped), [scoped]);
   const pets = useMemo(() => petMix(scoped), [scoped]);
   const tops = useMemo(() => topProducts(scoped, 5), [scoped]);
+  const bundles = useMemo(() => bundleSalesSummary(scoped), [scoped]);
   // When one day is selected the x-axis is intra-day (time only); across all
   // days of a multi-day event it also carries the date.
   const labelWithDay = !day && multiDay;
@@ -132,6 +133,7 @@ export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrd
           pets={pets}
           petTotal={petTotal}
           tops={tops}
+          bundles={bundles}
         />
       )}
     </div>
@@ -294,10 +296,11 @@ type AnalyticsBodyProps = {
   payTotal: number;
   pets: PetMix;
   petTotal: number;
-  tops: {product_id: string; name: string; revenue: number; units: number}[];
+  tops: TopProduct[];
+  bundles: BundleSalesSummary;
 };
 
-function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare, compare, onCompareChange, pay, payTotal, pets, petTotal, tops}: AnalyticsBodyProps) {
+function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare, compare, onCompareChange, pay, payTotal, pets, petTotal, tops, bundles}: AnalyticsBodyProps) {
   return (
     <div className="flex flex-col gap-7">
       {/* Headline KPIs */}
@@ -416,19 +419,48 @@ function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare
       </div>
 
       {/* Top sellers */}
-      {tops.length > 0 && (
+      {(tops.length > 0 || bundles.bundleRevenue > 0) && (
         <div>
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Top sellers</div>
           <ol className="flex flex-col gap-2.5">
-            {tops.map((t, i) => (
-              <li key={t.product_id ?? `${t.name}-${i}`} className="flex items-center gap-2.5 text-sm">
-                <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-                <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                <span className="text-xs tabular-nums text-muted-foreground">{t.units} {t.units === 1 ? 'unit' : 'units'}</span>
-                <span className="w-20 text-right font-medium tabular-nums">{formatPeso(t.revenue)}</span>
-              </li>
-            ))}
+            {tops.map((t, i) => {
+              const individual = t.units - t.bundledUnits;
+              return (
+                <li key={t.product_id ?? `${t.name}-${i}`} className="flex items-start gap-2.5 text-sm">
+                  <span className="w-4 pt-0.5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{t.name}</span>
+                    {t.bundledUnits > 0 && (
+                      <span className="text-[11px] tabular-nums text-muted-foreground">
+                        {individual} individual · {t.bundledUnits} bundled
+                      </span>
+                    )}
+                  </span>
+                  <span className="pt-0.5 text-xs tabular-nums text-muted-foreground">{t.units} {t.units === 1 ? 'unit' : 'units'}</span>
+                  <span className="w-20 pt-0.5 text-right font-medium tabular-nums">{formatPeso(t.revenue)}</span>
+                </li>
+              );
+            })}
           </ol>
+
+          {bundles.bundleRevenue > 0 && (
+            <div className="mt-2.5 flex flex-col gap-2.5">
+              <div className="h-px w-full bg-border" />
+              <div className="flex items-center gap-2.5 text-sm">
+                <span className="w-4" />
+                <span className="min-w-0 flex-1">
+                  Bundle deals
+                  <span className="ml-1.5 text-[11px] text-muted-foreground">priced as a set</span>
+                </span>
+                <span className="text-xs tabular-nums text-muted-foreground">{bundles.bundleOrders} {bundles.bundleOrders === 1 ? 'order' : 'orders'}</span>
+                <span className="w-20 text-right font-medium tabular-nums">{formatPeso(bundles.bundleRevenue)}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Itemized {formatPeso(bundles.itemizedRevenue)} plus bundles {formatPeso(bundles.bundleRevenue)} is{' '}
+                {formatPeso(bundles.totalRevenue)}, matching Revenue above.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
