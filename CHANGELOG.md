@@ -12,6 +12,24 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — CRM table filters — `feat(crm)`
+
+Each CRM table gets the filters its storefront-admin counterpart has, so an
+admin can reach a subset without scrolling 6 pages: carts by **Progress /
+Status / RETURN30**, orders by **Payment / Fulfillment / Reviewed**, customers
+by **Tier / Bought**. Filter sets are per-table and survive tab switches; any
+change resets to page 1, and a Clear appears only when something is narrowed.
+
+Progress needs Shopify's raw checkout payload, which the reader deliberately
+drops at the boundary — so the stage is now derived **server-side** in
+`crm-data.ts` and only the label (`Email` / `Shipping` / `Payment`) crosses to
+the browser, never the shopper's address. It is also a new table column and CSV
+field. As on the storefront, `Shipping` is the furthest step Shopify exposes:
+payment-form engagement lives in its secure iframe and is never persisted
+unless the payment completes.
+
+---
+
 ## 2026-09-21 — Website CRM page (live proxy) — `feat`
 
 New `/crm` tab: website customers, orders and cart recovery, read **live** from the

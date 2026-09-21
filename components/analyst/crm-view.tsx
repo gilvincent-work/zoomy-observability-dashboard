@@ -26,10 +26,16 @@ import {Pagination} from './pagination';
 import {
   cartStatus,
   enrichCustomers,
+  filterActive,
+  filterCarts,
+  filterCustomers,
+  filterOrders,
   fmtPh,
-  textMatch,
   tierCounts,
   turnaround,
+  EMPTY_CART_FILTER,
+  EMPTY_CUSTOMER_FILTER,
+  EMPTY_ORDER_FILTER,
   type CartStatus,
 } from '@/src/crm-compute';
 import type {
@@ -66,6 +72,41 @@ const TABS: Array<{key: Tab; label: string; icon: React.ComponentType<{className
   {key: 'orders', label: 'Orders', icon: Receipt},
   {key: 'customers', label: 'Customers', icon: Users},
 ];
+
+/** One labelled dropdown. Native select on purpose: it is the control every
+ * admin already knows, and it works on a phone without a popover library. */
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<[string, string]>;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      {label}
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          'h-8 rounded-lg border bg-background px-2 text-xs text-foreground outline-none',
+          'focus-visible:border-primary',
+          value === 'all' ? 'border-border' : 'border-primary text-primary',
+        )}
+      >
+        {options.map(([v, l]) => (
+          <option value={v} key={v}>
+            {l}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 function csvCell(v: unknown): string {
   const raw = String(v ?? '');
@@ -108,7 +149,26 @@ export function CrmView({
   const [tab, setTab] = useState<Tab>('carts');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+  // One filter set per table, kept while switching tabs so a narrowed view is
+  // still there when you come back to it.
+  const [cartFilter, setCartFilter] = useState(EMPTY_CART_FILTER);
+  const [orderFilter, setOrderFilter] = useState(EMPTY_ORDER_FILTER);
+  const [customerFilter, setCustomerFilter] = useState(EMPTY_CUSTOMER_FILTER);
   const needle = q.trim().toLowerCase();
+
+  const activeFilter =
+    tab === 'carts' ? cartFilter : tab === 'orders' ? orderFilter : customerFilter;
+  const clearFilters = () => {
+    if (tab === 'carts') setCartFilter(EMPTY_CART_FILTER);
+    else if (tab === 'orders') setOrderFilter(EMPTY_ORDER_FILTER);
+    else setCustomerFilter(EMPTY_CUSTOMER_FILTER);
+    setPage(1);
+  };
+  /** Every filter change resets to page 1 — page 4 of a narrowed list is empty. */
+  const onFilter = <T extends object>(set: (v: T) => void, next: T) => {
+    set(next);
+    setPage(1);
+  };
 
   const enriched = useMemo(
     () => enrichCustomers(customers, orders, membership.programStart),
@@ -117,14 +177,10 @@ export function CrmView({
   const tiers = useMemo(() => tierCounts(customers), [customers]);
 
   const rows = useMemo(() => {
-    if (tab === 'carts') return checkouts.filter((c) => textMatch(needle, [c.email]));
-    if (tab === 'orders') {
-      return orders.filter((o) => textMatch(needle, [o.email, o.orderNumber, o.financialStatus]));
-    }
-    return enriched.filter((c) =>
-      textMatch(needle, [c.email, c.firstName, c.lastName, c.phone, c.petName, c.membershipTier]),
-    );
-  }, [tab, needle, checkouts, orders, enriched]);
+    if (tab === 'carts') return filterCarts(checkouts, cartFilter, needle);
+    if (tab === 'orders') return filterOrders(orders, orderFilter, needle);
+    return filterCustomers(enriched, customerFilter, needle);
+  }, [tab, needle, checkouts, orders, enriched, cartFilter, orderFilter, customerFilter]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   // Clamped, not reset: searching shortens the list, and a page number left
@@ -140,10 +196,11 @@ export function CrmView({
   const onExport = () => {
     if (tab === 'carts') {
       downloadCsv(`crm-abandoned-carts (${rows.length}).csv`, [
-        ['Email', 'Cart value', 'Status', 'Reminders sent', 'Last reminder (PH time)', 'Reminder (RETURN30)', 'Abandoned (PH time)'],
+        ['Email', 'Cart value', 'Progress', 'Status', 'Reminders sent', 'Last reminder (PH time)', 'Reminder (RETURN30)', 'Abandoned (PH time)'],
         ...(rows as CrmCheckout[]).map((c) => [
           c.email ?? '',
           money(c.totalPrice, c.currency),
+          c.stage,
           cartStatus(c),
           String(c.remindersSent),
           fmtPh(c.lastReminderAt),
@@ -302,6 +359,114 @@ export function CrmView({
           </div>
         </div>
 
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {tab === 'carts' && (
+            <>
+              <FilterSelect
+                label="Progress"
+                value={cartFilter.stage}
+                onChange={(stage) => onFilter(setCartFilter, {...cartFilter, stage})}
+                options={[
+                  ['all', 'All'],
+                  ['Email', 'Email'],
+                  ['Shipping', 'Shipping'],
+                  ['Payment', 'Payment'],
+                ]}
+              />
+              <FilterSelect
+                label="Status"
+                value={cartFilter.status}
+                onChange={(status) => onFilter(setCartFilter, {...cartFilter, status})}
+                options={[
+                  ['all', 'All'],
+                  ['Active', 'Active'],
+                  ['Recovered', 'Recovered'],
+                  ['Converted', 'Converted'],
+                ]}
+              />
+              <FilterSelect
+                label="RETURN30"
+                value={cartFilter.winback}
+                onChange={(winback) => onFilter(setCartFilter, {...cartFilter, winback})}
+                options={[
+                  ['all', 'All'],
+                  ['sent', 'Sent'],
+                  ['not-sent', 'Not sent'],
+                ]}
+              />
+            </>
+          )}
+          {tab === 'orders' && (
+            <>
+              <FilterSelect
+                label="Payment"
+                value={orderFilter.payment}
+                onChange={(payment) => onFilter(setOrderFilter, {...orderFilter, payment})}
+                options={[
+                  ['all', 'All'],
+                  ['paid', 'Paid'],
+                  ['pending', 'Pending'],
+                  ['refunded', 'Refunded'],
+                ]}
+              />
+              <FilterSelect
+                label="Fulfillment"
+                value={orderFilter.fulfillment}
+                onChange={(fulfillment) => onFilter(setOrderFilter, {...orderFilter, fulfillment})}
+                options={[
+                  ['all', 'All'],
+                  ['fulfilled', 'Fulfilled'],
+                  ['unfulfilled', 'Unfulfilled'],
+                ]}
+              />
+              <FilterSelect
+                label="Reviewed"
+                value={orderFilter.reviewed}
+                onChange={(reviewed) => onFilter(setOrderFilter, {...orderFilter, reviewed})}
+                options={[
+                  ['all', 'All'],
+                  ['reviewed', 'Reviewed'],
+                  ['pending', 'Not reviewed'],
+                ]}
+              />
+            </>
+          )}
+          {tab === 'customers' && (
+            <>
+              <FilterSelect
+                label="Tier"
+                value={customerFilter.tier}
+                onChange={(tier) => onFilter(setCustomerFilter, {...customerFilter, tier})}
+                options={[
+                  ['all', 'All'],
+                  ['platinum', 'Platinum'],
+                  ['gold', 'Gold'],
+                  ['guest', 'Guest'],
+                ]}
+              />
+              <FilterSelect
+                label="Bought"
+                value={customerFilter.buyers}
+                onChange={(buyers) => onFilter(setCustomerFilter, {...customerFilter, buyers})}
+                options={[
+                  ['all', 'All'],
+                  ['buyers', 'Has ordered'],
+                  ['none', 'Never ordered'],
+                ]}
+              />
+            </>
+          )}
+          {filterActive(activeFilter) && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
         <Card>
           <CardContent className="p-0">
             {rows.length === 0 ? (
@@ -316,6 +481,7 @@ export function CrmView({
                       <tr>
                         <th className="px-4 py-2.5 font-medium">Email</th>
                         <th className="px-4 py-2.5 font-medium">Cart</th>
+                        <th className="px-4 py-2.5 font-medium">Progress</th>
                         <th className="px-4 py-2.5 font-medium">Status</th>
                         <th className="px-4 py-2.5 font-medium">Reminders</th>
                         <th className="px-4 py-2.5 font-medium">RETURN30</th>
@@ -351,6 +517,7 @@ export function CrmView({
                           <tr key={c.shopifyCheckoutId} className="border-b last:border-0">
                             <td className="px-4 py-2.5">{c.email ?? '—'}</td>
                             <td className="px-4 py-2.5 tabular-nums">{money(c.totalPrice, c.currency)}</td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground">{c.stage}</td>
                             <td className="px-4 py-2.5">
                               <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', STATUS_TONE[status])}>
                                 {status}

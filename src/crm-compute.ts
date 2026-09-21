@@ -4,7 +4,7 @@
  * dashboards read the same API and must not disagree about what "Recovered" or
  * "Platinum" means.
  */
-import type {CrmCheckout, CrmCustomer, CrmOrder} from './crm-types';
+import type {CheckoutStage, CrmCheckout, CrmCustomer, CrmOrder} from './crm-types';
 
 export type CartStatus = 'Active' | 'Recovered' | 'Converted';
 
@@ -121,4 +121,78 @@ export function fmtPh(iso: string | null | undefined): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+/**
+ * How far a shopper got before abandoning, from the raw Shopify checkout
+ * payload. Called on the server (crm-data.ts) so only the resulting label
+ * crosses to the browser.
+ *
+ * Shipping counts as reached when an address was entered OR a shipping method
+ * was computed, which implies one.
+ */
+export function checkoutStage(
+  checkout: {email?: string | null; reachedPaymentAt?: string | null},
+  raw: unknown,
+): CheckoutStage {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as {
+    email?: string;
+    shipping_address?: {address1?: string; city?: string; zip?: string};
+    shipping_lines?: unknown[];
+  };
+  if (checkout.reachedPaymentAt) return 'Payment';
+  const addr = r.shipping_address ?? {};
+  if (addr.address1 || addr.city || addr.zip || (r.shipping_lines?.length ?? 0) > 0) return 'Shipping';
+  if (checkout.email || r.email) return 'Email';
+  return 'Started';
+}
+
+/* ---------- table filters ---------- */
+
+export type CartFilter = {stage: string; status: string; winback: string};
+export type OrderFilter = {payment: string; fulfillment: string; reviewed: string};
+export type CustomerFilter = {tier: string; buyers: string};
+
+export const EMPTY_CART_FILTER: CartFilter = {stage: 'all', status: 'all', winback: 'all'};
+export const EMPTY_ORDER_FILTER: OrderFilter = {payment: 'all', fulfillment: 'all', reviewed: 'all'};
+export const EMPTY_CUSTOMER_FILTER: CustomerFilter = {tier: 'all', buyers: 'all'};
+
+/** True when any of a filter set's fields is narrowed — drives "Clear". */
+export function filterActive(f: Record<string, string>): boolean {
+  return Object.values(f).some((v) => v !== 'all');
+}
+
+export function filterCarts(rows: CrmCheckout[], f: CartFilter, needle: string): CrmCheckout[] {
+  return rows.filter(
+    (c) =>
+      textMatch(needle, [c.email]) &&
+      (f.stage === 'all' || c.stage === f.stage) &&
+      (f.status === 'all' || cartStatus(c) === f.status) &&
+      (f.winback === 'all' || (f.winback === 'sent' ? Boolean(c.winbackSentAt) : !c.winbackSentAt)),
+  );
+}
+
+export function filterOrders(rows: CrmOrder[], f: OrderFilter, needle: string): CrmOrder[] {
+  return rows.filter(
+    (o) =>
+      textMatch(needle, [o.email, o.orderNumber, o.financialStatus]) &&
+      (f.payment === 'all' || (o.financialStatus ?? '').toLowerCase() === f.payment) &&
+      (f.fulfillment === 'all' ||
+        (f.fulfillment === 'fulfilled' ? Boolean(o.fulfilledAt) : !o.fulfilledAt)) &&
+      (f.reviewed === 'all' ||
+        (f.reviewed === 'reviewed' ? Boolean(o.reviewSubmittedAt) : !o.reviewSubmittedAt)),
+  );
+}
+
+export function filterCustomers(
+  rows: EnrichedCustomer[],
+  f: CustomerFilter,
+  needle: string,
+): EnrichedCustomer[] {
+  return rows.filter(
+    (c) =>
+      textMatch(needle, [c.email, c.firstName, c.lastName, c.phone, c.petName, c.membershipTier]) &&
+      (f.tier === 'all' || (f.tier === 'guest' ? !c.membershipTier : c.membershipTier === f.tier)) &&
+      (f.buyers === 'all' || (f.buyers === 'buyers' ? c.orderCount > 0 : c.orderCount === 0)),
+  );
 }
