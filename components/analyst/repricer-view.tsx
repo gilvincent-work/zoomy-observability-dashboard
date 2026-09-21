@@ -116,7 +116,7 @@ function VariantHistoryPanel({events, currentPrice, drifted}: {events: RepriceHi
         <p className="px-4 py-4 text-sm text-foreground/55">No recorded price changes yet.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-xs max-md:min-w-[480px]">
             <thead>
               <tr className="border-b border-border/60 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <th scope="col" className="px-4 py-2 text-left">When</th>
@@ -190,7 +190,7 @@ function CurrentlyRepricedTable({variants, history}: {variants: RepricedVariant[
         </div>
       )}
       <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm max-md:min-w-[680px]">
           <thead>
             <tr className="border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <th scope="col" className="w-8 px-2 py-3" aria-hidden="true" />
@@ -454,7 +454,7 @@ export function RepricerView({
   }
 
   return (
-    <div className="mx-auto max-w-[1200px] space-y-8 px-6 pb-6 pt-6">
+    <div className="mx-auto max-w-[1200px] space-y-8 px-6 pb-6 pt-6 max-md:space-y-6 max-md:px-4">
       <style>{`
         @keyframes repriceRise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
         @media (prefers-reduced-motion: no-preference) {
@@ -464,7 +464,7 @@ export function RepricerView({
 
       <header className="reprice-reveal space-y-3 motion-safe:[animation-delay:0ms]">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-[28px] font-bold tracking-tight text-foreground">Repricer</h1>
+          <h1 className="text-[28px] font-bold tracking-tight text-foreground max-md:text-[22px]">Repricer</h1>
         </div>
         <p className="text-sm text-foreground/65">Website prices held below Lazada</p>
       </header>

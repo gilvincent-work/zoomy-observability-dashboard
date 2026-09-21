@@ -525,7 +525,7 @@ export function ChannelOverview({row, priorRow, initialChannels, offline}: {brie
   const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
 
   if (row.digest.degraded) {
-    return <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 text-muted-foreground">No data for this window — check the batch job.</div>;
+    return <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 text-muted-foreground max-md:px-4">No data for this window — check the batch job.</div>;
   }
 
   const toggle = (c: Channel) =>
@@ -537,7 +537,7 @@ export function ChannelOverview({row, priorRow, initialChannels, offline}: {brie
   const single = selected.length === 1 ? selected[0] : null;
 
   return (
-    <div className="w-full px-6 py-8 md:px-10 lg:px-12">
+    <div className="w-full px-6 py-8 md:px-10 lg:px-12 max-md:px-4 max-md:py-6">
       {/* header — back · date range · channel filter · compact KPIs (right) */}
       <div className="mb-7 flex flex-wrap items-center gap-x-6 gap-y-4">
         <Link
@@ -547,7 +547,7 @@ export function ChannelOverview({row, priorRow, initialChannels, offline}: {brie
         >
           <ArrowLeft className="size-5" />
         </Link>
-        <h1 className="font-serif text-[2.6rem] font-normal leading-[1.05] tracking-tight text-foreground">
+        <h1 className="font-serif text-[2.6rem] font-normal leading-[1.05] tracking-tight text-foreground max-md:text-[2rem]">
           {fmtRange(row.window_from, row.window_to, row.digest.window.label)}
         </h1>
 
