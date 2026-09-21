@@ -64,7 +64,7 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
   const mix = useMemo(() => petMix(shownOrders), [shownOrders]);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10 md:px-10">
+    <div className="mx-auto max-w-5xl px-6 py-10 md:px-10 max-md:px-4 max-md:py-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Eyebrow icon={Receipt}>Offline Sales</Eyebrow>

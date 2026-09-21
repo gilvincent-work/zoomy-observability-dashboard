@@ -12,6 +12,22 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — Mobile responsive, phase 2 · Offline Sales + padding pass — `feat(mobile)`
+
+The three Offline Sales views (`offline-sales`, `offline-orders`, `offline-events`)
+are already grid-based with responsive `md:grid-cols-*` and no tables, so they stack
+on mobile as-is; they only needed page padding tightened under `md`. Same `max-md:`
+padding applied to `inventory-view` and `home-landing`. All `max-md:`-only → desktop
+byte-identical.
+
+- `health-view` padding was left alone on purpose: its wrapper `px-6` is coupled to a
+  `-mx-6` full-bleed sticky (scroll-condense) header, so changing one without the
+  other would misalign it. Deferred to a dedicated pass.
+
+Verified: `typecheck` clean, build 17/17 pages.
+
+---
+
 ## 2026-09-21 — Mobile responsive, phase 2 · Repricer + Sales — `feat(mobile)`
 
 Two more views, both invariance-safe (every change is `max-md:`-only, so ≥ `md`
