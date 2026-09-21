@@ -55,7 +55,8 @@ async function offlineDailyProgress(): Promise<DailyProgress | null> {
   }
 }
 
-export default async function Page({searchParams}: {searchParams: {week?: string; channel?: string}}) {
+export default async function Page(props: {searchParams: Promise<{week?: string; channel?: string}>}) {
+  const searchParams = await props.searchParams;
   // Customer PII is masked inside getDigests() (server-only) rather than here, so
   // every route is fail-closed — see src/data.ts + src/pii.ts.
   const digests = await getDigests();

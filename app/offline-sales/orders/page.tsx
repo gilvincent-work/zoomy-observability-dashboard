@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 
 type SearchParams = {page?: string; method?: string; range?: string; min?: string; max?: string};
 
-export default async function Page({searchParams}: {searchParams: SearchParams}) {
+export default async function Page(props: {searchParams: Promise<SearchParams>}) {
+  const searchParams = await props.searchParams;
   const filter = parseOrdersFilter(searchParams);
   const [{orders, pageInfo}, bounds, products, bundleRows] = await Promise.all([
     getPosOrdersPage(parsePage(searchParams.page), filter),

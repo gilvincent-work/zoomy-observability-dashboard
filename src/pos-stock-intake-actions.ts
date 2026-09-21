@@ -23,7 +23,7 @@ async function actor(): Promise<string> {
 function revalidateStockSurfaces() {
   revalidatePath('/inventory');
   revalidatePath('/offline-sales');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
 }
 
 export interface StockLine {

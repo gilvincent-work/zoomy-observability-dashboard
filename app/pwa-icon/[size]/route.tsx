@@ -13,7 +13,8 @@ function tile(maskable: boolean): string {
   return `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect width="32" height="32" rx="${rx}" fill="#3F6E56"/>${open}<path d="M21 10.4 A8 8 0 1 0 21 21.6" fill="none" stroke="#F7F5EF" stroke-width="3.6" stroke-linecap="round"/></g></svg>`;
 }
 
-export function GET(req: Request, {params}: {params: {size: string}}) {
+export async function GET(req: Request, props: {params: Promise<{size: string}>}) {
+  const params = await props.params;
   const size = Math.min(1024, Math.max(48, Number(params.size) || 192));
   const maskable = new URL(req.url).searchParams.has('maskable');
   const svg = tile(maskable);

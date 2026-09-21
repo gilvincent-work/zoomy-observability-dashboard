@@ -86,8 +86,8 @@ export async function upsertEventAction(input: EventInput): Promise<ActionResult
   revalidatePath('/offline-sales/events');
   revalidatePath('/offline-sales');
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.events);
-  revalidateTag(POS_TAGS.orders); // attribute_untagged_orders may re-tag orders' event_id
+  revalidateTag(POS_TAGS.events, 'max');
+  revalidateTag(POS_TAGS.orders, 'max'); // attribute_untagged_orders may re-tag orders' event_id
   return {ok: true};
 }
 
@@ -104,6 +104,6 @@ export async function closeEventAction(eventId: string, closingCash: number | nu
 
   revalidatePath('/offline-sales/events');
   revalidatePath('/offline-sales');
-  revalidateTag(POS_TAGS.events);
+  revalidateTag(POS_TAGS.events, 'max');
   return {ok: true};
 }
