@@ -14,5 +14,5 @@ import {devAuthEnabled} from '@/src/dev-auth';
 export default devAuthEnabled() ? () => NextResponse.next() : auth;
 
 export const config = {
-  matcher: ['/((?!api|signin|_next/static|_next/image|favicon.ico|manifest.webmanifest|pwa-icon|apple-icon|icon.svg).*)'],
+  matcher: ['/((?!api|signin|_next/static|_next/image|favicon.ico|manifest.webmanifest|pwa-icon|apple-icon|icon.svg|sw.js).*)'],
 };
