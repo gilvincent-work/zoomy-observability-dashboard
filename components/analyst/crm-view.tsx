@@ -187,7 +187,7 @@ export function CrmView({
   const vouchersThisYear = birthdayVouchers.filter((v) => v.year === thisYear).length;
 
   return (
-    <div className="space-y-8 p-6 md:p-10">
+    <div className="space-y-8 p-6 md:p-10 max-md:space-y-6 max-md:p-4">
       <header>
         <h1 className="font-serif text-3xl font-normal tracking-tight">Website CRM</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -279,7 +279,7 @@ export function CrmView({
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 max-sm:w-full">
             <input
               type="search"
               value={q}
@@ -289,7 +289,7 @@ export function CrmView({
               }}
               placeholder="Search email, order # or name"
               aria-label="Search the table"
-              className="h-9 w-56 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-primary"
+              className="h-9 w-56 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-primary max-sm:w-auto max-sm:flex-1"
             />
             <button
               type="button"
@@ -309,7 +309,8 @@ export function CrmView({
                 {needle ? 'Nothing matches that search.' : 'No rows yet.'}
               </p>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="overflow-x-auto max-md:hidden">
                 <table className="w-full text-sm">
                   <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                     {tab === 'carts' && (
@@ -406,6 +407,99 @@ export function CrmView({
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobile (below md): the same rows as scannable cards. Same data
+                  and order as the table; the desktop table is hidden under md. */}
+              <ul className="divide-y divide-border md:hidden">
+                {tab === 'carts' &&
+                  (shown as CrmCheckout[]).map((c) => {
+                    const status = cartStatus(c);
+                    return (
+                      <li key={c.shopifyCheckoutId} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">{c.email ?? '—'}</span>
+                          <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium', STATUS_TONE[status])}>
+                            {status}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-base font-semibold tabular-nums">{money(c.totalPrice, c.currency)}</div>
+                        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <div className="flex justify-between gap-2">
+                            <dt>Reminders</dt>
+                            <dd className="tabular-nums text-foreground">{c.remindersSent}</dd>
+                          </div>
+                          <div className="flex justify-between gap-2">
+                            <dt>RETURN30</dt>
+                            <dd>{fmtPh(c.winbackSentAt)}</dd>
+                          </div>
+                          {c.lastReminderAt && (
+                            <div className="col-span-2 flex justify-between gap-2">
+                              <dt>Last reminder</dt>
+                              <dd>{fmtPh(c.lastReminderAt)}</dd>
+                            </div>
+                          )}
+                          <div className="col-span-2 flex justify-between gap-2">
+                            <dt>Abandoned</dt>
+                            <dd>{fmtPh(c.createdAt ?? c.updatedAt)}</dd>
+                          </div>
+                        </dl>
+                      </li>
+                    );
+                  })}
+                {tab === 'orders' &&
+                  (shown as CrmOrder[]).map((o) => (
+                    <li key={o.shopifyOrderId} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm font-medium">{o.orderNumber ?? o.shopifyOrderId}</span>
+                        <Badge variant={o.financialStatus === 'paid' ? 'default' : 'secondary'}>
+                          {o.financialStatus ?? 'unknown'}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 text-base font-semibold tabular-nums">{money(o.totalPrice, o.currency)}</div>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <div className="col-span-2 flex justify-between gap-2">
+                          <dt>Email</dt>
+                          <dd className="min-w-0 truncate text-foreground">{o.email ?? '—'}</dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt>Placed</dt>
+                          <dd>{fmtPh(o.createdAt)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt>Turnaround</dt>
+                          <dd className="tabular-nums">{turnaround(o.createdAt, o.fulfilledAt)}</dd>
+                        </div>
+                      </dl>
+                    </li>
+                  ))}
+                {tab === 'customers' &&
+                  (shown as ReturnType<typeof enrichCustomers>).map((c) => (
+                    <li key={c.shopifyCustomerId} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {[c.firstName, c.lastName].filter(Boolean).join(' ') || '—'}
+                        </span>
+                        <span className="shrink-0 text-xs capitalize text-muted-foreground">{c.membershipTier ?? 'guest'}</span>
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">{c.email ?? '—'}</div>
+                      <dl className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <div className="flex flex-col">
+                          <dt>Orders</dt>
+                          <dd className="tabular-nums text-foreground">{c.orderCount}</dd>
+                        </div>
+                        <div className="flex flex-col">
+                          <dt>Spend (yr)</dt>
+                          <dd className="tabular-nums text-foreground">{peso(c.spendYtd)}</dd>
+                        </div>
+                        <div className="flex flex-col">
+                          <dt>Pet</dt>
+                          <dd className="text-foreground">{c.petName ?? '—'}</dd>
+                        </div>
+                      </dl>
+                    </li>
+                  ))}
+              </ul>
+              </>
             )}
           </CardContent>
         </Card>

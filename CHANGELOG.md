@@ -12,6 +12,29 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — Mobile responsive, phase 2 · CRM view — `feat(mobile)`
+
+Phase 2 (per-view content density) begins with the freshly-merged Website CRM
+page (`components/analyst/crm-view.tsx`). Same invariance rule as phase 1: every
+change is additive (`max-md:`/`max-sm:` class or a `md:hidden` sibling), so the
+desktop view (≥ `md`) is byte-identical — the four touched classNames only gained
+suffixes; nothing was deleted or lowered.
+
+- **Table → cards** — the desktop table is now `max-md:hidden`; below `md` the same
+  rows render as scannable cards (one layout per tab: carts, orders, customers)
+  with the primary field + status/badge on top, the money figure emphasised, and
+  the rest as a compact label/value grid. Reuses the exact same `shown` slice, so
+  pagination/search/order match the table.
+- **Padding & search** — page padding tightens under `md` (`max-md:p-4`,
+  `max-md:space-y-6`); the search field fills the toolbar row on the narrowest
+  screens (`max-sm:`) instead of overflowing. The three KPI grids were already
+  responsive (`sm:`/`lg:`), so they were left alone.
+
+Verified: `typecheck` clean, build 17/17 pages (`/crm` compiles). Stat grids and
+the desktop table unchanged at `md`+.
+
+---
+
 ## 2026-09-21 — Mobile responsive, phase 1 (shell) — `feat(mobile)`
 
 First increment of the mobile-responsive pass. **Constraint held throughout: the
