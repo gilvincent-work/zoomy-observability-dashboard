@@ -26,7 +26,15 @@ const spinLeadsCached = unstable_cache(async (): Promise<SpinLead[]> => {
     .from('spin_wheel_leads')
     .select('email,mobile,prize,campaign,collected_at')
     .order('collected_at', {ascending: false});
-  if (error) throw new Error(`spin_wheel_leads read failed: ${error.message}`);
+
+  // Fail soft, unlike the pos_* readers. Leads are one optional block at the
+  // bottom of the event card, and the table is created per environment by hand
+  // (supabase/spin_wheel_leads.sql) — an environment that has not run it yet
+  // must still render sales, cash reconciliation and the rest of the page.
+  if (error) {
+    console.warn(`spin_wheel_leads read failed, rendering events without leads: ${error.message}`);
+    return [];
+  }
 
   return (data ?? []).map((l): SpinLead => ({
     email: l.email as string,
