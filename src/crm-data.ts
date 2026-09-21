@@ -2,6 +2,7 @@ import 'server-only';
 import {cache} from 'react';
 import {unstable_cache} from 'next/cache';
 import {checkoutStage} from './crm-compute';
+import {CRM_CACHE_REVALIDATE, CRM_TAG} from './crm-cache';
 import type {
   CrmBirthdayVoucher,
   CrmCheckout,
@@ -28,10 +29,6 @@ import type {
 
 const base = process.env.CRM_API_URL?.replace(/\/$/, '');
 const token = process.env.CRM_API_READ_TOKEN;
-
-/** Seconds a cached CRM read may be stale. The CRM is fed by webhooks, so a
- * new order shows up within a minute either way. */
-const CRM_CACHE_REVALIDATE = 60;
 
 /** Fallbacks matching the storefront's own constants (app/lib/membership-tier.js). */
 const MEMBERSHIP_FALLBACK: CrmMembershipConfig = {platinumThreshold: 2000, programStart: '2026-07-01'};
@@ -96,7 +93,7 @@ const metricsCached = unstable_cache(async (): Promise<CrmMetrics | null> => {
     console.warn(`CRM metrics read failed: ${(err as Error).message}`);
     return null;
   }
-}, ['crm-metrics'], {revalidate: CRM_CACHE_REVALIDATE});
+}, ['crm-metrics'], {revalidate: CRM_CACHE_REVALIDATE, tags: [CRM_TAG]});
 
 export const getCrmCustomers = cache((): Promise<CrmCustomer[]> =>
   crmConfigured() ? customersCached() : Promise.resolve([]),
@@ -124,7 +121,7 @@ const customersCached = unstable_cache(async (): Promise<CrmCustomer[]> => {
     console.warn(`CRM customers read failed: ${(err as Error).message}`);
     return [];
   }
-}, ['crm-customers'], {revalidate: CRM_CACHE_REVALIDATE});
+}, ['crm-customers'], {revalidate: CRM_CACHE_REVALIDATE, tags: [CRM_TAG]});
 
 export const getCrmOrders = cache((): Promise<CrmOrder[]> =>
   crmConfigured() ? ordersCached() : Promise.resolve([]),
@@ -151,7 +148,7 @@ const ordersCached = unstable_cache(async (): Promise<CrmOrder[]> => {
     console.warn(`CRM orders read failed: ${(err as Error).message}`);
     return [];
   }
-}, ['crm-orders'], {revalidate: CRM_CACHE_REVALIDATE});
+}, ['crm-orders'], {revalidate: CRM_CACHE_REVALIDATE, tags: [CRM_TAG]});
 
 export const getCrmCheckouts = cache((): Promise<CrmCheckout[]> =>
   crmConfigured() ? checkoutsCached() : Promise.resolve([]),
@@ -184,7 +181,7 @@ const checkoutsCached = unstable_cache(async (): Promise<CrmCheckout[]> => {
     console.warn(`CRM checkouts read failed: ${(err as Error).message}`);
     return [];
   }
-}, ['crm-checkouts'], {revalidate: CRM_CACHE_REVALIDATE});
+}, ['crm-checkouts'], {revalidate: CRM_CACHE_REVALIDATE, tags: [CRM_TAG]});
 
 export const getCrmBirthdayVouchers = cache((): Promise<CrmBirthdayVoucher[]> =>
   crmConfigured() ? birthdaysCached() : Promise.resolve([]),
@@ -200,7 +197,7 @@ const birthdaysCached = unstable_cache(async (): Promise<CrmBirthdayVoucher[]> =
     console.warn(`CRM birthday vouchers read failed: ${(err as Error).message}`);
     return [];
   }
-}, ['crm-birthday-vouchers'], {revalidate: CRM_CACHE_REVALIDATE});
+}, ['crm-birthday-vouchers'], {revalidate: CRM_CACHE_REVALIDATE, tags: [CRM_TAG]});
 
 /**
  * Membership settings. Served by the Worker from the same Shopify metafield the
@@ -225,4 +222,4 @@ const membershipConfigCached = unstable_cache(async (): Promise<CrmMembershipCon
     console.warn(`CRM membership config read failed: ${(err as Error).message}`);
     return MEMBERSHIP_FALLBACK;
   }
-}, ['crm-membership-config'], {revalidate: 3600});
+}, ['crm-membership-config'], {revalidate: 3600, tags: [CRM_TAG]});

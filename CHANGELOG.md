@@ -12,6 +12,23 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — CRM refresh control, no reporting period — `feat(crm)`
+
+**Refresh beside the title**, with the last read time next to it. The shared
+`RefreshControl` gained an optional `beforeRefresh` hook, because the CRM's
+readers sit behind a 60s server cache: `router.refresh()` alone would re-render
+the same figures while the label reset to "just now" — a refresh that claims to
+have worked and did nothing. The button now invalidates the `crm-live` cache tag
+(`src/crm-actions.ts`) first, so it genuinely goes back to the Worker. Cache
+window and tag moved to `src/crm-cache.ts`, mirroring `pos-cache.ts`.
+
+**The reporting-period pill is hidden on /crm.** The CRM's figures are all-time
+or rolling 7-day, read from the live engine; a digest week sitting above them
+implied a scope the numbers do not have. Added to the same `showPeriod`
+exclusion list as Inventory and Offline Sales.
+
+---
+
 ## 2026-09-21 — CRM table filters — `feat(crm)`
 
 Each CRM table gets the filters its storefront-admin counterpart has, so an

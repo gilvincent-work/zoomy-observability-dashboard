@@ -109,6 +109,9 @@ export function DashboardShell({
     // Inventory is now the merged live catalog (Products folded in), not a
     // period-scoped report, so it has no week picker (guardrail 2).
     !pathname.startsWith('/inventory') &&
+    // The CRM reads the live CRM engine, whose figures are all-time or rolling
+    // 7-day. A digest week sitting above them implied a scope it does not have.
+    !pathname.startsWith('/crm') &&
     !pathname.startsWith('/offline-sales');
 
   const [periodOpen, setPeriodOpen] = useState(false);

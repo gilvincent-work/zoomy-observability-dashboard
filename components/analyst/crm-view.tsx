@@ -21,6 +21,7 @@ import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {cn} from '@/lib/utils';
 import {Metric} from './metric';
+import {RefreshControl} from './refresh-control';
 import {Eyebrow} from './sections';
 import {Pagination} from './pagination';
 import {
@@ -38,6 +39,7 @@ import {
   EMPTY_ORDER_FILTER,
   type CartStatus,
 } from '@/src/crm-compute';
+import {refreshCrm} from '@/src/crm-actions';
 import type {
   CrmBirthdayVoucher,
   CrmCheckout,
@@ -245,12 +247,26 @@ export function CrmView({
 
   return (
     <div className="space-y-8 p-6 md:p-10">
-      <header>
-        <h1 className="font-serif text-3xl font-normal tracking-tight">Website CRM</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Customers, orders and cart recovery from zoomyforpets.com — live from the CRM engine,
-          read-only. Reminder and win-back sends stay in the storefront admin.
-        </p>
+      {/* The refresh cluster sits on the title's baseline: this page has no
+          reporting period above it, so "when was this read" belongs with the
+          title rather than buried under the last table. */}
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div>
+          <h1 className="font-serif text-3xl font-normal tracking-tight">Website CRM</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            Customers, orders and cart recovery from zoomyforpets.com — live from the CRM engine,
+            read-only. Reminder and win-back sends stay in the storefront admin.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 pt-1.5">
+          <span
+            className="hidden text-xs text-muted-foreground sm:inline"
+            title={`Last read at ${fmtPh(fetchedAt)} Philippine time`}
+          >
+            {fmtPh(fetchedAt)}
+          </span>
+          <RefreshControl fetchedAt={fetchedAt} beforeRefresh={refreshCrm} />
+        </div>
       </header>
 
       {!configured && (
@@ -580,7 +596,7 @@ export function CrmView({
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
             Showing {rows.length ? (safePage - 1) * PER_PAGE + 1 : 0}–
-            {Math.min(safePage * PER_PAGE, rows.length)} of {rows.length} · read {fmtPh(fetchedAt)}
+            {Math.min(safePage * PER_PAGE, rows.length)} of {rows.length}
           </p>
           <Pagination page={safePage} pageCount={pageCount} onPage={setPage} label="Table pagination" />
         </div>

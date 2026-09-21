@@ -19,8 +19,19 @@ function relativeLabel(fetchedAtMs: number, now: number): string {
  * Re-fetch the page's server data in place (no full reload) and show when it was
  * last loaded. `fetchedAt` is stamped by the server on each render, so after a
  * refresh it resets to "just now"; between refreshes the label ticks up.
+ *
+ * `beforeRefresh` runs first, for pages whose readers sit behind a server cache
+ * (the CRM's live proxy): without invalidating that cache, router.refresh()
+ * would re-render the same figures and the label would still reset to "just
+ * now" — a refresh that says it worked and did nothing.
  */
-export function RefreshControl({fetchedAt}: {fetchedAt: string}) {
+export function RefreshControl({
+  fetchedAt,
+  beforeRefresh,
+}: {
+  fetchedAt: string;
+  beforeRefresh?: () => Promise<void>;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const fetchedAtMs = new Date(fetchedAt).getTime();
@@ -40,7 +51,12 @@ export function RefreshControl({fetchedAt}: {fetchedAt: string}) {
       </span>
       <button
         type="button"
-        onClick={() => startTransition(() => router.refresh())}
+        onClick={() =>
+          startTransition(async () => {
+            await beforeRefresh?.();
+            router.refresh();
+          })
+        }
         disabled={pending}
         aria-label="Refresh"
         className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
