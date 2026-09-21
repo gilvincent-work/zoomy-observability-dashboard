@@ -3,7 +3,8 @@
 import {useEffect, useRef, useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {ArrowLeft, ChevronDown} from 'lucide-react';
-import {Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
+import dynamic from 'next/dynamic';
+import {CHANNELS, CHANNEL_ACCENT, shortMonth, hexToRgb} from './health-view-shared';
 import type {BusinessHealthSnapshot, ChannelActuals, ChannelFacts, Knobs} from '@/src/health-types';
 import {DEFAULT_WEBSITE_ACQ_COST, computeChannelHealth, computeHealth, computeOverallHealth, factsToActuals} from '@/src/health-compute';
 import {HEALTH_HINTS} from './health-hints';
@@ -20,7 +21,6 @@ const fmtRange = (from: string, to: string) => {
 };
 
 const CHANNEL_LABEL: Record<string, string> = {shopee: 'Shopee', lazada: 'Lazada', website: 'Website', offline: 'Offline'};
-const CHANNEL_ACCENT: Record<string, string> = {shopee: '#EE4D2D', lazada: '#2F6BD4', website: '#2E7D5B', offline: '#C9873F'};
 
 /** Short focus-guide captions (what each field is asking for). */
 const FIELD_HELP: Record<string, string> = {
@@ -448,186 +448,17 @@ function ChannelCard({facts, actuals, knobs, target, nonce, dirty, onReset, onAc
   );
 }
 
-const CHANNELS = [
-  {key: 'shopee' as const, label: 'Shopee'},
-  {key: 'lazada' as const, label: 'Lazada'},
-  {key: 'website' as const, label: 'Website'},
-];
-
-/** Channels in card order, blend last with a dashed swatch that matches the
- *  line — recharts' own legend would sort them and draw a circle. */
-function TrendLegend() {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[13px] text-muted-foreground">
-      {CHANNELS.map((c) => (
-        <span key={c.key} className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full" style={{background: CHANNEL_ACCENT[c.key]}} />
-          {c.label}
-        </span>
-      ))}
-      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-        <span className="h-0 w-4 border-t-2 border-dashed border-foreground" />
-        Overall
-      </span>
-    </div>
-  );
-}
-
-/** A tight y-axis: round the peak up to the next round step rather than letting
- *  recharts pick a domain twice the data's height. Aims for 4–6 gridlines. */
-function niceScale(peak: number) {
-  const headroom = Math.max(peak, 0.5) * 1.02; // just enough to clear the tallest bar
-  const step = [0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 50, 100].find((s) => headroom / s <= 6) ?? 200;
-  const max = Math.ceil(headroom / step) * step;
-  const ticks: number[] = [];
-  for (let v = 0; v <= max + 1e-9; v += step) ticks.push(Math.round(v * 100) / 100);
-  return {max, ticks};
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function TrendTooltip({active, payload, label}: any) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-md">
-      <div className="mb-1 font-semibold text-foreground">{label}</div>
-      {/* Channels first, then the blend set apart below a rule — it summarises
-          the rows above it rather than sitting alongside them. */}
-      {payload
-        .filter((p: {dataKey: string}) => p.dataKey !== 'overall')
-        .map((p: {dataKey: string; name: string; value: number; color: string}) => (
-          <div key={p.dataKey} className="flex items-center gap-2">
-            <span className="size-2 rounded-full" style={{background: p.color}} />
-            <span className="text-muted-foreground">{p.name}</span>
-            <span className="ml-auto font-semibold tabular-nums text-foreground">{p.value == null ? 'N/A' : Number(p.value).toFixed(2)}</span>
-          </div>
-        ))}
-      {payload
-        .filter((p: {dataKey: string}) => p.dataKey === 'overall')
-        .map((p: {dataKey: string; value: number}) => (
-          <div key={p.dataKey} className="mt-1 flex items-center gap-2 border-t border-border pt-1">
-            <span className="h-0 w-2.5 border-t-2 border-dashed border-foreground" />
-            <span className="text-muted-foreground">Overall</span>
-            <span className="ml-auto font-bold tabular-nums text-foreground">{p.value == null ? 'N/A' : Number(p.value).toFixed(2)}</span>
-          </div>
-        ))}
-    </div>
-  );
-}
-
-function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: Record<string, Knobs>}) {
-  const totalOrders: Record<string, number> = Object.fromEntries(snapshot.perChannel.map((c) => [c.channel, c.orders]));
-  // Recompute each month's QRR with the current knobs; window-total promos/acq are
-  // spread across months in proportion to that month's share of the channel's orders.
-  const data = (snapshot.monthly ?? []).map((mo) => {
-    const row: Record<string, number | string | null> = {label: mo.label};
-    // Collected per month so the blended line uses exactly the same inputs as
-    // the bars above it (same knobs, same promo/acq spread).
-    const forOverall: {channel: string; actuals: ChannelActuals; knobs: Knobs}[] = [];
-    for (const c of CHANNELS) {
-      const f = mo.perChannel.find((x) => x.channel === c.key);
-      const k = knobs[c.key];
-      if (!f || !k) {
-        row[c.key] = null;
-        continue;
-      }
-      const share = totalOrders[c.key] ? f.orders / totalOrders[c.key] : 0;
-      const monthKnobs = {cogsPct: k.cogsPct, platformFeePct: k.platformFeePct, promos: k.promos * share, acqCost: k.acqCost * share};
-      const facts = {...f, platformFeeApplies: c.key !== 'website', defaults: k};
-      const h = computeChannelHealth(facts, monthKnobs);
-      row[c.key] = h.qrr;
-      if (f.orders > 0) forOverall.push({channel: c.key, actuals: factsToActuals(facts), knobs: monthKnobs});
-    }
-    // Same volume-weighted pooling as the header pill: total gross margin over
-    // total spend; channels without a CAC that month sit out.
-    row.overall = computeOverallHealth(forOverall).qrr;
-    return row;
-  });
-
-  // Scale to the data (plus the target line, which must stay visible).
-  const peak = data.reduce((m, r) => {
-    for (const k of [...CHANNELS.map((c) => c.key), 'overall']) {
-      const v = r[k];
-      if (typeof v === 'number' && v > m) m = v;
-    }
-    return m;
-  }, snapshot.target);
-  const {max: yMax, ticks: yTicks} = niceScale(peak);
-
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5">
-      <div className="mb-4 flex items-center gap-1 text-sm font-semibold text-foreground">
-        QRR by month <InfoTip text="Each channel's Quality Revenue Ratio per month, using your current assumptions. The dashed line is the blended Overall QRR for that month. Bars below the target line are under the target of 3." />
-      </div>
-      <div className="h-[420px] text-muted-foreground max-md:h-[320px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{top: 8, right: 16, bottom: 4, left: 0}} barGap={2} barCategoryGap="22%">
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              width={34}
-              tick={{fill: 'currentColor', fontSize: 12}}
-              domain={[0, yMax]}
-              ticks={yTicks}
-              allowDecimals
-            />
-            <Tooltip cursor={{fill: 'currentColor', fillOpacity: 0.05}} content={<TrendTooltip />} />
-            <Legend content={<TrendLegend />} wrapperStyle={{paddingTop: 8}} />
-            <ReferenceLine y={snapshot.target} stroke="currentColor" strokeOpacity={0.45} strokeDasharray="5 4" label={{value: `target ${snapshot.target}`, position: 'insideTopRight', fontSize: 11, fill: 'currentColor'}} />
-            {CHANNELS.map((c) => (
-              <Bar key={c.key} dataKey={c.key} name={c.label} fill={CHANNEL_ACCENT[c.key]} radius={[3, 3, 0, 0]} maxBarSize={40} />
-            ))}
-            {/* Blended QRR rides over the bars — neutral ink so it reads as a
-                summary of the channels rather than another channel. */}
-            <Line
-              type="monotone"
-              dataKey="overall"
-              name="Overall"
-              stroke="var(--foreground)"
-              strokeWidth={2}
-              strokeDasharray="7 4"
-              strokeLinecap="round"
-              connectNulls
-              // Hollow markers: the card colour punches a clean disc out of
-              // whatever bar sits behind, so the ring stays crisp either way.
-              dot={{r: 3.5, fill: 'var(--card)', stroke: 'var(--foreground)', strokeWidth: 2}}
-              activeDot={{r: 5, fill: 'var(--foreground)', stroke: 'var(--card)', strokeWidth: 2.5}}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-const shortMonth = (ym: string) => new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-US', {month: 'short', timeZone: 'UTC'});
-const hexToRgb = (hex: string) => {
-  const h = hex.replace('#', '');
-  return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`;
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function MixTooltip({active, payload, label}: any) {
-  if (!active || !payload?.length) return null;
-  const total = payload.reduce((s: number, p: {value: number}) => s + (p.value || 0), 0);
-  return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-md">
-      <div className="mb-1 font-semibold text-foreground">{label}</div>
-      {payload.slice().reverse().map((p: {dataKey: string; name: string; value: number; color: string}) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="size-2 rounded-full" style={{background: p.color}} />
-          <span className="text-muted-foreground">{p.name}</span>
-          <span className="ml-auto font-semibold tabular-nums text-foreground">{p.value}</span>
-        </div>
-      ))}
-      <div className="mt-1 flex items-center gap-2 border-t border-border pt-1">
-        <span className="text-muted-foreground">Total buyers</span>
-        <span className="ml-auto font-bold tabular-nums text-foreground">{total}</span>
-      </div>
-    </div>
-  );
-}
+// Recharts is code-split: the two Business Health charts live in
+// ./health-view-chart and load as async chunks, keeping Recharts (~110 kB gz) out
+// of the /health initial JS. Height-matched skeletons hold layout (no CLS).
+const TrendView = dynamic(() => import('./health-view-chart').then((m) => m.TrendView), {
+  ssr: false,
+  loading: () => <div className="h-[420px] w-full animate-pulse rounded-lg bg-muted/40 max-md:h-[320px]" aria-hidden />,
+});
+const BuyerMixChart = dynamic(() => import('./health-view-chart').then((m) => m.BuyerMixChart), {
+  ssr: false,
+  loading: () => <div className="h-[320px] w-full animate-pulse rounded-lg bg-muted/40 max-md:h-[260px]" aria-hidden />,
+});
 
 function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   const [ch, setCh] = useState<'shopee' | 'lazada' | 'website'>('shopee');
@@ -726,19 +557,7 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
             <InfoTip text="Distinct buyers each month, split into New (first-ever purchase that month) and Returning (also bought in an earlier month). The full bar is the unique buyers active that month — not order count." />
           </div>
           <p className="mb-3 text-xs text-muted-foreground">Unique buyers per month (not orders) — new vs returning.</p>
-          <div className="h-[320px] text-muted-foreground max-md:h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mixData} margin={{top: 8, right: 12, bottom: 4, left: 0}} barCategoryGap="26%">
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
-                <YAxis tickLine={false} axisLine={false} width={30} tick={{fill: 'currentColor', fontSize: 12}} allowDecimals={false} />
-                <Tooltip cursor={{fill: 'currentColor', fillOpacity: 0.05}} content={<MixTooltip />} />
-                <Legend wrapperStyle={{fontSize: 13, paddingTop: 6}} iconType="circle" />
-                <Bar dataKey="returning" name="Returning" stackId="mix" fill={`rgba(${rgb},0.4)`} maxBarSize={52} />
-                <Bar dataKey="newBuyers" name="New" stackId="mix" fill={CHANNEL_ACCENT[ch]} radius={[3, 3, 0, 0]} maxBarSize={52} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <BuyerMixChart data={mixData} rgb={rgb} accent={CHANNEL_ACCENT[ch]} />
         </div>
       )}
       </div>
