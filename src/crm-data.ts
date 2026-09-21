@@ -1,6 +1,7 @@
 import 'server-only';
 import {cache} from 'react';
 import {unstable_cache} from 'next/cache';
+import {checkoutStage} from './crm-compute';
 import type {
   CrmBirthdayVoucher,
   CrmCheckout,
@@ -50,6 +51,16 @@ async function crmGet<T>(path: string): Promise<T> {
   });
   if (!res.ok) throw new Error(`CRM ${res.status} for ${path}`);
   return res.json() as Promise<T>;
+}
+
+/** Shopify's payload arrives as a JSON string; junk is treated as absent. */
+function parseRaw(raw: string | undefined): unknown {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }
 
 const num = (v: unknown): number => {
@@ -148,7 +159,12 @@ export const getCrmCheckouts = cache((): Promise<CrmCheckout[]> =>
 
 const checkoutsCached = unstable_cache(async (): Promise<CrmCheckout[]> => {
   try {
-    const {checkouts} = await crmGet<{checkouts: CrmCheckout[]}>('/api/checkouts');
+    // `raw` is the original Shopify payload. The progress stage is derived from
+    // it HERE, on the server, and the blob itself is then dropped — the browser
+    // needs the label, not the shopper's address.
+    const {checkouts} = await crmGet<{checkouts: Array<CrmCheckout & {raw?: string}>}>(
+      '/api/checkouts',
+    );
     return (checkouts ?? []).map((c) => ({
       shopifyCheckoutId: String(c.shopifyCheckoutId),
       email: c.email ?? null,
@@ -162,6 +178,7 @@ const checkoutsCached = unstable_cache(async (): Promise<CrmCheckout[]> => {
       lastReminderAt: c.lastReminderAt ?? null,
       reachedPaymentAt: c.reachedPaymentAt ?? null,
       winbackSentAt: c.winbackSentAt ?? null,
+      stage: checkoutStage(c, parseRaw(c.raw)),
     }));
   } catch (err) {
     console.warn(`CRM checkouts read failed: ${(err as Error).message}`);
