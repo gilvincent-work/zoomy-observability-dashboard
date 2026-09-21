@@ -558,8 +558,8 @@ function TrendView({snapshot, knobs}: {snapshot: BusinessHealthSnapshot; knobs: 
       <div className="mb-4 flex items-center gap-1 text-sm font-semibold text-foreground">
         QRR by month <InfoTip text="Each channel's Quality Revenue Ratio per month, using your current assumptions. The dashed line is the blended Overall QRR for that month. Bars below the target line are under the target of 3." />
       </div>
-      <div className="text-muted-foreground">
-        <ResponsiveContainer width="100%" height={420}>
+      <div className="h-[420px] text-muted-foreground max-md:h-[320px]">
+        <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{top: 8, right: 16, bottom: 4, left: 0}} barGap={2} barCategoryGap="22%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
@@ -726,8 +726,8 @@ function HeatmapView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
             <InfoTip text="Distinct buyers each month, split into New (first-ever purchase that month) and Returning (also bought in an earlier month). The full bar is the unique buyers active that month — not order count." />
           </div>
           <p className="mb-3 text-xs text-muted-foreground">Unique buyers per month (not orders) — new vs returning.</p>
-          <div className="text-muted-foreground">
-            <ResponsiveContainer width="100%" height={320}>
+          <div className="h-[320px] text-muted-foreground max-md:h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart data={mixData} margin={{top: 8, right: 12, bottom: 4, left: 0}} barCategoryGap="26%">
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.14} />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{fill: 'currentColor', fontSize: 13}} dy={4} />
@@ -815,10 +815,10 @@ export function HealthView({snapshot}: {snapshot: BusinessHealthSnapshot}) {
   ];
 
   return (
-    <div className="mx-auto max-w-[1560px] space-y-6 px-6 pb-6">
+    <div className="mx-auto max-w-[1560px] space-y-6 px-6 pb-6 max-md:px-4">
       <style>{`@keyframes healthPop{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}.health-pop{animation:healthPop .4s ease-out}@media (prefers-reduced-motion: reduce){.health-pop{animation:none}}`}</style>
       <header
-        className={`sticky top-0 z-20 -mx-6 flex flex-wrap items-end justify-between gap-3 border-b px-6 pb-4 transition-[padding,background-color,border-color] duration-300 ${
+        className={`sticky top-0 z-20 -mx-6 flex flex-wrap items-end justify-between gap-3 border-b px-6 pb-4 transition-[padding,background-color,border-color] duration-300 max-md:-mx-4 max-md:px-4 ${
           condensed ? 'border-border bg-background/85 pt-3 backdrop-blur-md' : 'border-border bg-background pt-6'
         }`}
       >
