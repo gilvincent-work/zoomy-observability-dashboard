@@ -31,6 +31,29 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Perf: intro splash no longer blocks load — `perf`
+
+Biggest perceived-load win. The intro splash was a fixed ~1.7–2.75s overlay on
+**every** full load (hardcoded timers), and `.coop-app-in` held `<main>` at
+`opacity: 0` until a **1.55s** animation-delay — so first contentful paint was
+gated by animation, not the network.
+
+- **Once per session** — `intro-splash.tsx` now records a `sessionStorage` flag; a
+  pre-paint script in `layout.tsx` (beside the theme seed) adds `coop-splash-seen`
+  to `<html>` on repeat loads so the overlay is `display:none` before first paint
+  (no flash) and unmounts immediately (timers skipped).
+- **Faster first show** — on the first load of a session the splash trigger drops
+  1700ms → 600ms and the fade 1000ms → 500ms (gone by ~1.1s vs ~2.75s).
+- **Content reveal** — `.coop-app-in` delay 1.55s → 0.15s, duration 0.85s → 0.5s, so
+  the dashboard paints almost immediately instead of waiting out the splash.
+  `prefers-reduced-motion` still disables all of it.
+
+Net: perceived load drops by ~1.5–2s on first visit and the splash is gone entirely
+on subsequent in-session loads. Typecheck clean, build 19/19. (TTFB + bundle wins
+tracked separately as the next perf tiers.)
+
+---
+
 ## 2026-09-21 — Dependency audit — `chore(security)`
 
 Ran `npm audit`. None of the flagged issues came from the new Serwist deps.

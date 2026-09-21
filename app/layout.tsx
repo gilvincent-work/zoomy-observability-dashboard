@@ -49,7 +49,7 @@ export default async function RootLayout({children}: {children: ReactNode}) {
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('zoomy-theme');document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}})();",
+              "(function(){try{var t=localStorage.getItem('zoomy-theme');document.documentElement.classList.toggle('dark',t==='dark');if(sessionStorage.getItem('coop-splash-seen'))document.documentElement.classList.add('coop-splash-seen');}catch(e){}})();",
           }}
         />
       </head>
