@@ -2,11 +2,15 @@
 
 import {useMemo, useState, type ReactNode} from 'react';
 import {Area, AreaChart, CartesianGrid, Line, LineChart, XAxis, YAxis} from 'recharts';
+import {Gift} from 'lucide-react';
 import type {BundleSalesSummary, PetMix, PosEvent, PosOrder, TopProduct} from '@/src/pos-sales-types';
 import {bundleSalesSummary, computeKpis, datesInRange, eventDayPacingSeries, eventRevenueSeries, manilaDayKey, paymentBreakdown, petMix, topProducts, type DayPacingSeries} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {cn} from '@/lib/utils';
 import {ChartContainer, ChartTooltip, type ChartConfig} from '@/components/ui/chart';
+import type {SpinLead} from '@/src/spin-leads-types';
+import {leadsInDays} from '@/src/spin-leads-types';
+import {LeadCapture} from './lead-capture';
 
 const PET_SEGMENTS: {key: keyof PetMix; label: string; color: string}[] = [
   {key: 'dog', label: 'Dog', color: '#3b82f6'},
@@ -66,7 +70,7 @@ function dayLineStyle(index: number, total: number): {stroke: string; width: num
  * a payment split, the pet mix, and top sellers. Pure-helper driven, all scoped
  * to this event's orders (its full lifetime, unfiltered by the home range tabs).
  */
-export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrder[]}) {
+export function EventAnalytics({event, orders, leads}: {event: PosEvent; orders: PosOrder[]; leads: SpinLead[]}) {
   // The event's own days; a toggle scopes every metric to one of them (or all).
   const days = useMemo(() => datesInRange(event.starts_on, event.ends_on), [event.starts_on, event.ends_on]);
   const multiDay = days.length > 1;
@@ -83,6 +87,13 @@ export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrd
   const scoped = useMemo(
     () => (day ? orders.filter((o) => manilaDayKey(o.created_at) === day) : orders),
     [orders, day],
+  );
+
+  // Booth leads follow the same day scope as the sales blocks: one day when a day
+  // pill is active, otherwise every day the event ran.
+  const scopedLeads = useMemo(
+    () => leadsInDays(leads, day ? [day] : days, manilaDayKey),
+    [leads, day, days],
   );
 
   const kpis = useMemo(() => computeKpis(scoped), [scoped]);
@@ -135,6 +146,16 @@ export function EventAnalytics({event, orders}: {event: PosEvent; orders: PosOrd
           tops={tops}
           bundles={bundles}
         />
+      )}
+
+      {/* Spin-the-wheel booth leads (spin_wheel_leads — see src/spin-leads.ts). */}
+      {scopedLeads.length > 0 && (
+        <div className="border-t pt-6">
+          <div className="mb-4 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Gift className="size-3.5" /> Lead capture
+          </div>
+          <LeadCapture leads={scopedLeads} orders={kpis.orders} />
+        </div>
       )}
     </div>
   );
