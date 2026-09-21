@@ -31,6 +31,26 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Perf: code-split Recharts off Offline Sales — `perf`
+
+Continues the Recharts split. `offline-sales.tsx` imported Recharts directly for its
+one chart (`MethodStackChart`). Moved that chart + its tooltip into a new
+`offline-sales-chart.tsx` and lazy-load it via `next/dynamic` (`ssr:false`, skeleton).
+
+- **`/offline-sales`: 247 kB → 136 kB** First Load JS (−111). Typecheck clean, build 19/19.
+
+**Remaining (tracked, not rushed):** `/offline-sales/events` (253 kB) and `/health`
+(227 kB) still import Recharts directly, but their charts are entangled with shared
+local helpers (`dayShort` is used by non-chart code; `pesoTick`/`axisLabelStyle` feed
+two charts; health's charts are inline in an 800-line render). A clean split means
+relocating those helpers across the recharts/non-recharts boundary — deferred to its
+own pass to avoid a rushed regression. Seams documented in the tracking issue.
+
+Total Recharts split so far: **8 of 10 chart routes** de-Recharted (all tab/overview
+routes + Offline Sales), ~−110 kB First Load JS each.
+
+---
+
 ## 2026-09-21 — Perf: code-split Recharts off tab/overview routes — `perf`
 
 Measured with the build's First-Load-JS table + chunk inspection: Recharts is a
