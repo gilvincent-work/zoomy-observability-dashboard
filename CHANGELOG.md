@@ -12,6 +12,32 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — Mobile responsive, phase 2 · Repricer + Sales — `feat(mobile)`
+
+Two more views, both invariance-safe (every change is `max-md:`-only, so ≥ `md`
+is byte-identical).
+
+- **Repricer** (`repricer-view.tsx`) — its four dense tables (currently-repriced
+  with expandable history, changed, ready-to-reprice, and the history sub-table)
+  keep their desktop layout and now scroll cleanly as a unit below `md`
+  (`max-md:min-w-[…]` inside the existing `overflow-x-auto` wrappers) instead of
+  cramming. Full card transforms were skipped here deliberately — the main table's
+  row-expand + inline `InfoTip`s make cards high-effort for a low-traffic review
+  page; scroll is the reviewer's sanctioned fallback. Page padding + the `text-[28px]`
+  heading also tighten under `md`.
+- **Sales / channel compare** (`channel-compare.tsx`) — already structurally mobile
+  (no tables; the 2-col layout is `lg:`-gated so it stacks below `lg`; header and
+  chips `flex-wrap`). Only the oversized `text-[2.6rem]` hero and page padding
+  needed `max-md:` shrinking.
+
+Note: `product-controls.tsx` was **not** touched — `/products` redirects to
+`/inventory` and the `ProductControls` component is no longer rendered anywhere
+(only referenced in comments), so it's effectively dead code.
+
+Verified: `typecheck` clean, build 17/17 pages.
+
+---
+
 ## 2026-09-21 — Mobile responsive, phase 2 · Inventory table — `feat(mobile)`
 
 The inventory table (`components/analyst/inventory-table.tsx`) now has a mobile
