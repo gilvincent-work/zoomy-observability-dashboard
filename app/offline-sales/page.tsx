@@ -33,7 +33,8 @@ async function dailyProgress(orders: PosOrder[]): Promise<DailyProgress | null> 
   }
 }
 
-export default async function Page({searchParams}: {searchParams: {range?: string}}) {
+export default async function Page(props: {searchParams: Promise<{range?: string}>}) {
+  const searchParams = await props.searchParams;
   const range = isSalesRange(searchParams.range) ? searchParams.range : '30d';
   const [allOrders, products, events] = await Promise.all([
     getPosOrders(),

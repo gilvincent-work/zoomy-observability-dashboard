@@ -25,8 +25,8 @@ export async function voidOrderAction(clientUuid: string): Promise<ActionResult>
   // The overview KPIs exclude voided sales, so refresh both surfaces.
   revalidatePath('/offline-sales/orders');
   revalidatePath('/offline-sales');
-  revalidateTag(POS_TAGS.orders);
-  revalidateTag(POS_TAGS.catalog); // a void/edit can restock, changing on-hand
+  revalidateTag(POS_TAGS.orders, 'max');
+  revalidateTag(POS_TAGS.catalog, 'max'); // a void/edit can restock, changing on-hand
   return {ok: true};
 }
 
@@ -51,8 +51,8 @@ export async function unvoidOrderAction(clientUuid: string): Promise<ActionResul
   // Restores the sale to the KPIs and revenue-by-method, so refresh both surfaces.
   revalidatePath('/offline-sales/orders');
   revalidatePath('/offline-sales');
-  revalidateTag(POS_TAGS.orders);
-  revalidateTag(POS_TAGS.catalog); // a void/edit can restock, changing on-hand
+  revalidateTag(POS_TAGS.orders, 'max');
+  revalidateTag(POS_TAGS.catalog, 'max'); // a void/edit can restock, changing on-hand
   return {ok: true};
 }
 
@@ -105,7 +105,7 @@ export async function editOrderAction(
 
   revalidatePath('/offline-sales/orders');
   revalidatePath('/offline-sales');
-  revalidateTag(POS_TAGS.orders);
-  revalidateTag(POS_TAGS.catalog); // a void/edit can restock, changing on-hand
+  revalidateTag(POS_TAGS.orders, 'max');
+  revalidateTag(POS_TAGS.catalog, 'max'); // a void/edit can restock, changing on-hand
   return {ok: true};
 }

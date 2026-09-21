@@ -4,7 +4,8 @@ import {ProductDetailView} from '@/components/analyst/product-detail';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Page({params}: {params: {sku: string}}) {
+export default async function Page(props: {params: Promise<{sku: string}>}) {
+  const params = await props.params;
   const detail = await getProductDetail(decodeURIComponent(params.sku));
   if (!detail) notFound();
   return <ProductDetailView detail={detail} />;

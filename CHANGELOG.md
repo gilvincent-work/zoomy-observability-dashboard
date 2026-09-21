@@ -31,6 +31,42 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Next.js 14 → 16 upgrade (security) — `chore(deps)` (issue #63)
+
+Upgrades Next.js **14.2.35 → 16.3.5**, clearing the critical + high npm-audit
+advisories that were pinned to Next 14 and its bundled postcss (RCE via image
+optimizer, RSC DoS, middleware/rewrite SSRF & cache poisoning, postcss XSS). Stays
+on **React 18.3** — Next 16 supports React 18.2+, so no React 19 migration needed;
+`next-auth@5-beta` and `@serwist/next` both already allow Next 16.
+
+Migration performed:
+- **Async request APIs** — ran `@next/codemod next-async-request-api`. `params` /
+  `searchParams` are now `Promise`s, awaited at the top of the 8 page files + the
+  `pwa-icon` route handler. Logic otherwise unchanged.
+- **`revalidateTag`** — Next 16 requires a cacheLife profile as the 2nd arg. Migrated
+  the ~25 on-demand invalidation calls in the POS Server Actions to
+  `revalidateTag(tag, 'max')` (the documented drop-in; preserves the existing
+  `unstable_cache` tag behavior with SWR). They still pair with `revalidatePath` for
+  the immediately-viewed routes, so read-your-writes is intact. (`unstable_cache`
+  remains supported in 16, now deprecated.)
+- **Builder** — Next 16 defaults to Turbopack, which Serwist's webpack-based SW
+  injection doesn't support yet, so `dev`/`build` scripts pin `--webpack`.
+- **tsconfig** — Next 16 auto-set `jsx: react-jsx` and added `.next/dev/types` (our
+  `app/sw.ts` exclusion preserved).
+
+Verified: `typecheck` clean, **201 tests pass**, production build green (all routes),
+service worker still generated + served, `/signin` renders, protected routes 307 to
+sign-in, manifest/icons public.
+
+**Remaining / follow-ups:** audit now shows 2 high, both `browserslist` (build-time,
+transitive via `@serwist/next`; exploit needs an untrusted `browserslist-stats.json`
+we don't use — negligible; only "fix" is a Serwist downgrade). The `middleware` file
+convention is deprecated in 16 in favor of `proxy` (still functional; codemod exists)
+— left as a separate follow-up. **Staging only — needs sign-off + a full manual pass
+before prod given it's a major framework bump.**
+
+---
+
 ## 2026-09-21 — Perf: code-split Recharts off Event analytics — `perf`
 
 `event-analytics.tsx` (route `/offline-sales/events`) imported Recharts directly for
