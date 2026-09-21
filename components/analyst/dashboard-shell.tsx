@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -72,6 +72,9 @@ export function DashboardShell({
 }) {
   const pathname = usePathname() || '/';
   const [accountOpen, setAccountOpen] = useState(false);
+  // Mobile "More" sheet (below md). Deterministic false default → matches SSR, so
+  // desktop hydration is unaffected (mirrors the navExpanded pattern below).
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const initials = (user?.name || user?.email || 'ZY')
     .split(/[\s@.]+/)
     .filter(Boolean)
@@ -144,6 +147,27 @@ export function DashboardShell({
     if (overviewGroupActive) setOverviewOpen(true);
   }, [overviewGroupActive]);
 
+  // ── Mobile nav model (below md only) ──────────────────────────────────────
+  // The left rail is hidden under md; these drive a bottom tab bar (5 primary
+  // destinations) + a "More" sheet for the rest. Reuses leafActive so highlight
+  // logic is identical to the rail. Desktop never renders any of this (md:hidden).
+  const mobileTabs = [
+    {href: '/', label: 'Home', icon: Home, active: leafActive('/', pathname, channel)},
+    {href: '/?channel=all', label: 'Sales', icon: BarChart3, active: leafActive('/?channel=all', pathname, channel)},
+    {href: '/inventory', label: 'Inventory', icon: Package, active: leafActive('/inventory', pathname, channel)},
+    {href: '/offline-sales', label: 'Offline', icon: Receipt, active: leafActive('/offline-sales', pathname, channel)},
+  ];
+  const moreItems: NavItem[] = [
+    {href: '/health', label: 'Business Health', icon: Gauge},
+    {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
+    {href: '/customers', label: 'Customers', icon: Users},
+    {href: '/crm', label: 'Website CRM', icon: Contact},
+    {href: '/traffic', label: 'Traffic', icon: Activity},
+    {href: '/repricer', label: 'Repricer', icon: Tag},
+    {href: '/settings', label: 'Settings', icon: Settings},
+  ];
+  const moreActive = moreItems.some((i) => leafActive(i.href, pathname, channel));
+
   return (
     <PlaybookProvider>
     <CoopChatProvider scopeLabel={currentRange || undefined}>
@@ -157,10 +181,12 @@ export function DashboardShell({
           </span>
         </Link>
 
-        {/* Brand switcher (Zoomy) — visual for now */}
+        {/* Brand switcher (Zoomy) — visual for now. Hidden on the narrowest
+            screens so the mobile header (period + Ask + theme + avatar) doesn't
+            overflow; visible from sm up, so desktop is unchanged. */}
         <button
           type="button"
-          className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted"
+          className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted max-sm:hidden"
         >
           <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
           Zoomy
@@ -268,7 +294,7 @@ export function DashboardShell({
             // flyout (which overflows into the content area) is clickable, not
             // just visible. Width is NOT transitioned: animating it relayouts the
             // adjacent charts every frame and feels laggy — the toggle is instant.
-            'sticky top-14 z-20 flex h-[calc(100vh-3.5rem)] shrink-0 flex-col gap-1 self-start border-r border-sidebar-border bg-sidebar py-4',
+            'sticky top-14 z-20 flex h-[calc(100vh-3.5rem)] shrink-0 flex-col gap-1 self-start border-r border-sidebar-border bg-sidebar py-4 max-md:hidden',
             navExpanded ? 'w-56 items-stretch px-3' : 'w-16 items-center',
           )}
         >
@@ -419,9 +445,106 @@ export function DashboardShell({
           </button>
         </nav>
 
-        <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-y-auto">
+        <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-y-auto max-md:pb-[calc(4rem+env(safe-area-inset-bottom))]">
           {children}
         </main>
+      </div>
+
+      {/* ── Mobile bottom tab bar (below md) ─────────────────────────────────
+          The rail is hidden under md; this replaces it. Pure CSS breakpoint
+          (md:hidden) → renders identically server/client and has zero effect on
+          the desktop layout. Nav is frequent, so items only transition color +
+          press-scale; no entrance motion. */}
+      <nav
+        aria-label="Primary"
+        className="fixed inset-x-0 bottom-0 z-30 flex h-16 items-stretch border-t border-sidebar-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden"
+      >
+        {mobileTabs.map((t) => (
+          <Link
+            key={t.label}
+            href={withWeek(t.href)}
+            aria-current={t.active ? 'page' : undefined}
+            className={cn(
+              'flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium tracking-tight transition-colors active:scale-95',
+              t.active ? 'text-primary' : 'text-muted-foreground',
+            )}
+          >
+            <t.icon className="size-[22px]" />
+            <span>{t.label}</span>
+          </Link>
+        ))}
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="More"
+          aria-expanded={mobileNavOpen}
+          className={cn(
+            'flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium tracking-tight transition-colors active:scale-95',
+            moreActive ? 'text-primary' : 'text-muted-foreground',
+          )}
+        >
+          <Menu className="size-[22px]" />
+          <span>More</span>
+        </button>
+      </nav>
+
+      {/* Mobile "More" sheet — secondary nav + account. Occasional use, so it
+          earns a real slide-up (iOS drawer curve); backdrop fades. Rendered but
+          hidden on desktop (md:hidden). */}
+      <div className="md:hidden" aria-hidden={!mobileNavOpen}>
+        <button
+          type="button"
+          tabIndex={mobileNavOpen ? 0 : -1}
+          aria-label="Close menu"
+          onClick={() => setMobileNavOpen(false)}
+          className={cn(
+            'fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 motion-reduce:transition-none',
+            mobileNavOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
+          )}
+        />
+        <div
+          role="dialog"
+          aria-modal={mobileNavOpen}
+          aria-label="More navigation"
+          className={cn(
+            'fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border-t border-sidebar-border bg-popover pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none',
+            mobileNavOpen ? 'translate-y-0' : 'translate-y-full',
+          )}
+        >
+          <div className="mx-auto mt-2.5 h-1 w-9 rounded-full bg-border" aria-hidden />
+          <div className="grid grid-cols-3 gap-1 p-3">
+            {moreItems.map((item) => {
+              const active = leafActive(item.href, pathname, channel);
+              return (
+                <Link
+                  key={item.label}
+                  href={withWeek(item.href)}
+                  onClick={() => setMobileNavOpen(false)}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-center text-[11px] font-medium leading-tight transition-colors active:scale-95',
+                    active ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted',
+                  )}
+                >
+                  <item.icon className="size-5 shrink-0" />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+          <div className="border-t border-border px-3 py-3">
+            <div className="mb-2 px-1">
+              <div className="truncate text-[13px] font-medium text-foreground">{user?.name || 'Signed in'}</div>
+              {user?.email && <div className="truncate text-[11px] text-muted-foreground">{user.email}</div>}
+            </div>
+            <button
+              onClick={() => signOut({callbackUrl: '/signin'})}
+              className="flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-muted active:scale-[0.99]"
+            >
+              <LogOut className="size-4 text-muted-foreground" /> Sign out
+            </button>
+          </div>
+        </div>
       </div>
     </div>
     </CoopChatProvider>

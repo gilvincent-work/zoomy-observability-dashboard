@@ -12,6 +12,37 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — Mobile responsive, phase 1 (shell) — `feat(mobile)`
+
+First increment of the mobile-responsive pass. **Constraint held throughout: the
+desktop view (≥ `md`/768px) must render byte-identically** — so every change is
+additive (a `max-md:`/`max-sm:` class, a `md:hidden` sibling, or new state with a
+deterministic `false` SSR default). A regression reviewer audited the plan against
+the code first; the diff was then audited to confirm no existing desktop-governing
+utility was deleted or changed in value.
+
+- **`app/layout.tsx`** — added a `viewport` export (`width=device-width`,
+  `initialScale=1`, `viewport-fit=cover`, light/dark `themeColor`). No fixed width
+  or `maximum-scale`, so desktop zoom/a11y unchanged; `themeColor`/`viewport-fit`
+  are inert on desktop.
+- **`components/analyst/dashboard-shell.tsx`** — below `md` the left rail is hidden
+  (`max-md:hidden`) and replaced by a **fixed bottom tab bar** (Home · Sales ·
+  Inventory · Offline · More) plus a slide-up **"More" sheet** (Business Health,
+  Events, Customers, Website CRM, Traffic, Repricer, Settings + account/sign-out).
+  Highlight logic reuses `leafActive` so it matches the rail. `<main>` gets `max-md:`
+  bottom padding (bar height + safe-area) so content clears the bar; the decorative
+  Zoomy brand switcher is `max-sm:hidden` to stop header overflow. Motion per Emil:
+  the frequent tab bar only transitions color + press-scale; the occasional sheet
+  gets the iOS drawer curve; `motion-reduce` respected.
+
+Verified: `typecheck` clean, 186 tests pass, production build 16/16 pages. Scrolling
+scope for Business Health (`#coop-scroll`) unchanged — `<main>` still owns scroll at
+all breakpoints. **Deferred to phase 2:** per-view content density (table→card
+transforms, chart label density, typography) and the PWA layer (manifest, icons,
+service worker).
+
+---
+
 ## 2026-09-21 — Website CRM page (live proxy) — `feat`
 
 New `/crm` tab: website customers, orders and cart recovery, read **live** from the
