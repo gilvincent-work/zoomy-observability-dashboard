@@ -12,7 +12,10 @@ import './globals.css';
 
 // Coop identity: Inter for UI/data, Newsreader for the editorial serif display.
 const sans = Inter({subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-sans'});
-const serif = Newsreader({subsets: ['latin'], weight: ['300', '400', '500', '600'], style: ['normal', 'italic'], variable: '--font-serif'});
+// Newsreader is only ever used at weight 400, upright (all `font-serif` usages are
+// `font-normal`; no serif-italic anywhere — body italics are Inter). Loading just
+// 400/normal drops ~6 unused font files (300/500/600 + the italic set).
+const serif = Newsreader({subsets: ['latin'], weight: ['400'], style: ['normal'], variable: '--font-serif'});
 
 export const metadata: Metadata = {
   title: 'Coop · BrandOS — Zoomy',

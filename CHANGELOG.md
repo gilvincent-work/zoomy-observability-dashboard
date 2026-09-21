@@ -31,6 +31,26 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Perf: trim Newsreader font weights — `perf`
+
+`Newsreader` (`--font-serif`) was loaded at 4 weights (300/400/500/600) with both
+normal and italic. Audit found every `font-serif` usage is `font-normal` (400) and
+there is **no serif italic** anywhere (body italics are Inter). Trimmed to
+`weight: ['400'], style: ['normal']` in `layout.tsx` — drops ~6 unused self-hosted
+woff2 files from the load. Typecheck clean, build 19/19. (The pre-existing "font
+override values for Newsreader" next/font warning is unrelated — it's on HEAD too.)
+
+**Deferred — Recharts code-split (measure first):** Recharts (~100 kB+) rides in the
+initial JS of chart routes (inventory 302, offline-sales/orders 301, events 266,
+health 226 kB). A real split means `next/dynamic` around the chart subtrees in
+`charts.tsx`/`health-view`/`offline-sales`/`event-analytics` with SSR skeletons — a
+genuine refactor with an LCP tradeoff (charts pop in post-hydration). Worth doing,
+but behind a `@next/bundle-analyzer` measurement to size the win and design the
+skeletons; not rushed in here. The Serwist SW already precaches these chunks for
+repeat visits.
+
+---
+
 ## 2026-09-21 — Perf: cache the digest read (TTFB) — `perf`
 
 `getDigests()` (`src/data.ts`) — read by the shell on **every** route — was
