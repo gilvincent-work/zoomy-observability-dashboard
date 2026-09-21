@@ -31,6 +31,33 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Perf: code-split Recharts off tab/overview routes — `perf`
+
+Measured with the build's First-Load-JS table + chunk inspection: Recharts is a
+single **383 kB (uncompressed, ~110 kB gz) chunk** that rode in the initial JS of
+~10 routes (`repricer` 106 kB / `inventory/[sku]` 113 kB have no charts, confirming
+Recharts was the delta). Root cause: `tabs.tsx` and `sections.tsx` statically import
+`./charts` (Recharts), and every Tab/overview route renders them.
+
+- New `components/analyst/charts-lazy.tsx` re-exports the four charts via
+  `next/dynamic` (`ssr: false`, height-matched skeleton → no CLS). `tabs.tsx` and
+  `sections.tsx` now import from it, so the whole Recharts graph moves to an async
+  chunk fetched after first paint.
+
+**Measured First Load JS drop (~−117 kB each):**
+
+| Route | Before | After |
+|---|---:|---:|
+| `/` | 252 kB | 135 kB |
+| `/crm` `/customers` `/settings` `/traffic` | 247–248 kB | 131 kB |
+| `/inventory` | 302 kB | 185 kB |
+| `/offline-sales/orders` | 301 kB | 184 kB |
+
+Typecheck clean, build 19/19. `/health`, `/offline-sales`, `/offline-sales/events`
+still import Recharts directly and are handled next.
+
+---
+
 ## 2026-09-21 — Perf: trim Newsreader font weights — `perf`
 
 `Newsreader` (`--font-serif`) was loaded at 4 weights (300/400/500/600) with both
