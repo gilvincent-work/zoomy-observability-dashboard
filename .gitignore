@@ -10,6 +10,11 @@ next-env.d.ts
 # tsc incremental build cache
 tsconfig.tsbuildinfo
 
+# Serwist service worker output (generated from app/sw.ts by `next build`)
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js
+
 # Spin-the-wheel CSV exports: raw contact data, imported with
 # scripts/import-spin-leads.mjs and never committed (this repo is public).
 spin-the-wheel-leads*.csv

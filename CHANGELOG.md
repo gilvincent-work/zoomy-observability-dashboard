@@ -31,6 +31,31 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — PWA: service worker (Serwist) — `feat(pwa)`
+
+Adds the offline/app-shell service worker, completing the PWA. Deliberately minimal
+and **PII-safe**.
+
+- **`app/sw.ts`** — a Serwist worker that precaches **only** Next's hashed static
+  build assets (JS/CSS/fonts/icons — no customer data). **No runtime caching** of
+  navigations, `/api`, or Supabase reads: this app is behind Google auth and renders
+  PII, so authenticated responses must never touch the cache (leak risk on shared
+  devices). Every non-precached request falls through to the network.
+- **`next.config.mjs`** — wrapped with `@serwist/next` (`swSrc: app/sw.ts` →
+  `public/sw.js`, `cacheOnNavigation: false`, `register: true`, disabled in dev).
+  `serwist` + `@serwist/next` added to deps; generated `public/sw.js` is gitignored.
+- **`middleware.ts`** — auth matcher also excludes `sw.js` so the worker script is
+  publicly fetchable. `app/sw.ts` is excluded from the app `tsconfig` (Serwist bundles
+  it; the `webworker` lib would clash with `dom`).
+
+Verified on a production server: `/sw.js` serves as public `application/javascript`
+(≈35 KB), the registration is wired into the client bundle (`serviceWorker.register`
+→ `/sw.js`), the manifest is public, and protected pages still 307 to `/signin`
+(auth intact). With this, Coop is a full PWA: installable, standalone, offline-shell,
+and eligible for the automatic install prompt.
+
+---
+
 ## 2026-09-21 — PWA: installable (manifest + icons) — `feat(pwa)`
 
 Coop is now installable (Add to Home Screen → standalone window with Coop chrome).
