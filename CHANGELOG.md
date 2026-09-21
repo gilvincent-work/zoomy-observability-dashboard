@@ -31,6 +31,25 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Perf: code-split Recharts off Event analytics — `perf`
+
+`event-analytics.tsx` (route `/offline-sales/events`) imported Recharts directly for
+its two charts (the cumulative-revenue AreaChart + the multi-day pacing LineChart).
+Moved both — and the chart-only helpers (`pesoTick`, `axisLabelStyle`, `todLabel`,
+`dayLineStyle`, `DAY_COLORS`, `chartConfig`) — into a new `event-analytics-chart.tsx`
+exposing one `EventRevenueChart` (it internally switches AreaChart ⇄ pacing on
+compare mode), lazy-loaded via `next/dynamic`. `dayShort` was duplicated (the parent
+still uses it for the day toggle) so the parent never statically imports the Recharts
+module.
+
+- **`/offline-sales/events`: 253 kB → 138 kB** First Load JS (−115). Typecheck clean.
+
+Recharts split now covers **9 of 10 chart routes**. Only `/health` remains (issue #64)
+— its two charts are inline in an 800-line view and share `CHANNEL_ACCENT`/`CHANNELS`
+with non-chart code, so it needs a small neutral shared-constants module first.
+
+---
+
 ## 2026-09-21 — Perf: code-split Recharts off Offline Sales — `perf`
 
 Continues the Recharts split. `offline-sales.tsx` imported Recharts directly for its
