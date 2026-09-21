@@ -4,6 +4,7 @@ import {useMemo, useState} from 'react';
 import Link from 'next/link';
 import {ArrowLeft, CalendarDays, ChevronDown, MapPin, Pencil, Plus, Store} from 'lucide-react';
 import type {EventRollup, PosOrder} from '@/src/pos-sales-types';
+import type {SpinLead} from '@/src/spin-leads-types';
 import {formatPeso} from '@/src/pos-format';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
@@ -33,12 +34,14 @@ function eventDates(startsOn: string | null, endsOn: string | null): string | nu
 export function OfflineEventsView({
   rollups,
   orders,
+  leads,
   currentEventId,
   usingMock,
   fetchedAt,
 }: {
   rollups: EventRollup[];
   orders: PosOrder[];
+  leads: SpinLead[];
   currentEventId: string | null;
   usingMock: boolean;
   fetchedAt: string;
@@ -123,6 +126,7 @@ export function OfflineEventsView({
                 key={r.event.event_id}
                 rollup={r}
                 orders={ordersByEvent.get(r.event.event_id) ?? []}
+                leads={leads}
                 spotlight={r.event.event_id === currentEventId}
                 onEdit={() => { setCreating(false); setEditingId(r.event.event_id); }}
               />
@@ -134,7 +138,7 @@ export function OfflineEventsView({
   );
 }
 
-function EventCard({rollup, orders: eventOrders, spotlight, onEdit}: {rollup: EventRollup; orders: PosOrder[]; spotlight: boolean; onEdit: () => void}) {
+function EventCard({rollup, orders: eventOrders, leads, spotlight, onEdit}: {rollup: EventRollup; orders: PosOrder[]; leads: SpinLead[]; spotlight: boolean; onEdit: () => void}) {
   const {event, revenue, orders, cashSales, expectedCash} = rollup;
   const closed = event.status === 'closed';
   const dates = eventDates(event.starts_on, event.ends_on);
@@ -243,7 +247,7 @@ function EventCard({rollup, orders: eventOrders, spotlight, onEdit}: {rollup: Ev
         <div className="mt-6 border-t pt-6">
           {open && (
             <div className="mb-5">
-              <EventAnalytics event={event} orders={eventOrders} />
+              <EventAnalytics event={event} orders={eventOrders} leads={leads} />
             </div>
           )}
           <button

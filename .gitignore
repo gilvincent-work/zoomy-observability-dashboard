@@ -9,3 +9,9 @@ next-env.d.ts
 
 # tsc incremental build cache
 tsconfig.tsbuildinfo
+
+# Spin-the-wheel CSV exports: raw contact data, imported with
+# scripts/import-spin-leads.mjs and never committed (this repo is public).
+spin-the-wheel-leads*.csv
+spin-wheel-leads*.csv
+data/
