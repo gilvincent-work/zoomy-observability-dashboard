@@ -31,6 +31,25 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Dependency audit — `chore(security)`
+
+Ran `npm audit`. None of the flagged issues came from the new Serwist deps.
+
+- **Fixed (non-breaking, `npm audit fix`)** — `js-yaml` and `qs`, both transitive
+  under the `shadcn` CLI (`cosmiconfig`, `@modelcontextprotocol/sdk → express`).
+  Build/CLI-time only, not in the app's request path. Only `package-lock.json`
+  changed; 9 → 4 advisories. Tests 201 pass, build 19/19.
+- **Deferred (breaking)** — the remaining 4 (1 critical + 3 high) are all Next.js
+  `14.2.35` and its bundled `postcss`; the only fix path is `next@16` (a major
+  upgrade). Pre-existing, unrelated to this work, and several advisories are
+  self-hosted-only / Vercel-mitigated. Flagged for a separate, tested upgrade —
+  not bundled into the mobile/PWA work.
+- Follow-up worth considering: `shadcn` sits in `dependencies` (it's a dev CLI) and
+  is the sole source of the js-yaml/qs subtrees — moving it to `devDependencies` (or
+  dropping it) would shrink the runtime dep surface.
+
+---
+
 ## 2026-09-21 — PWA: service worker (Serwist) — `feat(pwa)`
 
 Adds the offline/app-shell service worker, completing the PWA. Deliberately minimal
