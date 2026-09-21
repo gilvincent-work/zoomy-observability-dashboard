@@ -12,6 +12,33 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — v1.2.6: spin-the-wheel leads to prod — `chore(release)`
+
+**Version bumped to 1.2.6** (was 1.2.5). Ships the Lead capture block below, plus
+its contacts filters and pagination. The `spin_wheel_leads` table was created on
+prod (`qkxbwzdxhwcbwgriwipi`) from `supabase/spin_wheel_leads.sql` and seeded with
+the Sep 18–20 export (113 rows, 108 inside the event window) via
+`scripts/import-spin-leads.mjs` — additive only, nothing existing touched. No POS
+app change; this is dashboard-only.
+
+---
+
+## 2026-09-21 — Contacts filters + pagination — `feat`
+
+The contact list gained a prize filter, a collection-date filter, and the shared
+`Pagination` component in place of "Show all N". The copy-emails button follows
+the filters, so a segmented follow-up list (one prize, one day) is two clicks and
+a copy. Filters scope the table only — the stat tiles and prize bars stay on the
+event totals so the summary holds still while the list is sliced.
+
+Lead **analytics** (capture-over-time, per-day capture rate, wheel-fairness check)
+were scoped and deliberately deferred — the data supports them, but nothing was
+built. Worth noting the one finding from that pass: Sep 19 was the biggest order
+day (50 orders) but the worst capture rate (0.64 leads/order vs 0.87 and 0.82),
+which reads as the wheel being unmanned at peak.
+
+---
+
 ## 2026-09-21 — Spin-the-wheel leads on the event card — `feat`
 
 The storefront's Spin the Wheel booth game (`zoomyforpets.com/admin/spin-wheel`)
