@@ -40,7 +40,7 @@ import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {Metric, metricValueClass} from './metric';
-import {RevenueForecastChart} from './charts';
+import {RevenueForecastChart} from './charts-lazy';
 
 export const CATEGORY_ICON: Record<Category, typeof Package> = {
   inventory: Package,

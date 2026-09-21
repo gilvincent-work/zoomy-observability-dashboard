@@ -12,7 +12,7 @@ import type {AnalystBrief, Category} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
-import {ConversionFunnel, TopSkusChart, TrafficDonut} from './charts';
+import {ConversionFunnel, TopSkusChart, TrafficDonut} from './charts-lazy';
 import {PreferencesForm} from './settings/preferences-form';
 import {
   AnomalyRadar,
