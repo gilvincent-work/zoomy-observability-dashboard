@@ -12,6 +12,25 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — Mobile responsive, phase 2 · Business Health — `feat(mobile)`
+
+Closes the health-view items deferred earlier. All `max-md:`-only; desktop
+byte-identical.
+
+- **Padding** — the wrapper `px-6` and its coupled `-mx-6` full-bleed sticky header
+  now shrink together under `md` (`max-md:px-4` + `max-md:-mx-4 max-md:px-4`), so the
+  scroll-condense header stays aligned edge-to-edge.
+- **Chart heights** — the two tall charts (QRR-by-month 420px, buyer-mix 320px) now
+  size from a CSS container (`h-[420px] max-md:h-[320px]` / `h-[320px] max-md:h-[260px]`
+  with `ResponsiveContainer height="100%"`) instead of a fixed prop — the reviewer's
+  sanctioned CSS-container approach, no JS width branching. Desktop keeps the exact
+  same heights. Other charts (`charts.tsx`, 200–220px) were already width-responsive
+  and modest, so left alone.
+
+Verified: `typecheck` clean, build 19/19 pages.
+
+---
+
 ## 2026-09-21 — PWA: installable (manifest + icons) — `feat(pwa)`
 
 Coop is now installable (Add to Home Screen → standalone window with Coop chrome).
