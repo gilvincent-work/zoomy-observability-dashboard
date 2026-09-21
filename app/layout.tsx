@@ -1,4 +1,4 @@
-import type {Metadata} from 'next';
+import type {Metadata, Viewport} from 'next';
 import type {ReactNode} from 'react';
 import {Suspense} from 'react';
 import {Inter, Newsreader} from 'next/font/google';
@@ -17,6 +17,20 @@ const serif = Newsreader({subsets: ['latin'], weight: ['300', '400', '500', '600
 export const metadata: Metadata = {
   title: 'Coop · BrandOS — Zoomy',
   description: 'The Brand Operating System — store-ops analytics for Zoomy across Shopee, Lazada and the website.',
+};
+
+// Mobile: opt into device-width + safe-area insets, and tint the browser chrome
+// to the Coop canvas. Inert on desktop (themeColor/viewport-fit have no layout
+// effect there). We keep the default scale/user-scalable — no fixed width, no
+// maximum-scale — so desktop zoom and a11y are unchanged.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: [
+    {media: '(prefers-color-scheme: light)', color: '#F8F4F1'},
+    {media: '(prefers-color-scheme: dark)', color: '#17150F'},
+  ],
 };
 
 export default async function RootLayout({children}: {children: ReactNode}) {
