@@ -4,9 +4,16 @@ import {useMemo, useState} from 'react';
 import {Check, Copy} from 'lucide-react';
 import type {SpinLead} from '@/src/spin-leads-types';
 import {prizeTally} from '@/src/spin-leads-types';
+import {manilaDayKey} from '@/src/pos-sales-compute';
+import {Pagination} from './pagination';
 import {cn} from '@/lib/utils';
 
-const PREVIEW = 10;
+const PAGE_SIZE = 10;
+
+/** "2026-09-18" → "Sep 18" for the date filter. */
+function dayShort(key: string): string {
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+}
 
 /** "2026-09-20T21:32:00+08:00" → "Sep 20, 9:32 PM" (Manila). */
 function stamp(iso: string): string {
@@ -25,17 +32,46 @@ function stamp(iso: string): string {
  * Scoped by the day toggle above it, same as every other block on the card.
  */
 export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}) {
-  const [showAll, setShowAll] = useState(false);
+  const [page, setPage] = useState(1);
   const [copied, setCopied] = useState(false);
+  const [prize, setPrize] = useState('all');
+  const [collectedOn, setCollectedOn] = useState('all');
 
   const prizes = useMemo(() => prizeTally(leads), [leads]);
   const withMobile = leads.filter((l) => l.mobile).length;
   const top = prizes[0]?.count ?? 1;
-  const rows = showAll ? leads : leads.slice(0, PREVIEW);
+
+  // Every day these leads actually span, newest first — the filter only offers
+  // dates that have leads behind them, so it can never select an empty list.
+  const days = useMemo(
+    () => [...new Set(leads.map((l) => manilaDayKey(l.collectedAt)))].sort().reverse(),
+    [leads],
+  );
+
+  // The filters scope the contact list (and the copy button with it); the stats
+  // and prize bars above stay on the event's totals so the summary holds still
+  // while you slice the list underneath it.
+  const filtered = useMemo(
+    () =>
+      leads.filter(
+        (l) =>
+          (prize === 'all' || l.prize === prize) &&
+          (collectedOn === 'all' || manilaDayKey(l.collectedAt) === collectedOn),
+      ),
+    [leads, prize, collectedOn],
+  );
+  const filtering = prize !== 'all' || collectedOn !== 'all';
+
+  // Clamp rather than reset: a filter change rewinds to page 1 through its own
+  // handler, and this keeps the view valid if the list shrinks under it anyway.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pageCount);
+  const start = (current - 1) * PAGE_SIZE;
+  const rows = filtered.slice(start, start + PAGE_SIZE);
 
   const copyEmails = async () => {
     try {
-      await navigator.clipboard.writeText(leads.map((l) => l.email).join('\n'));
+      await navigator.clipboard.writeText(filtered.map((l) => l.email).join('\n'));
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -77,15 +113,35 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
 
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Contacts</span>
-          <button
-            type="button"
-            onClick={copyEmails}
-            className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-            {copied ? 'Copied' : `Copy ${leads.length} email${leads.length === 1 ? '' : 's'}`}
-          </button>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Contacts
+            {filtering && <span className="ml-1.5 font-medium normal-case tracking-normal">{filtered.length} of {leads.length}</span>}
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Filter
+              label="Prize"
+              value={prize}
+              onChange={(v) => { setPrize(v); setPage(1); }}
+              options={[{value: 'all', label: 'All prizes'}, ...prizes.map((p) => ({value: p.prize, label: `${p.prize} (${p.count})`}))]}
+            />
+            {days.length > 1 && (
+              <Filter
+                label="Collected"
+                value={collectedOn}
+                onChange={(v) => { setCollectedOn(v); setPage(1); }}
+                options={[{value: 'all', label: 'All dates'}, ...days.map((d) => ({value: d, label: dayShort(d)}))]}
+              />
+            )}
+            <button
+              type="button"
+              onClick={copyEmails}
+              disabled={filtered.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+              {copied ? 'Copied' : `Copy ${filtered.length} email${filtered.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
         </div>
         <div className="overflow-hidden rounded-lg border">
           <table className="w-full text-xs">
@@ -108,19 +164,39 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
               ))}
             </tbody>
           </table>
+          {rows.length === 0 && (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">No leads match these filters.</div>
+          )}
         </div>
-        {leads.length > PREVIEW && (
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            aria-expanded={showAll}
-            className="mt-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {showAll ? 'Show fewer' : `Show all ${leads.length}`}
-          </button>
+        {filtered.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {start + 1}&ndash;{start + rows.length} of {filtered.length}
+            </span>
+            <Pagination page={current} pageCount={pageCount} onPage={setPage} label="Contacts pagination" />
+          </div>
         )}
       </div>
     </div>
+  );
+}
+
+/** A labelled native select — no popover library for what is two short lists. */
+function Filter({label, value, onChange, options}: {label: string; value: string; onChange: (v: string) => void; options: {value: string; label: string}[]}) {
+  return (
+    <label className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground focus-within:text-foreground">
+      <span className="sr-only sm:not-sr-only">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={`Filter contacts by ${label.toLowerCase()}`}
+        className="max-w-[10rem] cursor-pointer truncate bg-transparent pr-1 font-medium text-foreground outline-none"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
