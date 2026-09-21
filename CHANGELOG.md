@@ -12,6 +12,36 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — Spin-the-wheel leads on the event card — `feat`
+
+The storefront's Spin the Wheel booth game (`zoomyforpets.com/admin/spin-wheel`)
+collected 113 leads at the Sep 18–20 bazaar. Those now show up in Coop as a
+**Lead capture** block inside each event card's analytics on `/offline-sales/events`:
+lead count, how many left a mobile number, leads per order, the prize payout
+tally, and the contact table (with a copy-all-emails button for follow-up).
+
+**Why it sits on the event card, not its own page.** The leads' collection days
+(Sep 18/19/20 — 26/32/50) line up exactly with *The Gourmet Pet Pantry* event, so
+they are booth data, not a separate channel. They scope to the same day pills as
+the sales blocks, so picking "Sep 19" narrows sales *and* leads together. The five
+stray rows in the export (three June/July test entries, two with no event tag)
+fall outside every event's dates and are simply never shown.
+
+**Where the data lives.** `spin_wheel_leads` (new table, `supabase/spin_wheel_leads.sql`)
+in the shared archive project, read service-role like `pos_*`. The storefront's own
+spin-wheel table sits in the **storefront** Supabase project, which Coop has no
+credentials for (confirmed 404 against `SUPABASE_URL_ARCHIVE`), so finished events
+are imported from the admin's CSV export with `scripts/import-spin-leads.mjs`
+(upserts on `email + collected_at`, so re-running an export is a no-op). The CSV
+itself is **never committed** — this repo is public and the export is raw contact
+data; `.gitignore` blocks it. RLS is on with no policies, so the anon key sees nothing.
+
+PH timestamps in the export have no timezone, so `parsePhTimestamp` pins them to
+`+08:00` rather than trusting server-local time — Vercel runs UTC, which would
+have slid every evening lead back a day.
+
+---
+
 ## 2026-09-18 — v1.2.5: pet-type editing to prod — `chore(release)`
 
 **Version bumped to 1.2.5** (was 1.2.4). Ships the pet-type edit control below, and
