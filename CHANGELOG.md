@@ -12,6 +12,26 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — Mobile responsive, phase 2 · Inventory table — `feat(mobile)`
+
+The inventory table (`components/analyst/inventory-table.tsx`) now has a mobile
+card view. Same invariance rule — the desktop `Row`, the `<table>`, and its
+`menuFor` state are **untouched**; the only edited line is the scroll wrapper,
+which gained `max-md:hidden`.
+
+- **Table → cards** — a new `md:hidden` `RowCard` renders each paged row as a card
+  (name/SKU + `⋯` menu on top, status pill + editable price, then a 3-col grid of
+  This mo/Last mo/3 mo/Stock/Lasts/Suggested). Reuses the same `RowMenu`, edit,
+  add-stock and edit-stock dialogs as the desktop row.
+- **Portal safety** — the card list uses its **own** `cardMenuFor` state, not the
+  table's `menuFor`. Because `RowMenu` portals to `<body>`, sharing state would let
+  the `display:none` breakpoint render a stray menu at (0,0) on the visible side;
+  independent state means the hidden side's menu can never open.
+
+Verified: `typecheck` clean, build 17/17 pages.
+
+---
+
 ## 2026-09-21 — Mobile responsive, phase 2 · CRM view — `feat(mobile)`
 
 Phase 2 (per-view content density) begins with the freshly-merged Website CRM
