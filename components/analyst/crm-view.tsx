@@ -1,0 +1,423 @@
+'use client';
+
+// The website CRM: customers, orders and cart recovery, read live from the
+// Zoomy CRM Worker (the same source the storefront admin reads). Three KPI
+// groups, then one table at a time — carts, orders, customers — each searchable
+// and exportable. Read-only by design: the reminder and win-back sends stay on
+// the storefront admin, so nothing here can email a customer.
+import {useMemo, useState} from 'react';
+import {
+  AlertTriangle,
+  Crown,
+  Mail,
+  MailCheck,
+  PawPrint,
+  Receipt,
+  RotateCcw,
+  ShoppingCart,
+  Users,
+} from 'lucide-react';
+import {Card, CardContent} from '@/components/ui/card';
+import {Badge} from '@/components/ui/badge';
+import {cn} from '@/lib/utils';
+import {Metric} from './metric';
+import {Eyebrow} from './sections';
+import {Pagination} from './pagination';
+import {
+  cartStatus,
+  enrichCustomers,
+  fmtPh,
+  textMatch,
+  tierCounts,
+  turnaround,
+  type CartStatus,
+} from '@/src/crm-compute';
+import type {
+  CrmBirthdayVoucher,
+  CrmCheckout,
+  CrmCustomer,
+  CrmMembershipConfig,
+  CrmMetrics,
+  CrmOrder,
+} from '@/src/crm-types';
+
+const PER_PAGE = 10;
+
+const peso = (n: number) =>
+  `₱${Number(n || 0).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+/** A money string straight off the API, which may carry its own currency. */
+const money = (amount: string | null, currency?: string | null) => {
+  const n = Number(amount ?? 0);
+  const sym = !currency || currency === 'PHP' ? '₱' : `${currency} `;
+  return `${sym}${n.toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+};
+
+const STATUS_TONE: Record<CartStatus, string> = {
+  Active: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+  Recovered: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300',
+  Converted: 'bg-muted text-muted-foreground',
+};
+
+type Tab = 'carts' | 'orders' | 'customers';
+
+const TABS: Array<{key: Tab; label: string; icon: React.ComponentType<{className?: string}>}> = [
+  {key: 'carts', label: 'Cart recovery', icon: RotateCcw},
+  {key: 'orders', label: 'Orders', icon: Receipt},
+  {key: 'customers', label: 'Customers', icon: Users},
+];
+
+function csvCell(v: unknown): string {
+  const raw = String(v ?? '');
+  // A cell starting with = + - @ can execute as a formula in Excel/Sheets, and
+  // these rows carry customer-supplied emails and names.
+  const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  const escaped = safe.replace(/"/g, '""');
+  return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((r) => r.map(csvCell).join(',')).join('\n');
+  const url = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function CrmView({
+  metrics,
+  customers,
+  orders,
+  checkouts,
+  birthdayVouchers,
+  membership,
+  configured,
+  fetchedAt,
+}: {
+  metrics: CrmMetrics | null;
+  customers: CrmCustomer[];
+  orders: CrmOrder[];
+  checkouts: CrmCheckout[];
+  birthdayVouchers: CrmBirthdayVoucher[];
+  membership: CrmMembershipConfig;
+  configured: boolean;
+  fetchedAt: string;
+}) {
+  const [tab, setTab] = useState<Tab>('carts');
+  const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const needle = q.trim().toLowerCase();
+
+  const enriched = useMemo(
+    () => enrichCustomers(customers, orders, membership.programStart),
+    [customers, orders, membership.programStart],
+  );
+  const tiers = useMemo(() => tierCounts(customers), [customers]);
+
+  const rows = useMemo(() => {
+    if (tab === 'carts') return checkouts.filter((c) => textMatch(needle, [c.email]));
+    if (tab === 'orders') {
+      return orders.filter((o) => textMatch(needle, [o.email, o.orderNumber, o.financialStatus]));
+    }
+    return enriched.filter((c) =>
+      textMatch(needle, [c.email, c.firstName, c.lastName, c.phone, c.petName, c.membershipTier]),
+    );
+  }, [tab, needle, checkouts, orders, enriched]);
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  // Clamped, not reset: searching shortens the list, and a page number left
+  // past the end would render an empty table.
+  const safePage = Math.min(page, pageCount);
+  const shown = rows.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
+  const onTab = (t: Tab) => {
+    setTab(t);
+    setPage(1);
+  };
+
+  const onExport = () => {
+    if (tab === 'carts') {
+      downloadCsv(`crm-abandoned-carts (${rows.length}).csv`, [
+        ['Email', 'Cart value', 'Status', 'Reminders sent', 'Last reminder (PH time)', 'Reminder (RETURN30)', 'Abandoned (PH time)'],
+        ...(rows as CrmCheckout[]).map((c) => [
+          c.email ?? '',
+          money(c.totalPrice, c.currency),
+          cartStatus(c),
+          String(c.remindersSent),
+          fmtPh(c.lastReminderAt),
+          fmtPh(c.winbackSentAt),
+          fmtPh(c.createdAt ?? c.updatedAt),
+        ]),
+      ]);
+    } else if (tab === 'orders') {
+      downloadCsv(`crm-orders (${rows.length}).csv`, [
+        ['Order', 'Email', 'Total', 'Payment', 'Fulfillment', 'Placed (PH time)', 'Fulfilled (PH time)', 'Turnaround', 'Reviewed'],
+        ...(rows as CrmOrder[]).map((o) => [
+          o.orderNumber ?? o.shopifyOrderId,
+          o.email ?? '',
+          money(o.totalPrice, o.currency),
+          o.financialStatus ?? '',
+          o.fulfillmentStatus ?? '',
+          fmtPh(o.createdAt),
+          fmtPh(o.fulfilledAt),
+          turnaround(o.createdAt, o.fulfilledAt),
+          o.reviewSubmittedAt ? 'yes' : '',
+        ]),
+      ]);
+    } else {
+      downloadCsv(`crm-customers (${rows.length}).csv`, [
+        ['Name', 'Email', 'Mobile', 'Tier', 'Orders', 'Lifetime spend', 'Spend this membership year', 'Pet'],
+        ...(rows as ReturnType<typeof enrichCustomers>).map((c) => [
+          [c.firstName, c.lastName].filter(Boolean).join(' '),
+          c.email ?? '',
+          c.phone ?? '',
+          c.membershipTier ?? 'guest',
+          String(c.orderCount),
+          peso(c.spent),
+          peso(c.spendYtd),
+          c.petName ?? '',
+        ]),
+      ]);
+    }
+  };
+
+  const thisYear = new Date().getUTCFullYear();
+  const vouchersThisYear = birthdayVouchers.filter((v) => v.year === thisYear).length;
+
+  return (
+    <div className="space-y-8 p-6 md:p-10">
+      <header>
+        <h1 className="font-serif text-3xl font-normal tracking-tight">Website CRM</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Customers, orders and cart recovery from zoomyforpets.com — live from the CRM engine,
+          read-only. Reminder and win-back sends stay in the storefront admin.
+        </p>
+      </header>
+
+      {!configured && (
+        <div className="flex items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-xs leading-snug text-muted-foreground">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            CRM credentials are not set in this environment (<code>CRM_API_URL</code> and{' '}
+            <code>CRM_API_READ_TOKEN</code>), so this page is empty rather than wrong.
+          </span>
+        </div>
+      )}
+
+      {configured && !metrics && (
+        <div className="flex items-start gap-2 rounded-lg border border-dashed border-amber-400/60 px-3 py-2 text-xs leading-snug text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span>The CRM engine did not answer this request — the figures below may be incomplete.</span>
+        </div>
+      )}
+
+      <section>
+        <Eyebrow icon={ShoppingCart}>Store overview</Eyebrow>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Metric icon={Users} label="Customers" value={(metrics?.customers ?? 0).toLocaleString()} />
+          <Metric icon={Receipt} label="Orders" value={(metrics?.orders ?? 0).toLocaleString()} />
+          <Metric label="Total revenue" value={peso(metrics?.totalRevenue ?? 0)} sub="Paid orders only" />
+          <Metric label="Orders (7d)" value={(metrics?.ordersLast7Days ?? 0).toLocaleString()} />
+          <Metric label="Revenue (7d)" value={peso(metrics?.revenueLast7Days ?? 0)} />
+        </div>
+      </section>
+
+      <section>
+        <Eyebrow icon={Crown}>Membership</Eyebrow>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric
+            label="Platinum"
+            value={tiers.platinum.toLocaleString()}
+            sub={`Crossed ₱${membership.platinumThreshold.toLocaleString('en-PH')} since ${membership.programStart}`}
+          />
+          <Metric label="Gold" value={tiers.gold.toLocaleString()} sub="Account holders, default tier" />
+          <Metric label="Guests" value={tiers.guest.toLocaleString()} sub="Checked out without an account" />
+          <Metric
+            icon={PawPrint}
+            label="Birthday vouchers"
+            value={vouchersThisYear.toLocaleString()}
+            sub={`Sent in ${thisYear} · ${birthdayVouchers.length.toLocaleString()} all time`}
+          />
+        </div>
+      </section>
+
+      <section>
+        <Eyebrow icon={RotateCcw}>Cart recovery</Eyebrow>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Metric icon={ShoppingCart} label="Abandoned (active)" value={(metrics?.abandonedActive ?? 0).toLocaleString()} sub="Email captured, not yet bought" />
+          <Metric icon={MailCheck} label="Recovered" value={(metrics?.recovered ?? 0).toLocaleString()} sub="Bought after a reminder" />
+          <Metric icon={Mail} label="Reminded" value={(metrics?.reminded ?? 0).toLocaleString()} />
+          <Metric label="Recovery rate" value={`${metrics?.recoveryRate ?? 0}%`} sub="Recovered ÷ reminded" />
+          <Metric label="Revenue recovered" value={peso(metrics?.revenueRecovered ?? 0)} />
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="CRM tables">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.key}
+                onClick={() => onTab(t.key)}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  tab === t.key
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border text-muted-foreground hover:border-primary hover:text-primary',
+                )}
+              >
+                <t.icon className="size-3.5" />
+                {t.label}
+                <span className="tabular-nums opacity-70">
+                  {t.key === 'carts' ? checkouts.length : t.key === 'orders' ? orders.length : customers.length}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search email, order # or name"
+              aria-label="Search the table"
+              className="h-9 w-56 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-primary"
+            />
+            <button
+              type="button"
+              onClick={onExport}
+              disabled={!rows.length}
+              className="h-9 rounded-lg border border-border px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+            >
+              Export CSV
+            </button>
+          </div>
+        </div>
+
+        <Card>
+          <CardContent className="p-0">
+            {rows.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                {needle ? 'Nothing matches that search.' : 'No rows yet.'}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    {tab === 'carts' && (
+                      <tr>
+                        <th className="px-4 py-2.5 font-medium">Email</th>
+                        <th className="px-4 py-2.5 font-medium">Cart</th>
+                        <th className="px-4 py-2.5 font-medium">Status</th>
+                        <th className="px-4 py-2.5 font-medium">Reminders</th>
+                        <th className="px-4 py-2.5 font-medium">RETURN30</th>
+                        <th className="px-4 py-2.5 font-medium">Abandoned</th>
+                      </tr>
+                    )}
+                    {tab === 'orders' && (
+                      <tr>
+                        <th className="px-4 py-2.5 font-medium">Order</th>
+                        <th className="px-4 py-2.5 font-medium">Email</th>
+                        <th className="px-4 py-2.5 font-medium">Total</th>
+                        <th className="px-4 py-2.5 font-medium">Payment</th>
+                        <th className="px-4 py-2.5 font-medium">Placed</th>
+                        <th className="px-4 py-2.5 font-medium">Turnaround</th>
+                      </tr>
+                    )}
+                    {tab === 'customers' && (
+                      <tr>
+                        <th className="px-4 py-2.5 font-medium">Name</th>
+                        <th className="px-4 py-2.5 font-medium">Email</th>
+                        <th className="px-4 py-2.5 font-medium">Tier</th>
+                        <th className="px-4 py-2.5 font-medium">Orders</th>
+                        <th className="px-4 py-2.5 font-medium">Spend (year)</th>
+                        <th className="px-4 py-2.5 font-medium">Pet</th>
+                      </tr>
+                    )}
+                  </thead>
+                  <tbody>
+                    {tab === 'carts' &&
+                      (shown as CrmCheckout[]).map((c) => {
+                        const status = cartStatus(c);
+                        return (
+                          <tr key={c.shopifyCheckoutId} className="border-b last:border-0">
+                            <td className="px-4 py-2.5">{c.email ?? '—'}</td>
+                            <td className="px-4 py-2.5 tabular-nums">{money(c.totalPrice, c.currency)}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', STATUS_TONE[status])}>
+                                {status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 tabular-nums">
+                              {c.remindersSent}
+                              {c.lastReminderAt && (
+                                <span className="ml-1 text-xs text-muted-foreground">· {fmtPh(c.lastReminderAt)}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground">{fmtPh(c.winbackSentAt)}</td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                              {fmtPh(c.createdAt ?? c.updatedAt)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    {tab === 'orders' &&
+                      (shown as CrmOrder[]).map((o) => (
+                        <tr key={o.shopifyOrderId} className="border-b last:border-0">
+                          <td className="px-4 py-2.5 font-medium">{o.orderNumber ?? o.shopifyOrderId}</td>
+                          <td className="px-4 py-2.5">{o.email ?? '—'}</td>
+                          <td className="px-4 py-2.5 tabular-nums">{money(o.totalPrice, o.currency)}</td>
+                          <td className="px-4 py-2.5">
+                            <Badge variant={o.financialStatus === 'paid' ? 'default' : 'secondary'}>
+                              {o.financialStatus ?? 'unknown'}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground">{fmtPh(o.createdAt)}</td>
+                          <td className="px-4 py-2.5 text-xs tabular-nums text-muted-foreground">
+                            {turnaround(o.createdAt, o.fulfilledAt)}
+                          </td>
+                        </tr>
+                      ))}
+                    {tab === 'customers' &&
+                      (shown as ReturnType<typeof enrichCustomers>).map((c) => (
+                        <tr key={c.shopifyCustomerId} className="border-b last:border-0">
+                          <td className="px-4 py-2.5">
+                            {[c.firstName, c.lastName].filter(Boolean).join(' ') || '—'}
+                          </td>
+                          <td className="px-4 py-2.5">{c.email ?? '—'}</td>
+                          <td className="px-4 py-2.5">
+                            <span className="text-xs capitalize text-muted-foreground">
+                              {c.membershipTier ?? 'guest'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums">{c.orderCount}</td>
+                          <td className="px-4 py-2.5 tabular-nums">{peso(c.spendYtd)}</td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground">{c.petName ?? '—'}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            Showing {rows.length ? (safePage - 1) * PER_PAGE + 1 : 0}–
+            {Math.min(safePage * PER_PAGE, rows.length)} of {rows.length} · read {fmtPh(fetchedAt)}
+          </p>
+          <Pagination page={safePage} pageCount={pageCount} onPage={setPage} label="Table pagination" />
+        </div>
+      </section>
+    </div>
+  );
+}

@@ -12,6 +12,28 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — Website CRM page (live proxy) — `feat`
+
+New `/crm` tab: website customers, orders and cart recovery, read **live** from the
+Zoomy CRM Worker — the same API the storefront admin at
+`zoomyforpets.com/admin/crm` reads. Chosen over archiving into Supabase because
+the Worker is the system of record (Shopify webhooks land there), so a copy could
+disagree with the storefront; `src/crm-data.ts` caches reads for 60s the way
+`pos-data.ts` does and fails soft, so an unreachable Worker empties the page
+instead of breaking the route.
+
+Two supporting changes in `zoomy-crm`: a **read-only token**
+(`CRM_API_READ_TOKEN`) that opens `/api` but not `/admin` — the full token can
+start a real customer email batch, which a Vercel app should never hold — and a
+new `GET /api/membership-config` serving the Platinum threshold from the Shopify
+metafield, so the threshold shown here cannot drift from the storefront's.
+
+Deliberately **read-only**: reminder and win-back sends stay in the storefront
+admin. Numbers verified against the storefront admin on the same data (totals,
+revenue, tiers and recovery all matched).
+
+---
+
 ## 2026-09-21 — v1.2.6: spin-the-wheel leads to prod — `chore(release)`
 
 **Version bumped to 1.2.6** (was 1.2.5). Ships the Lead capture block below, plus
