@@ -1,6 +1,6 @@
 import 'server-only';
 import {cache} from 'react';
-import {unstable_noStore as noStore} from 'next/cache';
+import {unstable_cache} from 'next/cache';
 import {createClient} from '@supabase/supabase-js';
 import type {DigestArchiveRow} from './types';
 import {MOCK_DIGESTS} from './mock';
@@ -32,18 +32,33 @@ export function usingMock(): boolean {
  * no unmasked customer name can enter an RSC payload. (There is no auth in front
  * of this app yet; relax once there is.) See src/pii.ts.
  */
+// The Supabase read, wrapped in Next's cross-request Data Cache. The shell (root
+// layout) reads this on EVERY route, so an uncached read put a Supabase round-trip
+// on every page's TTFB. The archive is written weekly by the batch job — there is
+// no in-app mutation — so a short time-based revalidate keeps the shell off the
+// network on nearly every request while still surfacing a freshly generated digest
+// within `revalidate`. (Was previously `noStore()`, i.e. fetched every request; the
+// perf cost outweighed the seconds-of-freshness benefit for weekly data.) To make a
+// new digest appear instantly, revalidateTag('digest-archive') from the batch job.
+const readDigests = unstable_cache(
+  async (): Promise<DigestArchiveRow[]> => {
+    const supabase = createClient(url as string, serviceKey as string, {auth: {persistSession: false}});
+    const {data, error} = await supabase
+      .from('digest_archive')
+      .select('window_from,window_to,digest,created_at')
+      .order('window_to', {ascending: false});
+    if (error) throw new Error(`digest_archive read failed: ${error.message}`);
+    return maskRows((data ?? []) as unknown as DigestArchiveRow[]);
+  },
+  ['digest-archive'],
+  {revalidate: 300, tags: ['digest-archive']},
+);
+
+/**
+ * Read archived digests, newest first (masked). React `cache()` de-dupes within a
+ * request; `readDigests` (unstable_cache) de-dupes across requests for ~5 min.
+ */
 export const getDigests = cache(async (): Promise<DigestArchiveRow[]> => {
-  // Never serve a stale archive: opt out of Next's Data Cache so a freshly
-  // generated digest shows immediately. (React cache() above still de-dupes the
-  // read within a single request.) Without this, the Supabase fetch could be
-  // cached in .next/cache across dev-server restarts, hiding the newest week.
-  noStore();
   if (usingMock()) return maskRows(MOCK_DIGESTS);
-  const supabase = createClient(url as string, serviceKey as string, {auth: {persistSession: false}});
-  const {data, error} = await supabase
-    .from('digest_archive')
-    .select('window_from,window_to,digest,created_at')
-    .order('window_to', {ascending: false});
-  if (error) throw new Error(`digest_archive read failed: ${error.message}`);
-  return maskRows((data ?? []) as unknown as DigestArchiveRow[]);
+  return readDigests();
 });

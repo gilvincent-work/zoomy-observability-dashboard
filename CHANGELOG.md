@@ -31,6 +31,24 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Perf: cache the digest read (TTFB) — `perf`
+
+`getDigests()` (`src/data.ts`) — read by the shell on **every** route — was
+`noStore()`, so each page view paid a Supabase round-trip before the layout could
+render. The digest archive is written weekly by the batch job (no in-app mutation),
+so the per-request freshness wasn't worth the latency.
+
+- Wrapped the Supabase read in `unstable_cache` (`revalidate: 300`, tag
+  `digest-archive`); React `cache()` still de-dupes within a request. The shell now
+  hits the network at most once per ~5 min instead of every request → lower TTFB on
+  all routes. Masked rows only (no unmasked PII cached).
+- A newly generated digest appears within 5 min; for instant, the batch job can
+  `revalidateTag('digest-archive')` (noted in code for a future cross-repo hook).
+
+Typecheck clean, build 19/19.
+
+---
+
 ## 2026-09-21 — Perf: intro splash no longer blocks load — `perf`
 
 Biggest perceived-load win. The intro splash was a fixed ~1.7–2.75s overlay on
