@@ -31,6 +31,34 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-21 — Perf: code-split Recharts off Business Health — `perf` (closes #64)
+
+The last chart route. `health-view.tsx` had two Recharts charts inline in an
+800-line view, with `CHANNEL_ACCENT`/`CHANNELS`/`shortMonth`/`hexToRgb` shared
+between the charts and non-chart UI (channel cards, segmented control, cohort
+table) — so a clean split needed a neutral shared module first.
+
+- **`health-view-shared.ts`** (Recharts-free) — the four shared constants, so the
+  parent imports them without pulling the Recharts chunk.
+- **`health-view-chart.tsx`** — `TrendView` (QRR-by-month ComposedChart) moved whole,
+  the buyer-mix BarChart extracted from `HeatmapView` as `BuyerMixChart` (takes
+  `data`/`rgb`/`accent` — `rgb` also colours the heatmap cells, so it stays computed
+  in the parent), plus the chart-only `TrendTooltip`/`TrendLegend`/`niceScale`/
+  `MixTooltip`. Both lazy-loaded via `next/dynamic` (`ssr:false`, height-matched
+  skeletons matching the earlier `max-md:` chart heights).
+- Parent drops its `recharts` import entirely; verified no static `recharts`
+  reference remains in the `/health` chunks (`ComposedChart` now only in async chunks).
+
+Verified: typecheck clean, 201 tests, build green, `/health` 307s (protected) and
+`/signin` renders.
+
+**Recharts code-split complete — all 10 chart routes done.** Every route that renders
+a chart now loads Recharts (~110 kB gz) as an async chunk after first paint; the
+chart routes dropped ~110–117 kB of initial JS each (e.g. `/inventory` 302→185,
+`/` 252→135, `/offline-sales` 247→136, `/offline-sales/events` 253→138).
+
+---
+
 ## 2026-09-21 — Next.js 14 → 16 upgrade (security) — `chore(deps)` (issue #63)
 
 Upgrades Next.js **14.2.35 → 16.3.5**, clearing the critical + high npm-audit
