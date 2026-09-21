@@ -12,6 +12,33 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-21 — PWA: installable (manifest + icons) — `feat(pwa)`
+
+Coop is now installable (Add to Home Screen → standalone window with Coop chrome).
+No new dependencies and no binary raster tooling.
+
+- **`app/manifest.ts`** — web manifest (name/short_name, `display: standalone`,
+  `start_url`/`scope` `/`, Coop `theme_color`/`background_color`). Next links it
+  automatically; inert on desktop.
+- **`app/pwa-icon/[size]/route.tsx`** — 192/512 (+ `?maskable=1`) PNG icons rendered
+  at request time by `next/og` (ImageResponse) from the existing brand mark
+  (`#3F6E56` tile + cream "c"), so no PNG assets or `sharp`/ImageMagick needed.
+- **`app/apple-icon.tsx`** — 180×180 iOS home-screen icon (iOS ignores the manifest
+  for A2HS), full-bleed tile since iOS rounds corners itself.
+- **`middleware.ts`** — the auth matcher now also excludes `manifest.webmanifest`,
+  `pwa-icon`, `apple-icon`, `icon.svg`. A manifest that 302s to `/signin` isn't
+  installable and browsers fetch icons without credentials; these carry no secrets.
+  No app **page** changed protection.
+
+Verified on a production server: `/manifest.webmanifest` serves public JSON and all
+four icons return `image/png` (PNG magic `89504e47`, ~2.6–11 KB). Paired with the
+phase-1 `viewport`/`themeColor`. **Still to come:** a Serwist service worker for
+offline app-shell + the automatic install prompt (separate step — it adds a
+dependency + build-config change and needs on-device testing; caching will be
+static-shell-only, never the PII/auth data).
+
+---
+
 ## 2026-09-21 — Mobile responsive, phase 2 · Offline Sales + padding pass — `feat(mobile)`
 
 The three Offline Sales views (`offline-sales`, `offline-orders`, `offline-events`)
