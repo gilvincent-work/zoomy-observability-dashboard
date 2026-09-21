@@ -43,7 +43,7 @@ export function InventoryView({data, bundles, tab, channel, venue}: {
   const intake = data.rows.map((r) => ({product_id: r.product_id, name: r.name, stock: r.stock}));
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
+    <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 max-md:px-4 max-md:py-6">
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
