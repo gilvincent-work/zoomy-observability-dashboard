@@ -12,6 +12,29 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-23 — One Customers hub for every contact list — `feat(customers)`
+
+The three contact lists now live under the **Customers** tab, and the top bar's
+reporting-period pill is replaced there by a **source switcher**: Website CRM ·
+Event lead contacts · Lazada contacts. A digest week never applied to these —
+they are live lists, not a windowed report — so the slot now carries something
+that does.
+
+- `/crm` → `/customers/website-crm`, `/lazada` → `/customers/lazada`, both old
+  paths kept as permanent redirects so existing links still land.
+- **New** `/customers/leads`: every spin-the-wheel lead across events, reusing
+  the event page's `LeadCapture` block. With no single event to divide by, its
+  "leads per order" stat reads '—'; the per-event slice stays on the event page.
+- `/customers` redirects to the CRM, the busiest of the three.
+- The nav rail goes back to one **Customers** tab (the separate Website CRM and
+  Lazada entries folded in).
+
+**Superseded:** the digest-derived "Customers — who to reach out to" view that
+`/customers` used to render. `CustomersTab` is still exported from
+`components/analyst/tabs.tsx` if it should come back as a fourth source.
+
+---
+
 ## 2026-09-23 — Compact Lazada header — `refactor(lazada)`
 
 The drop zone became an **Import export** button under Refresh, and the amber

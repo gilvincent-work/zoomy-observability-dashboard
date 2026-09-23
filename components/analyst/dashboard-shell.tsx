@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ShoppingBag, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -23,14 +23,20 @@ const OVERVIEW_CHILDREN: NavItem[] = [
   {href: '/offline-sales', label: 'Offline Sales', icon: Receipt},
   {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
 ];
+/** The three contact lists behind the Customers tab, in the top bar's dropdown. */
+const CUSTOMER_SOURCES: Array<{href: string; label: string; hint: string}> = [
+  {href: '/customers/website-crm', label: 'Website CRM', hint: 'zoomyforpets.com buyers & carts'},
+  {href: '/customers/leads', label: 'Event lead contacts', hint: 'Spin-the-wheel booth signups'},
+  {href: '/customers/lazada', label: 'Lazada contacts', hint: 'Marketplace buyers, by phone'},
+];
+
 const FLAT_TABS: NavItem[] = [
   // Products merged into Inventory (feat/inventory-revamp); /products redirects in.
   {href: '/inventory', label: 'Inventory', icon: Package},
+  // One tab for every contact list we hold: the website CRM, the booth leads and
+  // the Lazada marketplace buyers. The source switcher in the top bar moves
+  // between them (CUSTOMER_SOURCES below).
   {href: '/customers', label: 'Customers', icon: Users},
-  // Website CRM — read live from the CRM Worker, unlike the digest-derived tabs.
-  {href: '/crm', label: 'Website CRM', icon: Contact},
-  // Marketplace buyers from the Seller-Center export (uploaded here, not synced).
-  {href: '/lazada', label: 'Lazada', icon: ShoppingBag},
   {href: '/traffic', label: 'Traffic', icon: Activity},
   {href: '/repricer', label: 'Repricer', icon: Tag},
   {href: '/settings', label: 'Settings', icon: Settings},
@@ -113,11 +119,18 @@ export function DashboardShell({
     !pathname.startsWith('/inventory') &&
     // The CRM reads the live CRM engine, whose figures are all-time or rolling
     // 7-day. A digest week sitting above them implied a scope it does not have.
+    // The Customers hub carries live contact lists, not a digest window — it
+    // shows a source switcher in the same slot instead.
+    !pathname.startsWith('/customers') &&
     !pathname.startsWith('/crm') &&
     !pathname.startsWith('/lazada') &&
     !pathname.startsWith('/offline-sales');
 
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const showSource = pathname.startsWith('/customers');
+  const currentSource =
+    CUSTOMER_SOURCES.find((s) => pathname.startsWith(s.href)) ?? CUSTOMER_SOURCES[0];
 
   // Nav rail can expand to show labels beside the icons (8 icon-only tabs are
   // hard to tell apart). Default collapsed to match SSR; restore the saved
@@ -172,6 +185,53 @@ export function DashboardShell({
           Zoomy
           <ChevronDown className="size-3.5 text-muted-foreground" />
         </button>
+
+        {/* Source switcher — the Customers hub's three contact lists */}
+        {showSource && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setSourceOpen((o) => !o)}
+              aria-expanded={sourceOpen}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground/80 transition-colors hover:bg-muted"
+            >
+              <span className="text-xs font-medium">{currentSource.label}</span>
+              <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', sourceOpen && 'rotate-180')} />
+            </button>
+            {sourceOpen && (
+              <>
+                <button className="fixed inset-0 z-10 cursor-default" aria-hidden onClick={() => setSourceOpen(false)} />
+                <div className="absolute left-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+                  <div className="px-3 pb-1.5 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Contact lists
+                  </div>
+                  <div className="pb-1">
+                    {CUSTOMER_SOURCES.map((src) => {
+                      const active = src.href === currentSource.href;
+                      return (
+                        <Link
+                          key={src.href}
+                          href={src.href}
+                          onClick={() => setSourceOpen(false)}
+                          className={cn(
+                            'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                            active ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
+                          )}
+                        >
+                          <span className={cn('size-1.5 shrink-0 rounded-full', active ? 'bg-primary' : 'bg-border')} />
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate">{src.label}</span>
+                            <span className="truncate text-[11px] text-muted-foreground">{src.hint}</span>
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Reporting-period switcher — analytics views only */}
         {showPeriod && (
