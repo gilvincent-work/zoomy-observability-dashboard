@@ -12,6 +12,17 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-23 — Compact Lazada header — `refactor(lazada)`
+
+The drop zone became an **Import export** button under Refresh, and the amber
+PII banner is gone. Both were permanent blocks above the numbers people open the
+page to read, for an action taken about once a month. Dropping a file still
+works — the whole page is the drop target now, and it outlines while you drag.
+The consent wording moved to the button's tooltip, so the reminder still meets
+whoever is about to upload.
+
+---
+
 ## 2026-09-23 — Lazada customer exports — `feat(lazada)`
 
 The storefront admin's Lazada page moves to Coop, upload and all. Unlike the

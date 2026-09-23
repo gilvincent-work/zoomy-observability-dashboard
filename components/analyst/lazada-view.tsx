@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  Lock,
   Package,
   ShoppingBag,
   Upload,
@@ -222,17 +221,79 @@ export function LazadaView({
   }, []);
 
   return (
-    <div className="space-y-8 p-6 md:p-10">
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        // Only when the pointer actually leaves the page, not on every child.
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDragging(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) void handleFile(file);
+      }}
+      className={cn(
+        'space-y-6 p-6 transition-colors md:p-10',
+        dragging && 'bg-primary/5 ring-2 ring-inset ring-primary/40',
+      )}
+    >
+      {dragging && (
+        <p className="pointer-events-none text-center text-xs font-medium text-primary">
+          Drop the Seller-Center .xlsx to import it
+        </p>
+      )}
       <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div>
           <h1 className="font-serif text-3xl font-normal tracking-tight">Lazada</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Marketplace customers from the Seller-Center export, deduplicated by phone number.
-            Upload an export to add to it — re-uploading the same window is safe.
+            Import an export — or drop one anywhere on this page — to add to it; re-uploading the
+            same window is safe.
           </p>
         </div>
-        <div className="pt-1.5">
+        {/* Import lives beside Refresh rather than in a drop zone of its own:
+            an export is uploaded once a month, so it does not deserve a
+            permanent block above the numbers people come here to read. The
+            page still accepts a dragged file anywhere on it. */}
+        <div className="flex flex-col items-end gap-2 pt-1.5">
           <RefreshControl fetchedAt={fetchedAt} />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={pending}
+            title="Real customer data: names, phone numbers and cities. Access control is not consent — confirm the Lazada terms and customer-consent sign-off before uploading live exports."
+            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-60"
+          >
+            <Upload className={cn('size-3.5', pending && 'animate-pulse')} />
+            {pending ? 'Importing…' : 'Import export'}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx"
+            className="sr-only"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleFile(file);
+              e.target.value = '';
+            }}
+          />
+          {uploadMsg && (
+            <p
+              className={cn(
+                'max-w-xs text-right text-xs',
+                uploadMsg.tone === 'ok' ? 'text-emerald-600' : 'text-destructive',
+              )}
+              role="status"
+            >
+              {uploadMsg.text}
+            </p>
+          )}
         </div>
       </header>
 
@@ -254,71 +315,6 @@ export function LazadaView({
           </span>
         </div>
       )}
-
-      <div className="flex items-start gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-        <Lock className="mt-0.5 size-3.5 shrink-0" />
-        <span>
-          <b>Real customer data.</b> Names, phone numbers and cities are stored service-role only and
-          shown on this signed-in page. Access control is not consent — confirm the Lazada terms and
-          customer-consent sign-off before uploading live exports.
-        </span>
-      </div>
-
-      <section>
-        <Eyebrow icon={Upload}>Import</Eyebrow>
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            const file = e.dataTransfer.files?.[0];
-            if (file) void handleFile(file);
-          }}
-          className={cn(
-            'rounded-xl border border-dashed px-5 py-6 text-center transition-colors',
-            dragging ? 'border-primary bg-primary/5' : 'border-border',
-          )}
-        >
-          <p className="text-sm text-muted-foreground">
-            Drop the Seller-Center <code>.xlsx</code> export here, or{' '}
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="font-medium text-primary underline-offset-2 hover:underline"
-            >
-              choose a file
-            </button>
-            . The spreadsheet is read in your browser; only normalised rows are sent.
-          </p>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx"
-            className="sr-only"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleFile(file);
-              e.target.value = '';
-            }}
-          />
-          {pending && <p className="mt-2 text-xs text-muted-foreground">Saving…</p>}
-          {uploadMsg && (
-            <p
-              className={cn(
-                'mt-2 text-xs font-medium',
-                uploadMsg.tone === 'ok' ? 'text-emerald-600' : 'text-destructive',
-              )}
-              role="status"
-            >
-              {uploadMsg.text}
-            </p>
-          )}
-        </div>
-      </section>
 
       <section>
         <Eyebrow icon={ShoppingBag}>Overview</Eyebrow>
