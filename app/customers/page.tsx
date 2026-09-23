@@ -1,13 +1,7 @@
-import {getDigests} from '@/src/data';
-import {getBrief} from '@/src/salesSignals';
-import {pickIndex} from '@/src/week';
-import {CustomersTab} from '@/components/analyst/tabs';
+import {redirect} from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default async function Page({searchParams}: {searchParams: {week?: string}}) {
-  const digests = await getDigests();
-  const row = digests[pickIndex(digests, searchParams.week)];
-  if (!row) return <div className="p-10 text-muted-foreground">No digests archived yet.</div>;
-  return <CustomersTab brief={getBrief()} row={row} />;
+/** The Customers hub opens on the website CRM; the source switcher in the top
+ * bar moves between that, the booth leads and the Lazada contacts. */
+export default function Page() {
+  redirect('/customers/website-crm');
 }

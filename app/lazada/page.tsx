@@ -1,20 +1,6 @@
-import {getLastLazadaUpload, getLazadaItems} from '@/src/lazada-data';
-import {LazadaView} from '@/components/analyst/lazada-view';
+import {permanentRedirect} from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default async function Page() {
-  const [{items, missingTable, configured}, lastUpload] = await Promise.all([
-    getLazadaItems(),
-    getLastLazadaUpload(),
-  ]);
-  return (
-    <LazadaView
-      items={items}
-      lastUpload={lastUpload}
-      missingTable={missingTable}
-      configured={configured}
-      fetchedAt={new Date().toISOString()}
-    />
-  );
+/** Moved under the Customers hub. Kept so older links and bookmarks still land. */
+export default function Page() {
+  permanentRedirect('/customers/lazada');
 }
