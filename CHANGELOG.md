@@ -12,6 +12,36 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-23 — Lazada customer exports — `feat(lazada)`
+
+The storefront admin's Lazada page moves to Coop, upload and all. Unlike the
+CRM (a live proxy over a Worker), this feature **owns data**: `lazada_orders` +
+`lazada_uploads` lived in the STOREFRONT Supabase project, which Coop has no
+credentials for, so they are created in the shared archive project alongside
+`pos_*`. Nothing to migrate — the storefront's prod project never had the table.
+
+- **Transforms ported verbatim** to `src/lazada-export.ts` /
+  `-client.ts` (JS → TS, logic untouched) together with their 62 tests, which
+  pass unchanged. The rollup stays un-materialised: items collapse by phone at
+  read time, as documented in `supabase/lazada_orders.sql`.
+- **Upload is a server action** (`src/lazada-actions.ts`). The browser parses the
+  `.xlsx` with ExcelJS (dynamically imported, ~900KB off the initial bundle) and
+  posts normalised rows; the server upserts on `order_item_id` in chunks of 400,
+  so re-uploading the same export — or two overlapping windows — converges
+  instead of double-counting. A successful import revalidates the `lazada-orders`
+  tag, so the table reflects it immediately.
+- `lazada_uploads` is best-effort and optional: the orders are already saved, so
+  a missing ledger never reports a good import as failed. It keeps counts only —
+  the "13 buyers excluded" figure is knowable at parse time and nowhere else,
+  and storing the aggregate keeps the answer without retaining the PII of buyers
+  this list will never contact.
+- The money columns are typed optional, mirroring the storefront's defensive
+  `select *`: an install predating them must still render.
+
+Adds one dependency: `exceljs`.
+
+---
+
 ## 2026-09-21 — CRM refresh control, no reporting period — `feat(crm)`
 
 **Refresh beside the title**, with the last read time next to it. The shared
