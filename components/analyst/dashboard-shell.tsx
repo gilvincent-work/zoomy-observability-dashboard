@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, Contact, ShoppingBag, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -29,6 +29,8 @@ const FLAT_TABS: NavItem[] = [
   {href: '/customers', label: 'Customers', icon: Users},
   // Website CRM — read live from the CRM Worker, unlike the digest-derived tabs.
   {href: '/crm', label: 'Website CRM', icon: Contact},
+  // Marketplace buyers from the Seller-Center export (uploaded here, not synced).
+  {href: '/lazada', label: 'Lazada', icon: ShoppingBag},
   {href: '/traffic', label: 'Traffic', icon: Activity},
   {href: '/repricer', label: 'Repricer', icon: Tag},
   {href: '/settings', label: 'Settings', icon: Settings},
@@ -112,6 +114,7 @@ export function DashboardShell({
     // The CRM reads the live CRM engine, whose figures are all-time or rolling
     // 7-day. A digest week sitting above them implied a scope it does not have.
     !pathname.startsWith('/crm') &&
+    !pathname.startsWith('/lazada') &&
     !pathname.startsWith('/offline-sales');
 
   const [periodOpen, setPeriodOpen] = useState(false);
