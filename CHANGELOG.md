@@ -416,6 +416,133 @@ scope for Business Health (`#coop-scroll`) unchanged — `<main>` still owns scr
 all breakpoints. **Deferred to phase 2:** per-view content density (table→card
 transforms, chart label density, typography) and the PWA layer (manifest, icons,
 service worker).
+## 2026-09-24 — All contacts: the three lists merged — `feat(customers)`
+
+`/customers/all` is the hub's new landing view: one row per PERSON across the
+website CRM, the booth leads and the Lazada export. First live run — 388 raw
+records collapse to **379 people**.
+
+**Why a union-find** (`src/contacts-merge.ts`): the three lists have different
+identities. The CRM knows an email, a booth lead knows both, and a Lazada buyer
+has **no email at all** — the export never carries one, so a phone number is its
+only identity. Matching on email alone would keep every marketplace buyer
+permanently separate from their website account. A person is therefore matched
+on EITHER key, and a record that bridges two groups (a lead carrying the
+website's email and the marketplace's phone) joins them.
+
+Phone matching normalises to the last 10 digits, because the same number arrives
+as `09171234567`, `+639171234567`, `639171234567` or `9171234567` depending on
+which system typed it.
+
+**Layout choices**, so a merged row is never confusing:
+- Source chips (Web / Booth / Lazada) on every row — provenance is visible, not
+  inferred. Filtering by list, including "In 2+ lists", uses the same vocabulary.
+- Tiles lead with reachability (email / SMS), which is why anyone opens this.
+- Contact, email and mobile share one cell: "who is this and how do I reach
+  them" is one question.
+- Orders and spend are summed across lists, stated in the table footer.
+
+Field precedence follows what each list knows best: the website for names and
+tiers, Lazada for the shipping city, any list for contact details.
+
+---
+
+## 2026-09-23 — One Customers hub for every contact list — `feat(customers)`
+
+The three contact lists now live under the **Customers** tab, and the top bar's
+reporting-period pill is replaced there by a **source switcher**: Website CRM ·
+Event lead contacts · Lazada contacts. A digest week never applied to these —
+they are live lists, not a windowed report — so the slot now carries something
+that does.
+
+- `/crm` → `/customers/website-crm`, `/lazada` → `/customers/lazada`, both old
+  paths kept as permanent redirects so existing links still land.
+- **New** `/customers/leads`: every spin-the-wheel lead across events, reusing
+  the event page's `LeadCapture` block. With no single event to divide by, its
+  "leads per order" stat reads '—'; the per-event slice stays on the event page.
+- `/customers` redirects to the CRM, the busiest of the three.
+- The nav rail goes back to one **Customers** tab (the separate Website CRM and
+  Lazada entries folded in).
+
+**Superseded:** the digest-derived "Customers — who to reach out to" view that
+`/customers` used to render. `CustomersTab` is still exported from
+`components/analyst/tabs.tsx` if it should come back as a fourth source.
+
+---
+
+## 2026-09-23 — Compact Lazada header — `refactor(lazada)`
+
+The drop zone became an **Import export** button under Refresh, and the amber
+PII banner is gone. Both were permanent blocks above the numbers people open the
+page to read, for an action taken about once a month. Dropping a file still
+works — the whole page is the drop target now, and it outlines while you drag.
+The consent wording moved to the button's tooltip, so the reminder still meets
+whoever is about to upload.
+
+---
+
+## 2026-09-23 — Lazada customer exports — `feat(lazada)`
+
+The storefront admin's Lazada page moves to Coop, upload and all. Unlike the
+CRM (a live proxy over a Worker), this feature **owns data**: `lazada_orders` +
+`lazada_uploads` lived in the STOREFRONT Supabase project, which Coop has no
+credentials for, so they are created in the shared archive project alongside
+`pos_*`. Nothing to migrate — the storefront's prod project never had the table.
+
+- **Transforms ported verbatim** to `src/lazada-export.ts` /
+  `-client.ts` (JS → TS, logic untouched) together with their 62 tests, which
+  pass unchanged. The rollup stays un-materialised: items collapse by phone at
+  read time, as documented in `supabase/lazada_orders.sql`.
+- **Upload is a server action** (`src/lazada-actions.ts`). The browser parses the
+  `.xlsx` with ExcelJS (dynamically imported, ~900KB off the initial bundle) and
+  posts normalised rows; the server upserts on `order_item_id` in chunks of 400,
+  so re-uploading the same export — or two overlapping windows — converges
+  instead of double-counting. A successful import revalidates the `lazada-orders`
+  tag, so the table reflects it immediately.
+- `lazada_uploads` is best-effort and optional: the orders are already saved, so
+  a missing ledger never reports a good import as failed. It keeps counts only —
+  the "13 buyers excluded" figure is knowable at parse time and nowhere else,
+  and storing the aggregate keeps the answer without retaining the PII of buyers
+  this list will never contact.
+- The money columns are typed optional, mirroring the storefront's defensive
+  `select *`: an install predating them must still render.
+
+Adds one dependency: `exceljs`.
+
+---
+
+## 2026-09-21 — CRM refresh control, no reporting period — `feat(crm)`
+
+**Refresh beside the title**, with the last read time next to it. The shared
+`RefreshControl` gained an optional `beforeRefresh` hook, because the CRM's
+readers sit behind a 60s server cache: `router.refresh()` alone would re-render
+the same figures while the label reset to "just now" — a refresh that claims to
+have worked and did nothing. The button now invalidates the `crm-live` cache tag
+(`src/crm-actions.ts`) first, so it genuinely goes back to the Worker. Cache
+window and tag moved to `src/crm-cache.ts`, mirroring `pos-cache.ts`.
+
+**The reporting-period pill is hidden on /crm.** The CRM's figures are all-time
+or rolling 7-day, read from the live engine; a digest week sitting above them
+implied a scope the numbers do not have. Added to the same `showPeriod`
+exclusion list as Inventory and Offline Sales.
+
+---
+
+## 2026-09-21 — CRM table filters — `feat(crm)`
+
+Each CRM table gets the filters its storefront-admin counterpart has, so an
+admin can reach a subset without scrolling 6 pages: carts by **Progress /
+Status / RETURN30**, orders by **Payment / Fulfillment / Reviewed**, customers
+by **Tier / Bought**. Filter sets are per-table and survive tab switches; any
+change resets to page 1, and a Clear appears only when something is narrowed.
+
+Progress needs Shopify's raw checkout payload, which the reader deliberately
+drops at the boundary — so the stage is now derived **server-side** in
+`crm-data.ts` and only the label (`Email` / `Shipping` / `Payment`) crosses to
+the browser, never the shopper's address. It is also a new table column and CSV
+field. As on the storefront, `Shipping` is the furthest step Shopify exposes:
+payment-form engagement lives in its secure iframe and is never persisted
+unless the payment completes.
 
 ---
 

@@ -1,14 +1,22 @@
 import {describe, it, expect} from 'vitest';
 import {
   cartStatus,
+  checkoutStage,
   enrichCustomers,
+  filterActive,
+  filterCarts,
+  filterCustomers,
+  filterOrders,
   fmtPh,
   membershipWindowStart,
   textMatch,
   tierCounts,
   turnaround,
+  EMPTY_CART_FILTER,
+  EMPTY_CUSTOMER_FILTER,
+  EMPTY_ORDER_FILTER,
 } from '../src/crm-compute';
-import type {CrmCustomer, CrmOrder} from '../src/crm-types';
+import type {CrmCheckout, CrmCustomer, CrmOrder} from '../src/crm-types';
 
 const customer = (over: Partial<CrmCustomer> = {}): CrmCustomer => ({
   shopifyCustomerId: '1', email: 'a@x.com', firstName: null, lastName: null, phone: null,
@@ -118,5 +126,96 @@ describe('textMatch', () => {
     expect(textMatch('gmail', ['A@GMAIL.com', null])).toBe(true);
     expect(textMatch('zzz', ['a@x.com'])).toBe(false);
     expect(textMatch('', ['anything'])).toBe(true);
+  });
+});
+
+/* ---------- filters ---------- */
+
+const checkout = (over: Partial<CrmCheckout> = {}): CrmCheckout => ({
+  shopifyCheckoutId: 'ck1', email: 'a@x.com', abandonedCheckoutUrl: null, totalPrice: '500',
+  currency: 'PHP', createdAt: '2026-09-01T00:00:00Z', updatedAt: null, convertedAt: null,
+  remindersSent: 0, lastReminderAt: null, reachedPaymentAt: null, winbackSentAt: null,
+  stage: 'Email', ...over,
+});
+
+describe('checkoutStage', () => {
+  // Shipping is the furthest Shopify exposes; payment engagement lives in its
+  // secure iframe, so 'Payment' only comes from what the CRM recorded.
+  it('reads the furthest step reached', () => {
+    expect(checkoutStage({reachedPaymentAt: '2026-09-01'}, {})).toBe('Payment');
+    expect(checkoutStage({email: 'a@x.com'}, {shipping_address: {city: 'Manila'}})).toBe('Shipping');
+    expect(checkoutStage({email: null}, {shipping_lines: [{title: 'Std'}]})).toBe('Shipping');
+    expect(checkoutStage({email: 'a@x.com'}, {})).toBe('Email');
+    expect(checkoutStage({email: null}, {})).toBe('Started');
+  });
+
+  it('treats a missing or junk payload as no progress', () => {
+    expect(checkoutStage({email: null}, null)).toBe('Started');
+    expect(checkoutStage({email: null}, 'not an object')).toBe('Started');
+  });
+});
+
+describe('filterCarts', () => {
+  const rows = [
+    checkout({shopifyCheckoutId: 'a', stage: 'Payment', remindersSent: 2, convertedAt: '2026-09-02'}),
+    checkout({shopifyCheckoutId: 'b', stage: 'Email', email: 'other@y.com'}),
+    checkout({shopifyCheckoutId: 'c', stage: 'Shipping', winbackSentAt: '2026-09-17'}),
+  ];
+
+  it('narrows by stage, status and win-back, and combines with the search', () => {
+    expect(filterCarts(rows, {...EMPTY_CART_FILTER, stage: 'Payment'}, '').map((r) => r.shopifyCheckoutId)).toEqual(['a']);
+    expect(filterCarts(rows, {...EMPTY_CART_FILTER, status: 'Recovered'}, '').map((r) => r.shopifyCheckoutId)).toEqual(['a']);
+    expect(filterCarts(rows, {...EMPTY_CART_FILTER, winback: 'sent'}, '').map((r) => r.shopifyCheckoutId)).toEqual(['c']);
+    expect(filterCarts(rows, {...EMPTY_CART_FILTER, winback: 'not-sent'}, 'other')).toHaveLength(1);
+  });
+
+  it('passes everything through when nothing is set', () => {
+    expect(filterCarts(rows, EMPTY_CART_FILTER, '')).toHaveLength(3);
+  });
+});
+
+describe('filterOrders', () => {
+  const rows = [
+    order({shopifyOrderId: 'a', financialStatus: 'paid', fulfilledAt: '2026-09-02', reviewSubmittedAt: '2026-09-05'}),
+    order({shopifyOrderId: 'b', financialStatus: 'pending'}),
+    order({shopifyOrderId: 'c', financialStatus: 'PAID'}),
+  ];
+
+  it('matches payment status case-insensitively', () => {
+    expect(filterOrders(rows, {...EMPTY_ORDER_FILTER, payment: 'paid'}, '').map((r) => r.shopifyOrderId)).toEqual(['a', 'c']);
+  });
+
+  it('splits fulfilled and reviewed by presence of the timestamp', () => {
+    expect(filterOrders(rows, {...EMPTY_ORDER_FILTER, fulfillment: 'unfulfilled'}, '')).toHaveLength(2);
+    expect(filterOrders(rows, {...EMPTY_ORDER_FILTER, reviewed: 'reviewed'}, '').map((r) => r.shopifyOrderId)).toEqual(['a']);
+    expect(filterOrders(rows, {...EMPTY_ORDER_FILTER, reviewed: 'pending'}, '')).toHaveLength(2);
+  });
+});
+
+describe('filterCustomers', () => {
+  const rows = enrichCustomers(
+    [
+      customer({shopifyCustomerId: '1', membershipTier: 'gold'}),
+      customer({shopifyCustomerId: '2', email: 'g@x.com', membershipTier: null}),
+    ],
+    [order({shopifyCustomerId: '1'})],
+    '2026-07-01',
+  );
+
+  it('treats a missing tier as guest', () => {
+    expect(filterCustomers(rows, {...EMPTY_CUSTOMER_FILTER, tier: 'guest'}, '').map((r) => r.shopifyCustomerId)).toEqual(['2']);
+    expect(filterCustomers(rows, {...EMPTY_CUSTOMER_FILTER, tier: 'gold'}, '').map((r) => r.shopifyCustomerId)).toEqual(['1']);
+  });
+
+  it('splits buyers from browsers', () => {
+    expect(filterCustomers(rows, {...EMPTY_CUSTOMER_FILTER, buyers: 'buyers'}, '')).toHaveLength(1);
+    expect(filterCustomers(rows, {...EMPTY_CUSTOMER_FILTER, buyers: 'none'}, '').map((r) => r.shopifyCustomerId)).toEqual(['2']);
+  });
+});
+
+describe('filterActive', () => {
+  it('is false only when every field is "all"', () => {
+    expect(filterActive(EMPTY_CART_FILTER)).toBe(false);
+    expect(filterActive({...EMPTY_CART_FILTER, stage: 'Payment'})).toBe(true);
   });
 });
