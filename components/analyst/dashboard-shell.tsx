@@ -25,6 +25,7 @@ const OVERVIEW_CHILDREN: NavItem[] = [
 ];
 /** The three contact lists behind the Customers tab, in the top bar's dropdown. */
 const CUSTOMER_SOURCES: Array<{href: string; label: string; hint: string}> = [
+  {href: '/customers/all', label: 'All contacts', hint: 'Every list, merged by person'},
   {href: '/customers/website-crm', label: 'Website CRM', hint: 'zoomyforpets.com buyers & carts'},
   {href: '/customers/leads', label: 'Event lead contacts', hint: 'Spin-the-wheel booth signups'},
   {href: '/customers/lazada', label: 'Lazada contacts', hint: 'Marketplace buyers, by phone'},

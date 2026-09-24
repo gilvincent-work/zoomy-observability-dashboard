@@ -1,7 +1,7 @@
 import {redirect} from 'next/navigation';
 
-/** The Customers hub opens on the website CRM; the source switcher in the top
- * bar moves between that, the booth leads and the Lazada contacts. */
+/** The Customers hub lands on the merged list; the source switcher in the top
+ * bar moves to a single list. */
 export default function Page() {
-  redirect('/customers/website-crm');
+  redirect('/customers/all');
 }

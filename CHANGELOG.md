@@ -12,6 +12,37 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-24 — All contacts: the three lists merged — `feat(customers)`
+
+`/customers/all` is the hub's new landing view: one row per PERSON across the
+website CRM, the booth leads and the Lazada export. First live run — 388 raw
+records collapse to **379 people**.
+
+**Why a union-find** (`src/contacts-merge.ts`): the three lists have different
+identities. The CRM knows an email, a booth lead knows both, and a Lazada buyer
+has **no email at all** — the export never carries one, so a phone number is its
+only identity. Matching on email alone would keep every marketplace buyer
+permanently separate from their website account. A person is therefore matched
+on EITHER key, and a record that bridges two groups (a lead carrying the
+website's email and the marketplace's phone) joins them.
+
+Phone matching normalises to the last 10 digits, because the same number arrives
+as `09171234567`, `+639171234567`, `639171234567` or `9171234567` depending on
+which system typed it.
+
+**Layout choices**, so a merged row is never confusing:
+- Source chips (Web / Booth / Lazada) on every row — provenance is visible, not
+  inferred. Filtering by list, including "In 2+ lists", uses the same vocabulary.
+- Tiles lead with reachability (email / SMS), which is why anyone opens this.
+- Contact, email and mobile share one cell: "who is this and how do I reach
+  them" is one question.
+- Orders and spend are summed across lists, stated in the table footer.
+
+Field precedence follows what each list knows best: the website for names and
+tiers, Lazada for the shipping city, any list for contact details.
+
+---
+
 ## 2026-09-23 — One Customers hub for every contact list — `feat(customers)`
 
 The three contact lists now live under the **Customers** tab, and the top bar's
