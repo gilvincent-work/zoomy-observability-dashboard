@@ -63,7 +63,20 @@ export type CrmCheckout = {
   reachedPaymentAt: string | null;
   /** When the one-off RETURN30 win-back went out (null = never sent). */
   winbackSentAt: string | null;
+  /**
+   * How far the shopper got. Derived server-side from the Shopify payload (see
+   * crm-data.ts) so the browser gets the label without the raw blob's PII.
+   */
+  stage: CheckoutStage;
 };
+
+/**
+ * 'Shipping' is the furthest stage Shopify lets us see: whether someone engaged
+ * the payment form lives inside Shopify's secure iframe and is never persisted
+ * unless the payment completes — at which point it is an order, not a cart.
+ * 'Payment' therefore only appears for carts the CRM saw reach payment.
+ */
+export type CheckoutStage = 'Started' | 'Email' | 'Shipping' | 'Payment';
 
 export type CrmBirthdayVoucher = {
   id: number;

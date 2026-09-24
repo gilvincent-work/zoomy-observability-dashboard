@@ -1,14 +1,7 @@
-import {getDigests} from '@/src/data';
-import {getBrief} from '@/src/salesSignals';
-import {pickIndex} from '@/src/week';
-import {CustomersTab} from '@/components/analyst/tabs';
+import {redirect} from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default async function Page(props: {searchParams: Promise<{week?: string}>}) {
-  const searchParams = await props.searchParams;
-  const digests = await getDigests();
-  const row = digests[pickIndex(digests, searchParams.week)];
-  if (!row) return <div className="p-10 text-muted-foreground">No digests archived yet.</div>;
-  return <CustomersTab brief={getBrief()} row={row} />;
+/** The Customers hub lands on the merged list; the source switcher in the top
+ * bar moves to a single list. */
+export default function Page() {
+  redirect('/customers/all');
 }
