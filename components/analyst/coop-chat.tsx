@@ -226,7 +226,7 @@ function CoopFab({onOpen}: {onOpen: () => void}) {
       onClick={onOpen}
       aria-label="Ask coop"
       title="Ask coop"
-      className="fixed bottom-4 left-3 z-[70] flex size-10 items-center justify-center overflow-hidden rounded-full border border-primary/50 bg-primary/10 text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md"
+      className="fixed bottom-4 left-3 z-[70] flex size-10 items-center justify-center overflow-hidden rounded-full border border-primary/50 bg-primary/10 text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-md max-md:hidden"
     >
       <span className="coop-shine" aria-hidden />
       <Sparkles className="size-4" />

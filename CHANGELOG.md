@@ -31,6 +31,16 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-24 — Fix: hide Ask-coop FAB on mobile — `fix(mobile)`
+
+The floating "Ask coop" button (`CoopFab`, `fixed bottom-4 left-3`) is designed to
+sit in the desktop nav rail's bottom-left corner. On mobile the rail is hidden and
+the new bottom tab bar occupies that space, so the FAB landed on top of the "Home"
+tab. Added `max-md:hidden` — the header's `AskCoopPill` (top-right) is the mobile
+entry point, so the FAB is redundant there. Desktop unchanged.
+
+---
+
 ## 2026-09-21 — Perf: code-split Recharts off Business Health — `perf` (closes #64)
 
 The last chart route. `health-view.tsx` had two Recharts charts inline in an
