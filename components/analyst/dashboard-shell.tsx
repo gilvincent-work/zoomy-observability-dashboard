@@ -181,7 +181,6 @@ export function DashboardShell({
     {href: '/health', label: 'Business Health', icon: Gauge},
     {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
     {href: '/customers', label: 'Customers', icon: Users},
-    {href: '/crm', label: 'Website CRM', icon: Contact},
     {href: '/traffic', label: 'Traffic', icon: Activity},
     {href: '/repricer', label: 'Repricer', icon: Tag},
     {href: '/settings', label: 'Settings', icon: Settings},

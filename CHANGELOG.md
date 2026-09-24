@@ -31,6 +31,30 @@ Verified: `typecheck` clean, build 19/19 pages.
 
 ---
 
+## 2026-09-24 — Mobile: optimize the Lazada + Customers features — `feat(mobile)`
+
+Applies the mobile treatment to the coworker's newly-merged features (Lazada exports,
+merged Customers/contacts hub, CRM filters). Same additive `max-md:` / `md:hidden`
+pattern — desktop byte-identical.
+
+- **Lazada** (`lazada-view.tsx`) — both tables get a `md:hidden` card view (Customers:
+  name/phone/city + spend/orders/pay; Orders-by-product: product + orders/buyers/
+  items/revenue) beside the `max-md:hidden` desktop table. Page padding + the search
+  field tighten under `md` (drop-zone padding preserved).
+- **Customers hub** (`contacts-view.tsx`) — the merged contacts table gets a card view
+  (headline + reach details + source pills + orders/spend/city/last-seen), padding and
+  search responsive.
+- **Mobile nav** (`dashboard-shell.tsx`) — dropped the now-redundant `/crm` "Website
+  CRM" entry from the More sheet: `/crm` `permanentRedirect`s into the Customers hub,
+  which is already a More-sheet item (with the top-bar source switcher for its lists).
+- **CRM filters** — the coworker's new status/fulfillment/tier filter bar is already
+  `flex flex-wrap`, so it wraps cleanly on mobile; no change needed.
+
+Verified on the merged Next 16 base: typecheck clean, 286 tests, build green (all
+`/lazada` + `/customers/*` routes).
+
+---
+
 ## 2026-09-24 — Fix: hide Ask-coop FAB on mobile — `fix(mobile)`
 
 The floating "Ask coop" button (`CoopFab`, `fixed bottom-4 left-3`) is designed to
