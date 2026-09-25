@@ -13,7 +13,8 @@ export default async function Page() {
   // resolved event_id, so extending an event's dates folds those sales in.
   const orders = resolveOrderEvents(rawOrders, events);
   // The event running today (if any) gets spotlighted, expanded, at the top.
-  const featured = featuredEvent(events, manilaDayKey(new Date().toISOString()));
+  const todayKey = manilaDayKey(new Date().toISOString());
+  const featured = featuredEvent(events, todayKey);
   const currentEventId = featured?.state === 'current' ? featured.event.event_id : null;
 
   return (
@@ -22,6 +23,7 @@ export default async function Page() {
       orders={orders}
       leads={leads}
       currentEventId={currentEventId}
+      todayKey={todayKey}
       usingMock={usingPosMock()}
       fetchedAt={new Date().toISOString()}
     />

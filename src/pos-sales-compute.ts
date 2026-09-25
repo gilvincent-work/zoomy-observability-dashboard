@@ -198,6 +198,72 @@ export function featuredEvent(events: PosEvent[], todayKey: string): FeaturedEve
   return null;
 }
 
+// ── Events page: search, time filter, and sort (client-side; the list is modest
+// and each card computes its own analytics, so paginating on the server isn't
+// worth it). All pure so they're unit-tested and shared by the view + its badges.
+
+export type EventWhen = 'all' | 'upcoming' | 'ongoing' | 'past';
+export type EventSort = 'recent' | 'oldest' | 'revenue';
+
+export const EVENT_WHEN_FILTERS: {value: EventWhen; label: string}[] = [
+  {value: 'all', label: 'All'},
+  {value: 'upcoming', label: 'Upcoming'},
+  {value: 'ongoing', label: 'Happening'},
+  {value: 'past', label: 'Done'},
+];
+
+export const EVENT_SORT_OPTIONS: {value: EventSort; label: string}[] = [
+  {value: 'recent', label: 'Recent'},
+  {value: 'oldest', label: 'Oldest'},
+  {value: 'revenue', label: 'Top ₱'},
+];
+
+/** Where an event sits relative to today (Manila day key): before its dates
+ *  (upcoming), within them (ongoing/"happening now"), or after (past/"done").
+ *  A dateless event has no timeline, so it reads as ongoing (kept visible). */
+export function eventTimeState(event: PosEvent, todayKey: string): 'upcoming' | 'ongoing' | 'past' {
+  const start = event.starts_on ?? event.ends_on;
+  const end = event.ends_on ?? event.starts_on;
+  if (start && start > todayKey) return 'upcoming';
+  if (end && end < todayKey) return 'past';
+  return 'ongoing';
+}
+
+/** Case-insensitive match of a free-text query against an event's name, venue,
+ *  city, and organizer. Empty query matches everything. */
+export function eventMatchesQuery(event: PosEvent, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [event.name, event.venue, event.city, event.organizer].some((field) =>
+    (field ?? '').toLowerCase().includes(needle),
+  );
+}
+
+/** Filter event rollups by search + time bucket, then sort. Pure, so the view
+ *  just paginates the result. `recent` = latest start first; `oldest` = earliest
+ *  first; `revenue` = highest first (start date breaks ties). */
+export function filterAndSortEvents(
+  rollups: EventRollup[],
+  opts: {query: string; when: EventWhen; sort: EventSort},
+  todayKey: string,
+): EventRollup[] {
+  const filtered = rollups.filter(
+    (r) =>
+      eventMatchesQuery(r.event, opts.query) &&
+      (opts.when === 'all' || eventTimeState(r.event, todayKey) === opts.when),
+  );
+  const startKey = (r: EventRollup) => r.event.starts_on ?? r.event.ends_on ?? '';
+  const sorted = [...filtered];
+  if (opts.sort === 'revenue') {
+    sorted.sort((a, b) => b.revenue - a.revenue || startKey(b).localeCompare(startKey(a)));
+  } else if (opts.sort === 'oldest') {
+    sorted.sort((a, b) => startKey(a).localeCompare(startKey(b)));
+  } else {
+    sorted.sort((a, b) => startKey(b).localeCompare(startKey(a)));
+  }
+  return sorted;
+}
+
 /** Inclusive list of calendar-day keys (YYYY-MM-DD) from start to end. A single
  *  bound yields that one day; a reversed or empty range yields []. Capped so a
  *  bad range can't loop. Used for the per-event day granularity toggle. */

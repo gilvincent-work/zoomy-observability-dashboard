@@ -8,6 +8,9 @@ import {
   resolveOrderEvents,
   overlappingEvent,
   featuredEvent,
+  eventTimeState,
+  eventMatchesQuery,
+  filterAndSortEvents,
   paymentBreakdown,
   eventRevenueSeries,
   eventDayPacingSeries,
@@ -37,7 +40,7 @@ import {
   stockAlerts,
   topProducts,
 } from '../src/pos-sales-compute';
-import type {PosEvent, PosOrder} from '../src/pos-sales-types';
+import type {EventRollup, PosEvent, PosOrder} from '../src/pos-sales-types';
 import type {PosProductRow} from '../src/pos-types';
 
 const NOW = new Date('2026-09-07T12:00:00.000Z');
@@ -801,6 +804,61 @@ describe('featuredEvent', () => {
   it('ignores events with no dates', () => {
     const events = [event({event_id: 'undated'})];
     expect(featuredEvent(events, TODAY)).toBeNull();
+  });
+});
+
+describe('event search / time / sort', () => {
+  function event(over: Partial<PosEvent> & {event_id: string}): PosEvent {
+    return {
+      name: over.event_id, venue: null, city: null, organizer: null,
+      starts_on: null, ends_on: null, opening_cash: null, cash_note: null,
+      closing_cash: null, status: 'active', created_by: null, created_at: null,
+      updated_at: null, ...over,
+    };
+  }
+  function roll(over: Partial<PosEvent> & {event_id: string}, revenue = 0): EventRollup {
+    return {event: event(over), revenue, orders: 0, cashSales: 0, expectedCash: null};
+  }
+  const TODAY = '2026-09-17';
+
+  it('eventTimeState buckets by dates vs today (dateless = ongoing)', () => {
+    expect(eventTimeState(event({event_id: 'a', starts_on: '2026-09-20', ends_on: '2026-09-21'}), TODAY)).toBe('upcoming');
+    expect(eventTimeState(event({event_id: 'b', starts_on: '2026-09-16', ends_on: '2026-09-18'}), TODAY)).toBe('ongoing');
+    expect(eventTimeState(event({event_id: 'c', starts_on: '2026-09-10', ends_on: '2026-09-12'}), TODAY)).toBe('past');
+    expect(eventTimeState(event({event_id: 'd'}), TODAY)).toBe('ongoing');
+  });
+
+  it('eventMatchesQuery matches name/venue/city/organizer, case-insensitively', () => {
+    const e = event({event_id: 'x', name: 'Creative Market', venue: 'Espacio', city: 'Makati', organizer: 'Circuit'});
+    expect(eventMatchesQuery(e, 'creative')).toBe(true);
+    expect(eventMatchesQuery(e, 'espac')).toBe(true);
+    expect(eventMatchesQuery(e, 'makati')).toBe(true);
+    expect(eventMatchesQuery(e, 'circuit')).toBe(true);
+    expect(eventMatchesQuery(e, 'davao')).toBe(false);
+    expect(eventMatchesQuery(e, '   ')).toBe(true); // blank matches all
+  });
+
+  it('filterAndSortEvents filters by query + when, then sorts', () => {
+    const rolls = [
+      roll({event_id: 'past', name: 'Old Fair', starts_on: '2026-09-10', ends_on: '2026-09-11'}, 500),
+      roll({event_id: 'now', name: 'Live Bazaar', city: 'Makati', starts_on: '2026-09-16', ends_on: '2026-09-18'}, 300),
+      roll({event_id: 'soon', name: 'Makati Pop-up', starts_on: '2026-09-25', ends_on: '2026-09-26'}, 900),
+    ];
+    // Recent = latest start first.
+    expect(filterAndSortEvents(rolls, {query: '', when: 'all', sort: 'recent'}, TODAY).map((r) => r.event.event_id))
+      .toEqual(['soon', 'now', 'past']);
+    // Oldest reverses it.
+    expect(filterAndSortEvents(rolls, {query: '', when: 'all', sort: 'oldest'}, TODAY).map((r) => r.event.event_id))
+      .toEqual(['past', 'now', 'soon']);
+    // Top revenue.
+    expect(filterAndSortEvents(rolls, {query: '', when: 'all', sort: 'revenue'}, TODAY).map((r) => r.event.event_id))
+      .toEqual(['soon', 'past', 'now']);
+    // When = past only.
+    expect(filterAndSortEvents(rolls, {query: '', when: 'past', sort: 'recent'}, TODAY).map((r) => r.event.event_id))
+      .toEqual(['past']);
+    // Query matches name or city (Makati → 'now' via city, 'soon' via name).
+    expect(filterAndSortEvents(rolls, {query: 'makati', when: 'all', sort: 'recent'}, TODAY).map((r) => r.event.event_id))
+      .toEqual(['soon', 'now']);
   });
 });
 
