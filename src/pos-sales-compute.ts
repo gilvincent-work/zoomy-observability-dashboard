@@ -264,9 +264,11 @@ export function manilaMinuteOfDay(iso: string): number {
 
 /** One row per clock-hour mark of the event window; each event day is a numeric
  *  column holding that day's cumulative revenue BY that mark (inclusive of a sale
- *  landing exactly on it), or null for marks outside the day's own selling window
- *  (so a line spans only its real hours, never faking the future). `tod` is minutes
- *  since Manila midnight at the mark, so a 9:37 sale reads "₱1,200 by 10 AM". */
+ *  landing exactly on it). Completed days span the full window — flat ₱0 before
+ *  their first sale, flat at the day total after their last — so every line runs
+ *  edge to edge. Only the latest (maybe in-progress) day is null after its last
+ *  sale, so it isn't flat-lined into the future. `tod` is minutes since Manila
+ *  midnight at the mark, so a 9:37 sale reads "₱1,200 by 10 AM". */
 export interface DayPacingRow {
   tod: number;
   [dayKey: string]: number | null;
@@ -282,8 +284,10 @@ export interface DayPacingSeries {
  *  a later day's pace reads directly against earlier days at the same clock hour.
  *  One point per hour means an even hover step (10 AM, 11 AM, …) instead of jumping
  *  between sparse order times. Each mark holds the running total BY that clock hour
- *  (a 9:37 sale counts toward the 10 AM mark, leaving 9 AM at its ₱0 baseline); the
- *  mark before a day's first sale or after its last is null. Voided excluded. */
+ *  (a 9:37 sale counts toward the 10 AM mark, leaving 9 AM at its ₱0 baseline). A
+ *  completed day's line spans the whole window (flat ₱0 before its first sale, flat
+ *  at its total after its last); only the latest, still-selling day is left null
+ *  past its last sale. Voided excluded. */
 export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
   const byDay = new Map<string, PosOrder[]>();
   for (const o of orders) {
@@ -297,7 +301,7 @@ export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
   if (days.length === 0) return {days: [], rows: []};
 
   // Per day: ascending cumulative points (one per selling minute) + its window.
-  const perDay = new Map<string, {points: {tod: number; val: number}[]; firstMark: number; lastMark: number}>();
+  const perDay = new Map<string, {points: {tod: number; val: number}[]; firstMark: number; lastMark: number; total: number}>();
   let startHour = Infinity;
   let endHour = -Infinity;
   for (const d of days) {
@@ -318,10 +322,15 @@ export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
     // sale is counted "by 1 PM", never dropped).
     const firstMark = Math.floor(points[0].tod / 60);
     const lastMark = Math.ceil(points[points.length - 1].tod / 60);
-    perDay.set(d, {points, firstMark, lastMark});
+    perDay.set(d, {points, firstMark, lastMark, total: points[points.length - 1].val});
     startHour = Math.min(startHour, firstMark);
     endHour = Math.max(endHour, lastMark);
   }
+
+  // The most recent day may still be selling, so it must not be flat-lined to the
+  // right (that would fake future sales); every earlier day is complete and holds
+  // its total to the axis end so all completed lines span the full window.
+  const latestDay = days[days.length - 1];
 
   const rows: DayPacingRow[] = [];
   for (let h = startHour; h <= endHour; h++) {
@@ -329,8 +338,17 @@ export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
     const row: DayPacingRow = {tod: mark};
     for (const d of days) {
       const info = perDay.get(d)!;
-      if (h < info.firstMark || h > info.lastMark) {
-        row[d] = null;
+      // Before the day's first sale: flat ₱0 baseline (nothing sold yet) so every
+      // line starts at the shared left edge.
+      if (h < info.firstMark) {
+        row[d] = 0;
+        continue;
+      }
+      // After the day's last sale: hold the day's total flat to the right edge so a
+      // completed day spans the full axis; the latest (maybe in-progress) day stops
+      // at its real last sale instead (null), never faking the future.
+      if (h > info.lastMark) {
+        row[d] = d === latestDay ? null : info.total;
         continue;
       }
       let val = 0;
