@@ -1,4 +1,4 @@
-import type {Metadata} from 'next';
+import type {Metadata, Viewport} from 'next';
 import type {ReactNode} from 'react';
 import {Suspense} from 'react';
 import {Inter, Newsreader} from 'next/font/google';
@@ -12,11 +12,28 @@ import './globals.css';
 
 // Coop identity: Inter for UI/data, Newsreader for the editorial serif display.
 const sans = Inter({subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-sans'});
-const serif = Newsreader({subsets: ['latin'], weight: ['300', '400', '500', '600'], style: ['normal', 'italic'], variable: '--font-serif'});
+// Newsreader is only ever used at weight 400, upright (all `font-serif` usages are
+// `font-normal`; no serif-italic anywhere — body italics are Inter). Loading just
+// 400/normal drops ~6 unused font files (300/500/600 + the italic set).
+const serif = Newsreader({subsets: ['latin'], weight: ['400'], style: ['normal'], variable: '--font-serif'});
 
 export const metadata: Metadata = {
   title: 'Coop · BrandOS — Zoomy',
   description: 'The Brand Operating System — store-ops analytics for Zoomy across Shopee, Lazada and the website.',
+};
+
+// Mobile: opt into device-width + safe-area insets, and tint the browser chrome
+// to the Coop canvas. Inert on desktop (themeColor/viewport-fit have no layout
+// effect there). We keep the default scale/user-scalable — no fixed width, no
+// maximum-scale — so desktop zoom and a11y are unchanged.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: [
+    {media: '(prefers-color-scheme: light)', color: '#F8F4F1'},
+    {media: '(prefers-color-scheme: dark)', color: '#17150F'},
+  ],
 };
 
 export default async function RootLayout({children}: {children: ReactNode}) {
@@ -35,7 +52,7 @@ export default async function RootLayout({children}: {children: ReactNode}) {
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('zoomy-theme');document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}})();",
+              "(function(){try{var t=localStorage.getItem('zoomy-theme');document.documentElement.classList.toggle('dark',t==='dark');if(sessionStorage.getItem('coop-splash-seen'))document.documentElement.classList.add('coop-splash-seen');}catch(e){}})();",
           }}
         />
       </head>

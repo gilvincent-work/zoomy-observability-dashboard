@@ -18,7 +18,10 @@ function isOnline(channel: string | undefined): boolean {
   return channel === 'online' || channel === 'boxme';
 }
 
-export default async function Page({searchParams}: {searchParams: {channel?: string; tab?: string; venue?: string; week?: string}}) {
+export default async function Page(
+  props: {searchParams: Promise<{channel?: string; tab?: string; venue?: string; week?: string}>}
+) {
+  const searchParams = await props.searchParams;
   if (isOnline(searchParams.channel)) {
     return <OnlineInventory week={searchParams.week} />;
   }

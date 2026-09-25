@@ -1,13 +1,12 @@
 'use client';
 
 import {useMemo, useState, type ReactNode} from 'react';
-import {Area, AreaChart, CartesianGrid, Line, LineChart, XAxis, YAxis} from 'recharts';
+import dynamic from 'next/dynamic';
 import {Gift} from 'lucide-react';
 import type {BundleSalesSummary, PetMix, PosEvent, PosOrder, TopProduct} from '@/src/pos-sales-types';
 import {bundleSalesSummary, computeKpis, datesInRange, eventDayPacingSeries, eventRevenueSeries, manilaDayKey, paymentBreakdown, petMix, topProducts, type DayPacingSeries} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {cn} from '@/lib/utils';
-import {ChartContainer, ChartTooltip, type ChartConfig} from '@/components/ui/chart';
 import type {SpinLead} from '@/src/spin-leads-types';
 import {leadsInDays} from '@/src/spin-leads-types';
 import {LeadCapture} from './lead-capture';
@@ -19,51 +18,24 @@ const PET_SEGMENTS: {key: keyof PetMix; label: string; color: string}[] = [
   {key: 'untagged', label: 'Untagged', color: '#a1a1aa'},
 ];
 
-const chartConfig = {revenue: {label: 'Revenue', color: 'var(--status-good)'}} satisfies ChartConfig;
-
 /** Format an order instant for the trend axis. Multi-day events get the day too. */
 function pointLabel(iso: string, multiDay: boolean): string {
   const d = new Date(iso);
   return d.toLocaleString(undefined, multiDay ? {month: 'short', day: 'numeric', hour: 'numeric'} : {hour: 'numeric', minute: '2-digit'});
 }
 
-/** Compact peso for Y-axis ticks: ₱1.6k, ₱300. */
-function pesoTick(v: number): string {
-  return v >= 1000 ? `₱${(v / 1000).toFixed(1).replace(/\.0$/, '')}k` : `₱${v}`;
-}
-
-const axisLabelStyle = {fontSize: 10, fill: 'var(--muted-foreground)'} as const;
-
 /** "2026-09-15" → "Sep 15" for the day toggle. */
 function dayShort(key: string): string {
   return new Date(`${key}T00:00:00Z`).toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 }
 
-/** Minutes since Manila midnight → "10 AM", "1:30 PM" for the compare x-axis. */
-function todLabel(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return new Date(Date.UTC(2000, 0, 1, h, m)).toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    timeZone: 'UTC',
-    ...(m ? {minute: '2-digit'} : {}),
-  });
-}
-
-// Distinct per-day line colors so a multi-day event reads as more than "gold + gray".
-// Cool-leaning, mutually distinct hues that hold up on both the light and dark card;
-// the latest (live) day is kept on the warm ochre accent below so "today" still pops.
-const DAY_COLORS = ['#4E9A87', '#5E8BD0', '#A87FB0', '#6E9E80', '#7C93A6', '#C98A5A'];
-
-/**
- * Stroke for a day's pacing line. The latest day (last, usually the live one) gets
- * the solid ochre accent and a thicker line so "today vs history" reads at a glance;
- * each earlier day gets its own distinct hue from DAY_COLORS.
- */
-function dayLineStyle(index: number, total: number): {stroke: string; width: number; opacity: number} {
-  if (index === total - 1) return {stroke: 'var(--chart-4)', width: 2.5, opacity: 1};
-  return {stroke: DAY_COLORS[index % DAY_COLORS.length], width: 1.75, opacity: 1};
-}
+// Recharts is code-split: the "Revenue over time" chart lives in
+// ./event-analytics-chart and loads as an async chunk, keeping Recharts (~110 kB gz)
+// out of this route's initial JS. Height-matched skeleton holds layout (no CLS).
+const EventRevenueChart = dynamic(() => import('./event-analytics-chart').then((m) => m.EventRevenueChart), {
+  ssr: false,
+  loading: () => <div className="h-[210px] w-full animate-pulse rounded-lg bg-muted/40" aria-hidden />,
+});
 
 /**
  * The per-event analytics panel: headline KPIs, a cumulative-revenue trend line,
@@ -203,107 +175,6 @@ function ToggleBtn({active, onClick, children}: {active: boolean; onClick: () =>
   );
 }
 
-/**
- * Per-day cumulative revenue overlaid on one time-of-day axis: each day resets to
- * ₱0 and climbs, so the latest day's pace reads directly against earlier days at
- * the same clock time. Latest day in the ochre accent, earlier days in muted gray.
- */
-function DayPacingChart({pacing}: {pacing: DayPacingSeries}) {
-  const {days, rows} = pacing;
-  const n = days.length;
-  const config: ChartConfig = Object.fromEntries(
-    days.map((d, i) => [d, {label: dayShort(d), color: dayLineStyle(i, n).stroke}]),
-  );
-
-  return (
-    <>
-      <ChartContainer config={config} className="h-[210px] w-full">
-        <LineChart data={rows} margin={{left: 10, right: 12, top: 8, bottom: 20}}>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.4} />
-          <XAxis
-            dataKey="tod"
-            type="number"
-            domain={['dataMin', 'dataMax']}
-            tickLine={false}
-            axisLine={false}
-            tickMargin={8}
-            fontSize={10}
-            minTickGap={44}
-            tickFormatter={(v) => todLabel(Number(v))}
-            label={{value: 'Time of day', position: 'insideBottom', offset: -12, style: {...axisLabelStyle, textAnchor: 'middle'}}}
-          />
-          <YAxis
-            tickLine={false}
-            axisLine={false}
-            width={52}
-            fontSize={10}
-            domain={[0, 'dataMax']}
-            tickFormatter={(v) => pesoTick(Number(v))}
-            label={{value: 'Revenue that day', angle: -90, position: 'insideLeft', offset: 2, style: {...axisLabelStyle, textAnchor: 'middle'}}}
-          />
-          <ChartTooltip
-            cursor={{stroke: 'var(--muted-foreground)', strokeOpacity: 0.3}}
-            content={({active, payload, label}) => {
-              if (!active || !payload?.length) return null;
-              const entries = payload.filter((p) => p.value != null);
-              if (!entries.length) return null;
-              return (
-                <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md">
-                  <div className="mb-1 text-muted-foreground">{todLabel(Number(label))}</div>
-                  <div className="flex flex-col gap-1">
-                    {entries.map((p) => {
-                      const i = days.indexOf(String(p.dataKey));
-                      const s = dayLineStyle(i, n);
-                      const latest = i === n - 1;
-                      return (
-                        <div key={String(p.dataKey)} className="flex items-center gap-2 tabular-nums">
-                          <span className="size-2 rounded-[3px]" style={{backgroundColor: s.stroke, opacity: s.opacity}} />
-                          <span className={cn(latest ? 'text-foreground' : 'text-muted-foreground')}>{dayShort(String(p.dataKey))}</span>
-                          <span className="ml-auto font-medium">{formatPeso(Number(p.value))}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }}
-          />
-          {days.map((d, i) => {
-            const s = dayLineStyle(i, n);
-            return (
-              <Line
-                key={d}
-                type="monotone"
-                dataKey={d}
-                stroke={s.stroke}
-                strokeWidth={s.width}
-                strokeOpacity={s.opacity}
-                dot={false}
-                activeDot={{r: 3.5}}
-                connectNulls
-                isAnimationActive={false}
-              />
-            );
-          })}
-        </LineChart>
-      </ChartContainer>
-      <ul className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        {days.map((d, i) => {
-          const s = dayLineStyle(i, n);
-          const latest = i === n - 1;
-          return (
-            <li key={d} className="flex items-center gap-1.5 text-xs">
-              <span className="inline-block h-0.5 w-4 rounded-full" style={{backgroundColor: s.stroke, opacity: s.opacity}} />
-              <span className={cn('tabular-nums', latest ? 'font-medium text-foreground' : 'text-muted-foreground')}>{dayShort(d)}</span>
-              {latest && <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--chart-4)]">latest</span>}
-            </li>
-          );
-        })}
-      </ul>
-    </>
-  );
-}
-
 type AnalyticsBodyProps = {
   kpis: {revenue: number; orders: number; units: number; oversells: number};
   avgBasket: number;
@@ -339,59 +210,7 @@ function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Revenue over time</span>
             {canCompare && <CompareToggle compare={compare} onChange={onCompareChange} />}
           </div>
-          {showCompare ? (
-            <DayPacingChart pacing={pacing} />
-          ) : (
-          <ChartContainer config={chartConfig} className="h-[210px] w-full">
-            <AreaChart data={series} margin={{left: 10, right: 12, top: 8, bottom: 20}}>
-              <defs>
-                <linearGradient id="eventRevFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-revenue)" stopOpacity={0.28} />
-                  <stop offset="100%" stopColor="var(--color-revenue)" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.4} />
-              <XAxis
-                dataKey="label"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                fontSize={10}
-                minTickGap={44}
-                label={{value: 'Order time', position: 'insideBottom', offset: -12, style: {...axisLabelStyle, textAnchor: 'middle'}}}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                width={52}
-                fontSize={10}
-                domain={[0, 'dataMax']}
-                tickFormatter={(v) => pesoTick(Number(v))}
-                label={{value: 'Cumulative revenue', angle: -90, position: 'insideLeft', offset: 2, style: {...axisLabelStyle, textAnchor: 'middle'}}}
-              />
-              <ChartTooltip
-                cursor={{stroke: 'var(--color-revenue)', strokeOpacity: 0.3}}
-                content={({active, payload, label}) =>
-                  active && payload?.length ? (
-                    <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md">
-                      <div className="text-muted-foreground">{label}</div>
-                      <div className="font-medium tabular-nums">{formatPeso(Number(payload[0].value))} total</div>
-                    </div>
-                  ) : null
-                }
-              />
-              <Area
-                type="monotone"
-                dataKey="revenue"
-                stroke="var(--color-revenue)"
-                strokeWidth={2}
-                fill="url(#eventRevFill)"
-                dot={false}
-                activeDot={{r: 3.5}}
-              />
-            </AreaChart>
-          </ChartContainer>
-          )}
+          <EventRevenueChart showCompare={showCompare} pacing={pacing} series={series} />
         </div>
       )}
 

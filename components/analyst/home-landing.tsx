@@ -78,7 +78,7 @@ export function HomeLanding({row, progress}: {row: DigestArchiveRow; progress?: 
   const verdict = row.digest.headline?.trim() || 'Your latest store-ops brief is ready.';
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
+    <div className="mx-auto max-w-5xl px-6 py-12 md:px-10 max-md:px-4 max-md:py-8">
       <h1 className="mb-8 text-[30px] font-semibold tracking-tight text-foreground">What should we do today?</h1>
 
       {progress && (

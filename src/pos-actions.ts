@@ -118,7 +118,7 @@ export async function createProductAction(input: {
   }
 
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -136,7 +136,7 @@ export async function setStockAction(product_id: string, qty: string): Promise<A
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
   revalidatePath(`/inventory/${product_id}`);
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -152,7 +152,7 @@ export async function setEmojiAction(product_id: string, emoji: string): Promise
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -168,7 +168,7 @@ export async function setLineAction(product_id: string, line: string): Promise<A
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -191,7 +191,7 @@ export async function setCategoryAction(product_id: string, category: string, su
     .eq('product_id', product_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -207,7 +207,7 @@ export async function renameProductAction(product_id: string, name: string): Pro
   });
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -224,7 +224,7 @@ export async function repriceProductAction(product_id: string, price: string): P
   });
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -238,7 +238,7 @@ export async function setListingAction(product_id: string, active: boolean): Pro
   });
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -260,7 +260,7 @@ export async function setBundleEmojiAction(bundle_id: string, emoji: string): Pr
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -273,7 +273,7 @@ export async function setBundleActiveAction(bundle_id: string, active: boolean):
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -288,7 +288,7 @@ export async function renameBundleAction(bundle_id: string, name: string): Promi
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -303,7 +303,7 @@ export async function repriceBundleAction(bundle_id: string, price: string): Pro
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -313,7 +313,7 @@ export async function deleteBundleAction(bundle_id: string): Promise<ActionResul
   const {error} = await posClient().rpc('delete_pos_bundle', {p_bundle_id: bundle_id});
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -332,7 +332,7 @@ export async function setBundleScopeAction(bundle_id: string, pickCount: number,
     .eq('bundle_id', bundle_id);
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }
 
@@ -376,6 +376,6 @@ export async function createBundleAction(input: NewBundleInput): Promise<ActionR
   });
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
-  revalidateTag(POS_TAGS.catalog);
+  revalidateTag(POS_TAGS.catalog, 'max');
   return {ok: true};
 }

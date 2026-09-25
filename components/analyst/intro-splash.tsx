@@ -14,8 +14,21 @@ export function IntroSplash() {
   const [gone, setGone] = useState(false); // unmounted after the fade
 
   useEffect(() => {
-    const t1 = setTimeout(() => setFading(true), 1700);
-    const t2 = setTimeout(() => setGone(true), 2750);
+    // Once per session. The pre-paint script in app/layout.tsx adds
+    // `coop-splash-seen` to <html> when sessionStorage says a prior load already
+    // showed it — so on repeat loads within a session the splash is hidden before
+    // first paint (no flash) and we unmount it immediately here (skipping the
+    // timers). First load of a session: show it, but briefly.
+    const seen = document.documentElement.classList.contains('coop-splash-seen');
+    try {
+      sessionStorage.setItem('coop-splash-seen', '1');
+    } catch {}
+    if (seen) {
+      setGone(true);
+      return;
+    }
+    const t1 = setTimeout(() => setFading(true), 600);
+    const t2 = setTimeout(() => setGone(true), 1100);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -29,7 +42,7 @@ export function IntroSplash() {
       aria-hidden
       className={cn(
         // The whole overlay crossfades out over the (already-present) dashboard.
-        'fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background transition-opacity duration-[1000ms] ease-out',
+        'coop-splash fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background transition-opacity duration-[500ms] ease-out',
         fading ? 'opacity-0' : 'opacity-100',
       )}
     >
@@ -37,7 +50,7 @@ export function IntroSplash() {
         className={cn(
           // The title card gently scales up + softens as it leaves — feels like it
           // lifts away to reveal the app, rather than a hard cut.
-          'coop-intro-rise flex flex-col items-center text-center transition-[transform,filter] duration-[1000ms] ease-out will-change-transform',
+          'coop-intro-rise flex flex-col items-center text-center transition-[transform,filter] duration-[500ms] ease-out will-change-transform',
           fading ? 'scale-[1.05] blur-[3px]' : 'scale-100 blur-0',
         )}
       >

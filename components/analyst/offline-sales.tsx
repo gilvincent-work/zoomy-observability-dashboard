@@ -3,7 +3,7 @@
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
 import {CalendarClock, CalendarDays, ChevronDown, ChevronRight, PackageX, Receipt, TriangleAlert} from 'lucide-react';
-import {Bar, BarChart, CartesianGrid, XAxis, YAxis} from 'recharts';
+import dynamic from 'next/dynamic';
 import type {BundleSalesSummary, DayMethodRevenue, FeaturedEvent, PetMix, PosOrder, SalesKpis, SalesRange, TopBundle, TopProduct} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
 import type {PaymentMethodOption, StockAlerts} from '@/src/pos-sales-compute';
@@ -13,7 +13,6 @@ import type {ForecastRow, ForecastSummary, ForecastStatus} from '@/src/pos-forec
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
-import {ChartContainer, ChartTooltip, type ChartConfig} from '@/components/ui/chart';
 import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
 import {Metric} from './metric';
@@ -64,7 +63,7 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
   const mix = useMemo(() => petMix(shownOrders), [shownOrders]);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10 md:px-10">
+    <div className="mx-auto max-w-5xl px-6 py-10 md:px-10 max-md:px-4 max-md:py-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Eyebrow icon={Receipt}>Offline Sales</Eyebrow>
@@ -555,75 +554,13 @@ function Empty({children}: {children: React.ReactNode}) {
   return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
-// Per-day revenue stacked by payment method. When a method is selected its
-// segments keep full color and the rest go grey (still visible). Hovering a bar
-// shows each payment option's amount for that day.
-function MethodStackChart({data, methods, selected}: {data: DayMethodRevenue[]; methods: string[]; selected: string}) {
-  const config = Object.fromEntries(methods.map((m) => [m, {label: paymentMethodLabel(m), color: paymentMethodColor(m)}])) as ChartConfig;
-  const rows = data.map((d) => ({label: shortDay(d.day), ...Object.fromEntries(methods.map((m) => [m, d.byMethod[m] ?? 0]))}));
-  const topMethod = methods[methods.length - 1];
-
-  return (
-    <div className="flex flex-col gap-2">
-      <ChartContainer config={config} className="h-[220px] w-full">
-        <BarChart data={rows} margin={{left: 4, right: 8, top: 8, bottom: 0}}>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" />
-          <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-          <YAxis tickLine={false} axisLine={false} width={44} fontSize={11} tickFormatter={(v) => formatPeso(Number(v))} />
-          <ChartTooltip cursor={{fill: 'var(--muted)', opacity: 0.35}} content={<MethodTooltip />} />
-          {methods.map((m) => {
-            const active = selected === 'all' || selected === m;
-            return (
-              <Bar
-                key={m}
-                dataKey={m}
-                stackId="rev"
-                fill={active ? paymentMethodColor(m) : '#52525b'}
-                fillOpacity={active ? 1 : 0.35}
-                radius={m === topMethod ? [3, 3, 0, 0] : [0, 0, 0, 0]}
-                isAnimationActive={false}
-              />
-            );
-          })}
-        </BarChart>
-      </ChartContainer>
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {methods.map((m) => {
-          const active = selected === 'all' || selected === m;
-          return (
-            <span key={m} className={cn('inline-flex items-center gap-1.5 text-[11px]', active ? 'text-muted-foreground' : 'text-muted-foreground/40')}>
-              <span className="size-2 rounded-[3px]" style={{backgroundColor: active ? paymentMethodColor(m) : '#52525b'}} />
-              {paymentMethodLabel(m)}
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-type TooltipRow = {dataKey?: string; value?: number};
-
-/** Mini tooltip: each payment option's revenue for the hovered day. */
-function MethodTooltip({active, payload, label}: {active?: boolean; payload?: TooltipRow[]; label?: string}) {
-  if (!active || !payload?.length) return null;
-  const rows = payload.filter((p) => Number(p.value) > 0);
-  if (rows.length === 0) return null;
-  return (
-    <div className="rounded-lg border bg-background px-2.5 py-1.5 text-xs shadow-lg">
-      <div className="mb-1 font-medium text-foreground">{label}</div>
-      <ul className="flex min-w-[9rem] flex-col gap-0.5">
-        {rows.map((p) => (
-          <li key={p.dataKey} className="flex items-center gap-1.5">
-            <span className="size-2 rounded-[3px]" style={{backgroundColor: paymentMethodColor(p.dataKey)}} />
-            <span className="text-muted-foreground">{paymentMethodLabel(p.dataKey)}</span>
-            <span className="ml-auto font-medium tabular-nums text-foreground">{formatPeso(Number(p.value))}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
+// Recharts is code-split: MethodStackChart (+ its tooltip) live in
+// ./offline-sales-chart and load as an async chunk, keeping Recharts (~110 kB gz)
+// out of this route's initial JS. A height-matched skeleton holds layout (no CLS).
+const MethodStackChart = dynamic(() => import('./offline-sales-chart').then((m) => m.MethodStackChart), {
+  ssr: false,
+  loading: () => <div className="h-[220px] w-full animate-pulse rounded-lg bg-muted/40" aria-hidden />,
+});
 
 /** Color-coded payment-method dropdown. Default "All payment options". */
 function PaymentMethodSelect({value, options, onChange}: {value: string; options: PaymentMethodOption[]; onChange: (v: string) => void}) {

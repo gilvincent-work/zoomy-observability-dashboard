@@ -73,7 +73,7 @@ export function OfflineEventsView({
   const allEvents = useMemo(() => rollups.map((r) => r.event), [rollups]);
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
+    <div className="mx-auto max-w-4xl px-6 py-8 md:px-10 max-md:px-4 max-md:py-6">
       <Link href="/offline-sales" className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-3.5" /> Offline Sales
       </Link>

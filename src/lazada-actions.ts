@@ -66,6 +66,6 @@ export async function uploadLazadaItems(
     console.warn(`lazada_uploads write failed: ${ledgerError.message}`);
   }
 
-  revalidateTag(LAZADA_TAG);
+  revalidateTag(LAZADA_TAG, 'max');
   return {ok: true, saved: items.length};
 }

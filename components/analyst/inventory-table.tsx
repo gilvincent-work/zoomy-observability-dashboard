@@ -43,6 +43,11 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'category', dir: 1});
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  // Separate menu state for the mobile card list. The card RowMenu portals to
+  // <body>, so sharing menuFor with the table would let the display:none side
+  // render a stray menu at (0,0) on the visible side. Keeping them independent
+  // means the hidden breakpoint's menu never opens (its buttons aren't clickable).
+  const [cardMenuFor, setCardMenuFor] = useState<string | null>(null);
   const [editing, setEditing] = useState<{row: InventoryRow; field: 'name' | 'price'} | null>(null);
   const [addStockRow, setAddStockRow] = useState<InventoryRow | null>(null);
   const [editStockRow, setEditStockRow] = useState<InventoryRow | null>(null);
@@ -127,7 +132,8 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
           {sorted.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">No products match this filter.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="overflow-x-auto max-md:hidden">
               <table className="w-full min-w-[1000px] text-sm">
                 <thead>
                   <tr className="border-b text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -156,6 +162,21 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile (below md): the same paged rows as cards. Own menu state
+                (cardMenuFor) so the hidden desktop table never spawns a stray
+                RowMenu portal, and shares the parent edit/stock dialogs. */}
+            <ul className="divide-y divide-border md:hidden">
+              {paged.map((r) => (
+                <RowCard key={r.product_id} r={r} menuOpen={cardMenuFor === r.product_id}
+                  onMenu={() => setCardMenuFor((m) => (m === r.product_id ? null : r.product_id))}
+                  onClose={() => setCardMenuFor(null)}
+                  onEdit={(field) => {setCardMenuFor(null); setEditing({row: r, field});}}
+                  onAddStock={() => {setCardMenuFor(null); setAddStockRow(r);}}
+                  onEditStock={() => {setCardMenuFor(null); setEditStockRow(r);}} />
+              ))}
+            </ul>
+            </>
           )}
         </CardContent>
       </Card>
@@ -257,6 +278,85 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
         )}
       </td>
     </tr>
+  );
+}
+
+// Mobile (below md) card mirror of Row. Same handlers and shared parent dialogs;
+// its own menu open/close is driven by cardMenuFor so it never collides with the
+// desktop table's portal. The name link navigates (no whole-card click, so the
+// price/menu taps don't need stopPropagation).
+function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
+  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onAddStock: () => void; onEditStock: () => void;
+}) {
+  const s = STATUS[r.status];
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  function toggleListing() {
+    startTransition(async () => {
+      await setListingAction(r.product_id, !r.active);
+      onClose();
+      router.refresh();
+    });
+  }
+  function undoLastAdd() {
+    startTransition(async () => {
+      await voidLastAddAction(r.product_id);
+      onClose();
+      router.refresh();
+    });
+  }
+  return (
+    <li className={cn('p-4', !r.active && 'opacity-55')}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link href={`/inventory/${r.product_id}`} className="font-medium transition-colors hover:text-primary">{r.name}</Link>
+          <div className="font-mono text-[10px] text-muted-foreground">{r.product_id}{!r.active && ' · unlisted'}</div>
+        </div>
+        <div className="relative shrink-0">
+          <button ref={menuBtnRef} onClick={onMenu} aria-label="Row actions" className="rounded p-1.5 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-5" /></button>
+          {menuOpen && (
+            <RowMenu anchor={menuBtnRef.current} sku={r.product_id} active={r.active} pending={pending}
+              onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
+              onAddStock={onAddStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
+          )}
+        </div>
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', s.bg, s.text)}>
+          <span className={cn('size-1.5 rounded-full', s.dot)} />{s.label}
+        </span>
+        <button onClick={() => onEdit('price')} className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs tabular-nums transition-colors hover:text-primary" title="Change price">
+          {formatPeso(r.price)} <Pencil className="size-3 text-muted-foreground" />
+        </button>
+      </div>
+      <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2.5 text-xs">
+        <div>
+          <dt className="text-muted-foreground">This mo</dt>
+          <dd className="mt-0.5 font-medium tabular-nums">{r.monthly.thisMonth}<YoyDelta yoy={r.yoy} thisMonth={r.monthly.thisMonth} /></dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Last mo</dt>
+          <dd className="mt-0.5 tabular-nums text-muted-foreground">{r.monthly.lastMonth}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">3 mo</dt>
+          <dd className="mt-0.5 tabular-nums">{r.monthly.threeMonthTotal}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Stock</dt>
+          <dd className="mt-0.5 font-medium tabular-nums">{r.stock}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Lasts</dt>
+          <dd className="mt-0.5"><LastsBadge row={r} /></dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Suggested</dt>
+          <dd className="mt-0.5 tabular-nums">{r.reorderQty != null ? r.reorderQty : <span className="text-muted-foreground">—</span>}</dd>
+        </div>
+      </dl>
+    </li>
   );
 }
 

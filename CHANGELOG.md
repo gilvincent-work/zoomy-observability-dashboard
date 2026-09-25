@@ -12,6 +12,484 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-24 — v1.3.0: staging bundle to prod (Next 16 · PWA · mobile · perf) — `chore(release)`
+
+**Version bumped to 1.3.0** (was 1.2.6). First *minor* since 1.2.0 — not a
+single-feature patch but the whole staging line promoted to prod in one cut-over:
+a framework major plus several new capability surfaces. Dashboard-only; **POS
+unchanged at 1.2.3**.
+
+**Why a clean minor, and why now.** Prod (`main`) had drifted: our co-worker
+merged his Lazada + Customers hub + website-CRM work *straight onto the old
+Next-14 `main`* (PRs #65–68) without a version bump, while our entire staging
+line moved to Next 16. Rather than backfill a throwaway version for that
+out-of-band drop, this release supersedes it — `main` fast-forwards to `staging`,
+which already carries his features **re-integrated onto Next 16** (`99fe5c8`), so
+the two lines reconcile in one move. `origin/main` is an ancestor of
+`origin/staging`, so the promotion is a clean fast-forward — no conflicts.
+
+Rolls up everything since 1.2.6:
+
+- **Next.js 14 → 16 major upgrade** — clears the outstanding critical/high
+  advisories; paired with an `npm audit` pass (js-yaml, qs). Validated on staging
+  (typecheck clean, build 19/19 pages).
+- **PWA** — installable manifest + `next/og` icons, Serwist service worker
+  (static-shell precache only).
+- **Mobile-responsive overhaul** — responsive app shell (bottom tab bar + "More"
+  sheet below `md`), tables→cards for Inventory and CRM, per-page padding/chart-height
+  passes (offline-sales, inventory/home, repricer, Business Health phase 1 + 2),
+  Ask-coop FAB hidden below `md`, and the mobile treatment of the merged
+  Lazada/Customers hub.
+- **Performance** — Recharts code-split off four route groups (overview/tabs,
+  offline sales, event analytics, Business Health), Newsreader trimmed to weight
+  400, digest read cached (`unstable_cache`, revalidate 300), splash once-per-session
+  + fast content reveal.
+- **Customers hub (reconciled)** — Lazada exports, Spin-the-wheel leads, and the
+  website-CRM proxy unified under one Customers tab with real data (no more mock),
+  now riding the Next-16 base.
+
+**Prod DB — already in place, nothing applied this release.** The tables the
+bundle reads (`lazada_orders` 584 rows, `lazada_uploads` 1, `spin_wheel_leads`
+113) were created on prod (`qkxbwzdxhwcbwgriwipi`) during the co-worker's earlier
+drop; verified present before cut-over. Website CRM is a live proxy over the CRM
+Worker (no table). This promotion is code-only.
+
+**Deploy trigger sits with the co-worker.** The prod Vercel project is his, not
+ours — `main` is pushed here, but he owns the deploy and must be looped in given
+this is a framework major. Pre-deploy checks on his side: the CRM Worker URL env
+var is set (his Lazada/CRM drop already needed it) and `SUPABASE_URL_ARCHIVE`
+still points at prod.
+
+---
+
+## 2026-09-21 — Mobile responsive, phase 2 · Business Health — `feat(mobile)`
+
+Closes the health-view items deferred earlier. All `max-md:`-only; desktop
+byte-identical.
+
+- **Padding** — the wrapper `px-6` and its coupled `-mx-6` full-bleed sticky header
+  now shrink together under `md` (`max-md:px-4` + `max-md:-mx-4 max-md:px-4`), so the
+  scroll-condense header stays aligned edge-to-edge.
+- **Chart heights** — the two tall charts (QRR-by-month 420px, buyer-mix 320px) now
+  size from a CSS container (`h-[420px] max-md:h-[320px]` / `h-[320px] max-md:h-[260px]`
+  with `ResponsiveContainer height="100%"`) instead of a fixed prop — the reviewer's
+  sanctioned CSS-container approach, no JS width branching. Desktop keeps the exact
+  same heights. Other charts (`charts.tsx`, 200–220px) were already width-responsive
+  and modest, so left alone.
+
+Verified: `typecheck` clean, build 19/19 pages.
+
+---
+
+## 2026-09-24 — Mobile: optimize the Lazada + Customers features — `feat(mobile)`
+
+Applies the mobile treatment to the coworker's newly-merged features (Lazada exports,
+merged Customers/contacts hub, CRM filters). Same additive `max-md:` / `md:hidden`
+pattern — desktop byte-identical.
+
+- **Lazada** (`lazada-view.tsx`) — both tables get a `md:hidden` card view (Customers:
+  name/phone/city + spend/orders/pay; Orders-by-product: product + orders/buyers/
+  items/revenue) beside the `max-md:hidden` desktop table. Page padding + the search
+  field tighten under `md` (drop-zone padding preserved).
+- **Customers hub** (`contacts-view.tsx`) — the merged contacts table gets a card view
+  (headline + reach details + source pills + orders/spend/city/last-seen), padding and
+  search responsive.
+- **Mobile nav** (`dashboard-shell.tsx`) — dropped the now-redundant `/crm` "Website
+  CRM" entry from the More sheet: `/crm` `permanentRedirect`s into the Customers hub,
+  which is already a More-sheet item (with the top-bar source switcher for its lists).
+- **CRM filters** — the coworker's new status/fulfillment/tier filter bar is already
+  `flex flex-wrap`, so it wraps cleanly on mobile; no change needed.
+
+Verified on the merged Next 16 base: typecheck clean, 286 tests, build green (all
+`/lazada` + `/customers/*` routes).
+
+---
+
+## 2026-09-24 — Fix: hide Ask-coop FAB on mobile — `fix(mobile)`
+
+The floating "Ask coop" button (`CoopFab`, `fixed bottom-4 left-3`) is designed to
+sit in the desktop nav rail's bottom-left corner. On mobile the rail is hidden and
+the new bottom tab bar occupies that space, so the FAB landed on top of the "Home"
+tab. Added `max-md:hidden` — the header's `AskCoopPill` (top-right) is the mobile
+entry point, so the FAB is redundant there. Desktop unchanged.
+
+---
+
+## 2026-09-21 — Perf: code-split Recharts off Business Health — `perf` (closes #64)
+
+The last chart route. `health-view.tsx` had two Recharts charts inline in an
+800-line view, with `CHANNEL_ACCENT`/`CHANNELS`/`shortMonth`/`hexToRgb` shared
+between the charts and non-chart UI (channel cards, segmented control, cohort
+table) — so a clean split needed a neutral shared module first.
+
+- **`health-view-shared.ts`** (Recharts-free) — the four shared constants, so the
+  parent imports them without pulling the Recharts chunk.
+- **`health-view-chart.tsx`** — `TrendView` (QRR-by-month ComposedChart) moved whole,
+  the buyer-mix BarChart extracted from `HeatmapView` as `BuyerMixChart` (takes
+  `data`/`rgb`/`accent` — `rgb` also colours the heatmap cells, so it stays computed
+  in the parent), plus the chart-only `TrendTooltip`/`TrendLegend`/`niceScale`/
+  `MixTooltip`. Both lazy-loaded via `next/dynamic` (`ssr:false`, height-matched
+  skeletons matching the earlier `max-md:` chart heights).
+- Parent drops its `recharts` import entirely; verified no static `recharts`
+  reference remains in the `/health` chunks (`ComposedChart` now only in async chunks).
+
+Verified: typecheck clean, 201 tests, build green, `/health` 307s (protected) and
+`/signin` renders.
+
+**Recharts code-split complete — all 10 chart routes done.** Every route that renders
+a chart now loads Recharts (~110 kB gz) as an async chunk after first paint; the
+chart routes dropped ~110–117 kB of initial JS each (e.g. `/inventory` 302→185,
+`/` 252→135, `/offline-sales` 247→136, `/offline-sales/events` 253→138).
+
+---
+
+## 2026-09-21 — Next.js 14 → 16 upgrade (security) — `chore(deps)` (issue #63)
+
+Upgrades Next.js **14.2.35 → 16.3.5**, clearing the critical + high npm-audit
+advisories that were pinned to Next 14 and its bundled postcss (RCE via image
+optimizer, RSC DoS, middleware/rewrite SSRF & cache poisoning, postcss XSS). Stays
+on **React 18.3** — Next 16 supports React 18.2+, so no React 19 migration needed;
+`next-auth@5-beta` and `@serwist/next` both already allow Next 16.
+
+Migration performed:
+- **Async request APIs** — ran `@next/codemod next-async-request-api`. `params` /
+  `searchParams` are now `Promise`s, awaited at the top of the 8 page files + the
+  `pwa-icon` route handler. Logic otherwise unchanged.
+- **`revalidateTag`** — Next 16 requires a cacheLife profile as the 2nd arg. Migrated
+  the ~25 on-demand invalidation calls in the POS Server Actions to
+  `revalidateTag(tag, 'max')` (the documented drop-in; preserves the existing
+  `unstable_cache` tag behavior with SWR). They still pair with `revalidatePath` for
+  the immediately-viewed routes, so read-your-writes is intact. (`unstable_cache`
+  remains supported in 16, now deprecated.)
+- **Builder** — Next 16 defaults to Turbopack, which Serwist's webpack-based SW
+  injection doesn't support yet, so `dev`/`build` scripts pin `--webpack`.
+- **tsconfig** — Next 16 auto-set `jsx: react-jsx` and added `.next/dev/types` (our
+  `app/sw.ts` exclusion preserved).
+
+Verified: `typecheck` clean, **201 tests pass**, production build green (all routes),
+service worker still generated + served, `/signin` renders, protected routes 307 to
+sign-in, manifest/icons public.
+
+**Remaining / follow-ups:** audit now shows 2 high, both `browserslist` (build-time,
+transitive via `@serwist/next`; exploit needs an untrusted `browserslist-stats.json`
+we don't use — negligible; only "fix" is a Serwist downgrade). The `middleware` file
+convention is deprecated in 16 in favor of `proxy` (still functional; codemod exists)
+— left as a separate follow-up. **Staging only — needs sign-off + a full manual pass
+before prod given it's a major framework bump.**
+
+---
+
+## 2026-09-21 — Perf: code-split Recharts off Event analytics — `perf`
+
+`event-analytics.tsx` (route `/offline-sales/events`) imported Recharts directly for
+its two charts (the cumulative-revenue AreaChart + the multi-day pacing LineChart).
+Moved both — and the chart-only helpers (`pesoTick`, `axisLabelStyle`, `todLabel`,
+`dayLineStyle`, `DAY_COLORS`, `chartConfig`) — into a new `event-analytics-chart.tsx`
+exposing one `EventRevenueChart` (it internally switches AreaChart ⇄ pacing on
+compare mode), lazy-loaded via `next/dynamic`. `dayShort` was duplicated (the parent
+still uses it for the day toggle) so the parent never statically imports the Recharts
+module.
+
+- **`/offline-sales/events`: 253 kB → 138 kB** First Load JS (−115). Typecheck clean.
+
+Recharts split now covers **9 of 10 chart routes**. Only `/health` remains (issue #64)
+— its two charts are inline in an 800-line view and share `CHANNEL_ACCENT`/`CHANNELS`
+with non-chart code, so it needs a small neutral shared-constants module first.
+
+---
+
+## 2026-09-21 — Perf: code-split Recharts off Offline Sales — `perf`
+
+Continues the Recharts split. `offline-sales.tsx` imported Recharts directly for its
+one chart (`MethodStackChart`). Moved that chart + its tooltip into a new
+`offline-sales-chart.tsx` and lazy-load it via `next/dynamic` (`ssr:false`, skeleton).
+
+- **`/offline-sales`: 247 kB → 136 kB** First Load JS (−111). Typecheck clean, build 19/19.
+
+**Remaining (tracked, not rushed):** `/offline-sales/events` (253 kB) and `/health`
+(227 kB) still import Recharts directly, but their charts are entangled with shared
+local helpers (`dayShort` is used by non-chart code; `pesoTick`/`axisLabelStyle` feed
+two charts; health's charts are inline in an 800-line render). A clean split means
+relocating those helpers across the recharts/non-recharts boundary — deferred to its
+own pass to avoid a rushed regression. Seams documented in the tracking issue.
+
+Total Recharts split so far: **8 of 10 chart routes** de-Recharted (all tab/overview
+routes + Offline Sales), ~−110 kB First Load JS each.
+
+---
+
+## 2026-09-21 — Perf: code-split Recharts off tab/overview routes — `perf`
+
+Measured with the build's First-Load-JS table + chunk inspection: Recharts is a
+single **383 kB (uncompressed, ~110 kB gz) chunk** that rode in the initial JS of
+~10 routes (`repricer` 106 kB / `inventory/[sku]` 113 kB have no charts, confirming
+Recharts was the delta). Root cause: `tabs.tsx` and `sections.tsx` statically import
+`./charts` (Recharts), and every Tab/overview route renders them.
+
+- New `components/analyst/charts-lazy.tsx` re-exports the four charts via
+  `next/dynamic` (`ssr: false`, height-matched skeleton → no CLS). `tabs.tsx` and
+  `sections.tsx` now import from it, so the whole Recharts graph moves to an async
+  chunk fetched after first paint.
+
+**Measured First Load JS drop (~−117 kB each):**
+
+| Route | Before | After |
+|---|---:|---:|
+| `/` | 252 kB | 135 kB |
+| `/crm` `/customers` `/settings` `/traffic` | 247–248 kB | 131 kB |
+| `/inventory` | 302 kB | 185 kB |
+| `/offline-sales/orders` | 301 kB | 184 kB |
+
+Typecheck clean, build 19/19. `/health`, `/offline-sales`, `/offline-sales/events`
+still import Recharts directly and are handled next.
+
+---
+
+## 2026-09-21 — Perf: trim Newsreader font weights — `perf`
+
+`Newsreader` (`--font-serif`) was loaded at 4 weights (300/400/500/600) with both
+normal and italic. Audit found every `font-serif` usage is `font-normal` (400) and
+there is **no serif italic** anywhere (body italics are Inter). Trimmed to
+`weight: ['400'], style: ['normal']` in `layout.tsx` — drops ~6 unused self-hosted
+woff2 files from the load. Typecheck clean, build 19/19. (The pre-existing "font
+override values for Newsreader" next/font warning is unrelated — it's on HEAD too.)
+
+**Deferred — Recharts code-split (measure first):** Recharts (~100 kB+) rides in the
+initial JS of chart routes (inventory 302, offline-sales/orders 301, events 266,
+health 226 kB). A real split means `next/dynamic` around the chart subtrees in
+`charts.tsx`/`health-view`/`offline-sales`/`event-analytics` with SSR skeletons — a
+genuine refactor with an LCP tradeoff (charts pop in post-hydration). Worth doing,
+but behind a `@next/bundle-analyzer` measurement to size the win and design the
+skeletons; not rushed in here. The Serwist SW already precaches these chunks for
+repeat visits.
+
+---
+
+## 2026-09-21 — Perf: cache the digest read (TTFB) — `perf`
+
+`getDigests()` (`src/data.ts`) — read by the shell on **every** route — was
+`noStore()`, so each page view paid a Supabase round-trip before the layout could
+render. The digest archive is written weekly by the batch job (no in-app mutation),
+so the per-request freshness wasn't worth the latency.
+
+- Wrapped the Supabase read in `unstable_cache` (`revalidate: 300`, tag
+  `digest-archive`); React `cache()` still de-dupes within a request. The shell now
+  hits the network at most once per ~5 min instead of every request → lower TTFB on
+  all routes. Masked rows only (no unmasked PII cached).
+- A newly generated digest appears within 5 min; for instant, the batch job can
+  `revalidateTag('digest-archive')` (noted in code for a future cross-repo hook).
+
+Typecheck clean, build 19/19.
+
+---
+
+## 2026-09-21 — Perf: intro splash no longer blocks load — `perf`
+
+Biggest perceived-load win. The intro splash was a fixed ~1.7–2.75s overlay on
+**every** full load (hardcoded timers), and `.coop-app-in` held `<main>` at
+`opacity: 0` until a **1.55s** animation-delay — so first contentful paint was
+gated by animation, not the network.
+
+- **Once per session** — `intro-splash.tsx` now records a `sessionStorage` flag; a
+  pre-paint script in `layout.tsx` (beside the theme seed) adds `coop-splash-seen`
+  to `<html>` on repeat loads so the overlay is `display:none` before first paint
+  (no flash) and unmounts immediately (timers skipped).
+- **Faster first show** — on the first load of a session the splash trigger drops
+  1700ms → 600ms and the fade 1000ms → 500ms (gone by ~1.1s vs ~2.75s).
+- **Content reveal** — `.coop-app-in` delay 1.55s → 0.15s, duration 0.85s → 0.5s, so
+  the dashboard paints almost immediately instead of waiting out the splash.
+  `prefers-reduced-motion` still disables all of it.
+
+Net: perceived load drops by ~1.5–2s on first visit and the splash is gone entirely
+on subsequent in-session loads. Typecheck clean, build 19/19. (TTFB + bundle wins
+tracked separately as the next perf tiers.)
+
+---
+
+## 2026-09-21 — Dependency audit — `chore(security)`
+
+Ran `npm audit`. None of the flagged issues came from the new Serwist deps.
+
+- **Fixed (non-breaking, `npm audit fix`)** — `js-yaml` and `qs`, both transitive
+  under the `shadcn` CLI (`cosmiconfig`, `@modelcontextprotocol/sdk → express`).
+  Build/CLI-time only, not in the app's request path. Only `package-lock.json`
+  changed; 9 → 4 advisories. Tests 201 pass, build 19/19.
+- **Deferred (breaking)** — the remaining 4 (1 critical + 3 high) are all Next.js
+  `14.2.35` and its bundled `postcss`; the only fix path is `next@16` (a major
+  upgrade). Pre-existing, unrelated to this work, and several advisories are
+  self-hosted-only / Vercel-mitigated. Flagged for a separate, tested upgrade —
+  not bundled into the mobile/PWA work.
+- Follow-up worth considering: `shadcn` sits in `dependencies` (it's a dev CLI) and
+  is the sole source of the js-yaml/qs subtrees — moving it to `devDependencies` (or
+  dropping it) would shrink the runtime dep surface.
+
+---
+
+## 2026-09-21 — PWA: service worker (Serwist) — `feat(pwa)`
+
+Adds the offline/app-shell service worker, completing the PWA. Deliberately minimal
+and **PII-safe**.
+
+- **`app/sw.ts`** — a Serwist worker that precaches **only** Next's hashed static
+  build assets (JS/CSS/fonts/icons — no customer data). **No runtime caching** of
+  navigations, `/api`, or Supabase reads: this app is behind Google auth and renders
+  PII, so authenticated responses must never touch the cache (leak risk on shared
+  devices). Every non-precached request falls through to the network.
+- **`next.config.mjs`** — wrapped with `@serwist/next` (`swSrc: app/sw.ts` →
+  `public/sw.js`, `cacheOnNavigation: false`, `register: true`, disabled in dev).
+  `serwist` + `@serwist/next` added to deps; generated `public/sw.js` is gitignored.
+- **`middleware.ts`** — auth matcher also excludes `sw.js` so the worker script is
+  publicly fetchable. `app/sw.ts` is excluded from the app `tsconfig` (Serwist bundles
+  it; the `webworker` lib would clash with `dom`).
+
+Verified on a production server: `/sw.js` serves as public `application/javascript`
+(≈35 KB), the registration is wired into the client bundle (`serviceWorker.register`
+→ `/sw.js`), the manifest is public, and protected pages still 307 to `/signin`
+(auth intact). With this, Coop is a full PWA: installable, standalone, offline-shell,
+and eligible for the automatic install prompt.
+
+---
+
+## 2026-09-21 — PWA: installable (manifest + icons) — `feat(pwa)`
+
+Coop is now installable (Add to Home Screen → standalone window with Coop chrome).
+No new dependencies and no binary raster tooling.
+
+- **`app/manifest.ts`** — web manifest (name/short_name, `display: standalone`,
+  `start_url`/`scope` `/`, Coop `theme_color`/`background_color`). Next links it
+  automatically; inert on desktop.
+- **`app/pwa-icon/[size]/route.tsx`** — 192/512 (+ `?maskable=1`) PNG icons rendered
+  at request time by `next/og` (ImageResponse) from the existing brand mark
+  (`#3F6E56` tile + cream "c"), so no PNG assets or `sharp`/ImageMagick needed.
+- **`app/apple-icon.tsx`** — 180×180 iOS home-screen icon (iOS ignores the manifest
+  for A2HS), full-bleed tile since iOS rounds corners itself.
+- **`middleware.ts`** — the auth matcher now also excludes `manifest.webmanifest`,
+  `pwa-icon`, `apple-icon`, `icon.svg`. A manifest that 302s to `/signin` isn't
+  installable and browsers fetch icons without credentials; these carry no secrets.
+  No app **page** changed protection.
+
+Verified on a production server: `/manifest.webmanifest` serves public JSON and all
+four icons return `image/png` (PNG magic `89504e47`, ~2.6–11 KB). Paired with the
+phase-1 `viewport`/`themeColor`. **Still to come:** a Serwist service worker for
+offline app-shell + the automatic install prompt (separate step — it adds a
+dependency + build-config change and needs on-device testing; caching will be
+static-shell-only, never the PII/auth data).
+
+---
+
+## 2026-09-21 — Mobile responsive, phase 2 · Offline Sales + padding pass — `feat(mobile)`
+
+The three Offline Sales views (`offline-sales`, `offline-orders`, `offline-events`)
+are already grid-based with responsive `md:grid-cols-*` and no tables, so they stack
+on mobile as-is; they only needed page padding tightened under `md`. Same `max-md:`
+padding applied to `inventory-view` and `home-landing`. All `max-md:`-only → desktop
+byte-identical.
+
+- `health-view` padding was left alone on purpose: its wrapper `px-6` is coupled to a
+  `-mx-6` full-bleed sticky (scroll-condense) header, so changing one without the
+  other would misalign it. Deferred to a dedicated pass.
+
+Verified: `typecheck` clean, build 17/17 pages.
+
+---
+
+## 2026-09-21 — Mobile responsive, phase 2 · Repricer + Sales — `feat(mobile)`
+
+Two more views, both invariance-safe (every change is `max-md:`-only, so ≥ `md`
+is byte-identical).
+
+- **Repricer** (`repricer-view.tsx`) — its four dense tables (currently-repriced
+  with expandable history, changed, ready-to-reprice, and the history sub-table)
+  keep their desktop layout and now scroll cleanly as a unit below `md`
+  (`max-md:min-w-[…]` inside the existing `overflow-x-auto` wrappers) instead of
+  cramming. Full card transforms were skipped here deliberately — the main table's
+  row-expand + inline `InfoTip`s make cards high-effort for a low-traffic review
+  page; scroll is the reviewer's sanctioned fallback. Page padding + the `text-[28px]`
+  heading also tighten under `md`.
+- **Sales / channel compare** (`channel-compare.tsx`) — already structurally mobile
+  (no tables; the 2-col layout is `lg:`-gated so it stacks below `lg`; header and
+  chips `flex-wrap`). Only the oversized `text-[2.6rem]` hero and page padding
+  needed `max-md:` shrinking.
+
+Note: `product-controls.tsx` was **not** touched — `/products` redirects to
+`/inventory` and the `ProductControls` component is no longer rendered anywhere
+(only referenced in comments), so it's effectively dead code.
+
+Verified: `typecheck` clean, build 17/17 pages.
+
+---
+
+## 2026-09-21 — Mobile responsive, phase 2 · Inventory table — `feat(mobile)`
+
+The inventory table (`components/analyst/inventory-table.tsx`) now has a mobile
+card view. Same invariance rule — the desktop `Row`, the `<table>`, and its
+`menuFor` state are **untouched**; the only edited line is the scroll wrapper,
+which gained `max-md:hidden`.
+
+- **Table → cards** — a new `md:hidden` `RowCard` renders each paged row as a card
+  (name/SKU + `⋯` menu on top, status pill + editable price, then a 3-col grid of
+  This mo/Last mo/3 mo/Stock/Lasts/Suggested). Reuses the same `RowMenu`, edit,
+  add-stock and edit-stock dialogs as the desktop row.
+- **Portal safety** — the card list uses its **own** `cardMenuFor` state, not the
+  table's `menuFor`. Because `RowMenu` portals to `<body>`, sharing state would let
+  the `display:none` breakpoint render a stray menu at (0,0) on the visible side;
+  independent state means the hidden side's menu can never open.
+
+Verified: `typecheck` clean, build 17/17 pages.
+
+---
+
+## 2026-09-21 — Mobile responsive, phase 2 · CRM view — `feat(mobile)`
+
+Phase 2 (per-view content density) begins with the freshly-merged Website CRM
+page (`components/analyst/crm-view.tsx`). Same invariance rule as phase 1: every
+change is additive (`max-md:`/`max-sm:` class or a `md:hidden` sibling), so the
+desktop view (≥ `md`) is byte-identical — the four touched classNames only gained
+suffixes; nothing was deleted or lowered.
+
+- **Table → cards** — the desktop table is now `max-md:hidden`; below `md` the same
+  rows render as scannable cards (one layout per tab: carts, orders, customers)
+  with the primary field + status/badge on top, the money figure emphasised, and
+  the rest as a compact label/value grid. Reuses the exact same `shown` slice, so
+  pagination/search/order match the table.
+- **Padding & search** — page padding tightens under `md` (`max-md:p-4`,
+  `max-md:space-y-6`); the search field fills the toolbar row on the narrowest
+  screens (`max-sm:`) instead of overflowing. The three KPI grids were already
+  responsive (`sm:`/`lg:`), so they were left alone.
+
+Verified: `typecheck` clean, build 17/17 pages (`/crm` compiles). Stat grids and
+the desktop table unchanged at `md`+.
+
+---
+
+## 2026-09-21 — Mobile responsive, phase 1 (shell) — `feat(mobile)`
+
+First increment of the mobile-responsive pass. **Constraint held throughout: the
+desktop view (≥ `md`/768px) must render byte-identically** — so every change is
+additive (a `max-md:`/`max-sm:` class, a `md:hidden` sibling, or new state with a
+deterministic `false` SSR default). A regression reviewer audited the plan against
+the code first; the diff was then audited to confirm no existing desktop-governing
+utility was deleted or changed in value.
+
+- **`app/layout.tsx`** — added a `viewport` export (`width=device-width`,
+  `initialScale=1`, `viewport-fit=cover`, light/dark `themeColor`). No fixed width
+  or `maximum-scale`, so desktop zoom/a11y unchanged; `themeColor`/`viewport-fit`
+  are inert on desktop.
+- **`components/analyst/dashboard-shell.tsx`** — below `md` the left rail is hidden
+  (`max-md:hidden`) and replaced by a **fixed bottom tab bar** (Home · Sales ·
+  Inventory · Offline · More) plus a slide-up **"More" sheet** (Business Health,
+  Events, Customers, Website CRM, Traffic, Repricer, Settings + account/sign-out).
+  Highlight logic reuses `leafActive` so it matches the rail. `<main>` gets `max-md:`
+  bottom padding (bar height + safe-area) so content clears the bar; the decorative
+  Zoomy brand switcher is `max-sm:hidden` to stop header overflow. Motion per Emil:
+  the frequent tab bar only transitions color + press-scale; the occasional sheet
+  gets the iOS drawer curve; `motion-reduce` respected.
+
+Verified: `typecheck` clean, 186 tests pass, production build 16/16 pages. Scrolling
+scope for Business Health (`#coop-scroll`) unchanged — `<main>` still owns scroll at
+all breakpoints. **Deferred to phase 2:** per-view content density (table→card
+transforms, chart label density, typography) and the PWA layer (manifest, icons,
+service worker).
 ## 2026-09-24 — All contacts: the three lists merged — `feat(customers)`
 
 `/customers/all` is the hub's new landing view: one row per PERSON across the

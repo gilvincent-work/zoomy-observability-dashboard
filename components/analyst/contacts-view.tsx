@@ -148,7 +148,7 @@ export function ContactsView({
   };
 
   return (
-    <div className="space-y-6 p-6 md:p-10">
+    <div className="space-y-6 p-6 md:p-10 max-md:p-4">
       <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div>
           <h1 className="font-serif text-3xl font-normal tracking-tight">All contacts</h1>
@@ -214,7 +214,7 @@ export function ContactsView({
               }}
               placeholder="Search name, email, mobile or city"
               aria-label="Search contacts"
-              className="h-9 w-60 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-primary"
+              className="h-9 w-60 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-primary max-md:w-full"
             />
             <button
               type="button"
@@ -234,7 +234,8 @@ export function ContactsView({
                 Nothing matches those filters.
               </p>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="overflow-x-auto max-md:hidden">
                 <table className="w-full text-sm">
                   <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
@@ -307,6 +308,65 @@ export function ContactsView({
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobile (below md): the same contacts as cards. */}
+              <ul className="divide-y divide-border md:hidden">
+                {shown.map((c) => {
+                  const headline = c.name ?? c.email ?? c.mobile ?? '—';
+                  const details = [c.email, c.mobile].filter((v): v is string => Boolean(v) && v !== headline);
+                  return (
+                    <li key={c.id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{headline}</div>
+                          <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                            {details.map((d) => (
+                              <span key={d} className="tabular-nums">{d}</span>
+                            ))}
+                            {!c.email && !c.mobile && <span>No contact detail</span>}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                          {c.sources.map((s) => (
+                            <span
+                              key={s}
+                              title={SOURCE_META[s].label}
+                              className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', SOURCE_META[s].className)}
+                            >
+                              {SOURCE_META[s].short}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {(c.tier || c.prize) && (
+                        <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
+                          {c.tier && <span className="capitalize">{c.tier} member</span>}
+                          {c.prize && <span>Won {c.prize}</span>}
+                        </div>
+                      )}
+                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <div className="flex justify-between gap-2">
+                          <dt>Orders</dt>
+                          <dd className="tabular-nums text-foreground">{c.orders || '—'}</dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt>Spend</dt>
+                          <dd className="tabular-nums text-foreground">{c.spend ? peso(c.spend) : '—'}</dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt>City</dt>
+                          <dd>{c.city ?? '—'}</dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt>Last seen</dt>
+                          <dd>{fmtDate(c.lastSeen)}</dd>
+                        </div>
+                      </dl>
+                    </li>
+                  );
+                })}
+              </ul>
+              </>
             )}
           </CardContent>
         </Card>

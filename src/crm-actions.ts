@@ -8,5 +8,5 @@ import {CRM_TAG} from './crm-cache';
  * to the page's Refresh button — read-only, and it touches no customer data.
  */
 export async function refreshCrm(): Promise<void> {
-  revalidateTag(CRM_TAG);
+  revalidateTag(CRM_TAG, 'max');
 }

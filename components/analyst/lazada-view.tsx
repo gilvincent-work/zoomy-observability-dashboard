@@ -238,7 +238,7 @@ export function LazadaView({
         if (file) void handleFile(file);
       }}
       className={cn(
-        'space-y-6 p-6 transition-colors md:p-10',
+        'space-y-6 p-6 transition-colors md:p-10 max-md:p-4',
         dragging && 'bg-primary/5 ring-2 ring-inset ring-primary/40',
       )}
     >
@@ -370,7 +370,7 @@ export function LazadaView({
               }}
               placeholder="Search name, phone or city"
               aria-label="Search Lazada customers"
-              className="h-9 w-56 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-primary"
+              className="h-9 w-56 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-primary max-md:w-full"
             />
             <select
               value={city}
@@ -423,7 +423,8 @@ export function LazadaView({
                   : 'No Lazada orders yet — upload a Seller-Center export above.'}
               </p>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="overflow-x-auto max-md:hidden">
                 <table className="w-full text-sm">
                   <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
@@ -449,6 +450,44 @@ export function LazadaView({
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobile (below md): the same customers as scannable cards. */}
+              <ul className="divide-y divide-border md:hidden">
+                {shown.map((c) => (
+                  <li key={c.phone} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{c.name ?? '—'}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{c.orderCount} order{c.orderCount === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="mt-0.5 truncate text-xs tabular-nums text-muted-foreground">
+                      {c.phone}{c.city ? ` · ${c.city}` : ''}
+                    </div>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <div className="flex justify-between gap-2">
+                        <dt>Total spent</dt>
+                        <dd className="tabular-nums text-foreground">{peso(c.totalSpent)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt>Avg order</dt>
+                        <dd className="tabular-nums">{peso(c.avgOrder)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt>Last order</dt>
+                        <dd>{fmtDate(c.lastOrderAt)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt>Days since</dt>
+                        <dd className="tabular-nums">{c.daysSince}</dd>
+                      </div>
+                      <div className="col-span-2 flex justify-between gap-2">
+                        <dt>Pay method</dt>
+                        <dd>{c.payMethod ?? '—'}</dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+              </>
             )}
           </CardContent>
         </Card>
@@ -468,7 +507,7 @@ export function LazadaView({
           <Eyebrow icon={Package}>Orders by product</Eyebrow>
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-md:hidden">
                 <table className="w-full text-sm">
                   <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
@@ -496,6 +535,37 @@ export function LazadaView({
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobile (below md): the same product rows as cards. */}
+              <ul className="divide-y divide-border md:hidden">
+                {products.map((p, i) => (
+                  <li key={`${p.product}-${p.variant}-${i}`} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 flex-1 text-sm font-medium">{productDisplayName(p.product)}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">#{i + 1}</span>
+                    </div>
+                    {p.variant && <div className="mt-0.5 text-xs text-muted-foreground">{p.variant}</div>}
+                    <dl className="mt-2 grid grid-cols-4 gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <div className="flex flex-col">
+                        <dt>Orders</dt>
+                        <dd className="tabular-nums text-foreground">{p.orders}</dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt>Buyers</dt>
+                        <dd className="tabular-nums text-foreground">{p.buyers}</dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt>Items</dt>
+                        <dd className="tabular-nums text-foreground">{p.items}</dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt>Revenue</dt>
+                        <dd className="tabular-nums text-foreground">{peso(p.revenue)}</dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
         </section>
