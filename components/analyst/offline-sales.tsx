@@ -16,6 +16,7 @@ import {Badge} from '@/components/ui/badge';
 import {cn} from '@/lib/utils';
 import {Eyebrow, MockNote} from './sections';
 import {Metric} from './metric';
+import {SegmentedControl} from './segmented-control';
 import {RefreshControl} from './refresh-control';
 import {DailyTargetBar} from './daily-target-bar';
 import {InfoTip} from './info-tip';
@@ -25,8 +26,8 @@ type Props = {
   progress: DailyProgress | null; // today vs daily goal; null = hidden (fail-soft)
   featured: FeaturedEvent | null; // event running today, else next upcoming, else null
   kpis: SalesKpis; // all-methods totals for the range
-  top: TopProduct[]; // ranked by revenue
-  topByUnits: TopProduct[]; // same products ranked by units sold
+  productsByRevenue: TopProduct[]; // full product list ranked high→low by revenue
+  productsByUnits: TopProduct[]; // full product list ranked high→low by units sold
   topBundles: TopBundle[]; // bundles sold by name (from bundle_id lines)
   bundles: BundleSalesSummary; // reconciles itemized product revenue with the KPI
   orders: PosOrder[]; // filtered, newest first
@@ -42,7 +43,7 @@ const expiryLabel = (iso: string | null) =>
 const shortDay = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const timeLabel = (iso: string) => new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 
-export function OfflineSalesView({range, progress, featured, kpis, top, topByUnits, topBundles, bundles, orders, stock, alerts, usingMock, fetchedAt}: Props) {
+export function OfflineSalesView({range, progress, featured, kpis, productsByRevenue, productsByUnits, topBundles, bundles, orders, stock, alerts, usingMock, fetchedAt}: Props) {
   // 'all' or a specific payment method. The method drives the KPI cards and
   // which segment of the stacked chart is highlighted. Computed client-side from
   // the range-filtered orders so switching is instant (no reload).
@@ -119,7 +120,7 @@ export function OfflineSalesView({range, progress, featured, kpis, top, topByUni
           )}
         </Panel>
 
-        <TopSellersColumn byRevenue={top} byUnits={topByUnits} bundles={bundles} topBundles={topBundles} />
+        <TopSellersColumn byRevenue={productsByRevenue} byUnits={productsByUnits} bundles={bundles} topBundles={topBundles} />
       </div>
 
       <div className="mt-5 grid gap-5 md:grid-cols-2 md:items-start">
@@ -410,9 +411,20 @@ function PetMixCard({mix}: {mix: PetMix}) {
   );
 }
 
-/** Right column of the overview: Top products stacked over Top bundles, both
- *  driven by one shared Revenue/Units toggle. In Units mode bundles rank by
- *  orders (their unit analog: one order == one bundle sold). */
+const METRIC_OPTIONS = [
+  {value: 'revenue', label: 'Revenue'},
+  {value: 'units', label: 'Units'},
+] as const;
+const DIRECTION_OPTIONS = [
+  {value: 'top', label: 'Top'},
+  {value: 'bottom', label: 'Bottom'},
+] as const;
+const SELLERS_LIMIT = 5;
+
+/** Right column of the overview: the product list stacked over Top bundles.
+ *  A Revenue/Units toggle picks the metric; a Top/Bottom toggle flips between the
+ *  best sellers and the lowest ("kulelat"). In Units mode bundles rank by orders
+ *  (their unit analog: one order == one bundle sold). */
 function TopSellersColumn({
   byRevenue,
   byUnits,
@@ -424,40 +436,38 @@ function TopSellersColumn({
   bundles: BundleSalesSummary;
   topBundles: TopBundle[];
 }) {
-  const [sort, setSort] = useState<'revenue' | 'units'>('revenue');
-  const rows = sort === 'revenue' ? byRevenue : byUnits;
+  const [metric, setMetric] = useState<'revenue' | 'units'>('revenue');
+  const [direction, setDirection] = useState<'top' | 'bottom'>('top');
+  const isTop = direction === 'top';
+
+  // Full ranked list (high→low). Top shows the first N; Bottom shows the last N
+  // flipped so #1 is the single lowest seller.
+  const ranked = metric === 'revenue' ? byRevenue : byUnits;
+  const rows = isTop ? ranked.slice(0, SELLERS_LIMIT) : ranked.slice(-SELLERS_LIMIT).reverse();
   const bundleRows =
-    sort === 'revenue'
+    metric === 'revenue'
       ? topBundles
       : [...topBundles].sort((a, b) => b.orders - a.orders || b.revenue - a.revenue);
 
-  const pill = (
-    <div className="inline-flex rounded-md border p-0.5">
-      {(['revenue', 'units'] as const).map((key) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => setSort(key)}
-          aria-pressed={sort === key}
-          className={cn(
-            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-            sort === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {key === 'revenue' ? 'Revenue' : 'Units'}
-        </button>
-      ))}
+  // The bundle reconciliation is a whole-of-total statement ("matching Revenue
+  // above"), so it only belongs with the best-sellers view, not the lowest.
+  const showBundleReconcile = isTop && bundles.bundleRevenue > 0;
+
+  const controls = (
+    <div className="flex items-center gap-1.5">
+      <SegmentedControl ariaLabel="Rank by" options={METRIC_OPTIONS} value={metric} onChange={setMetric} />
+      <SegmentedControl ariaLabel="Show best or lowest" options={DIRECTION_OPTIONS} value={direction} onChange={setDirection} />
     </div>
   );
 
   return (
     <div className="flex flex-col gap-4">
       <Panel
-        title="Top products"
+        title={isTop ? 'Top products' : 'Lowest products'}
         info="Money shown is itemized sales only. Bundle deals are priced as a set, so their value is listed once under Bundle deals, not split per item."
-        control={pill}
+        control={controls}
       >
-        {rows.length === 0 && bundles.bundleRevenue <= 0 ? (
+        {ranked.length === 0 && bundles.bundleRevenue <= 0 ? (
           <Empty>No sales in this range.</Empty>
         ) : (
           <div className="flex flex-col gap-2.5">
@@ -471,17 +481,17 @@ function TopSellersColumn({
                       <span className="text-[11px] text-muted-foreground">{t.bundledUnits} of these units were bundled</span>
                     )}
                   </span>
-                  <span className={cn('pt-0.5 text-xs tabular-nums', sort === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                  <span className={cn('pt-0.5 text-xs tabular-nums', metric === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
                     {t.units} units
                   </span>
-                  <span className={cn('w-20 pt-0.5 text-right text-sm tabular-nums', sort === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                  <span className={cn('w-20 pt-0.5 text-right text-sm tabular-nums', metric === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
                     {formatPeso(t.revenue)}
                   </span>
                 </li>
               ))}
             </ul>
 
-            {bundles.bundleRevenue > 0 && (
+            {showBundleReconcile && (
               <>
                 <div className="h-px w-full bg-border" />
                 <div className="flex items-center gap-3">
@@ -513,10 +523,10 @@ function TopSellersColumn({
               <li key={b.bundle_id} className="flex items-center gap-3">
                 <span className="w-4 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
                 <span className="min-w-0 flex-1 truncate text-sm">{b.name}</span>
-                <span className={cn('text-xs tabular-nums', sort === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                <span className={cn('text-xs tabular-nums', metric === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
                   {b.orders} {b.orders === 1 ? 'order' : 'orders'}
                 </span>
-                <span className={cn('w-20 text-right text-sm tabular-nums', sort === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                <span className={cn('w-20 text-right text-sm tabular-nums', metric === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>
                   {formatPeso(b.revenue)}
                 </span>
               </li>
