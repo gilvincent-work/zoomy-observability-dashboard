@@ -12,6 +12,15 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-26 — v1.3.5: full-width compare-days lines — `feat(offline-sales)`
+
+**Version bumped to 1.3.5** (patch; was 1.3.4). In the "Compare days" chart, a day
+whose sales started later or ended earlier drew a shorter line, so days didn't span
+the same x-axis. Now every completed day runs edge to edge: flat ₱0 before its first
+sale and held flat at the day total after its last. The latest (possibly still
+selling) day is deliberately left to end at its real last sale, so it's never
+flat-lined into the future. Two regression tests added. `eventDayPacingSeries` only.
+
 ## 2026-09-25 — v1.3.4: sticky top bar on scroll — `fix(nav)`
 
 **Version bumped to 1.3.4** (patch; was 1.3.3). The top bar was `relative`, so it
