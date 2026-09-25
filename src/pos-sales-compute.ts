@@ -262,10 +262,11 @@ export function manilaMinuteOfDay(iso: string): number {
   return ((min % 1440) + 1440) % 1440;
 }
 
-/** One row per clock hour of the event window; each event day is a numeric column
- *  holding that day's cumulative revenue through the END of that hour, or null for
- *  hours outside the day's own selling window (so a line spans only its real hours,
- *  never faking the future). `tod` is minutes since Manila midnight at the hour. */
+/** One row per clock-hour mark of the event window; each event day is a numeric
+ *  column holding that day's cumulative revenue BY that mark (inclusive of a sale
+ *  landing exactly on it), or null for marks outside the day's own selling window
+ *  (so a line spans only its real hours, never faking the future). `tod` is minutes
+ *  since Manila midnight at the mark, so a 9:37 sale reads "₱1,200 by 10 AM". */
 export interface DayPacingRow {
   tod: number;
   [dayKey: string]: number | null;
@@ -280,8 +281,9 @@ export interface DayPacingSeries {
  *  time-of-day, for the "compare days" overlay: each day resets to 0 and climbs, so
  *  a later day's pace reads directly against earlier days at the same clock hour.
  *  One point per hour means an even hover step (10 AM, 11 AM, …) instead of jumping
- *  between sparse order times. Each hour holds the running total through that hour's
- *  end; hours before a day's first sale or after its last are null. Voided excluded. */
+ *  between sparse order times. Each mark holds the running total BY that clock hour
+ *  (a 9:37 sale counts toward the 10 AM mark, leaving 9 AM at its ₱0 baseline); the
+ *  mark before a day's first sale or after its last is null. Voided excluded. */
 export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
   const byDay = new Map<string, PosOrder[]>();
   for (const o of orders) {
@@ -295,7 +297,7 @@ export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
   if (days.length === 0) return {days: [], rows: []};
 
   // Per day: ascending cumulative points (one per selling minute) + its window.
-  const perDay = new Map<string, {points: {tod: number; val: number}[]; firstHour: number; lastHour: number}>();
+  const perDay = new Map<string, {points: {tod: number; val: number}[]; firstMark: number; lastMark: number}>();
   let startHour = Infinity;
   let endHour = -Infinity;
   for (const d of days) {
@@ -309,26 +311,31 @@ export function eventDayPacingSeries(orders: PosOrder[]): DayPacingSeries {
       if (last && last.tod === tod) last.val = running; // same minute keeps the latest total
       else points.push({tod, val: running});
     }
-    const firstHour = Math.floor(points[0].tod / 60);
-    const lastHour = Math.floor(points[points.length - 1].tod / 60);
-    perDay.set(d, {points, firstHour, lastHour});
-    startHour = Math.min(startHour, firstHour);
-    endHour = Math.max(endHour, lastHour);
+    // firstMark: the clock-hour mark the line starts on. It reads 0 when the first
+    // sale is after the hour (e.g. 9:37 → a ₱0 baseline at 9 AM), or the sale's own
+    // value when it lands exactly on the hour. lastMark: rounded UP so the mark
+    // always sits at or past the last sale, capturing the full day total (a 12:30
+    // sale is counted "by 1 PM", never dropped).
+    const firstMark = Math.floor(points[0].tod / 60);
+    const lastMark = Math.ceil(points[points.length - 1].tod / 60);
+    perDay.set(d, {points, firstMark, lastMark});
+    startHour = Math.min(startHour, firstMark);
+    endHour = Math.max(endHour, lastMark);
   }
 
   const rows: DayPacingRow[] = [];
   for (let h = startHour; h <= endHour; h++) {
-    const cutoff = h * 60 + 59; // through the end of this clock hour
-    const row: DayPacingRow = {tod: h * 60};
+    const mark = h * 60; // cumulative revenue BY this clock-hour mark, inclusive
+    const row: DayPacingRow = {tod: mark};
     for (const d of days) {
       const info = perDay.get(d)!;
-      if (h < info.firstHour || h > info.lastHour) {
+      if (h < info.firstMark || h > info.lastMark) {
         row[d] = null;
         continue;
       }
       let val = 0;
       for (const p of info.points) {
-        if (p.tod <= cutoff) val = p.val;
+        if (p.tod <= mark) val = p.val;
         else break;
       }
       row[d] = val;

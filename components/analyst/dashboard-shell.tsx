@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange} from '../../src/week';
@@ -21,6 +21,7 @@ const OVERVIEW_CHILDREN: NavItem[] = [
   {href: '/health', label: 'Business Health', icon: Gauge},
   {href: '/?channel=all', label: 'Sales', icon: BarChart3},
   {href: '/offline-sales', label: 'Offline Sales', icon: Receipt},
+  {href: '/offline-sales/orders', label: 'Transactions', icon: ReceiptText},
   {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
 ];
 /** The three contact lists behind the Customers tab, in the top bar's dropdown. */
@@ -48,14 +49,18 @@ const FLAT_TABS: NavItem[] = [
 const leafActive = (href: string, pathname: string, channel: string | null) => {
   if (href === '/') return pathname === '/' && !channel;
   if (href === '/?channel=all') return pathname === '/' && Boolean(channel);
-  // Events lives under /offline-sales, so the two must not both light up: Offline
-  // Sales owns /offline-sales and its non-events subpaths; Events owns the events
-  // subtree. This makes the highlight transfer to Events when you open it from the
-  // Offline Sales "Events" button.
+  // Transactions (/offline-sales/orders) and Events (/offline-sales/events) live
+  // under /offline-sales, so all three must not light up together: Offline Sales
+  // owns /offline-sales and any other subpath, while Transactions and Events each
+  // own their own subtree. This transfers the highlight to the child when you open
+  // it from the Offline Sales page.
   if (href === '/offline-sales') {
     return pathname === '/offline-sales'
-      || (pathname.startsWith('/offline-sales/') && !pathname.startsWith('/offline-sales/events'));
+      || (pathname.startsWith('/offline-sales/')
+        && !pathname.startsWith('/offline-sales/events')
+        && !pathname.startsWith('/offline-sales/orders'));
   }
+  if (href === '/offline-sales/orders') return pathname.startsWith('/offline-sales/orders');
   if (href === '/offline-sales/events') return pathname.startsWith('/offline-sales/events');
   return pathname.startsWith(href.split('?')[0]);
 };
@@ -179,6 +184,7 @@ export function DashboardShell({
   ];
   const moreItems: NavItem[] = [
     {href: '/health', label: 'Business Health', icon: Gauge},
+    {href: '/offline-sales/orders', label: 'Transactions', icon: ReceiptText},
     {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
     {href: '/customers', label: 'Customers', icon: Users},
     {href: '/traffic', label: 'Traffic', icon: Activity},
