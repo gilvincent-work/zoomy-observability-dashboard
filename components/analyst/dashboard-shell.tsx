@@ -540,11 +540,11 @@ export function DashboardShell({
             href={withWeek(t.href)}
             aria-current={t.active ? 'page' : undefined}
             className={cn(
-              'flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium tracking-tight transition-colors active:scale-95',
+              'flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium tracking-tight transition-colors active:scale-95',
               t.active ? 'text-primary' : 'text-muted-foreground',
             )}
           >
-            <t.icon className="size-[22px]" />
+            <t.icon className="size-[26px]" strokeWidth={2} />
             <span>{t.label}</span>
           </Link>
         ))}
@@ -554,11 +554,11 @@ export function DashboardShell({
           aria-label="More"
           aria-expanded={mobileNavOpen}
           className={cn(
-            'flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium tracking-tight transition-colors active:scale-95',
+            'flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium tracking-tight transition-colors active:scale-95',
             moreActive ? 'text-primary' : 'text-muted-foreground',
           )}
         >
-          <Menu className="size-[22px]" />
+          <Menu className="size-[26px]" strokeWidth={2} />
           <span>More</span>
         </button>
       </nav>

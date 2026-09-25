@@ -545,7 +545,7 @@ export function LazadaView({
                       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">#{i + 1}</span>
                     </div>
                     {p.variant && <div className="mt-0.5 text-xs text-muted-foreground">{p.variant}</div>}
-                    <dl className="mt-2 grid grid-cols-4 gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-muted-foreground min-[420px]:grid-cols-4">
                       <div className="flex flex-col">
                         <dt>Orders</dt>
                         <dd className="tabular-nums text-foreground">{p.orders}</dd>
