@@ -198,7 +198,10 @@ export function DashboardShell({
     <CoopChatProvider scopeLabel={currentRange || undefined}>
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
-      <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur-sm">
+      {/* Sticky (not relative) so it stays pinned on scroll, flush above the
+          sticky rail (which pins at top-14 = this bar's height). z-30 keeps it
+          over both the rail and the scrolling canvas. */}
+      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur-sm">
         <Link href="/" aria-label="Coop home" className="flex items-center gap-2 rounded-lg transition-opacity hover:opacity-70">
           <CoopMark />
           <span className="hidden text-[13px] font-medium tracking-tight text-muted-foreground sm:inline">

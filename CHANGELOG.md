@@ -12,6 +12,13 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-25 — v1.3.4: sticky top bar on scroll — `fix(nav)`
+
+**Version bumped to 1.3.4** (patch; was 1.3.3). The top bar was `relative`, so it
+scrolled away while the drawer rail (which is `sticky top-14`) stayed pinned,
+leaving the rail floating under an empty gap. Made the header `sticky top-0 z-30`
+so it stays pinned flush above the rail on scroll. CSS-only.
+
 ## 2026-09-25 — v1.3.3: compare-chart hour fix + Transactions nav tab — `chore(release)`
 
 **Version bumped to 1.3.3** (patch; was 1.3.2). Two changes, promoted
