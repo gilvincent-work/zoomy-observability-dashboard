@@ -542,7 +542,7 @@ function Panel({title, info, action, control, children}: {title: string; info?: 
   return (
     <Card>
       <CardContent className="py-4">
-        <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
           <h3 className="flex items-center gap-1 text-sm font-semibold">
             {title}
             {info && <InfoTip text={info} />}

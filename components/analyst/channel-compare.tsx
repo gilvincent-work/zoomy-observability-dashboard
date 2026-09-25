@@ -122,8 +122,9 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
             Compare channels <InfoTip text={METRIC_HINTS[metric]} />
           </div>
+          <div className="max-md:-mx-1 max-md:overflow-x-auto max-md:px-1">
           <div
-            className="relative grid rounded-xl border border-border bg-muted/40 p-1"
+            className="relative grid rounded-xl border border-border bg-muted/40 p-1 max-md:min-w-[468px]"
             style={{gridTemplateColumns: `repeat(${METRICS.length}, minmax(0, 1fr))`}}
           >
             {/* liquid-glass sliding indicator — springs to the active metric */}
@@ -148,6 +149,7 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
                 {m.label}
               </button>
             ))}
+          </div>
           </div>
         </div>
         {rows.length === 0 ? (

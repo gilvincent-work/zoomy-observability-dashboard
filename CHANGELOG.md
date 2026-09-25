@@ -12,6 +12,32 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-26 — v1.3.7: PWA home-screen icon + mobile polish — `fix(pwa,mobile)`
+
+**Version bumped to 1.3.7** (patch; was 1.3.6). Fixes from on-device (iPhone 15)
+review of the installed PWA and mobile web.
+
+- **Home-screen icon was a plain white "C" instead of the Coop mark.** `apple-icon`
+  and the `/pwa-icon/[size]` route both rendered the brand tile by embedding an SVG
+  as an `<img>` data-URI inside `next/og` `ImageResponse` — satori renders those
+  unreliably, so the route silently failed and iOS fell back to a generated
+  white-tile-with-first-letter icon. Both now draw the tile with **native satori
+  elements** (a `#3F6E56` green `<div>` + the cream `#F7F5EF` "c" arc as an inline
+  `<svg>`), matching the web favicon (`app/icon.svg`). Verified: `/apple-icon`,
+  `/pwa-icon/192`, and `/pwa-icon/512?maskable=1` all return valid PNGs. (iOS caches
+  the old icon — users must remove and re-add to Home Screen to see the new one.)
+- **Bottom tab bar icons enlarged** on mobile (22px → 26px, labels 10px → 11px) —
+  they read as too small on iPhone 15.
+- **Offline Sales "Top products" toggles no longer clip off-screen.** The `Panel`
+  header now wraps (`flex-wrap`), so the Revenue/Units + Top/Bottom segmented
+  controls drop below the title on narrow screens instead of overflowing.
+- **Channel-compare metric selector** (6 nowrap metrics) now scrolls horizontally
+  on mobile inside an `overflow-x-auto` wrapper with a `min-w` grid, keeping the
+  sliding indicator aligned instead of clipping labels / pushing page width.
+- **Lazada mobile product card** metric grid goes `grid-cols-2` on phones
+  (`min-[420px]:grid-cols-4`) so the four stats aren't cramped.
+- **Event-analytics top-sellers toggle row** made `flex-wrap` (defensive).
+
 ## 2026-09-26 — v1.3.6: Events search + filters + pagination, clearer status — `feat(events)`
 
 **Version bumped to 1.3.6** (patch; was 1.3.5). The Events page grew long as offline
