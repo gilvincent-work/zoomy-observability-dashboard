@@ -12,6 +12,24 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-25 — v1.3.3: compare-chart hour fix + Transactions nav tab — `chore(release)`
+
+**Version bumped to 1.3.3** (patch; was 1.3.2). Two changes, promoted
+`develop → staging → main`:
+
+- **Fix: compare-days chart was off by one hour.** `eventDayPacingSeries` plotted
+  each hour bucket at the hour's *start* while holding the cumulative through the
+  hour's *end*, so a 9:37 sale read as "₱1,200 at 9 AM". Points now sit on the
+  clock-hour mark they actually represent (cumulative *by* that mark, inclusive), so
+  the 9:37 sale correctly reads "₱0 by 9 AM, ₱1,200 by 10 AM"; a day starts from a
+  ₱0 baseline and off-hour last sales are rounded up so the day total is never
+  dropped. Added a regression test for the off-hour case (the gap that hid this).
+- **Feat: Transactions tab in the drawer nav.** New "Transactions" entry under
+  Overview (between Offline Sales and Events, `ReceiptText` icon) linking to the
+  ALL TRANSACTIONS list at `/offline-sales/orders`. Added to the mobile "More" sheet
+  too, and the active-state carve-out so Offline Sales / Transactions / Events don't
+  all highlight at once.
+
 ## 2026-09-25 — v1.3.2: drop redundant "so far" in compare tooltip — `chore(release)`
 
 **Version bumped to 1.3.2** (patch; was 1.3.1). Follow-up to 1.3.1: the per-day

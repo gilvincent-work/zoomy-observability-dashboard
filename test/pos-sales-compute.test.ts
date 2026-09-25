@@ -897,13 +897,27 @@ describe('eventDayPacingSeries', () => {
   it('gives each day an hourly running total, aligned by clock hour, resetting daily', () => {
     const {days, rows} = eventDayPacingSeries(orders);
     expect(days).toEqual(['2026-09-11', '2026-09-12']);
-    // One row per clock hour 10:00–12:00 (tod = hour*60). Each holds the total
-    // through that hour's end; Sep 11 holds 100 at 11:00 (no 11:00 sale), Sep 12
-    // is null at 12:00 (past its last sale hour of 11:00).
+    // One row per clock-hour mark 10:00–12:00 (tod = hour*60). Each holds the total
+    // BY that mark (inclusive); these sales all land exactly on the hour, so the
+    // values match their marks. Sep 11 holds 100 at 11:00 (no 11:00 sale), Sep 12
+    // is null at 12:00 (past its last sale mark of 11:00).
     expect(rows).toEqual([
       {tod: 600, '2026-09-11': 100, '2026-09-12': 200},
       {tod: 660, '2026-09-11': 100, '2026-09-12': 260},
       {tod: 720, '2026-09-11': 150, '2026-09-12': null},
+    ]);
+  });
+
+  it('attributes an off-hour sale to the next clock mark, with a ₱0 baseline', () => {
+    // A single 9:37 sale of 1,200 must read "₱0 by 9 AM, ₱1,200 by 10 AM" — not
+    // ₱1,200 sitting on the 9 AM mark (the bug this guards against).
+    const {days, rows} = eventDayPacingSeries([
+      order({id: 'x', created_at: '2026-09-11T01:37:00.000Z', total: 1200}), // 09:37 Manila
+    ]);
+    expect(days).toEqual(['2026-09-11']);
+    expect(rows).toEqual([
+      {tod: 540, '2026-09-11': 0}, // 9 AM: nothing yet
+      {tod: 600, '2026-09-11': 1200}, // 10 AM: the 9:37 sale so far
     ]);
   });
 
