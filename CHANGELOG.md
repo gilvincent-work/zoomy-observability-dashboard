@@ -12,6 +12,34 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-25 — v1.3.1: sales-analytics refinements to prod — `chore(release)`
+
+**Version bumped to 1.3.1** (patch; was 1.3.0). Ships the analytics refinements
+below (low-end sort, event Top-seller toggles, clearer compare chart). UI-only, no
+schema/data change; promoted `develop → staging → main`. POS stays at 1.2.4.
+
+## 2026-09-25 — Sales analytics: low-end sort, event toggles, clearer compare chart — `feat(offline-sales)`
+
+Three refinements to the offline-sales analytics, driven by owner feedback:
+
+- **Revenue/Units + Top/Bottom on the Events "Top sellers".** The per-event
+  analytics (`event-analytics.tsx`) gains the same Revenue/Units metric toggle the
+  main "Top products" card already had, plus a new **Top/Bottom** toggle to surface
+  the lowest sellers ("kulelat"). The list ranks the full product set and slices the
+  top or bottom 5; the header retitles to "Lowest sellers" in Bottom mode.
+- **Low-end sort on the main Top products too.** Same Top/Bottom control added to
+  the Offline Sales overview card for consistency. The page now passes the full
+  ranked product lists (was top-5 only) so the client can show either end. The
+  bundle reconciliation footer ("matching Revenue above") shows only in the Top view,
+  since it's a whole-of-total note.
+- **Clearer "Compare days" chart.** The per-day lines are cumulative running totals,
+  but the Y-axis said the ambiguous "Revenue that day". Renamed to **"Cumulative
+  revenue"** (matching the Combined chart), the tooltip now reads **"By 9 AM"** with
+  **"₱1,200 so far"** per day, and a one-line caption explains the lines are running
+  totals from the day's open. No data/logic change, wording only.
+- **New shared `SegmentedControl`** (`segmented-control.tsx`) dedupes the pill toggle
+  markup now used across both cards.
+
 ## 2026-09-24 — v1.3.0: staging bundle to prod (Next 16 · PWA · mobile · perf) — `chore(release)`
 
 **Version bumped to 1.3.0** (was 1.2.6). First *minor* since 1.2.0 — not a

@@ -10,6 +10,7 @@ import {cn} from '@/lib/utils';
 import type {SpinLead} from '@/src/spin-leads-types';
 import {leadsInDays} from '@/src/spin-leads-types';
 import {LeadCapture} from './lead-capture';
+import {SegmentedControl} from './segmented-control';
 
 const PET_SEGMENTS: {key: keyof PetMix; label: string; color: string}[] = [
   {key: 'dog', label: 'Dog', color: '#3b82f6'},
@@ -71,7 +72,10 @@ export function EventAnalytics({event, orders, leads}: {event: PosEvent; orders:
   const kpis = useMemo(() => computeKpis(scoped), [scoped]);
   const pay = useMemo(() => paymentBreakdown(scoped), [scoped]);
   const pets = useMemo(() => petMix(scoped), [scoped]);
-  const tops = useMemo(() => topProducts(scoped, 5), [scoped]);
+  // Full ranked product lists (high→low) for both metrics; the Top sellers block
+  // slices top/bottom 5 from these based on its own toggles.
+  const topsByRevenue = useMemo(() => topProducts(scoped, Infinity, 'revenue'), [scoped]);
+  const topsByUnits = useMemo(() => topProducts(scoped, Infinity, 'units'), [scoped]);
   const bundles = useMemo(() => bundleSalesSummary(scoped), [scoped]);
   // When one day is selected the x-axis is intra-day (time only); across all
   // days of a multi-day event it also carries the date.
@@ -115,7 +119,8 @@ export function EventAnalytics({event, orders, leads}: {event: PosEvent; orders:
           payTotal={payTotal}
           pets={pets}
           petTotal={petTotal}
-          tops={tops}
+          topsByRevenue={topsByRevenue}
+          topsByUnits={topsByUnits}
           bundles={bundles}
         />
       )}
@@ -188,11 +193,32 @@ type AnalyticsBodyProps = {
   payTotal: number;
   pets: PetMix;
   petTotal: number;
-  tops: TopProduct[];
+  topsByRevenue: TopProduct[];
+  topsByUnits: TopProduct[];
   bundles: BundleSalesSummary;
 };
 
-function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare, compare, onCompareChange, pay, payTotal, pets, petTotal, tops, bundles}: AnalyticsBodyProps) {
+const METRIC_OPTIONS = [
+  {value: 'revenue', label: 'Revenue'},
+  {value: 'units', label: 'Units'},
+] as const;
+const DIRECTION_OPTIONS = [
+  {value: 'top', label: 'Top'},
+  {value: 'bottom', label: 'Bottom'},
+] as const;
+const SELLERS_LIMIT = 5;
+
+function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare, compare, onCompareChange, pay, payTotal, pets, petTotal, topsByRevenue, topsByUnits, bundles}: AnalyticsBodyProps) {
+  // Top sellers controls: metric (Revenue/Units) and direction (best vs lowest,
+  // i.e. "kulelat"). State lives here so it survives day-scope changes above.
+  const [metric, setMetric] = useState<'revenue' | 'units'>('revenue');
+  const [direction, setDirection] = useState<'top' | 'bottom'>('top');
+  const isTop = direction === 'top';
+  const ranked = metric === 'revenue' ? topsByRevenue : topsByUnits;
+  const topRows = isTop ? ranked.slice(0, SELLERS_LIMIT) : ranked.slice(-SELLERS_LIMIT).reverse();
+  // The bundle reconciliation is a whole-of-total note, so keep it with the
+  // best-sellers view only, not the lowest.
+  const showBundleReconcile = isTop && bundles.bundleRevenue > 0;
   return (
     <div className="flex flex-col gap-7">
       {/* Headline KPIs */}
@@ -259,11 +285,19 @@ function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare
       </div>
 
       {/* Top sellers */}
-      {(tops.length > 0 || bundles.bundleRevenue > 0) && (
+      {(topsByRevenue.length > 0 || bundles.bundleRevenue > 0) && (
         <div>
-          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Top sellers</div>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {isTop ? 'Top sellers' : 'Lowest sellers'}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <SegmentedControl ariaLabel="Rank by" options={METRIC_OPTIONS} value={metric} onChange={setMetric} />
+              <SegmentedControl ariaLabel="Show best or lowest" options={DIRECTION_OPTIONS} value={direction} onChange={setDirection} />
+            </div>
+          </div>
           <ol className="flex flex-col gap-2.5">
-            {tops.map((t, i) => {
+            {topRows.map((t, i) => {
               const individual = t.units - t.bundledUnits;
               return (
                 <li key={t.product_id ?? `${t.name}-${i}`} className="flex items-start gap-2.5 text-sm">
@@ -276,14 +310,14 @@ function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare
                       </span>
                     )}
                   </span>
-                  <span className="pt-0.5 text-xs tabular-nums text-muted-foreground">{t.units} {t.units === 1 ? 'unit' : 'units'}</span>
-                  <span className="w-20 pt-0.5 text-right font-medium tabular-nums">{formatPeso(t.revenue)}</span>
+                  <span className={cn('pt-0.5 text-xs tabular-nums', metric === 'units' ? 'font-medium text-foreground' : 'text-muted-foreground')}>{t.units} {t.units === 1 ? 'unit' : 'units'}</span>
+                  <span className={cn('w-20 pt-0.5 text-right tabular-nums', metric === 'revenue' ? 'font-medium text-foreground' : 'text-muted-foreground')}>{formatPeso(t.revenue)}</span>
                 </li>
               );
             })}
           </ol>
 
-          {bundles.bundleRevenue > 0 && (
+          {showBundleReconcile && (
             <div className="mt-2.5 flex flex-col gap-2.5">
               <div className="h-px w-full bg-border" />
               <div className="flex items-center gap-2.5 text-sm">
