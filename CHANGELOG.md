@@ -12,6 +12,12 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-25 — v1.3.2: drop redundant "so far" in compare tooltip — `chore(release)`
+
+**Version bumped to 1.3.2** (patch; was 1.3.1). Follow-up to 1.3.1: the per-day
+"Compare days" tooltip dropped the trailing "so far" on each row — the "By 9 AM"
+header and the running-total caption already convey it. Wording-only.
+
 ## 2026-09-25 — v1.3.1: sales-analytics refinements to prod — `chore(release)`
 
 **Version bumped to 1.3.1** (patch; was 1.3.0). Ships the analytics refinements

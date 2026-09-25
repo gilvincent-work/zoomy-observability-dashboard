@@ -102,10 +102,7 @@ function DayPacingChart({pacing}: {pacing: DayPacingSeries}) {
                         <div key={String(p.dataKey)} className="flex items-center gap-2 tabular-nums">
                           <span className="size-2 rounded-[3px]" style={{backgroundColor: s.stroke, opacity: s.opacity}} />
                           <span className={cn(latest ? 'text-foreground' : 'text-muted-foreground')}>{dayShort(String(p.dataKey))}</span>
-                          <span className="ml-auto">
-                            <span className="font-medium">{formatPeso(Number(p.value))}</span>
-                            <span className="ml-1 text-muted-foreground">so far</span>
-                          </span>
+                          <span className="ml-auto font-medium">{formatPeso(Number(p.value))}</span>
                         </div>
                       );
                     })}
