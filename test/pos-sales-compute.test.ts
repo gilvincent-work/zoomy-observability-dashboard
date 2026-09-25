@@ -921,6 +921,42 @@ describe('eventDayPacingSeries', () => {
     ]);
   });
 
+  it('spans a completed day across the full window: 0 before its first sale, total after its last', () => {
+    // Sep 11 (completed, earlier day) sells 11:00 → 12:00; Sep 12 (latest) sells
+    // 10:00 → 13:00 and defines the window. Sep 11 must read 0 at the 10 AM edge
+    // (before its first sale) and hold its 150 total out to the 1 PM edge.
+    const {rows} = eventDayPacingSeries([
+      order({id: 'a', created_at: '2026-09-11T03:00:00.000Z', total: 100}), // 11:00
+      order({id: 'b', created_at: '2026-09-11T04:00:00.000Z', total: 50}), // 12:00 → 150
+      order({id: 'c', created_at: '2026-09-12T02:00:00.000Z', total: 200}), // 10:00
+      order({id: 'd', created_at: '2026-09-12T05:00:00.000Z', total: 60}), // 13:00 → 260
+    ]);
+    expect(rows).toEqual([
+      {tod: 600, '2026-09-11': 0, '2026-09-12': 200}, // 10 AM: Sep 11 baseline
+      {tod: 660, '2026-09-11': 100, '2026-09-12': 200},
+      {tod: 720, '2026-09-11': 150, '2026-09-12': 200},
+      {tod: 780, '2026-09-11': 150, '2026-09-12': 260}, // 1 PM: Sep 11 holds its total
+    ]);
+  });
+
+  it('never flat-lines the latest (maybe in-progress) day past its last sale', () => {
+    // Sep 11 (completed) runs 10:00 → 13:00; Sep 12 (latest) stops at 11:00. Sep 12
+    // must go null after 11:00 rather than holding its total, so it isn't drawn as
+    // if it kept selling.
+    const {rows} = eventDayPacingSeries([
+      order({id: 'a', created_at: '2026-09-11T02:00:00.000Z', total: 100}), // 10:00
+      order({id: 'b', created_at: '2026-09-11T05:00:00.000Z', total: 50}), // 13:00 → 150
+      order({id: 'c', created_at: '2026-09-12T02:00:00.000Z', total: 200}), // 10:00
+      order({id: 'd', created_at: '2026-09-12T03:00:00.000Z', total: 60}), // 11:00 → 260
+    ]);
+    expect(rows).toEqual([
+      {tod: 600, '2026-09-11': 100, '2026-09-12': 200},
+      {tod: 660, '2026-09-11': 100, '2026-09-12': 260},
+      {tod: 720, '2026-09-11': 100, '2026-09-12': null}, // Sep 12 stops, Sep 11 continues
+      {tod: 780, '2026-09-11': 150, '2026-09-12': null},
+    ]);
+  });
+
   it('is empty when there are no (non-voided) orders', () => {
     expect(eventDayPacingSeries([])).toEqual({days: [], rows: []});
   });
