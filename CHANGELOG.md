@@ -12,6 +12,56 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-24 — v1.3.0: staging bundle to prod (Next 16 · PWA · mobile · perf) — `chore(release)`
+
+**Version bumped to 1.3.0** (was 1.2.6). First *minor* since 1.2.0 — not a
+single-feature patch but the whole staging line promoted to prod in one cut-over:
+a framework major plus several new capability surfaces. Dashboard-only; **POS
+unchanged at 1.2.3**.
+
+**Why a clean minor, and why now.** Prod (`main`) had drifted: our co-worker
+merged his Lazada + Customers hub + website-CRM work *straight onto the old
+Next-14 `main`* (PRs #65–68) without a version bump, while our entire staging
+line moved to Next 16. Rather than backfill a throwaway version for that
+out-of-band drop, this release supersedes it — `main` fast-forwards to `staging`,
+which already carries his features **re-integrated onto Next 16** (`99fe5c8`), so
+the two lines reconcile in one move. `origin/main` is an ancestor of
+`origin/staging`, so the promotion is a clean fast-forward — no conflicts.
+
+Rolls up everything since 1.2.6:
+
+- **Next.js 14 → 16 major upgrade** — clears the outstanding critical/high
+  advisories; paired with an `npm audit` pass (js-yaml, qs). Validated on staging
+  (typecheck clean, build 19/19 pages).
+- **PWA** — installable manifest + `next/og` icons, Serwist service worker
+  (static-shell precache only).
+- **Mobile-responsive overhaul** — responsive app shell (bottom tab bar + "More"
+  sheet below `md`), tables→cards for Inventory and CRM, per-page padding/chart-height
+  passes (offline-sales, inventory/home, repricer, Business Health phase 1 + 2),
+  Ask-coop FAB hidden below `md`, and the mobile treatment of the merged
+  Lazada/Customers hub.
+- **Performance** — Recharts code-split off four route groups (overview/tabs,
+  offline sales, event analytics, Business Health), Newsreader trimmed to weight
+  400, digest read cached (`unstable_cache`, revalidate 300), splash once-per-session
+  + fast content reveal.
+- **Customers hub (reconciled)** — Lazada exports, Spin-the-wheel leads, and the
+  website-CRM proxy unified under one Customers tab with real data (no more mock),
+  now riding the Next-16 base.
+
+**Prod DB — already in place, nothing applied this release.** The tables the
+bundle reads (`lazada_orders` 584 rows, `lazada_uploads` 1, `spin_wheel_leads`
+113) were created on prod (`qkxbwzdxhwcbwgriwipi`) during the co-worker's earlier
+drop; verified present before cut-over. Website CRM is a live proxy over the CRM
+Worker (no table). This promotion is code-only.
+
+**Deploy trigger sits with the co-worker.** The prod Vercel project is his, not
+ours — `main` is pushed here, but he owns the deploy and must be looped in given
+this is a framework major. Pre-deploy checks on his side: the CRM Worker URL env
+var is set (his Lazada/CRM drop already needed it) and `SUPABASE_URL_ARCHIVE`
+still points at prod.
+
+---
+
 ## 2026-09-21 — Mobile responsive, phase 2 · Business Health — `feat(mobile)`
 
 Closes the health-view items deferred earlier. All `max-md:`-only; desktop
