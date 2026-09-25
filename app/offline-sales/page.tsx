@@ -55,8 +55,8 @@ export default async function Page(props: {searchParams: Promise<{range?: string
       progress={progress}
       featured={featured}
       kpis={computeKpis(orders)}
-      top={topProducts(orders)}
-      topByUnits={topProducts(orders, 5, 'units')}
+      productsByRevenue={topProducts(orders, Infinity, 'revenue')}
+      productsByUnits={topProducts(orders, Infinity, 'units')}
       topBundles={topBundles(orders)}
       bundles={bundleSalesSummary(orders)}
       orders={orders}

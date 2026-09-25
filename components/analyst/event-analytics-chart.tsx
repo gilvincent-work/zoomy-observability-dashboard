@@ -82,7 +82,7 @@ function DayPacingChart({pacing}: {pacing: DayPacingSeries}) {
             fontSize={10}
             domain={[0, 'dataMax']}
             tickFormatter={(v) => pesoTick(Number(v))}
-            label={{value: 'Revenue that day', angle: -90, position: 'insideLeft', offset: 2, style: {...axisLabelStyle, textAnchor: 'middle'}}}
+            label={{value: 'Cumulative revenue', angle: -90, position: 'insideLeft', offset: 2, style: {...axisLabelStyle, textAnchor: 'middle'}}}
           />
           <ChartTooltip
             cursor={{stroke: 'var(--muted-foreground)', strokeOpacity: 0.3}}
@@ -92,7 +92,7 @@ function DayPacingChart({pacing}: {pacing: DayPacingSeries}) {
               if (!entries.length) return null;
               return (
                 <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md">
-                  <div className="mb-1 text-muted-foreground">{todLabel(Number(label))}</div>
+                  <div className="mb-1 text-muted-foreground">By {todLabel(Number(label))}</div>
                   <div className="flex flex-col gap-1">
                     {entries.map((p) => {
                       const i = days.indexOf(String(p.dataKey));
@@ -102,7 +102,10 @@ function DayPacingChart({pacing}: {pacing: DayPacingSeries}) {
                         <div key={String(p.dataKey)} className="flex items-center gap-2 tabular-nums">
                           <span className="size-2 rounded-[3px]" style={{backgroundColor: s.stroke, opacity: s.opacity}} />
                           <span className={cn(latest ? 'text-foreground' : 'text-muted-foreground')}>{dayShort(String(p.dataKey))}</span>
-                          <span className="ml-auto font-medium">{formatPeso(Number(p.value))}</span>
+                          <span className="ml-auto">
+                            <span className="font-medium">{formatPeso(Number(p.value))}</span>
+                            <span className="ml-1 text-muted-foreground">so far</span>
+                          </span>
                         </div>
                       );
                     })}
@@ -143,6 +146,9 @@ function DayPacingChart({pacing}: {pacing: DayPacingSeries}) {
           );
         })}
       </ul>
+      <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+        Each line is a running total from that day&rsquo;s open, so you can see which day was pacing ahead at the same time of day.
+      </p>
     </>
   );
 }

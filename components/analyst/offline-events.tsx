@@ -250,15 +250,17 @@ function EventCard({rollup, orders: eventOrders, leads, spotlight, onEdit}: {rol
               <EventAnalytics event={event} orders={eventOrders} leads={leads} />
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
-            {open ? 'Hide analytics' : 'Show analytics'}
-          </button>
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              className="group inline-flex items-center gap-2 rounded-full border bg-background/60 px-4 py-2 text-xs font-medium text-muted-foreground transition-colors duration-150 ease-out hover:border-foreground/25 hover:bg-muted hover:text-foreground active:scale-[0.98]"
+            >
+              {open ? 'Hide analytics' : 'Show analytics'}
+              <ChevronDown className={cn('size-3.5 transition-transform duration-200 ease-out', open && 'rotate-180')} />
+            </button>
+          </div>
         </div>
       </CardContent>
     </Card>
