@@ -1,17 +1,29 @@
 'use client';
 
-import {useMemo, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, CalendarDays, ChevronDown, MapPin, Pencil, Plus, Store} from 'lucide-react';
+import {ArrowLeft, CalendarDays, ChevronDown, MapPin, Pencil, Plus, Search, Store, X} from 'lucide-react';
 import type {EventRollup, PosOrder} from '@/src/pos-sales-types';
 import type {SpinLead} from '@/src/spin-leads-types';
 import {formatPeso} from '@/src/pos-format';
+import {
+  EVENT_SORT_OPTIONS,
+  EVENT_WHEN_FILTERS,
+  eventTimeState,
+  filterAndSortEvents,
+  type EventSort,
+  type EventWhen,
+} from '@/src/pos-sales-compute';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Eyebrow, MockNote} from './sections';
 import {RefreshControl} from './refresh-control';
+import {SegmentedControl} from './segmented-control';
+import {Pagination} from './pagination';
 import {EventForm} from './event-form';
 import {EventAnalytics} from './event-analytics';
+
+const EVENTS_PER_PAGE = 6;
 
 /** "2026-09-14" → "Sep 14, 2026". */
 function dayLabel(iso: string | null): string | null {
@@ -36,6 +48,7 @@ export function OfflineEventsView({
   orders,
   leads,
   currentEventId,
+  todayKey,
   usingMock,
   fetchedAt,
 }: {
@@ -43,11 +56,21 @@ export function OfflineEventsView({
   orders: PosOrder[];
   leads: SpinLead[];
   currentEventId: string | null;
+  todayKey: string;
   usingMock: boolean;
   fetchedAt: string;
 }) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Search + time bucket + sort + page, all client-side (see filterAndSortEvents):
+  // the list is modest and each card computes its own analytics, so a server-
+  // paginated slice would starve those. Any result-set change snaps back to page 1.
+  const [query, setQuery] = useState('');
+  const [when, setWhen] = useState<EventWhen>('all');
+  const [sort, setSort] = useState<EventSort>('recent');
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [query, when, sort]);
 
   // Orders bucketed by event, so each card computes its analytics from its own.
   const ordersByEvent = useMemo(() => {
@@ -61,16 +84,24 @@ export function OfflineEventsView({
     return m;
   }, [orders]);
 
-  // The live event floats to the top; the rest keep their date order.
-  const ordered = useMemo(() => {
-    if (!currentEventId) return rollups;
-    const current = rollups.filter((r) => r.event.event_id === currentEventId);
-    const rest = rollups.filter((r) => r.event.event_id !== currentEventId);
-    return [...current, ...rest];
-  }, [rollups, currentEventId]);
-
   // Every event, for the form's live overlap check.
   const allEvents = useMemo(() => rollups.map((r) => r.event), [rollups]);
+
+  // Filter + sort, then pin the live event to the very top so it stays on page 1.
+  const ordered = useMemo(() => {
+    const list = filterAndSortEvents(rollups, {query, when, sort}, todayKey);
+    if (!currentEventId) return list;
+    const idx = list.findIndex((r) => r.event.event_id === currentEventId);
+    if (idx <= 0) return list;
+    return [list[idx], ...list.slice(0, idx), ...list.slice(idx + 1)];
+  }, [rollups, query, when, sort, todayKey, currentEventId]);
+
+  const total = rollups.length;
+  const matches = ordered.length;
+  const pageCount = Math.max(1, Math.ceil(matches / EVENTS_PER_PAGE));
+  const safePage = Math.min(page, pageCount);
+  const pageItems = ordered.slice((safePage - 1) * EVENTS_PER_PAGE, safePage * EVENTS_PER_PAGE);
+  const filtering = query.trim() !== '' || when !== 'all';
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10 max-md:px-4 max-md:py-6">
@@ -109,7 +140,7 @@ export function OfflineEventsView({
         </div>
       )}
 
-      {rollups.length === 0 && !creating ? (
+      {total === 0 && !creating ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             No events yet. Use &ldquo;New event&rdquo; to schedule a bazaar with its dates, location, and opening cash. Its
@@ -117,30 +148,130 @@ export function OfflineEventsView({
           </CardContent>
         </Card>
       ) : (
-        <div className="flex flex-col gap-3">
-          {ordered.map((r) =>
-            editingId === r.event.event_id ? (
-              <EventForm key={r.event.event_id} initial={r.event} events={allEvents} onDone={() => setEditingId(null)} />
-            ) : (
-              <EventCard
-                key={r.event.event_id}
-                rollup={r}
-                orders={ordersByEvent.get(r.event.event_id) ?? []}
-                leads={leads}
-                spotlight={r.event.event_id === currentEventId}
-                onEdit={() => { setCreating(false); setEditingId(r.event.event_id); }}
-              />
-            ),
+        <>
+          {total > 0 && (
+            <EventsToolbar
+              query={query}
+              onQuery={setQuery}
+              when={when}
+              onWhen={setWhen}
+              sort={sort}
+              onSort={setSort}
+            />
           )}
-        </div>
+
+          {total > 0 && (
+            <p className="mb-3 text-xs text-muted-foreground">
+              {filtering ? `${matches} of ${total} ${total === 1 ? 'event' : 'events'}` : `${total} ${total === 1 ? 'event' : 'events'}`}
+            </p>
+          )}
+
+          {matches === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-3 py-10 text-center text-sm text-muted-foreground">
+                No events match your search.
+                <button
+                  type="button"
+                  onClick={() => { setQuery(''); setWhen('all'); }}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-opacity hover:opacity-80"
+                >
+                  <X className="size-3.5" /> Clear filters
+                </button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pageItems.map((r) =>
+                editingId === r.event.event_id ? (
+                  <EventForm key={r.event.event_id} initial={r.event} events={allEvents} onDone={() => setEditingId(null)} />
+                ) : (
+                  <EventCard
+                    key={r.event.event_id}
+                    rollup={r}
+                    orders={ordersByEvent.get(r.event.event_id) ?? []}
+                    leads={leads}
+                    todayKey={todayKey}
+                    spotlight={r.event.event_id === currentEventId}
+                    onEdit={() => { setCreating(false); setEditingId(r.event.event_id); }}
+                  />
+                ),
+              )}
+            </div>
+          )}
+
+          <Pagination page={safePage} pageCount={pageCount} onPage={setPage} className="mt-6" />
+        </>
       )}
     </div>
   );
 }
 
-function EventCard({rollup, orders: eventOrders, leads, spotlight, onEdit}: {rollup: EventRollup; orders: PosOrder[]; leads: SpinLead[]; spotlight: boolean; onEdit: () => void}) {
+/** Search box + When/Sort segmented controls above the event list. */
+function EventsToolbar({
+  query,
+  onQuery,
+  when,
+  onWhen,
+  sort,
+  onSort,
+}: {
+  query: string;
+  onQuery: (v: string) => void;
+  when: EventWhen;
+  onWhen: (v: EventWhen) => void;
+  sort: EventSort;
+  onSort: (v: EventSort) => void;
+}) {
+  return (
+    <div className="mb-4 flex flex-col gap-3">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="Search events by name, venue, or city"
+          aria-label="Search events"
+          className="h-10 w-full rounded-lg border bg-background pl-9 pr-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring/40"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => onQuery('')}
+            aria-label="Clear search"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground active:scale-95"
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <ToolbarGroup label="When">
+          <SegmentedControl ariaLabel="Filter by when" options={EVENT_WHEN_FILTERS} value={when} onChange={onWhen} />
+        </ToolbarGroup>
+        <ToolbarGroup label="Sort">
+          <SegmentedControl ariaLabel="Sort events" options={EVENT_SORT_OPTIONS} value={sort} onChange={onSort} />
+        </ToolbarGroup>
+      </div>
+    </div>
+  );
+}
+
+function ToolbarGroup({label, children}: {label: string; children: React.ReactNode}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function EventCard({rollup, orders: eventOrders, leads, todayKey, spotlight, onEdit}: {rollup: EventRollup; orders: PosOrder[]; leads: SpinLead[]; todayKey: string; spotlight: boolean; onEdit: () => void}) {
   const {event, revenue, orders, cashSales, expectedCash} = rollup;
   const closed = event.status === 'closed';
+  // Status badge is time-derived, not the raw status field: a past bazaar should
+  // read "Done", never a misleading "Active". ongoing = happening now, past = done.
+  const timeState = eventTimeState(event, todayKey);
   const dates = eventDates(event.starts_on, event.ends_on);
   const place = [event.venue, event.city].filter(Boolean).join(', ');
   // Over/short once the till is counted: counted closing_cash vs expected.
@@ -155,22 +286,20 @@ function EventCard({rollup, orders: eventOrders, leads, spotlight, onEdit}: {rol
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-semibold tracking-tight">{event.name || 'Untitled event'}</h3>
-              {spotlight ? (
+              {timeState === 'ongoing' ? (
                 <span
                   className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300"
                   style={{backgroundColor: 'color-mix(in oklab, var(--status-good) 14%, transparent)'}}
                 >
                   <span className="size-1.5 rounded-full bg-[var(--status-good)]" aria-hidden /> Happening now
                 </span>
+              ) : timeState === 'upcoming' ? (
+                <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Upcoming
+                </span>
               ) : (
-                <span
-                  className={cn(
-                    'inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide',
-                    closed ? 'bg-muted text-muted-foreground' : 'text-emerald-700 dark:text-emerald-300',
-                  )}
-                  style={closed ? undefined : {backgroundColor: 'color-mix(in oklab, var(--status-good) 14%, transparent)'}}
-                >
-                  {closed ? 'Closed' : 'Active'}
+                <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Done
                 </span>
               )}
             </div>
