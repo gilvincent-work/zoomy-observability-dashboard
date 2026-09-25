@@ -12,6 +12,23 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-26 — v1.3.6: Events search + filters + pagination, clearer status — `feat(events)`
+
+**Version bumped to 1.3.6** (patch; was 1.3.5). The Events page grew long as offline
+events accumulated, so it now has a proper browse toolbar and clearer status:
+
+- **Search** across event name, venue, city, and organizer (case-insensitive).
+- **When filter** (All / Upcoming / Happening / Done) and **Sort** (Recent / Oldest /
+  Top ₱), as segmented pills matching the house style.
+- **Pagination** at 6 events per page (client-side — each card computes its own
+  analytics, so a server slice would starve them). The live event stays pinned to
+  the top of page 1; the result count and an empty "no matches" state round it out.
+- **Status badge is now time-derived, not the raw `status` field.** A past bazaar
+  read a misleading "Active"; it now reads **"Done" in grey**. States are Happening
+  now (green), Upcoming (outlined), and Done (grey).
+- New pure helpers `eventTimeState` / `eventMatchesQuery` / `filterAndSortEvents`
+  (unit-tested) drive both the filter and the badge.
+
 ## 2026-09-26 — v1.3.5: full-width compare-days lines — `feat(offline-sales)`
 
 **Version bumped to 1.3.5** (patch; was 1.3.4). In the "Compare days" chart, a day
