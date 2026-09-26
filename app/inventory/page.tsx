@@ -4,6 +4,8 @@ import {getBrief} from '@/src/salesSignals';
 import {pickIndex} from '@/src/week';
 import {getPosBundles} from '@/src/pos-data';
 import {getInventoryPageData} from '@/src/pos-inventory-data';
+import {getLocationStock} from '@/src/pos-location-data';
+import {getFreeTasteSummary} from '@/src/pos-free-taste-data';
 import {cn} from '@/lib/utils';
 import {InventoryTab} from '@/components/analyst/tabs';
 import {InventoryView} from '@/components/analyst/inventory-view';
@@ -27,8 +29,13 @@ export default async function Page(
   }
   const tab = searchParams.tab === 'summary' ? 'summary' : searchParams.tab === 'bundles' ? 'bundles' : 'all';
   const venue = searchParams.venue ?? 'all';
-  const [data, bundles] = await Promise.all([getInventoryPageData(venue), getPosBundles()]);
-  return <InventoryView data={data} bundles={bundles} tab={tab} channel="offline" venue={data.activeVenue} />;
+  const [data, bundles, locations, sampling] = await Promise.all([
+    getInventoryPageData(venue),
+    getPosBundles(),
+    getLocationStock().catch(() => []),
+    getFreeTasteSummary().catch(() => ({windowDays: 30, totalUnits: 0, totalCount: 0, oversoldCount: 0, byProduct: []})),
+  ]);
+  return <InventoryView data={data} bundles={bundles} tab={tab} channel="offline" venue={data.activeVenue} locations={locations} sampling={sampling} />;
 }
 
 // D13: the Online scope KEEPS the existing marketplace analytics (digest-driven
