@@ -10,7 +10,7 @@
 
 import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
-import {Check, ChevronsUpDown, Search} from 'lucide-react';
+import {Check, ChevronsUpDown, Search, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 
 export interface SearchableOption {
@@ -181,6 +181,17 @@ function SearchablePanel({
         />
       </div>
       <ul className="max-h-60 overflow-y-auto py-1">
+        {value && !q && (
+          <li>
+            <button
+              type="button"
+              onClick={() => onPick('')}
+              className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5 shrink-0" /> Clear selection
+            </button>
+          </li>
+        )}
         {filtered.length === 0 ? (
           <li className="px-3 py-2 text-sm text-muted-foreground">No matches.</li>
         ) : (
