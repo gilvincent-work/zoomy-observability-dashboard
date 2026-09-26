@@ -10,21 +10,26 @@ import {useState, useTransition} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
-import {Package, Plus, X} from 'lucide-react';
+import {Dog, Package, Plus, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {POS_CATEGORIES} from '@/src/pos-format';
 import {createProductAction} from '@/src/pos-actions';
 import {AddStockButton} from './add-stock-button';
+import {TransferStockButton} from './transfer-stock-button';
+import {FreeTasteButton} from './free-taste-button';
 import {InventoryTable} from './inventory-table';
 import {InventorySummary} from './inventory-summary';
 import {BundleControls} from './bundle-controls';
 import type {InventoryPageData} from '@/src/pos-inventory-data';
+import type {LocationStockRow} from '@/src/pos-location-data';
+import type {FreeTasteSummary} from '@/src/pos-free-taste-data';
 import type {PosBundleRow} from '@/src/pos-types';
 
 type Tab = 'all' | 'bundles' | 'summary';
 
-export function InventoryView({data, bundles, tab, channel, venue}: {
+export function InventoryView({data, bundles, tab, channel, venue, locations, sampling}: {
   data: InventoryPageData; bundles: PosBundleRow[]; tab: Tab; channel: string; venue: string;
+  locations: LocationStockRow[]; sampling: FreeTasteSummary;
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -42,6 +47,15 @@ export function InventoryView({data, bundles, tab, channel, venue}: {
 
   const intake = data.rows.map((r) => ({product_id: r.product_id, name: r.name, stock: r.stock}));
 
+  // Per-location on-hand for the transfer modal + the toolbar Office/Event totals.
+  const locById = new Map(locations.map((l) => [l.product_id, l]));
+  const transferProducts = data.rows.map((r) => {
+    const l = locById.get(r.product_id);
+    return {product_id: r.product_id, name: r.name, office: l?.office ?? 0, event: l?.event ?? 0};
+  });
+  const officeTotal = locations.reduce((s, l) => s + l.office, 0);
+  const eventTotal = locations.reduce((s, l) => s + l.event, 0);
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 max-md:px-4 max-md:py-6">
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
@@ -55,12 +69,19 @@ export function InventoryView({data, bundles, tab, channel, venue}: {
               <ChannelLink href={href({channel: 'offline'})} active={channel === 'offline'}>Stratpoint <span className="font-mono text-[9px] opacity-70">offline</span></ChannelLink>
               <ChannelLink href={href({channel: 'online'})} active={false}>BoxMe <span className="font-mono text-[9px] opacity-70">online</span></ChannelLink>
             </div>
+            <div className="inline-flex items-center gap-2 rounded-md border bg-background px-2.5 py-1 font-mono text-[10px] text-muted-foreground">
+              <span><span className="text-foreground">Office</span> <span className="tabular-nums">{officeTotal}</span></span>
+              <span aria-hidden className="opacity-40">·</span>
+              <span><span className="text-foreground">Event</span> <span className="tabular-nums">{eventTotal}</span></span>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setCreating(true)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
             <Plus className="size-3.5" /> New product
           </button>
+          <TransferStockButton products={transferProducts} />
+          <FreeTasteButton products={transferProducts} />
           <AddStockButton products={intake} />
         </div>
       </header>
@@ -81,6 +102,33 @@ export function InventoryView({data, bundles, tab, channel, venue}: {
               {data.venues.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
             </select>
           </label>
+        </div>
+      )}
+
+      {tab === 'all' && sampling.totalCount > 0 && (
+        <div className="mb-4 rounded-xl border bg-card p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <Dog className="size-3.5" /> Sampling · last {sampling.windowDays} days
+            </span>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              <span className="tabular-nums text-foreground">{sampling.totalUnits}</span> units ·{' '}
+              <span className="tabular-nums">{sampling.totalCount}</span> logged
+              {sampling.oversoldCount > 0 && (
+                <> · <span className="tabular-nums text-amber-600 dark:text-amber-400">{sampling.oversoldCount}</span> vs low stock</>
+              )}
+            </span>
+          </div>
+          {sampling.byProduct.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {sampling.byProduct.slice(0, 6).map((p) => (
+                <span key={p.product_id} className="inline-flex items-baseline gap-1.5 rounded-md border bg-background px-2 py-1 text-xs">
+                  <span className="text-foreground">{p.name}</span>
+                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{p.units}</span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
