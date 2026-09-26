@@ -12,6 +12,26 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-26 — Inventory UX polish: searchable pickers, Move Stock row action, column reorder — `feat(inventory)`
+
+Usability follow-ups on the inventory + giveaway surfaces.
+
+- **Searchable dropdowns.** New reusable `SearchableSelect` combobox (type to
+  filter) replaces the long native `<select>` product/order pickers in Move stock,
+  Log free taste, and the Prizes backfill (order + product).
+- **Per-row "Move Stock".** The row menu's "Add to Office" is now **Move Stock**,
+  opening the transfer modal preselected to that product (Office to Event, editable).
+  Header "Add stock" is still how stock is received; "Edit stock" and "Undo last
+  add" stay.
+- **Column order.** Inventory table is now Product, Status, Price, **Office, Event**,
+  Trend, This mo, Last mo, 3mo, Lasts, Suggested (Office/Event moved up next to Price).
+- **Row menu icons.** Each action gained a leading icon (View detail, Move Stock,
+  Edit stock, Undo last add, Rename, Change price, Unlist) so the longer menu scans
+  faster.
+- **Sampling undo.** Replaced the aggregate chips + wordy toggle with a recent list
+  of individual free tastes, each with an X that opens a confirmation modal before
+  reverting (restores the Event stock). Typecheck clean; 292 tests pass.
+
 ## 2026-09-26 — Per-location inventory view, Event-based forecast, free-taste undo — `feat(inventory)`
 
 Follow-ups from POS feedback. Reads Staging views/RPCs; no prod change.
