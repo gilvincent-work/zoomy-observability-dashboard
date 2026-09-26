@@ -11,6 +11,7 @@ import {useRouter} from 'next/navigation';
 import {Dog, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {recordFreeTasteAction} from '@/src/pos-free-taste-actions';
+import {SearchableSelect} from './searchable-select';
 
 export interface TasteProduct {
   product_id: string;
@@ -102,31 +103,22 @@ function FreeTasteModal({products, onClose}: {products: TasteProduct[]; onClose:
             Opened stock given to pets to sample. Deducts the Event pool and is logged as sampling, kept separate from sales.
           </p>
 
-          <label className="block">
+          <div>
             <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Product</span>
-            <select
+            <SearchableSelect
               value={sku}
-              onChange={(e) => {
-                setSku(e.target.value);
+              onChange={(v) => {
+                setSku(v);
                 setMsg(null);
               }}
-              aria-label="Select product"
-              className={cn(
-                'w-full rounded-md border bg-background px-2.5 py-2 text-sm outline-none focus-visible:border-ring',
-                !sku && 'text-muted-foreground',
-              )}
-            >
-              <option value="">Select product…</option>
-              {products.map((p) => (
-                <option key={p.product_id} value={p.product_id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              options={products.map((p) => ({value: p.product_id, label: p.name, hint: `${p.event}`}))}
+              placeholder="Select product…"
+              ariaLabel="Select product"
+            />
             {picked && (
               <span className="mt-1.5 block font-mono text-[10px] text-muted-foreground">{picked.event} on hand at Event</span>
             )}
-          </label>
+          </div>
 
           <div className={cn('mt-4', !sku && 'pointer-events-none opacity-40')}>
             <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Packs opened</span>

@@ -11,6 +11,7 @@ import {useRouter} from 'next/navigation';
 import {Gift, Undo2, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {addPrizeAction, voidPrizeAction} from '@/src/pos-prize-actions';
+import {SearchableSelect} from './searchable-select';
 import type {PrizeRow, RecentOrder, PrizeProduct} from '@/src/pos-prize-data';
 
 const DELTAS = [1, 2, 5];
@@ -152,39 +153,31 @@ function AddPrizeModal({recentOrders, products, onClose}: {recentOrders: RecentO
             Attach a spin-a-wheel prize to a past sale. It deducts the Event pool and is logged as a giveaway, separate from sales.
           </p>
 
-          <label className="block">
+          <div>
             <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Order that won</span>
-            <select
+            <SearchableSelect
               value={orderUuid}
-              onChange={(e) => {
-                setOrderUuid(e.target.value);
+              onChange={(v) => {
+                setOrderUuid(v);
                 setMsg(null);
               }}
-              aria-label="Select order"
-              className={cn('w-full rounded-md border bg-background px-2.5 py-2 text-sm outline-none focus-visible:border-ring', !orderUuid && 'text-muted-foreground')}
-            >
-              <option value="">Select order…</option>
-              {recentOrders.map((o) => (
-                <option key={o.client_uuid} value={o.client_uuid}>{o.label}</option>
-              ))}
-            </select>
-          </label>
+              options={recentOrders.map((o) => ({value: o.client_uuid, label: o.label}))}
+              placeholder="Select order…"
+              ariaLabel="Select order"
+            />
+          </div>
 
-          <label className="mt-4 block">
+          <div className="mt-4">
             <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Prize product</span>
-            <select
+            <SearchableSelect
               value={sku}
-              onChange={(e) => setSku(e.target.value)}
-              aria-label="Select product"
-              className={cn('w-full rounded-md border bg-background px-2.5 py-2 text-sm outline-none focus-visible:border-ring', !sku && 'text-muted-foreground')}
-            >
-              <option value="">Select product…</option>
-              {products.map((p) => (
-                <option key={p.product_id} value={p.product_id}>{p.name}</option>
-              ))}
-            </select>
+              onChange={(v) => setSku(v)}
+              options={products.map((p) => ({value: p.product_id, label: p.name, hint: `${p.event}`}))}
+              placeholder="Select product…"
+              ariaLabel="Select product"
+            />
             {picked && <span className="mt-1.5 block font-mono text-[10px] text-muted-foreground">{picked.event} on hand at Event</span>}
-          </label>
+          </div>
 
           <div className={cn('mt-4', !sku && 'pointer-events-none opacity-40')}>
             <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Quantity</span>

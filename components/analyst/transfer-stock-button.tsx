@@ -13,6 +13,7 @@ import {useRouter} from 'next/navigation';
 import {ArrowLeftRight, ArrowRight, Repeat2, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {transferStockAction, type LocationCode} from '@/src/pos-transfer-actions';
+import {SearchableSelect} from './searchable-select';
 
 export interface TransferProduct {
   product_id: string;
@@ -46,12 +47,12 @@ export function TransferStockButton({products, className}: {products: TransferPr
   );
 }
 
-function TransferModal({products, onClose}: {products: TransferProduct[]; onClose: () => void}) {
+export function TransferModal({products, initialSku, onClose}: {products: TransferProduct[]; initialSku?: string; onClose: () => void}) {
   const titleId = useId();
   const router = useRouter();
   const [from, setFrom] = useState<LocationCode>('office');
   const [to, setTo] = useState<LocationCode>('event');
-  const [sku, setSku] = useState('');
+  const [sku, setSku] = useState(initialSku ?? '');
   const [qty, setQty] = useState(0);
   const [draft, setDraft] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -131,30 +132,21 @@ function TransferModal({products, onClose}: {products: TransferProduct[]; onClos
           </div>
 
           {/* Product */}
-          <label className="mt-4 block">
+          <div className="mt-4">
             <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Product</span>
-            <select
+            <SearchableSelect
               value={sku}
-              onChange={(e) => {
-                setSku(e.target.value);
+              onChange={(v) => {
+                setSku(v);
                 setQty(0);
                 setDraft(null);
                 setMsg(null);
               }}
-              aria-label="Select product"
-              className={cn(
-                'w-full rounded-md border bg-background px-2.5 py-2 text-sm outline-none focus-visible:border-ring',
-                !sku && 'text-muted-foreground',
-              )}
-            >
-              <option value="">Select product…</option>
-              {products.map((p) => (
-                <option key={p.product_id} value={p.product_id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={products.map((p) => ({value: p.product_id, label: p.name}))}
+              placeholder="Select product…"
+              ariaLabel="Select product"
+            />
+          </div>
 
           {/* Quantity */}
           <div className={cn('mt-4', !sku && 'pointer-events-none opacity-40')}>
