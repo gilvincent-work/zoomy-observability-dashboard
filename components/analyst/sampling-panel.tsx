@@ -1,20 +1,22 @@
 'use client';
 
 // Sampling panel (free tastes). Shows the 30-day summary (units + logged count, with
-// an oversold flag) then lists each recent free taste as its own row with a small X to
-// undo it. The X opens a confirmation modal (void_free_taste restores the Event stock)
-// so a misclicked product can be reverted without a wordy toggle. Freebies are logged
-// only, never counted in sales / units / revenue.
+// an oversold flag) then the per-product pills. Each pill carries an X that undoes the
+// product's MOST RECENT sample (void_free_taste restores the Event stock) behind a
+// confirmation modal, so a misclick can be reverted without a long flat list. Freebies
+// are logged only, never counted in sales / units / revenue.
 
 import {useEffect, useId, useRef, useState, useTransition} from 'react';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
 import {Dog, Undo2, X} from 'lucide-react';
 import {voidFreeTasteAction} from '@/src/pos-free-taste-actions';
-import type {FreeTasteSummary, RecentFreeTaste} from '@/src/pos-free-taste-data';
+import type {FreeTasteSummary} from '@/src/pos-free-taste-data';
+
+type PendingUndo = {productName: string; clientUuid: string; qty: number};
 
 export function SamplingPanel({sampling}: {sampling: FreeTasteSummary}) {
-  const [confirming, setConfirming] = useState<RecentFreeTaste | null>(null);
+  const [confirming, setConfirming] = useState<PendingUndo | null>(null);
 
   if (sampling.totalCount === 0) return null;
 
@@ -33,45 +35,43 @@ export function SamplingPanel({sampling}: {sampling: FreeTasteSummary}) {
         </span>
       </div>
 
-      {sampling.recent.length > 0 && (
-        <ul className="mt-3 flex flex-col divide-y border-t pt-1">
-          {sampling.recent.map((r, i) => (
-            <li key={(r.client_uuid ?? 'x') + i} className="flex items-center justify-between gap-3 py-2">
-              <div className="min-w-0 text-sm">
-                <span className="font-medium">{r.qty}× {r.product_name}</span>
-                {r.oversold && <span className="ml-1.5 rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-amber-600 dark:text-amber-400">low stock</span>}
-                <span className="ml-2 font-mono text-[10px] text-muted-foreground">
-                  {new Date(r.opened_at).toLocaleDateString('en-PH', {month: 'short', day: 'numeric'})}
-                </span>
-              </div>
-              {r.client_uuid ? (
+      {sampling.byProduct.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {sampling.byProduct.map((p) => (
+            <span
+              key={p.product_id}
+              className="inline-flex items-center gap-1.5 rounded-md border bg-background py-1 pl-2.5 pr-1 text-xs"
+            >
+              <span className="text-foreground">{p.name}</span>
+              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{p.units}</span>
+              {p.lastClientUuid ? (
                 <button
                   type="button"
-                  onClick={() => setConfirming(r)}
-                  aria-label={`Undo ${r.qty} ${r.product_name}`}
-                  title="Undo this free taste (restores Event stock)"
-                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => setConfirming({productName: p.name, clientUuid: p.lastClientUuid as string, qty: p.lastQty})}
+                  aria-label={`Undo the most recent ${p.name} free taste`}
+                  title="Undo the most recent sample of this product"
+                  className="ml-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <X className="size-3.5" />
                 </button>
               ) : (
-                <span className="shrink-0 p-1 text-muted-foreground/40" title="Cannot undo (no reference)" aria-hidden>
+                <span className="ml-0.5 p-0.5 text-muted-foreground/40" title="Cannot undo (no reference)" aria-hidden>
                   <X className="size-3.5" />
                 </span>
               )}
-            </li>
+            </span>
           ))}
-        </ul>
+        </div>
       )}
 
-      {confirming && <UndoConfirmModal taste={confirming} onClose={() => setConfirming(null)} />}
+      {confirming && <UndoConfirmModal undo={confirming} onClose={() => setConfirming(null)} />}
     </div>
   );
 }
 
-// Confirm before voiding a free taste. Portalled modal in the incumbent style; the
-// firedRef guard keeps a double-click from voiding twice while the transition runs.
-function UndoConfirmModal({taste, onClose}: {taste: RecentFreeTaste; onClose: () => void}) {
+// Confirm before voiding a product's most recent free taste. Portalled modal in the
+// incumbent style; the firedRef guard keeps a double-click from voiding twice.
+function UndoConfirmModal({undo, onClose}: {undo: PendingUndo; onClose: () => void}) {
   const titleId = useId();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -86,10 +86,10 @@ function UndoConfirmModal({taste, onClose}: {taste: RecentFreeTaste; onClose: ()
   }, [onClose]);
 
   function confirm() {
-    if (firedRef.current || !taste.client_uuid) return;
+    if (firedRef.current) return;
     firedRef.current = true;
     startTransition(async () => {
-      await voidFreeTasteAction(taste.client_uuid as string);
+      await voidFreeTasteAction(undo.clientUuid);
       router.refresh();
       onClose();
     });
@@ -111,9 +111,9 @@ function UndoConfirmModal({taste, onClose}: {taste: RecentFreeTaste; onClose: ()
 
         <div className="px-5 py-4">
           <p className="text-sm text-muted-foreground">
-            Undo this free taste? This restores {taste.qty} to Event stock.
+            Undo the most recent free taste of this product? This restores {undo.qty} to Event stock.
           </p>
-          <p className="mt-2 text-sm font-medium">{taste.qty}× {taste.product_name}</p>
+          <p className="mt-2 text-sm font-medium">{undo.qty}× {undo.productName}</p>
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3">
