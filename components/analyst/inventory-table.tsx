@@ -10,13 +10,14 @@ import {useMemo, useState, useTransition, useEffect, useLayoutEffect, useRef} fr
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
-import {MoreHorizontal, Pencil, X} from 'lucide-react';
+import {ArrowLeftRight, Eye, EyeOff, MoreHorizontal, Pencil, Tag, Type, Undo2, X, type LucideIcon} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {POS_CATEGORIES, POS_SUBCATEGORIES, SUBCATEGORY_CATEGORY, formatPeso} from '@/src/pos-format';
 import {compareByCategory} from '@/src/pos-inventory-compute';
 import {renameProductAction, repriceProductAction, setListingAction, setStockAction} from '@/src/pos-actions';
-import {addStockAction, voidLastAddAction} from '@/src/pos-stock-intake-actions';
+import {voidLastAddAction} from '@/src/pos-stock-intake-actions';
+import {TransferModal} from './transfer-stock-button';
 import {Pagination} from './pagination';
 import type {InventoryRow} from '@/src/pos-inventory-data';
 import type {ForecastStatus} from '@/src/pos-forecast-compute';
@@ -50,7 +51,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   // means the hidden breakpoint's menu never opens (its buttons aren't clickable).
   const [cardMenuFor, setCardMenuFor] = useState<string | null>(null);
   const [editing, setEditing] = useState<{row: InventoryRow; field: 'name' | 'price'} | null>(null);
-  const [addStockRow, setAddStockRow] = useState<InventoryRow | null>(null);
+  const [moveStockRow, setMoveStockRow] = useState<InventoryRow | null>(null);
   const [editStockRow, setEditStockRow] = useState<InventoryRow | null>(null);
   const [page, setPage] = useState(1);
 
@@ -145,12 +146,12 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                     <Th onClick={() => toggleSort('name')} active={sort.key === 'name' || sort.key === 'category'}>Product <Sc>{sort.key === 'category' ? '▲cat' : caret('name')}</Sc></Th>
                     <Th onClick={() => toggleSort('status')} active={sort.key === 'status'}>Status <Sc>{caret('status')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('price')} active={sort.key === 'price'}>Price <Sc>{caret('price')}</Sc></Th>
+                    <Th className="text-right" onClick={() => toggleSort('office')} active={sort.key === 'office'}>Office <Sc>{caret('office')}</Sc></Th>
+                    <Th className="text-right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'}>Event <Sc>{caret('stock')}</Sc></Th>
                     <th className="px-4 py-3 text-left">Trend</th>
                     <Th className="text-right" onClick={() => toggleSort('thisMonth')} active={sort.key === 'thisMonth'}>This mo <Sc>{caret('thisMonth')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('lastMonth')} active={sort.key === 'lastMonth'}>Last mo <Sc>{caret('lastMonth')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('threeMo')} active={sort.key === 'threeMo'}>3mo <Sc>{caret('threeMo')}</Sc></Th>
-                    <Th className="text-right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'}>Event <Sc>{caret('stock')}</Sc></Th>
-                    <Th className="text-right" onClick={() => toggleSort('office')} active={sort.key === 'office'}>Office <Sc>{caret('office')}</Sc></Th>
                     <Th onClick={() => toggleSort('cover')} active={sort.key === 'cover'}>Lasts <Sc>{caret('cover')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('reorder')} active={sort.key === 'reorder'}>Suggested <Sc>{caret('reorder')}</Sc></Th>
                     <th className="px-2 py-3"></th>
@@ -162,7 +163,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                       onMenu={() => setMenuFor((m) => (m === r.product_id ? null : r.product_id))}
                       onClose={() => setMenuFor(null)}
                       onEdit={(field) => {setMenuFor(null); setEditing({row: r, field});}}
-                      onAddStock={() => {setMenuFor(null); setAddStockRow(r);}}
+                      onMoveStock={() => {setMenuFor(null); setMoveStockRow(r);}}
                       onEditStock={() => {setMenuFor(null); setEditStockRow(r);}} />
                   ))}
                 </tbody>
@@ -178,7 +179,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                   onMenu={() => setCardMenuFor((m) => (m === r.product_id ? null : r.product_id))}
                   onClose={() => setCardMenuFor(null)}
                   onEdit={(field) => {setCardMenuFor(null); setEditing({row: r, field});}}
-                  onAddStock={() => {setCardMenuFor(null); setAddStockRow(r);}}
+                  onMoveStock={() => {setCardMenuFor(null); setMoveStockRow(r);}}
                   onEditStock={() => {setCardMenuFor(null); setEditStockRow(r);}} />
               ))}
             </ul>
@@ -201,10 +202,12 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
           onClose={() => setEditing(null)}
           onSaved={(patch) => {setRows((rs) => rs.map((r) => (r.product_id === editing.row.product_id ? {...r, ...patch} : r))); setEditing(null);}} />
       )}
-      {addStockRow && (
-        <AddStockDialog row={addStockRow} usingMock={usingMock}
-          onClose={() => setAddStockRow(null)}
-          onDone={(added) => {setRows((rs) => rs.map((r) => (r.product_id === addStockRow.product_id ? {...r, office: r.office + added} : r))); setAddStockRow(null);}} />
+      {moveStockRow && (
+        <TransferModal
+          products={rows.map((r) => ({product_id: r.product_id, name: r.name, office: r.office, event: r.event}))}
+          initialSku={moveStockRow.product_id}
+          onClose={() => setMoveStockRow(null)}
+        />
       )}
       {editStockRow && (
         <EditStockDialog row={editStockRow} usingMock={usingMock}
@@ -215,8 +218,8 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   );
 }
 
-function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
-  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onAddStock: () => void; onEditStock: () => void;
+function Row({r, menuOpen, onMenu, onClose, onEdit, onMoveStock, onEditStock}: {
+  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onMoveStock: () => void; onEditStock: () => void;
 }) {
   const s = STATUS[r.status];
   const [pending, startTransition] = useTransition();
@@ -256,6 +259,8 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
           {formatPeso(r.price)} <Pencil className="size-3 text-muted-foreground" />
         </button>
       </td>
+      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.office}</td>
+      <td className="px-4 py-3 text-right tabular-nums font-medium">{r.event}</td>
       <td className="px-4 py-3">
         <span className="inline-flex h-5 items-end gap-[3px]">
           {r.monthly.trend.map((v, i) => (
@@ -270,8 +275,6 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.monthly.lastMonth}</td>
       <td className="px-4 py-3 text-right tabular-nums">{r.monthly.threeMonthTotal}</td>
-      <td className="px-4 py-3 text-right tabular-nums font-medium">{r.event}</td>
-      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.office}</td>
       <td className="whitespace-nowrap px-4 py-3">
         <LastsBadge row={r} />
       </td>
@@ -281,7 +284,7 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
         {menuOpen && (
           <RowMenu anchor={menuBtnRef.current} sku={r.product_id} active={r.active} pending={pending}
             onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
-            onAddStock={onAddStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
+            onMoveStock={onMoveStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
         )}
       </td>
     </tr>
@@ -292,8 +295,8 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
 // its own menu open/close is driven by cardMenuFor so it never collides with the
 // desktop table's portal. The name link navigates (no whole-card click, so the
 // price/menu taps don't need stopPropagation).
-function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
-  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onAddStock: () => void; onEditStock: () => void;
+function RowCard({r, menuOpen, onMenu, onClose, onEdit, onMoveStock, onEditStock}: {
+  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onMoveStock: () => void; onEditStock: () => void;
 }) {
   const s = STATUS[r.status];
   const [pending, startTransition] = useTransition();
@@ -325,7 +328,7 @@ function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}
           {menuOpen && (
             <RowMenu anchor={menuBtnRef.current} sku={r.product_id} active={r.active} pending={pending}
               onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
-              onAddStock={onAddStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
+              onMoveStock={onMoveStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
           )}
         </div>
       </div>
@@ -339,6 +342,14 @@ function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}
       </div>
       <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2.5 text-xs">
         <div>
+          <dt className="text-muted-foreground">Office</dt>
+          <dd className="mt-0.5 tabular-nums text-muted-foreground">{r.office}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Event</dt>
+          <dd className="mt-0.5 font-medium tabular-nums">{r.event}</dd>
+        </div>
+        <div>
           <dt className="text-muted-foreground">This mo</dt>
           <dd className="mt-0.5 font-medium tabular-nums">{r.monthly.thisMonth}<YoyDelta yoy={r.yoy} thisMonth={r.monthly.thisMonth} /></dd>
         </div>
@@ -349,14 +360,6 @@ function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}
         <div>
           <dt className="text-muted-foreground">3 mo</dt>
           <dd className="mt-0.5 tabular-nums">{r.monthly.threeMonthTotal}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Event</dt>
-          <dd className="mt-0.5 font-medium tabular-nums">{r.event}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Office</dt>
-          <dd className="mt-0.5 tabular-nums text-muted-foreground">{r.office}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground">Lasts</dt>
@@ -403,8 +406,8 @@ function Badge({tone, children}: {tone: 'crit' | 'warn' | 'ok'; children: React.
 // Rendered in a portal with fixed positioning anchored to the ⋯ button, so it
 // escapes the table's overflow container (which would otherwise clip it) and flips
 // above the button when there isn't room below (bottom rows near the viewport edge).
-function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleListing, onAddStock, onEditStock, onUndo, onClose}: {
-  anchor: HTMLElement | null; sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onAddStock: () => void; onEditStock: () => void; onUndo: () => void; onClose: () => void;
+function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleListing, onMoveStock, onEditStock, onUndo, onClose}: {
+  anchor: HTMLElement | null; sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onMoveStock: () => void; onEditStock: () => void; onUndo: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{left: number; top: number} | null>(null);
@@ -443,21 +446,27 @@ function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleLis
     <div ref={ref} onClick={(e) => e.stopPropagation()}
       style={{position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? 'visible' : 'hidden'}}
       className="z-50 w-48 overflow-hidden rounded-xl border bg-popover text-left shadow-lg">
-      <MenuItem href={`/inventory/${sku}`}>View detail</MenuItem>
-      <MenuItem onClick={onAddStock}>Add to Office</MenuItem>
-      <MenuItem onClick={onEditStock}>Edit stock</MenuItem>
-      <MenuItem onClick={onUndo} disabled={pending}>Undo last add</MenuItem>
-      <MenuItem onClick={onRename}>Rename</MenuItem>
-      <MenuItem onClick={onReprice}>Change price</MenuItem>
-      <MenuItem onClick={onToggleListing} disabled={pending}>{active ? 'Unlist' : 'List'}</MenuItem>
+      <MenuItem href={`/inventory/${sku}`} icon={Eye}>View detail</MenuItem>
+      <MenuItem onClick={onMoveStock} icon={ArrowLeftRight}>Move stock</MenuItem>
+      <MenuItem onClick={onEditStock} icon={Pencil}>Edit stock</MenuItem>
+      <MenuItem onClick={onUndo} disabled={pending} icon={Undo2}>Undo last add</MenuItem>
+      <MenuItem onClick={onRename} icon={Type}>Rename</MenuItem>
+      <MenuItem onClick={onReprice} icon={Tag}>Change price</MenuItem>
+      <MenuItem onClick={onToggleListing} disabled={pending} icon={active ? EyeOff : Eye}>{active ? 'Unlist' : 'List'}</MenuItem>
     </div>,
     document.body,
   );
 }
-function MenuItem({children, onClick, href, disabled}: {children: React.ReactNode; onClick?: () => void; href?: string; disabled?: boolean}) {
-  const cls = 'block w-full border-b px-4 py-2.5 text-left text-sm font-medium last:border-0 hover:bg-muted disabled:opacity-50';
-  if (href) return <Link href={href} className={cls}>{children}</Link>;
-  return <button type="button" onClick={onClick} disabled={disabled} className={cls}>{children}</button>;
+function MenuItem({children, onClick, href, disabled, icon: Icon}: {children: React.ReactNode; onClick?: () => void; href?: string; disabled?: boolean; icon?: LucideIcon}) {
+  const cls = 'flex w-full items-center gap-2.5 border-b px-4 py-2.5 text-left text-sm font-medium last:border-0 hover:bg-muted disabled:opacity-50';
+  const inner = (
+    <>
+      {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" />}
+      {children}
+    </>
+  );
+  if (href) return <Link href={href} className={cls}>{inner}</Link>;
+  return <button type="button" onClick={onClick} disabled={disabled} className={cls}>{inner}</button>;
 }
 
 function EditDialog({row, field, usingMock, onClose, onSaved}: {
@@ -512,62 +521,6 @@ function EditDialog({row, field, usingMock, onClose, onSaved}: {
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">Cancel</button>
           <button onClick={save} disabled={pending || usingMock} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{pending ? 'Saving…' : 'Save'}</button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function AddStockDialog({row, usingMock, onClose, onDone}: {
-  row: InventoryRow; usingMock: boolean; onClose: () => void; onDone: (added: number) => void;
-}) {
-  const [value, setValue] = useState('');
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {if (e.key === 'Escape') onClose();};
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  function save() {
-    setError(null);
-    const qty = Math.round(Number(value));
-    if (!Number.isFinite(qty) || qty <= 0) {setError('Enter a quantity greater than zero.'); return;}
-    startTransition(async () => {
-      const res = await addStockAction([{sku: row.product_id, qty}]);
-      if (res.ok) {
-        onDone(qty);
-        router.refresh();
-      } else setError(res.error);
-    });
-  }
-  if (typeof document === 'undefined') return null;
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <button type="button" aria-label="Cancel" onClick={onClose} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
-      <div className="relative w-full max-w-sm rounded-xl border bg-popover p-5 shadow-lg">
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Add to Office</h2>
-          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
-        </div>
-        <p className="mb-3 font-mono text-[11px] text-muted-foreground">{row.name} · Office {row.office} · Event {row.event}</p>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">+</span>
-          <input type="text" inputMode="numeric" value={value} autoFocus
-            onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ''))}
-            onKeyDown={(e) => {if (e.key === 'Enter') save();}}
-            className="w-32 rounded-md border bg-background px-2 py-1.5 text-sm tabular-nums outline-none focus-visible:border-ring" />
-          <span className="text-xs text-muted-foreground">units</span>
-        </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">Lands in Office back-stock. Use Move stock to send units to Event for the POS to sell. Undo the last add from the row menu.</p>
-        {usingMock && <p className="mt-2 text-xs text-muted-foreground">Demo mode — set the Supabase pos_* env to add stock.</p>}
-        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">Cancel</button>
-          <button onClick={save} disabled={pending || usingMock} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{pending ? 'Adding…' : 'Add to Office'}</button>
         </div>
       </div>
     </div>,
