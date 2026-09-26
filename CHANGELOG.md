@@ -12,6 +12,14 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-26 — Sampling card back to per-product pills (with X undo) — `feat(inventory)`
+
+Reverted the flat individual list (too long/repetitive) back to the compact
+per-product pills. Each pill now carries a small X that undoes the product's most
+recent free taste behind the same confirmation modal (restores the Event stock).
+The data layer tracks each product's newest sample (`lastClientUuid`/`lastQty`) so
+the pill can undo it directly. Typecheck clean; 292 tests pass.
+
 ## 2026-09-26 — Inventory UX polish: searchable pickers, Move Stock row action, column reorder — `feat(inventory)`
 
 Usability follow-ups on the inventory + giveaway surfaces.
