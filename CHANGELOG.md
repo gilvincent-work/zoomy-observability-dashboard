@@ -12,6 +12,14 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-27 — "Free item won" badge on order tiles — `feat(offline-sales)`
+
+The offline-sales order tiles (`/offline-sales/orders`) now show a "Free item" badge
+(Gift icon, amber pill) when the order has a non-voided won free item, so an analyst
+can spot prize orders at a glance. New server-only `getOrdersWithPrizes()` (distinct
+client_uuids from non-voided `pos_order_prizes`), threaded to the order list. Read-only,
+fail-soft. Typecheck clean, 292 tests pass.
+
 ## 2026-09-27 — Backfill won free items from the Edit-order modal — `feat(offline-sales)`
 
 The Edit-order modal (offline-sales) now has a "Free items won" section for
