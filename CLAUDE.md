@@ -16,3 +16,13 @@ Workspace-wide conventions (Supabase/MCP targets, deployments, environments, des
   - `graph.html` — interactive graph, open in a browser.
 - **Rebuild when code drifts:** `graphify . --update` re-extracts only changed files. Do this after substantial edits so the graph stays accurate; a stale graph is worse than none for a specific claim.
 - Use the graph to *locate*, then read the actual file to *act*. Don't quote the graph as ground truth for code you're about to change without confirming against the source.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

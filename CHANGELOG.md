@@ -12,6 +12,37 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-26 — Free taste: log action + sampling summary — `feat(inventory)`
+
+- **Log a free taste** (`free-taste-button.tsx`): pick a product, packs opened, an
+  optional note; `recordFreeTasteAction` → `record_free_taste` RPC deducts the
+  Event pool and logs it as sampling (separate from sales). Shows Event on-hand and
+  warns when opening against low stock. This is the online / backfill path; the POS
+  logs most free tastes live.
+- **Sampling summary** on the Inventory (All products) tab: total units and count
+  over the last 30 days, an "opened vs low stock" flag, and the top sampled
+  products. New `src/pos-free-taste-actions.ts` + `src/pos-free-taste-data.ts`
+  (reads `pos_free_tastes`). Mirrors the incumbent modal system; typecheck clean.
+
+## 2026-09-26 — Inventory locations: Move stock + receive into Office — `feat(inventory)`
+
+Surfaces the new Office/Event location split on the Inventory page (Stratpoint /
+offline scope). Reads the new Staging views; no prod change. BoxMe online scope is
+untouched (still the existing stub).
+
+- **Move stock modal** (`transfer-stock-button.tsx`) transfers a product between
+  Office and Event via the `transfer_stock` RPC. Shows on-hand at both locations,
+  previews the resulting counts, caps the quantity at the source on-hand (the RPC
+  enforces it too), and defaults to the Office to Event direction with a swap.
+- **Add stock now picks a destination** (`add-stock-button.tsx`): Office
+  back-stock by default, or Event (immediately sellable). Wired through
+  `addStockAction(lines, location)`.
+- **Toolbar shows Office / Event totals** at a glance.
+- New `src/pos-transfer-actions.ts` (transfer server action) and
+  `src/pos-location-data.ts` (reads `pos_inventory_by_location`). All new UI
+  mirrors the incumbent stock-intake modal system (portal, steppers, footer) per
+  the design skills. Typecheck clean.
+
 ## 2026-09-26 — v1.3.7: PWA home-screen icon + mobile polish — `fix(pwa,mobile)`
 
 **Version bumped to 1.3.7** (patch; was 1.3.6). Fixes from on-device (iPhone 15)
