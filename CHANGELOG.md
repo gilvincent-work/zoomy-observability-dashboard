@@ -12,6 +12,25 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-26 — Per-location inventory view, Event-based forecast, free-taste undo — `feat(inventory)`
+
+Follow-ups from POS feedback. Reads Staging views/RPCs; no prod change.
+
+- **Office vs Event per product.** The inventory table now shows an **Event**
+  (sellable) column and an **Office** (back-stock) column, plus a **Location**
+  filter (All / In Event / In Office). The main Stock, status, and forecast are
+  based on Event on-hand, so Office back-stock never masks a low sellable count.
+  The per-row "Add stock" is now explicitly "Add to Office" (copy + optimistic
+  update target the Office field); "Edit stock" (set exact) still targets Event.
+- **Forecast and low-stock alerts use Event on-hand** (`pos-forecast-data.ts`,
+  `pos-inventory-data.ts` read `getLocationStock`; the `stock-alert` edge function
+  reads `pos_inventory_event`). Falls back to the global sum when the per-location
+  read is empty, so nothing regresses.
+- **Revert a free taste.** The Sampling card gains a recent list with an Undo per
+  row (`void_free_taste` restores the Event stock) for misclicks.
+- Free tastes and prizes remain excluded from sales, units, revenue, and forecast
+  velocity (verified). Typecheck clean; 292 dashboard tests pass.
+
 ## 2026-09-26 — Free taste: log action + sampling summary — `feat(inventory)`
 
 - **Log a free taste** (`free-taste-button.tsx`): pick a product, packs opened, an

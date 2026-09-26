@@ -55,3 +55,16 @@ export async function recordFreeTasteAction(input: {
   revalidateStockSurfaces();
   return {ok: true, oversold: Boolean((data as {oversold?: boolean} | null)?.oversold)};
 }
+
+type VoidResult = {ok: true} | {ok: false; error: string};
+
+/** Revert a logged free taste (restores the Event stock it deducted). */
+export async function voidFreeTasteAction(clientUuid: string): Promise<VoidResult> {
+  if (usingPosMock()) return {ok: false, error: 'Running in demo mode.'};
+  if (!clientUuid) return {ok: false, error: 'Missing free-taste reference.'};
+  const {data, error} = await posClient().rpc('void_free_taste', {p_client_uuid: clientUuid});
+  if (error) return {ok: false, error: error.message};
+  if (!(data as {ok?: boolean} | null)?.ok) return {ok: false, error: 'Could not undo that free taste.'};
+  revalidateStockSurfaces();
+  return {ok: true};
+}
