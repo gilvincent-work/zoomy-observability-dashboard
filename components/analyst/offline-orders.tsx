@@ -41,6 +41,7 @@ export function OfflineOrdersView({
   bounds,
   catalog,
   bundles,
+  prizeOrderUuids,
   usingMock,
   fetchedAt,
 }: {
@@ -50,12 +51,15 @@ export function OfflineOrdersView({
   bounds: PriceBounds;
   catalog: PosCatalogItem[];
   bundles: PosBundleDef[];
+  prizeOrderUuids: string[]; // client_uuids of orders with a non-voided prize
   usingMock: boolean;
   fetchedAt: string;
 }) {
   const {page, totalPages, pageSize} = pageInfo;
   const firstOnPage = (page - 1) * pageSize;
   const filtered = isFilterActive(filter);
+  // Set for O(1) lookup when tagging each tile with the "Free item" badge.
+  const prizeOrders = new Set(prizeOrderUuids);
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -147,6 +151,11 @@ export function OfflineOrdersView({
                       <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', paymentMethodBadgeClass(o.payment_method))}>
                         {paymentMethodLabel(o.payment_method)}
                       </span>
+                      {prizeOrders.has(o.client_uuid) && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                          <Gift className="size-3" /> Free item
+                        </span>
+                      )}
                       {o.customer_handle && (
                         <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                           <PawPrint className="size-3" /> {o.customer_handle}

@@ -90,6 +90,28 @@ export const getOrderPrizeContext = cache(async (orderClientUuid: string): Promi
   return {prizes, products: pickable};
 });
 
+/** The DISTINCT client_uuids of orders that carry at least one NON-voided prize.
+ *  Powers the "Free item" badge on the offline-sales order tiles. Inner-joins to
+ *  pos_orders (prize.order_id → pos_orders.id) so we can read the order's
+ *  client_uuid, filtered to live prizes only. Mock/empty-safe. */
+export const getOrdersWithPrizes = cache(async (): Promise<string[]> => {
+  if (usingPosMock()) return [];
+  const supabase = posClient();
+
+  const {data, error} = await supabase
+    .from('pos_order_prizes')
+    .select('pos_orders!inner(client_uuid)')
+    .is('voided_at', null);
+  if (error) throw new Error(`pos_order_prizes read failed: ${error.message}`);
+
+  const uuids = new Set<string>();
+  for (const row of data ?? []) {
+    const ord = pickOne((row as {pos_orders: unknown}).pos_orders) as {client_uuid: string | null} | null;
+    if (ord?.client_uuid) uuids.add(ord.client_uuid);
+  }
+  return [...uuids];
+});
+
 export const getPrizeData = cache(async (): Promise<PrizeData> => {
   if (usingPosMock()) return EMPTY;
   const supabase = posClient();
