@@ -10,7 +10,7 @@ import {useMemo, useState, useTransition, useEffect, useLayoutEffect, useRef} fr
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
-import {ArrowLeftRight, Eye, EyeOff, MoreHorizontal, Pencil, Tag, Type, Undo2, X, type LucideIcon} from 'lucide-react';
+import {ArrowLeftRight, Eye, EyeOff, MoreHorizontal, Pencil, Search, Tag, Type, Undo2, X, type LucideIcon} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {POS_CATEGORIES, POS_SUBCATEGORIES, SUBCATEGORY_CATEGORY, formatPeso} from '@/src/pos-format';
@@ -115,21 +115,36 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
 
   return (
     <div>
-      {/* Filters */}
-      <div className="mb-4 flex flex-col gap-2">
-        <PillRow label="Line" items={[{v: '', l: 'All'}, ...POS_CATEGORIES.map((c) => ({v: c as string, l: c}))]} active={line}
-          onSelect={(v) => {setLine(v); if (v !== SUBCATEGORY_CATEGORY) setSub('');}} />
-        {line === SUBCATEGORY_CATEGORY && (
-          <PillRow label="Type" items={[{v: '', l: 'All'}, ...POS_SUBCATEGORIES.map((s) => ({v: s as string, l: s}))]} active={sub} onSelect={setSub} />
-        )}
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Filters: search first on the left, filter groups stacked to its right */}
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start">
+        <div className="relative md:w-64 md:shrink-0">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name or SKU…"
+            aria-label="Search products"
+            className="w-full rounded-md border bg-background py-2 pl-9 pr-8 text-sm outline-none transition-colors focus-visible:border-ring"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label="Clear search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <PillRow label="Line" items={[{v: '', l: 'All'}, ...POS_CATEGORIES.map((c) => ({v: c as string, l: c}))]} active={line}
+            onSelect={(v) => {setLine(v); if (v !== SUBCATEGORY_CATEGORY) setSub('');}} />
+          {line === SUBCATEGORY_CATEGORY && (
+            <PillRow label="Type" items={[{v: '', l: 'All'}, ...POS_SUBCATEGORIES.map((s) => ({v: s as string, l: s}))]} active={sub} onSelect={setSub} />
+          )}
           <PillRow label="Status" items={[{v: '', l: 'All'}, {v: 'out', l: 'Out'}, {v: 'low', l: 'Low'}, {v: 'healthy', l: 'Healthy'}, {v: 'unlisted', l: 'Unlisted'}]} active={status} onSelect={(v) => setStatus(v as typeof status)} />
-        <PillRow label="Location" items={[{v: '', l: 'All'}, {v: 'event', l: 'In Event'}, {v: 'office', l: 'In Office'}]} active={loc} onSelect={(v) => setLoc(v as typeof loc)} />
-          <div className="ml-auto flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5">
-            <span className="text-xs text-muted-foreground">🔍</span>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name or SKU…" aria-label="Search products"
-              className="w-40 bg-transparent text-xs outline-none" />
-          </div>
+          <PillRow label="Location" items={[{v: '', l: 'All'}, {v: 'event', l: 'In Event'}, {v: 'office', l: 'In Office'}]} active={loc} onSelect={(v) => setLoc(v as typeof loc)} />
         </div>
       </div>
 
@@ -610,7 +625,7 @@ function PillRow({label, items, active, onSelect}: {label: string; items: {v: st
       <span className="w-16 shrink-0 whitespace-nowrap font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
       {items.map((it) => (
         <button key={it.v || 'all'} type="button" onClick={() => onSelect(it.v)}
-          className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', active === it.v ? 'border-primary bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
+          className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', active === it.v ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')}>
           {it.l}
         </button>
       ))}
