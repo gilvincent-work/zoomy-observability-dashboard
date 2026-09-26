@@ -607,7 +607,7 @@ function Sc({children}: {children: React.ReactNode}) {
 function PillRow({label, items, active, onSelect}: {label: string; items: {v: string; l: string}[]; active: string; onSelect: (v: string) => void}) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="w-10 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="w-16 shrink-0 whitespace-nowrap font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
       {items.map((it) => (
         <button key={it.v || 'all'} type="button" onClick={() => onSelect(it.v)}
           className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', active === it.v ? 'border-primary bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
