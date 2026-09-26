@@ -12,6 +12,15 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-26 — Inventory filters: Line on top, search + Filters modal, applied chips — `feat(inventory)`
+
+Reworked the filter bar so it stops cramming. Line (the primary filter) stays as
+quick-tap pills on top. Below it, a full-width search input sits next to a **Filters**
+button (with an active-count badge) that opens a modal holding the secondary filters
+(Type when Freeze-Dried, Status, Location; live-apply, Reset/Done). Applied secondary
+filters render as removable chips on their own line under the search, plus a Clear all,
+so it's always clear what's active. Typecheck clean; 292 tests pass.
+
 ## 2026-09-26 — Sampling card back to per-product pills (with X undo) — `feat(inventory)`
 
 Reverted the flat individual list (too long/repetitive) back to the compact
