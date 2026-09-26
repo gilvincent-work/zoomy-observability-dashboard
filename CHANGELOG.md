@@ -12,6 +12,17 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-27 — Backfill won free items from the Edit-order modal — `feat(offline-sales)`
+
+The Edit-order modal (offline-sales) now has a "Free items won" section for
+backfilling spin-a-wheel prizes onto a past sale: it lists the order's existing
+prizes with a remove (x, via void_order_prize) and an add control (add_order_prize).
+The prize picker only offers products with Event on-hand and caps the quantity at
+what's available, so a backfill deducts Event without going negative and you can't
+pick an out-of-stock product. New `getOrderPrizeContext` read + action; reuses the
+existing add/void prize actions. Independent of the edit Save. Typecheck clean; 292
+tests pass.
+
 ## 2026-09-26 — Inventory filters: Line on top, search + Filters modal, applied chips — `feat(inventory)`
 
 Reworked the filter bar so it stops cramming. Line (the primary filter) stays as

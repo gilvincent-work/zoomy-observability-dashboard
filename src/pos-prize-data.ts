@@ -46,6 +46,50 @@ const peso = (n: number) => `₱${Math.round(n).toLocaleString('en-PH')}`;
 const shortDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('en-PH', {month: 'short', day: 'numeric'}) : '—';
 
+/** The non-voided prizes already on ONE order, plus the pickable in-stock products.
+ *  Powers the "Free items won" section of the Edit-order modal (backfill path). */
+export interface OrderPrizeContext {
+  prizes: {client_uuid: string; product_name: string; qty: number}[];
+  products: PrizeProduct[]; // catalog entries with Event on-hand > 0, sorted by name
+}
+
+export const getOrderPrizeContext = cache(async (orderClientUuid: string): Promise<OrderPrizeContext> => {
+  if (usingPosMock() || !orderClientUuid) return {prizes: [], products: []};
+  const supabase = posClient();
+
+  const [prizeRes, products, locations] = await Promise.all([
+    // Inner-join to pos_orders so we can filter the prizes by the order's client_uuid
+    // (prize.order_id → pos_orders.id). Only the live (non-voided) prizes, newest first.
+    supabase
+      .from('pos_order_prizes')
+      .select('client_uuid,product_id,qty,won_at,pos_orders!inner(client_uuid)')
+      .eq('pos_orders.client_uuid', orderClientUuid)
+      .is('voided_at', null)
+      .order('won_at', {ascending: false}),
+    getPosProducts(),
+    getLocationStock().catch(() => []),
+  ]);
+  if (prizeRes.error) throw new Error(`pos_order_prizes read failed: ${prizeRes.error.message}`);
+
+  const nameById = new Map(products.map((p) => [p.product_id, p.name]));
+  const eventById = new Map(locations.map((l) => [l.product_id, l.event]));
+
+  const prizes = (prizeRes.data ?? [])
+    .filter((r) => r.client_uuid != null)
+    .map((r) => ({
+      client_uuid: r.client_uuid as string,
+      product_name: nameById.get(r.product_id as string) ?? (r.product_id as string),
+      qty: Number(r.qty ?? 0),
+    }));
+
+  const pickable: PrizeProduct[] = products
+    .map((p) => ({product_id: p.product_id, name: p.name, event: eventById.get(p.product_id) ?? 0}))
+    .filter((p) => p.event > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return {prizes, products: pickable};
+});
+
 export const getPrizeData = cache(async (): Promise<PrizeData> => {
   if (usingPosMock()) return EMPTY;
   const supabase = posClient();

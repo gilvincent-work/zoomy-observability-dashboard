@@ -5,6 +5,7 @@ import {revalidatePath, revalidateTag} from 'next/cache';
 import {POS_TAGS} from './pos-cache';
 import {auth} from '@/auth';
 import {posClient, usingPosMock} from './pos-data';
+import {getOrderPrizeContext, type OrderPrizeContext} from './pos-prize-data';
 
 // Server actions for the spin-a-wheel free ITEM (prize) attached to an order, via
 // the SECURITY DEFINER add_order_prize / void_order_prize RPCs. A prize deducts the
@@ -24,6 +25,13 @@ function revalidatePrizeSurfaces() {
   revalidatePath('/offline-sales');
   revalidatePath('/inventory');
   revalidateTag(POS_TAGS.catalog, 'max');
+}
+
+// Read the prize context for ONE order (its live prizes + the in-stock pickable
+// products), for the Edit-order modal's "Free items won" section.
+export async function getOrderPrizeContextAction(orderClientUuid: string): Promise<OrderPrizeContext> {
+  if (!orderClientUuid) return {prizes: [], products: []};
+  return getOrderPrizeContext(orderClientUuid);
 }
 
 type AddResult = {ok: true; oversold: boolean} | {ok: false; error: string};
