@@ -21,7 +21,7 @@ import {Pagination} from './pagination';
 import type {InventoryRow} from '@/src/pos-inventory-data';
 import type {ForecastStatus} from '@/src/pos-forecast-compute';
 
-type SortKey = 'category' | 'name' | 'status' | 'price' | 'thisMonth' | 'lastMonth' | 'threeMo' | 'stock' | 'cover' | 'reorder';
+type SortKey = 'category' | 'name' | 'status' | 'price' | 'thisMonth' | 'lastMonth' | 'threeMo' | 'stock' | 'office' | 'cover' | 'reorder';
 
 const PAGE_SIZE = 12; // rows per page on the merged product table
 
@@ -40,6 +40,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   const [line, setLine] = useState('');
   const [sub, setSub] = useState('');
   const [status, setStatus] = useState<'' | ForecastStatus | 'unlisted'>('');
+  const [loc, setLoc] = useState<'' | 'office' | 'event'>('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'category', dir: 1});
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -60,10 +61,12 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
       if (line === SUBCATEGORY_CATEGORY && sub && (r.subcategory ?? '') !== sub) return false;
       if (status === 'unlisted' && r.active) return false;
       if (status && status !== 'unlisted' && r.status !== status) return false;
+      if (loc === 'office' && r.office <= 0) return false;
+      if (loc === 'event' && r.event <= 0) return false;
       if (q && !(r.name.toLowerCase().includes(q) || r.product_id.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [rows, line, sub, status, search]);
+  }, [rows, line, sub, status, loc, search]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -77,6 +80,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
         case 'lastMonth': return r.monthly.lastMonth;
         case 'threeMo': return r.monthly.threeMonthTotal;
         case 'stock': return r.stock;
+        case 'office': return r.office;
         case 'cover': return r.coverEventDays ?? Number.POSITIVE_INFINITY;
         case 'reorder': return r.reorderQty ?? -1;
         default: return 0;
@@ -93,7 +97,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   // Paginate the filtered+sorted rows client-side. Snap back to page 1 whenever the
   // result set changes (filter/search/sort), and clamp so a shrunk set never leaves
   // us stranded past the last page.
-  useEffect(() => setPage(1), [line, sub, status, search, sort]);
+  useEffect(() => setPage(1), [line, sub, status, loc, search, sort]);
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const from = (safePage - 1) * PAGE_SIZE;
@@ -119,6 +123,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
         )}
         <div className="flex flex-wrap items-center gap-2">
           <PillRow label="Status" items={[{v: '', l: 'All'}, {v: 'out', l: 'Out'}, {v: 'low', l: 'Low'}, {v: 'healthy', l: 'Healthy'}, {v: 'unlisted', l: 'Unlisted'}]} active={status} onSelect={(v) => setStatus(v as typeof status)} />
+        <PillRow label="Location" items={[{v: '', l: 'All'}, {v: 'event', l: 'In Event'}, {v: 'office', l: 'In Office'}]} active={loc} onSelect={(v) => setLoc(v as typeof loc)} />
           <div className="ml-auto flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5">
             <span className="text-xs text-muted-foreground">🔍</span>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name or SKU…" aria-label="Search products"
@@ -144,7 +149,8 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                     <Th className="text-right" onClick={() => toggleSort('thisMonth')} active={sort.key === 'thisMonth'}>This mo <Sc>{caret('thisMonth')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('lastMonth')} active={sort.key === 'lastMonth'}>Last mo <Sc>{caret('lastMonth')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('threeMo')} active={sort.key === 'threeMo'}>3mo <Sc>{caret('threeMo')}</Sc></Th>
-                    <Th className="text-right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'}>Stock Qty <Sc>{caret('stock')}</Sc></Th>
+                    <Th className="text-right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'}>Event <Sc>{caret('stock')}</Sc></Th>
+                    <Th className="text-right" onClick={() => toggleSort('office')} active={sort.key === 'office'}>Office <Sc>{caret('office')}</Sc></Th>
                     <Th onClick={() => toggleSort('cover')} active={sort.key === 'cover'}>Lasts <Sc>{caret('cover')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('reorder')} active={sort.key === 'reorder'}>Suggested <Sc>{caret('reorder')}</Sc></Th>
                     <th className="px-2 py-3"></th>
@@ -198,12 +204,12 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
       {addStockRow && (
         <AddStockDialog row={addStockRow} usingMock={usingMock}
           onClose={() => setAddStockRow(null)}
-          onDone={(added) => {setRows((rs) => rs.map((r) => (r.product_id === addStockRow.product_id ? {...r, stock: r.stock + added} : r))); setAddStockRow(null);}} />
+          onDone={(added) => {setRows((rs) => rs.map((r) => (r.product_id === addStockRow.product_id ? {...r, office: r.office + added} : r))); setAddStockRow(null);}} />
       )}
       {editStockRow && (
         <EditStockDialog row={editStockRow} usingMock={usingMock}
           onClose={() => setEditStockRow(null)}
-          onDone={(newQty) => {setRows((rs) => rs.map((r) => (r.product_id === editStockRow.product_id ? {...r, stock: newQty} : r))); setEditStockRow(null);}} />
+          onDone={(newQty) => {setRows((rs) => rs.map((r) => (r.product_id === editStockRow.product_id ? {...r, stock: newQty, event: newQty} : r))); setEditStockRow(null);}} />
       )}
     </div>
   );
@@ -264,7 +270,8 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.monthly.lastMonth}</td>
       <td className="px-4 py-3 text-right tabular-nums">{r.monthly.threeMonthTotal}</td>
-      <td className="px-4 py-3 text-right tabular-nums font-medium">{r.stock}</td>
+      <td className="px-4 py-3 text-right tabular-nums font-medium">{r.event}</td>
+      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.office}</td>
       <td className="whitespace-nowrap px-4 py-3">
         <LastsBadge row={r} />
       </td>
@@ -344,8 +351,12 @@ function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}
           <dd className="mt-0.5 tabular-nums">{r.monthly.threeMonthTotal}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Stock</dt>
-          <dd className="mt-0.5 font-medium tabular-nums">{r.stock}</dd>
+          <dt className="text-muted-foreground">Event</dt>
+          <dd className="mt-0.5 font-medium tabular-nums">{r.event}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Office</dt>
+          <dd className="mt-0.5 tabular-nums text-muted-foreground">{r.office}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground">Lasts</dt>
@@ -433,7 +444,7 @@ function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleLis
       style={{position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? 'visible' : 'hidden'}}
       className="z-50 w-48 overflow-hidden rounded-xl border bg-popover text-left shadow-lg">
       <MenuItem href={`/inventory/${sku}`}>View detail</MenuItem>
-      <MenuItem onClick={onAddStock}>Add stock</MenuItem>
+      <MenuItem onClick={onAddStock}>Add to Office</MenuItem>
       <MenuItem onClick={onEditStock}>Edit stock</MenuItem>
       <MenuItem onClick={onUndo} disabled={pending}>Undo last add</MenuItem>
       <MenuItem onClick={onRename}>Rename</MenuItem>
@@ -539,10 +550,10 @@ function AddStockDialog({row, usingMock, onClose, onDone}: {
       <button type="button" aria-label="Cancel" onClick={onClose} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
       <div className="relative w-full max-w-sm rounded-xl border bg-popover p-5 shadow-lg">
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Add stock</h2>
+          <h2 className="text-sm font-semibold">Add to Office</h2>
           <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
-        <p className="mb-3 font-mono text-[11px] text-muted-foreground">{row.name} · {row.product_id} · {row.stock} on hand</p>
+        <p className="mb-3 font-mono text-[11px] text-muted-foreground">{row.name} · Office {row.office} · Event {row.event}</p>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">+</span>
           <input type="text" inputMode="numeric" value={value} autoFocus
@@ -551,12 +562,12 @@ function AddStockDialog({row, usingMock, onClose, onDone}: {
             className="w-32 rounded-md border bg-background px-2 py-1.5 text-sm tabular-nums outline-none focus-visible:border-ring" />
           <span className="text-xs text-muted-foreground">units</span>
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">Logged to the stock ledger. Undo the last add from the row menu.</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">Lands in Office back-stock. Use Move stock to send units to Event for the POS to sell. Undo the last add from the row menu.</p>
         {usingMock && <p className="mt-2 text-xs text-muted-foreground">Demo mode — set the Supabase pos_* env to add stock.</p>}
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">Cancel</button>
-          <button onClick={save} disabled={pending || usingMock} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{pending ? 'Adding…' : 'Add stock'}</button>
+          <button onClick={save} disabled={pending || usingMock} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{pending ? 'Adding…' : 'Add to Office'}</button>
         </div>
       </div>
     </div>,

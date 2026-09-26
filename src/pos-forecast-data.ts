@@ -2,6 +2,7 @@ import 'server-only';
 import {cache} from 'react';
 import {unstable_cache} from 'next/cache';
 import {posClient, usingPosMock, getPosProducts} from './pos-data';
+import {getLocationStock} from './pos-location-data';
 import {manilaDayKey} from './pos-sales-compute';
 import {POS_TAGS, POS_CACHE_REVALIDATE} from './pos-cache';
 import {MOCK_POS_PRODUCTS} from './pos-mock';
@@ -65,13 +66,21 @@ export interface StockForecast {
  */
 export async function getStockForecast(now: Date = new Date()): Promise<StockForecast | null> {
   try {
-    const [products, movements, config, plan] = await Promise.all([
+    const [products, movements, config, plan, locations] = await Promise.all([
       getPosProducts(),
       getSaleMovements(),
       getStockConfig(),
       getNextEventPlan(),
+      getLocationStock().catch(() => []),
     ]);
-    const {rows, summary} = computeForecast(products, movements, now, config);
+    // Forecast on the sellable (Event) on-hand, not the global Office+Event sum, so
+    // Office back-stock never inflates cover-days or hides a low sellable count.
+    // Falls back to the product's global stock if the per-location read is empty.
+    const eventById = new Map(locations.map((l) => [l.product_id, l.event]));
+    const sellable = locations.length
+      ? products.map((p) => ({...p, stock: eventById.get(p.product_id) ?? 0}))
+      : products;
+    const {rows, summary} = computeForecast(sellable, movements, now, config);
     const {rows: surge, summary: surgeSummary} = computeSurge(rows, plan, config, now);
     return {rows, summary, config, plan, surge, surgeSummary};
   } catch {

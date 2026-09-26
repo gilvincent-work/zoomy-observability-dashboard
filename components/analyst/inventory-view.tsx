@@ -10,13 +10,14 @@ import {useState, useTransition} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
-import {Dog, Package, Plus, X} from 'lucide-react';
+import {Package, Plus, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {POS_CATEGORIES} from '@/src/pos-format';
 import {createProductAction} from '@/src/pos-actions';
 import {AddStockButton} from './add-stock-button';
 import {TransferStockButton} from './transfer-stock-button';
 import {FreeTasteButton} from './free-taste-button';
+import {SamplingPanel} from './sampling-panel';
 import {InventoryTable} from './inventory-table';
 import {InventorySummary} from './inventory-summary';
 import {BundleControls} from './bundle-controls';
@@ -105,32 +106,7 @@ export function InventoryView({data, bundles, tab, channel, venue, locations, sa
         </div>
       )}
 
-      {tab === 'all' && sampling.totalCount > 0 && (
-        <div className="mb-4 rounded-xl border bg-card p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <Dog className="size-3.5" /> Sampling · last {sampling.windowDays} days
-            </span>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              <span className="tabular-nums text-foreground">{sampling.totalUnits}</span> units ·{' '}
-              <span className="tabular-nums">{sampling.totalCount}</span> logged
-              {sampling.oversoldCount > 0 && (
-                <> · <span className="tabular-nums text-amber-600 dark:text-amber-400">{sampling.oversoldCount}</span> vs low stock</>
-              )}
-            </span>
-          </div>
-          {sampling.byProduct.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {sampling.byProduct.slice(0, 6).map((p) => (
-                <span key={p.product_id} className="inline-flex items-baseline gap-1.5 rounded-md border bg-background px-2 py-1 text-xs">
-                  <span className="text-foreground">{p.name}</span>
-                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{p.units}</span>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {tab === 'all' && <SamplingPanel sampling={sampling} />}
 
       {tab === 'all' ? (
         <InventoryTable rows={data.rows} usingMock={data.usingMock} />

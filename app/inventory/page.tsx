@@ -33,7 +33,7 @@ export default async function Page(
     getInventoryPageData(venue),
     getPosBundles(),
     getLocationStock().catch(() => []),
-    getFreeTasteSummary().catch(() => ({windowDays: 30, totalUnits: 0, totalCount: 0, oversoldCount: 0, byProduct: []})),
+    getFreeTasteSummary().catch(() => ({windowDays: 30, totalUnits: 0, totalCount: 0, oversoldCount: 0, byProduct: [], recent: []})),
   ]);
   return <InventoryView data={data} bundles={bundles} tab={tab} channel="offline" venue={data.activeVenue} locations={locations} sampling={sampling} />;
 }
