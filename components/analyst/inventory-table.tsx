@@ -10,7 +10,7 @@ import {useMemo, useState, useTransition, useEffect, useLayoutEffect, useRef} fr
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
-import {ArrowLeftRight, Eye, EyeOff, MoreHorizontal, Pencil, Search, Tag, Type, Undo2, X, type LucideIcon} from 'lucide-react';
+import {ArrowLeftRight, Eye, EyeOff, MoreHorizontal, Pencil, Search, SlidersHorizontal, Tag, Type, Undo2, X, type LucideIcon} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {POS_CATEGORIES, POS_SUBCATEGORIES, SUBCATEGORY_CATEGORY, formatPeso} from '@/src/pos-format';
@@ -32,6 +32,8 @@ const STATUS: Record<ForecastStatus, {label: string; dot: string; text: string; 
   out: {label: 'Out', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/10'},
 };
 const STATUS_RANK: Record<ForecastStatus, number> = {out: 0, low: 1, healthy: 2};
+const STATUS_FILTER_LABELS: Record<'out' | 'low' | 'healthy' | 'unlisted', string> = {out: 'Out', low: 'Low', healthy: 'Healthy', unlisted: 'Unlisted'};
+const LOC_FILTER_LABELS: Record<'office' | 'event', string> = {office: 'In Office', event: 'In Event'};
 const fmt1 = (n: number) => (Math.round(n * 10) / 10).toLocaleString();
 
 export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryRow[]; usingMock: boolean}) {
@@ -43,6 +45,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   const [status, setStatus] = useState<'' | ForecastStatus | 'unlisted'>('');
   const [loc, setLoc] = useState<'' | 'office' | 'event'>('');
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'category', dir: 1});
   const [menuFor, setMenuFor] = useState<string | null>(null);
   // Separate menu state for the mobile card list. The card RowMenu portals to
@@ -113,40 +116,73 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   }
   const caret = (key: SortKey) => (sort.key !== key ? '↕' : sort.dir === 1 ? '↑' : '↓');
 
+  // Type only applies within the Freeze-Dried line; count it only when it's live.
+  const typeActive = line === SUBCATEGORY_CATEGORY && sub !== '';
+  const advancedCount = (typeActive ? 1 : 0) + (status ? 1 : 0) + (loc ? 1 : 0);
+
   return (
     <div>
-      {/* Filters: search first on the left, filter groups stacked to its right */}
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start">
-        <div className="relative md:w-64 md:shrink-0">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name or SKU…"
-            aria-label="Search products"
-            className="w-full rounded-md border bg-background py-2 pl-9 pr-8 text-sm outline-none transition-colors focus-visible:border-ring"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              aria-label="Clear search"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <X className="size-3.5" />
+      {/* Filters: Line is the primary filter (quick-tap on top); search + the rest
+          behind a Filters modal, with the applied ones shown as chips below. */}
+      <div className="mb-4 flex flex-col gap-2.5">
+        <PillRow label="Line" items={[{v: '', l: 'All'}, ...POS_CATEGORIES.map((c) => ({v: c as string, l: c}))]} active={line}
+          onSelect={(v) => {setLine(v); if (v !== SUBCATEGORY_CATEGORY) setSub('');}} />
+
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name or SKU…"
+              aria-label="Search products"
+              className="w-full rounded-md border bg-background py-2 pl-9 pr-8 text-sm outline-none transition-colors focus-visible:border-ring"
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:text-foreground">
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(true)}
+            aria-label="More filters"
+            className={cn(
+              'inline-flex shrink-0 items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium transition-colors',
+              advancedCount > 0 ? 'border-primary/50 text-foreground' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <SlidersHorizontal className="size-4" /> Filters
+            {advancedCount > 0 && (
+              <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold tabular-nums text-primary-foreground">{advancedCount}</span>
+            )}
+          </button>
+        </div>
+
+        {advancedCount > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Applied</span>
+            {typeActive && <FilterChip label={`Type: ${sub}`} onClear={() => setSub('')} />}
+            {status && <FilterChip label={`Status: ${STATUS_FILTER_LABELS[status]}`} onClear={() => setStatus('')} />}
+            {loc && <FilterChip label={`Location: ${LOC_FILTER_LABELS[loc]}`} onClear={() => setLoc('')} />}
+            <button type="button" onClick={() => {setSub(''); setStatus(''); setLoc('');}}
+              className="ml-1 text-[11px] font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline">
+              Clear all
             </button>
-          )}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <PillRow label="Line" items={[{v: '', l: 'All'}, ...POS_CATEGORIES.map((c) => ({v: c as string, l: c}))]} active={line}
-            onSelect={(v) => {setLine(v); if (v !== SUBCATEGORY_CATEGORY) setSub('');}} />
-          {line === SUBCATEGORY_CATEGORY && (
-            <PillRow label="Type" items={[{v: '', l: 'All'}, ...POS_SUBCATEGORIES.map((s) => ({v: s as string, l: s}))]} active={sub} onSelect={setSub} />
-          )}
-          <PillRow label="Status" items={[{v: '', l: 'All'}, {v: 'out', l: 'Out'}, {v: 'low', l: 'Low'}, {v: 'healthy', l: 'Healthy'}, {v: 'unlisted', l: 'Unlisted'}]} active={status} onSelect={(v) => setStatus(v as typeof status)} />
-          <PillRow label="Location" items={[{v: '', l: 'All'}, {v: 'event', l: 'In Event'}, {v: 'office', l: 'In Office'}]} active={loc} onSelect={(v) => setLoc(v as typeof loc)} />
-        </div>
+          </div>
+        )}
       </div>
+
+      {filtersOpen && (
+        <FilterModal
+          line={line} sub={sub} setSub={setSub}
+          status={status} setStatus={setStatus}
+          loc={loc} setLoc={setLoc}
+          onClose={() => setFiltersOpen(false)}
+        />
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -619,6 +655,78 @@ function Th({children, className, onClick, active}: {children: React.ReactNode; 
 function Sc({children}: {children: React.ReactNode}) {
   return <span className="ml-0.5 text-[9px] opacity-60">{children}</span>;
 }
+// A removable applied-filter chip shown under the search row.
+function FilterChip({label, onClear}: {label: string; onClear: () => void}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border bg-muted/40 py-0.5 pl-2.5 pr-1 text-xs">
+      <span className="text-foreground">{label}</span>
+      <button type="button" onClick={onClear} aria-label={`Remove ${label}`} className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+        <X className="size-3" />
+      </button>
+    </span>
+  );
+}
+
+// Secondary filters (Type when Freeze-Dried, Status, Location) in a modal, opened
+// from the Filters button. Selections apply live; Reset clears them, Done closes.
+function FilterModal({
+  line, sub, setSub, status, setStatus, loc, setLoc, onClose,
+}: {
+  line: string;
+  sub: string;
+  setSub: (v: string) => void;
+  status: '' | ForecastStatus | 'unlisted';
+  setStatus: (v: '' | ForecastStatus | 'unlisted') => void;
+  loc: '' | 'office' | 'event';
+  setLoc: (v: '' | 'office' | 'event') => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const hasAny = (line === SUBCATEGORY_CATEGORY && sub !== '') || status !== '' || loc !== '';
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="inv-filter-title">
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
+      <div className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-lg">
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <h2 id="inv-filter-title" className="flex items-center gap-2 text-base font-semibold">
+            <SlidersHorizontal className="size-4" /> Filters
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+
+        <div className="flex flex-col gap-4 px-5 py-4">
+          {line === SUBCATEGORY_CATEGORY && (
+            <PillRow label="Type" items={[{v: '', l: 'All'}, ...POS_SUBCATEGORIES.map((s) => ({v: s as string, l: s}))]} active={sub} onSelect={setSub} />
+          )}
+          <PillRow label="Status" items={[{v: '', l: 'All'}, {v: 'out', l: 'Out'}, {v: 'low', l: 'Low'}, {v: 'healthy', l: 'Healthy'}, {v: 'unlisted', l: 'Unlisted'}]} active={status} onSelect={(v) => setStatus(v as '' | ForecastStatus | 'unlisted')} />
+          <PillRow label="Location" items={[{v: '', l: 'All'}, {v: 'event', l: 'In Event'}, {v: 'office', l: 'In Office'}]} active={loc} onSelect={(v) => setLoc(v as '' | 'office' | 'event')} />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3">
+          <button type="button" onClick={() => {setSub(''); setStatus(''); setLoc('');}} disabled={!hasAny}
+            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+            Reset filters
+          </button>
+          <button type="button" onClick={onClose}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function PillRow({label, items, active, onSelect}: {label: string; items: {v: string; l: string}[]; active: string; onSelect: (v: string) => void}) {
   return (
     <div className="flex flex-wrap items-center gap-2">
