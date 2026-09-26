@@ -12,6 +12,16 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-27 — v1.4.0: ship to prod (locations, free taste, free item) — `chore(release)`
+
+**Version 1.3.7 → 1.4.0.** Promotes the inventory location UI (Office/Event columns +
+Location filter + totals, Move stock, receive-into-Office), Event-based forecast +
+low-stock alerts, free taste (log + Sampling panel with undo), and the spin-a-wheel
+free item (Prizes panel + Edit-order backfill + "Free item" badge on order tiles). Reads
+the prod `pos_*` schema (migrated + verified: existing stock backfilled to Event). No
+Coop table altered. Deploy note: prod Vercel is the co-worker's project (redeploy `main`;
+confirm `SUPABASE_URL_ARCHIVE` points at prod).
+
 ## 2026-09-27 — "Free item won" badge on order tiles — `feat(offline-sales)`
 
 The offline-sales order tiles (`/offline-sales/orders`) now show a "Free item" badge
