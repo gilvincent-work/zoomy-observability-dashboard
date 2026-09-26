@@ -12,6 +12,122 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-27 — v1.4.0: ship to prod (locations, free taste, free item) — `chore(release)`
+
+**Version 1.3.7 → 1.4.0.** Promotes the inventory location UI (Office/Event columns +
+Location filter + totals, Move stock, receive-into-Office), Event-based forecast +
+low-stock alerts, free taste (log + Sampling panel with undo), and the spin-a-wheel
+free item (Prizes panel + Edit-order backfill + "Free item" badge on order tiles). Reads
+the prod `pos_*` schema (migrated + verified: existing stock backfilled to Event). No
+Coop table altered. Deploy note: prod Vercel is the co-worker's project (redeploy `main`;
+confirm `SUPABASE_URL_ARCHIVE` points at prod).
+
+## 2026-09-27 — "Free item won" badge on order tiles — `feat(offline-sales)`
+
+The offline-sales order tiles (`/offline-sales/orders`) now show a "Free item" badge
+(Gift icon, amber pill) when the order has a non-voided won free item, so an analyst
+can spot prize orders at a glance. New server-only `getOrdersWithPrizes()` (distinct
+client_uuids from non-voided `pos_order_prizes`), threaded to the order list. Read-only,
+fail-soft. Typecheck clean, 292 tests pass.
+
+## 2026-09-27 — Backfill won free items from the Edit-order modal — `feat(offline-sales)`
+
+The Edit-order modal (offline-sales) now has a "Free items won" section for
+backfilling spin-a-wheel prizes onto a past sale: it lists the order's existing
+prizes with a remove (x, via void_order_prize) and an add control (add_order_prize).
+The prize picker only offers products with Event on-hand and caps the quantity at
+what's available, so a backfill deducts Event without going negative and you can't
+pick an out-of-stock product. New `getOrderPrizeContext` read + action; reuses the
+existing add/void prize actions. Independent of the edit Save. Typecheck clean; 292
+tests pass.
+
+## 2026-09-26 — Inventory filters: Line on top, search + Filters modal, applied chips — `feat(inventory)`
+
+Reworked the filter bar so it stops cramming. Line (the primary filter) stays as
+quick-tap pills on top. Below it, a full-width search input sits next to a **Filters**
+button (with an active-count badge) that opens a modal holding the secondary filters
+(Type when Freeze-Dried, Status, Location; live-apply, Reset/Done). Applied secondary
+filters render as removable chips on their own line under the search, plus a Clear all,
+so it's always clear what's active. Typecheck clean; 292 tests pass.
+
+## 2026-09-26 — Sampling card back to per-product pills (with X undo) — `feat(inventory)`
+
+Reverted the flat individual list (too long/repetitive) back to the compact
+per-product pills. Each pill now carries a small X that undoes the product's most
+recent free taste behind the same confirmation modal (restores the Event stock).
+The data layer tracks each product's newest sample (`lastClientUuid`/`lastQty`) so
+the pill can undo it directly. Typecheck clean; 292 tests pass.
+
+## 2026-09-26 — Inventory UX polish: searchable pickers, Move Stock row action, column reorder — `feat(inventory)`
+
+Usability follow-ups on the inventory + giveaway surfaces.
+
+- **Searchable dropdowns.** New reusable `SearchableSelect` combobox (type to
+  filter) replaces the long native `<select>` product/order pickers in Move stock,
+  Log free taste, and the Prizes backfill (order + product).
+- **Per-row "Move Stock".** The row menu's "Add to Office" is now **Move Stock**,
+  opening the transfer modal preselected to that product (Office to Event, editable).
+  Header "Add stock" is still how stock is received; "Edit stock" and "Undo last
+  add" stay.
+- **Column order.** Inventory table is now Product, Status, Price, **Office, Event**,
+  Trend, This mo, Last mo, 3mo, Lasts, Suggested (Office/Event moved up next to Price).
+- **Row menu icons.** Each action gained a leading icon (View detail, Move Stock,
+  Edit stock, Undo last add, Rename, Change price, Unlist) so the longer menu scans
+  faster.
+- **Sampling undo.** Replaced the aggregate chips + wordy toggle with a recent list
+  of individual free tastes, each with an X that opens a confirmation modal before
+  reverting (restores the Event stock). Typecheck clean; 292 tests pass.
+
+## 2026-09-26 — Per-location inventory view, Event-based forecast, free-taste undo — `feat(inventory)`
+
+Follow-ups from POS feedback. Reads Staging views/RPCs; no prod change.
+
+- **Office vs Event per product.** The inventory table now shows an **Event**
+  (sellable) column and an **Office** (back-stock) column, plus a **Location**
+  filter (All / In Event / In Office). The main Stock, status, and forecast are
+  based on Event on-hand, so Office back-stock never masks a low sellable count.
+  The per-row "Add stock" is now explicitly "Add to Office" (copy + optimistic
+  update target the Office field); "Edit stock" (set exact) still targets Event.
+- **Forecast and low-stock alerts use Event on-hand** (`pos-forecast-data.ts`,
+  `pos-inventory-data.ts` read `getLocationStock`; the `stock-alert` edge function
+  reads `pos_inventory_event`). Falls back to the global sum when the per-location
+  read is empty, so nothing regresses.
+- **Revert a free taste.** The Sampling card gains a recent list with an Undo per
+  row (`void_free_taste` restores the Event stock) for misclicks.
+- Free tastes and prizes remain excluded from sales, units, revenue, and forecast
+  velocity (verified). Typecheck clean; 292 dashboard tests pass.
+
+## 2026-09-26 — Free taste: log action + sampling summary — `feat(inventory)`
+
+- **Log a free taste** (`free-taste-button.tsx`): pick a product, packs opened, an
+  optional note; `recordFreeTasteAction` → `record_free_taste` RPC deducts the
+  Event pool and logs it as sampling (separate from sales). Shows Event on-hand and
+  warns when opening against low stock. This is the online / backfill path; the POS
+  logs most free tastes live.
+- **Sampling summary** on the Inventory (All products) tab: total units and count
+  over the last 30 days, an "opened vs low stock" flag, and the top sampled
+  products. New `src/pos-free-taste-actions.ts` + `src/pos-free-taste-data.ts`
+  (reads `pos_free_tastes`). Mirrors the incumbent modal system; typecheck clean.
+
+## 2026-09-26 — Inventory locations: Move stock + receive into Office — `feat(inventory)`
+
+Surfaces the new Office/Event location split on the Inventory page (Stratpoint /
+offline scope). Reads the new Staging views; no prod change. BoxMe online scope is
+untouched (still the existing stub).
+
+- **Move stock modal** (`transfer-stock-button.tsx`) transfers a product between
+  Office and Event via the `transfer_stock` RPC. Shows on-hand at both locations,
+  previews the resulting counts, caps the quantity at the source on-hand (the RPC
+  enforces it too), and defaults to the Office to Event direction with a swap.
+- **Add stock now picks a destination** (`add-stock-button.tsx`): Office
+  back-stock by default, or Event (immediately sellable). Wired through
+  `addStockAction(lines, location)`.
+- **Toolbar shows Office / Event totals** at a glance.
+- New `src/pos-transfer-actions.ts` (transfer server action) and
+  `src/pos-location-data.ts` (reads `pos_inventory_by_location`). All new UI
+  mirrors the incumbent stock-intake modal system (portal, steppers, footer) per
+  the design skills. Typecheck clean.
+
 ## 2026-09-26 — v1.3.7: PWA home-screen icon + mobile polish — `fix(pwa,mobile)`
 
 **Version bumped to 1.3.7** (patch; was 1.3.6). Fixes from on-device (iPhone 15)

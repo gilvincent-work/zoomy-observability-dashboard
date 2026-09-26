@@ -31,19 +31,24 @@ export interface StockLine {
   qty: number;
 }
 
+export type StockLocation = 'office' | 'event';
+
 type AddResult = {ok: true; count: number} | {ok: false; error: string};
 
-/** Add stock for several products in one transaction (all-or-nothing). */
-export async function addStockAction(lines: StockLine[]): Promise<AddResult> {
+/** Add stock for several products in one transaction (all-or-nothing). Received
+ *  stock lands in the given location (default Office, the back-stock the POS pulls
+ *  Event stock from). */
+export async function addStockAction(lines: StockLine[], location: StockLocation = 'office'): Promise<AddResult> {
   if (usingPosMock()) {
     return {ok: false, error: 'Running in demo mode — set the Supabase pos_* env to add stock.'};
   }
+  const loc: StockLocation = location === 'event' ? 'event' : 'office';
   const clean = lines
     .filter((l) => l.sku && Number.isFinite(l.qty) && l.qty > 0)
     .map((l) => ({sku: l.sku, qty: Math.round(l.qty)}));
   if (clean.length === 0) return {ok: false, error: 'Add at least one product with a quantity.'};
 
-  const {data, error} = await posClient().rpc('add_pos_stock', {p_lines: clean, p_by: await actor()});
+  const {data, error} = await posClient().rpc('add_pos_stock', {p_lines: clean, p_by: await actor(), p_location: loc});
   if (error) return {ok: false, error: error.message};
 
   revalidateStockSurfaces();

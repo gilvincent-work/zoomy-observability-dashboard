@@ -2,6 +2,7 @@ import 'server-only';
 import {getPosProducts, usingPosMock} from './pos-data';
 import {getPosOrders, getPosEvents} from './pos-sales';
 import {getStockForecast} from './pos-forecast-data';
+import {getLocationStock} from './pos-location-data';
 import {salesByProductMonth, compareByCategory, emptyMonthlySales, monthKeyOffset, monthKeyLabel, soldInMonth, yoyDeltaPct, type MonthlySales} from './pos-inventory-compute';
 import {resolveOrderEvents} from './pos-sales-compute';
 import type {ForecastStatus, ForecastConfig, NextEventPlan, SurgeSummary, SurgeRow, ForecastRow} from './pos-forecast-compute';
@@ -21,7 +22,9 @@ export interface InventoryRow {
   emoji: string | null;
   active: boolean;
   price: number | null;
-  stock: number; // "Stock Qty" — the single global on-hand (D3)
+  stock: number; // sellable on-hand = Event location (drives status/forecast)
+  office: number; // back-stock at Office
+  event: number; // sellable at Event (same as `stock`, named for the column)
   status: ForecastStatus;
   coverEventDays: number | null;
   runsOutLabel: string;
@@ -72,11 +75,18 @@ export async function getInventoryPageData(
   now: Date = new Date(),
 ): Promise<InventoryPageData> {
   const products: PosProductRow[] = await getPosProducts(); // throws only on a hard failure; page catches
-  const [forecast, rawOrders, events] = await Promise.all([
+  const [forecast, rawOrders, events, locations] = await Promise.all([
     getStockForecast(now).catch(() => null),
     getPosOrders().catch(() => [] as Awaited<ReturnType<typeof getPosOrders>>),
     getPosEvents().catch(() => [] as PosEvent[]),
+    getLocationStock().catch(() => []),
   ]);
+  // Per-location on-hand: Event is the sellable count (drives status/forecast),
+  // Office is back-stock. Falls back to the product's global stock as Event when
+  // the per-location read is empty (e.g. mock), so nothing regresses.
+  const hasLocations = locations.length > 0;
+  const eventById = new Map(locations.map((l) => [l.product_id, l.event]));
+  const officeById = new Map(locations.map((l) => [l.product_id, l.office]));
 
   // Attribute untagged past-day sales to any event now covering their date, then
   // scope by venue through the (resolved) event_id (automatic, read-time).
@@ -102,6 +112,8 @@ export async function getInventoryPageData(
       const f = forecastById.get(p.product_id);
       const m = monthly.get(p.product_id) ?? emptyMonthlySales();
       const ly = lastYearSold.get(p.product_id) ?? 0;
+      const event = hasLocations ? (eventById.get(p.product_id) ?? 0) : p.stock;
+      const office = officeById.get(p.product_id) ?? 0;
       return {
         product_id: p.product_id,
         name: p.name,
@@ -110,10 +122,12 @@ export async function getInventoryPageData(
         emoji: p.emoji,
         active: p.active,
         price: p.price,
-        stock: p.stock,
-        status: (f?.status ?? (p.stock <= 0 ? 'out' : 'healthy')) as ForecastStatus,
+        stock: event,
+        office,
+        event,
+        status: (f?.status ?? (event <= 0 ? 'out' : 'healthy')) as ForecastStatus,
         coverEventDays: f?.coverEventDays ?? null,
-        runsOutLabel: f?.runsOutLabel ?? (p.stock <= 0 ? 'Now' : 'No recent sales'),
+        runsOutLabel: f?.runsOutLabel ?? (event <= 0 ? 'Now' : 'No recent sales'),
         reorderQty: f?.reorderQty ?? null,
         monthly: m,
         yoy: ly > 0 ? {lastYearSold: ly, deltaPct: yoyDeltaPct(m.thisMonth, ly), monthLabel: lastYearLabel} : null,

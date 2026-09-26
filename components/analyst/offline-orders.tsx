@@ -1,18 +1,21 @@
 'use client';
 
-import {useState, useTransition} from 'react';
+import {useCallback, useEffect, useRef, useState, useTransition} from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
-import {ArrowLeft, Ban, PawPrint, Pencil, Plus, Receipt, RotateCcw, TriangleAlert, X} from 'lucide-react';
+import {ArrowLeft, Ban, Gift, Minus, PawPrint, Pencil, Plus, Receipt, RotateCcw, TriangleAlert, X} from 'lucide-react';
 import type {PosOrder, PosOrdersFilter, PriceBounds, PosCatalogItem, PosBundleDef, EditEntry} from '@/src/pos-sales-types';
 import {isFilterActive, orderToEntries, type PageInfo} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodLabel, paymentMethodBadgeClass} from '@/src/pos-format';
 import {voidOrderAction, unvoidOrderAction, editOrderAction} from '@/src/pos-sales-actions';
+import {addPrizeAction, voidPrizeAction, getOrderPrizeContextAction} from '@/src/pos-prize-actions';
+import type {OrderPrizeContext} from '@/src/pos-prize-data';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Eyebrow, MockNote} from './sections';
+import {SearchableSelect} from './searchable-select';
 import {TransactionFilters} from './transaction-filters';
 import {RefreshControl} from './refresh-control';
 import {Pagination} from './pagination';
@@ -38,6 +41,7 @@ export function OfflineOrdersView({
   bounds,
   catalog,
   bundles,
+  prizeOrderUuids,
   usingMock,
   fetchedAt,
 }: {
@@ -47,12 +51,15 @@ export function OfflineOrdersView({
   bounds: PriceBounds;
   catalog: PosCatalogItem[];
   bundles: PosBundleDef[];
+  prizeOrderUuids: string[]; // client_uuids of orders with a non-voided prize
   usingMock: boolean;
   fetchedAt: string;
 }) {
   const {page, totalPages, pageSize} = pageInfo;
   const firstOnPage = (page - 1) * pageSize;
   const filtered = isFilterActive(filter);
+  // Set for O(1) lookup when tagging each tile with the "Free item" badge.
+  const prizeOrders = new Set(prizeOrderUuids);
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -144,6 +151,11 @@ export function OfflineOrdersView({
                       <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', paymentMethodBadgeClass(o.payment_method))}>
                         {paymentMethodLabel(o.payment_method)}
                       </span>
+                      {prizeOrders.has(o.client_uuid) && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                          <Gift className="size-3" /> Free item
+                        </span>
+                      )}
                       {o.customer_handle && (
                         <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                           <PawPrint className="size-3" /> {o.customer_handle}
@@ -476,6 +488,8 @@ function EditOrderModal({
               {error}
             </div>
           )}
+
+          <OrderPrizesSection order={order} />
         </div>
 
         <div className="flex items-center justify-between border-t px-5 py-3">
@@ -597,6 +611,180 @@ function BundleEntryCard({
       )}
 
       {problem && <p className="mt-1.5 text-[11px] text-destructive">This bundle {problem}.</p>}
+    </div>
+  );
+}
+
+/** "Free items won" section inside the edit modal: lists the spin-a-wheel prizes
+ *  already on this order (each undoable) and backfills a new one. It is independent
+ *  of the Save button — prizes apply immediately through add_order_prize /
+ *  void_order_prize (like the standalone Prizes panel), then re-fetch + router.refresh
+ *  so restored/deducted Event stock reflects. The picker only offers products with
+ *  Event on-hand and caps qty at that on-hand, so a backfill never oversells. */
+function OrderPrizesSection({order}: {order: PosOrder}) {
+  const router = useRouter();
+  const [ctx, setCtx] = useState<OrderPrizeContext | null>(null);
+  const [loading, startLoad] = useTransition();
+  const [busy, startBusy] = useTransition();
+  const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [sku, setSku] = useState('');
+  const [qty, setQty] = useState(1);
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [okNote, setOkNote] = useState<string | null>(null);
+  // Synchronous guard so a rapid double-click can't fire void_order_prize twice for
+  // the same prize (React state lags a render); the disabled UI is a second layer.
+  const voidingRef = useRef<Set<string>>(new Set());
+
+  const refetch = useCallback(async () => {
+    setCtx(await getOrderPrizeContextAction(order.client_uuid));
+  }, [order.client_uuid]);
+
+  useEffect(() => {
+    startLoad(() => refetch());
+  }, [refetch]);
+
+  const products = ctx?.products ?? [];
+  const prizes = ctx?.prizes ?? [];
+  const picked = products.find((p) => p.product_id === sku);
+  const cap = picked?.event ?? 1;
+  const clampedQty = Math.max(1, Math.min(cap, qty));
+
+  const pickProduct = (v: string) => {
+    setSku(v);
+    setQty(1);
+    setErr(null);
+    setOkNote(null);
+  };
+
+  const add = () => {
+    if (!sku || busy) return;
+    setErr(null);
+    setOkNote(null);
+    startBusy(async () => {
+      const res = await addPrizeAction({orderClientUuid: order.client_uuid, sku, qty: clampedQty, note: note.trim() || undefined});
+      if (!res.ok) {
+        setErr(res.error);
+        return;
+      }
+      // The qty cap is against a cached on-hand snapshot; a stale snapshot can still
+      // oversell, in which case the RPC flags it. Surface that so Coop can restock.
+      if (res.oversold) setOkNote('Added, but that went past the Event on-hand (restock in Coop).');
+      setSku('');
+      setQty(1);
+      setNote('');
+      await refetch();
+      router.refresh();
+    });
+  };
+
+  const undo = (clientUuid: string) => {
+    // Synchronous ref guard: blocks a rapid double-click before React state catches up.
+    if (voidingRef.current.has(clientUuid)) return;
+    voidingRef.current.add(clientUuid);
+    setErr(null);
+    setOkNote(null);
+    setVoidingId(clientUuid);
+    startBusy(async () => {
+      try {
+        const res = await voidPrizeAction(clientUuid);
+        if (!res.ok) {
+          setErr(res.error);
+          return;
+        }
+        await refetch();
+        router.refresh();
+      } finally {
+        voidingRef.current.delete(clientUuid);
+        setVoidingId(null);
+      }
+    });
+  };
+
+  return (
+    <div className="mt-5 border-t pt-4">
+      <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        <Gift className="size-3.5" /> Free items won
+      </span>
+
+      {loading && !ctx ? (
+        <p className="mt-2 text-xs text-muted-foreground">Loading prizes…</p>
+      ) : (
+        <>
+          {prizes.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {prizes.map((p) => (
+                <li key={p.client_uuid} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background/40 px-2.5 py-1.5">
+                  <span className="min-w-0 truncate text-sm">
+                    <span className="font-medium tabular-nums">{p.qty}×</span> {p.product_name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => undo(p.client_uuid)}
+                    disabled={busy || voidingId === p.client_uuid}
+                    aria-label={`Remove prize ${p.product_name}`}
+                    title="Undo this prize (restores Event stock)"
+                    className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {products.length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">No products have Event stock to give as a prize.</p>
+          ) : (
+            <div className="mt-3 flex flex-col gap-2">
+              <SearchableSelect
+                value={sku}
+                onChange={pickProduct}
+                options={products.map((p) => ({value: p.product_id, label: p.name, hint: `${p.event} at Event`}))}
+                placeholder="Select a prize product…"
+                ariaLabel="Select prize product"
+              />
+              <div className="flex items-center gap-2">
+                <div className="inline-flex items-center rounded-md border bg-background">
+                  <button
+                    type="button"
+                    onClick={() => setQty((q) => Math.max(1, Math.min(cap, q) - 1))}
+                    disabled={!sku || clampedQty <= 1}
+                    aria-label="Decrease quantity"
+                    className="flex size-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                  >
+                    <Minus className="size-3.5" />
+                  </button>
+                  <span className="w-8 text-center text-sm font-medium tabular-nums" aria-label="Prize quantity">{clampedQty}</span>
+                  <button
+                    type="button"
+                    onClick={() => setQty((q) => Math.min(cap, Math.max(1, q) + 1))}
+                    disabled={!sku || clampedQty >= cap}
+                    aria-label="Increase quantity"
+                    className="flex size-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                  >
+                    <Plus className="size-3.5" />
+                  </button>
+                </div>
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Note (optional)"
+                  aria-label="Prize note"
+                  className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus-visible:border-ring"
+                />
+              </div>
+              {picked && <span className="text-[11px] text-muted-foreground">{picked.event} on hand at Event.</span>}
+              <Button size="sm" variant="outline" onClick={add} disabled={busy || !sku} className="self-start">
+                <Gift className="size-3.5" /> {busy ? 'Adding…' : 'Add free item won'}
+              </Button>
+            </div>
+          )}
+
+          {okNote && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{okNote}</p>}
+          {err && <p className="mt-2 text-xs text-destructive">{err}</p>}
+        </>
+      )}
     </div>
   );
 }

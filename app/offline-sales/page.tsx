@@ -18,6 +18,8 @@ import {
   topProducts,
 } from '@/src/pos-sales-compute';
 import {OfflineSalesView} from '@/components/analyst/offline-sales';
+import {getPrizeData} from '@/src/pos-prize-data';
+import {PrizePanel} from '@/components/analyst/prize-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,10 +38,11 @@ async function dailyProgress(orders: PosOrder[]): Promise<DailyProgress | null> 
 export default async function Page(props: {searchParams: Promise<{range?: string}>}) {
   const searchParams = await props.searchParams;
   const range = isSalesRange(searchParams.range) ? searchParams.range : '30d';
-  const [allOrders, products, events] = await Promise.all([
+  const [allOrders, products, events, prizeData] = await Promise.all([
     getPosOrders(),
     getPosProducts(),
     getPosEvents(),
+    getPrizeData().catch(() => ({prizes: [], recentOrders: [], products: []})),
   ]);
   const orders = filterOrdersByRange(allOrders, range);
   const progress = await dailyProgress(allOrders);
@@ -50,20 +53,25 @@ export default async function Page(props: {searchParams: Promise<{range?: string
   const featured = featuredEvent(events, manilaDayKey(new Date().toISOString()));
 
   return (
-    <OfflineSalesView
-      range={range}
-      progress={progress}
-      featured={featured}
-      kpis={computeKpis(orders)}
-      productsByRevenue={topProducts(orders, Infinity, 'revenue')}
-      productsByUnits={topProducts(orders, Infinity, 'units')}
-      topBundles={topBundles(orders)}
-      bundles={bundleSalesSummary(orders)}
-      orders={orders}
-      stock={stock}
-      alerts={stockAlerts(products)}
-      usingMock={usingPosMock()}
-      fetchedAt={new Date().toISOString()}
-    />
+    <>
+      <OfflineSalesView
+        range={range}
+        progress={progress}
+        featured={featured}
+        kpis={computeKpis(orders)}
+        productsByRevenue={topProducts(orders, Infinity, 'revenue')}
+        productsByUnits={topProducts(orders, Infinity, 'units')}
+        topBundles={topBundles(orders)}
+        bundles={bundleSalesSummary(orders)}
+        orders={orders}
+        stock={stock}
+        alerts={stockAlerts(products)}
+        usingMock={usingPosMock()}
+        fetchedAt={new Date().toISOString()}
+      />
+      <div className="mx-auto max-w-6xl px-6 pb-12 md:px-10 max-md:px-4">
+        <PrizePanel prizes={prizeData.prizes} recentOrders={prizeData.recentOrders} products={prizeData.products} />
+      </div>
+    </>
   );
 }

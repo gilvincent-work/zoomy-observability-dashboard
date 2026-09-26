@@ -10,18 +10,19 @@ import {useMemo, useState, useTransition, useEffect, useLayoutEffect, useRef} fr
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
-import {MoreHorizontal, Pencil, X} from 'lucide-react';
+import {ArrowLeftRight, Eye, EyeOff, MoreHorizontal, Pencil, Search, SlidersHorizontal, Tag, Type, Undo2, X, type LucideIcon} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {POS_CATEGORIES, POS_SUBCATEGORIES, SUBCATEGORY_CATEGORY, formatPeso} from '@/src/pos-format';
 import {compareByCategory} from '@/src/pos-inventory-compute';
 import {renameProductAction, repriceProductAction, setListingAction, setStockAction} from '@/src/pos-actions';
-import {addStockAction, voidLastAddAction} from '@/src/pos-stock-intake-actions';
+import {voidLastAddAction} from '@/src/pos-stock-intake-actions';
+import {TransferModal} from './transfer-stock-button';
 import {Pagination} from './pagination';
 import type {InventoryRow} from '@/src/pos-inventory-data';
 import type {ForecastStatus} from '@/src/pos-forecast-compute';
 
-type SortKey = 'category' | 'name' | 'status' | 'price' | 'thisMonth' | 'lastMonth' | 'threeMo' | 'stock' | 'cover' | 'reorder';
+type SortKey = 'category' | 'name' | 'status' | 'price' | 'thisMonth' | 'lastMonth' | 'threeMo' | 'stock' | 'office' | 'cover' | 'reorder';
 
 const PAGE_SIZE = 12; // rows per page on the merged product table
 
@@ -31,6 +32,8 @@ const STATUS: Record<ForecastStatus, {label: string; dot: string; text: string; 
   out: {label: 'Out', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/10'},
 };
 const STATUS_RANK: Record<ForecastStatus, number> = {out: 0, low: 1, healthy: 2};
+const STATUS_FILTER_LABELS: Record<'out' | 'low' | 'healthy' | 'unlisted', string> = {out: 'Out', low: 'Low', healthy: 'Healthy', unlisted: 'Unlisted'};
+const LOC_FILTER_LABELS: Record<'office' | 'event', string> = {office: 'In Office', event: 'In Event'};
 const fmt1 = (n: number) => (Math.round(n * 10) / 10).toLocaleString();
 
 export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryRow[]; usingMock: boolean}) {
@@ -40,7 +43,9 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   const [line, setLine] = useState('');
   const [sub, setSub] = useState('');
   const [status, setStatus] = useState<'' | ForecastStatus | 'unlisted'>('');
+  const [loc, setLoc] = useState<'' | 'office' | 'event'>('');
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'category', dir: 1});
   const [menuFor, setMenuFor] = useState<string | null>(null);
   // Separate menu state for the mobile card list. The card RowMenu portals to
@@ -49,7 +54,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   // means the hidden breakpoint's menu never opens (its buttons aren't clickable).
   const [cardMenuFor, setCardMenuFor] = useState<string | null>(null);
   const [editing, setEditing] = useState<{row: InventoryRow; field: 'name' | 'price'} | null>(null);
-  const [addStockRow, setAddStockRow] = useState<InventoryRow | null>(null);
+  const [moveStockRow, setMoveStockRow] = useState<InventoryRow | null>(null);
   const [editStockRow, setEditStockRow] = useState<InventoryRow | null>(null);
   const [page, setPage] = useState(1);
 
@@ -60,10 +65,12 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
       if (line === SUBCATEGORY_CATEGORY && sub && (r.subcategory ?? '') !== sub) return false;
       if (status === 'unlisted' && r.active) return false;
       if (status && status !== 'unlisted' && r.status !== status) return false;
+      if (loc === 'office' && r.office <= 0) return false;
+      if (loc === 'event' && r.event <= 0) return false;
       if (q && !(r.name.toLowerCase().includes(q) || r.product_id.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [rows, line, sub, status, search]);
+  }, [rows, line, sub, status, loc, search]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -77,6 +84,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
         case 'lastMonth': return r.monthly.lastMonth;
         case 'threeMo': return r.monthly.threeMonthTotal;
         case 'stock': return r.stock;
+        case 'office': return r.office;
         case 'cover': return r.coverEventDays ?? Number.POSITIVE_INFINITY;
         case 'reorder': return r.reorderQty ?? -1;
         default: return 0;
@@ -93,7 +101,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   // Paginate the filtered+sorted rows client-side. Snap back to page 1 whenever the
   // result set changes (filter/search/sort), and clamp so a shrunk set never leaves
   // us stranded past the last page.
-  useEffect(() => setPage(1), [line, sub, status, search, sort]);
+  useEffect(() => setPage(1), [line, sub, status, loc, search, sort]);
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const from = (safePage - 1) * PAGE_SIZE;
@@ -108,24 +116,73 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   }
   const caret = (key: SortKey) => (sort.key !== key ? '↕' : sort.dir === 1 ? '↑' : '↓');
 
+  // Type only applies within the Freeze-Dried line; count it only when it's live.
+  const typeActive = line === SUBCATEGORY_CATEGORY && sub !== '';
+  const advancedCount = (typeActive ? 1 : 0) + (status ? 1 : 0) + (loc ? 1 : 0);
+
   return (
     <div>
-      {/* Filters */}
-      <div className="mb-4 flex flex-col gap-2">
+      {/* Filters: Line is the primary filter (quick-tap on top); search + the rest
+          behind a Filters modal, with the applied ones shown as chips below. */}
+      <div className="mb-4 flex flex-col gap-2.5">
         <PillRow label="Line" items={[{v: '', l: 'All'}, ...POS_CATEGORIES.map((c) => ({v: c as string, l: c}))]} active={line}
           onSelect={(v) => {setLine(v); if (v !== SUBCATEGORY_CATEGORY) setSub('');}} />
-        {line === SUBCATEGORY_CATEGORY && (
-          <PillRow label="Type" items={[{v: '', l: 'All'}, ...POS_SUBCATEGORIES.map((s) => ({v: s as string, l: s}))]} active={sub} onSelect={setSub} />
-        )}
-        <div className="flex flex-wrap items-center gap-2">
-          <PillRow label="Status" items={[{v: '', l: 'All'}, {v: 'out', l: 'Out'}, {v: 'low', l: 'Low'}, {v: 'healthy', l: 'Healthy'}, {v: 'unlisted', l: 'Unlisted'}]} active={status} onSelect={(v) => setStatus(v as typeof status)} />
-          <div className="ml-auto flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5">
-            <span className="text-xs text-muted-foreground">🔍</span>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name or SKU…" aria-label="Search products"
-              className="w-40 bg-transparent text-xs outline-none" />
+
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name or SKU…"
+              aria-label="Search products"
+              className="w-full rounded-md border bg-background py-2 pl-9 pr-8 text-sm outline-none transition-colors focus-visible:border-ring"
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:text-foreground">
+                <X className="size-3.5" />
+              </button>
+            )}
           </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(true)}
+            aria-label="More filters"
+            className={cn(
+              'inline-flex shrink-0 items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium transition-colors',
+              advancedCount > 0 ? 'border-primary/50 text-foreground' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <SlidersHorizontal className="size-4" /> Filters
+            {advancedCount > 0 && (
+              <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold tabular-nums text-primary-foreground">{advancedCount}</span>
+            )}
+          </button>
         </div>
+
+        {advancedCount > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Applied</span>
+            {typeActive && <FilterChip label={`Type: ${sub}`} onClear={() => setSub('')} />}
+            {status && <FilterChip label={`Status: ${STATUS_FILTER_LABELS[status]}`} onClear={() => setStatus('')} />}
+            {loc && <FilterChip label={`Location: ${LOC_FILTER_LABELS[loc]}`} onClear={() => setLoc('')} />}
+            <button type="button" onClick={() => {setSub(''); setStatus(''); setLoc('');}}
+              className="ml-1 text-[11px] font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline">
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
+
+      {filtersOpen && (
+        <FilterModal
+          line={line} sub={sub} setSub={setSub}
+          status={status} setStatus={setStatus}
+          loc={loc} setLoc={setLoc}
+          onClose={() => setFiltersOpen(false)}
+        />
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -140,11 +197,12 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                     <Th onClick={() => toggleSort('name')} active={sort.key === 'name' || sort.key === 'category'}>Product <Sc>{sort.key === 'category' ? '▲cat' : caret('name')}</Sc></Th>
                     <Th onClick={() => toggleSort('status')} active={sort.key === 'status'}>Status <Sc>{caret('status')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('price')} active={sort.key === 'price'}>Price <Sc>{caret('price')}</Sc></Th>
+                    <Th className="text-right" onClick={() => toggleSort('office')} active={sort.key === 'office'}>Office <Sc>{caret('office')}</Sc></Th>
+                    <Th className="text-right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'}>Event <Sc>{caret('stock')}</Sc></Th>
                     <th className="px-4 py-3 text-left">Trend</th>
                     <Th className="text-right" onClick={() => toggleSort('thisMonth')} active={sort.key === 'thisMonth'}>This mo <Sc>{caret('thisMonth')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('lastMonth')} active={sort.key === 'lastMonth'}>Last mo <Sc>{caret('lastMonth')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('threeMo')} active={sort.key === 'threeMo'}>3mo <Sc>{caret('threeMo')}</Sc></Th>
-                    <Th className="text-right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'}>Stock Qty <Sc>{caret('stock')}</Sc></Th>
                     <Th onClick={() => toggleSort('cover')} active={sort.key === 'cover'}>Lasts <Sc>{caret('cover')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('reorder')} active={sort.key === 'reorder'}>Suggested <Sc>{caret('reorder')}</Sc></Th>
                     <th className="px-2 py-3"></th>
@@ -156,7 +214,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                       onMenu={() => setMenuFor((m) => (m === r.product_id ? null : r.product_id))}
                       onClose={() => setMenuFor(null)}
                       onEdit={(field) => {setMenuFor(null); setEditing({row: r, field});}}
-                      onAddStock={() => {setMenuFor(null); setAddStockRow(r);}}
+                      onMoveStock={() => {setMenuFor(null); setMoveStockRow(r);}}
                       onEditStock={() => {setMenuFor(null); setEditStockRow(r);}} />
                   ))}
                 </tbody>
@@ -172,7 +230,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                   onMenu={() => setCardMenuFor((m) => (m === r.product_id ? null : r.product_id))}
                   onClose={() => setCardMenuFor(null)}
                   onEdit={(field) => {setCardMenuFor(null); setEditing({row: r, field});}}
-                  onAddStock={() => {setCardMenuFor(null); setAddStockRow(r);}}
+                  onMoveStock={() => {setCardMenuFor(null); setMoveStockRow(r);}}
                   onEditStock={() => {setCardMenuFor(null); setEditStockRow(r);}} />
               ))}
             </ul>
@@ -195,22 +253,24 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
           onClose={() => setEditing(null)}
           onSaved={(patch) => {setRows((rs) => rs.map((r) => (r.product_id === editing.row.product_id ? {...r, ...patch} : r))); setEditing(null);}} />
       )}
-      {addStockRow && (
-        <AddStockDialog row={addStockRow} usingMock={usingMock}
-          onClose={() => setAddStockRow(null)}
-          onDone={(added) => {setRows((rs) => rs.map((r) => (r.product_id === addStockRow.product_id ? {...r, stock: r.stock + added} : r))); setAddStockRow(null);}} />
+      {moveStockRow && (
+        <TransferModal
+          products={rows.map((r) => ({product_id: r.product_id, name: r.name, office: r.office, event: r.event}))}
+          initialSku={moveStockRow.product_id}
+          onClose={() => setMoveStockRow(null)}
+        />
       )}
       {editStockRow && (
         <EditStockDialog row={editStockRow} usingMock={usingMock}
           onClose={() => setEditStockRow(null)}
-          onDone={(newQty) => {setRows((rs) => rs.map((r) => (r.product_id === editStockRow.product_id ? {...r, stock: newQty} : r))); setEditStockRow(null);}} />
+          onDone={(newQty) => {setRows((rs) => rs.map((r) => (r.product_id === editStockRow.product_id ? {...r, stock: newQty, event: newQty} : r))); setEditStockRow(null);}} />
       )}
     </div>
   );
 }
 
-function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
-  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onAddStock: () => void; onEditStock: () => void;
+function Row({r, menuOpen, onMenu, onClose, onEdit, onMoveStock, onEditStock}: {
+  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onMoveStock: () => void; onEditStock: () => void;
 }) {
   const s = STATUS[r.status];
   const [pending, startTransition] = useTransition();
@@ -250,6 +310,8 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
           {formatPeso(r.price)} <Pencil className="size-3 text-muted-foreground" />
         </button>
       </td>
+      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.office}</td>
+      <td className="px-4 py-3 text-right tabular-nums font-medium">{r.event}</td>
       <td className="px-4 py-3">
         <span className="inline-flex h-5 items-end gap-[3px]">
           {r.monthly.trend.map((v, i) => (
@@ -264,7 +326,6 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.monthly.lastMonth}</td>
       <td className="px-4 py-3 text-right tabular-nums">{r.monthly.threeMonthTotal}</td>
-      <td className="px-4 py-3 text-right tabular-nums font-medium">{r.stock}</td>
       <td className="whitespace-nowrap px-4 py-3">
         <LastsBadge row={r} />
       </td>
@@ -274,7 +335,7 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
         {menuOpen && (
           <RowMenu anchor={menuBtnRef.current} sku={r.product_id} active={r.active} pending={pending}
             onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
-            onAddStock={onAddStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
+            onMoveStock={onMoveStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
         )}
       </td>
     </tr>
@@ -285,8 +346,8 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
 // its own menu open/close is driven by cardMenuFor so it never collides with the
 // desktop table's portal. The name link navigates (no whole-card click, so the
 // price/menu taps don't need stopPropagation).
-function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}: {
-  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onAddStock: () => void; onEditStock: () => void;
+function RowCard({r, menuOpen, onMenu, onClose, onEdit, onMoveStock, onEditStock}: {
+  r: InventoryRow; menuOpen: boolean; onMenu: () => void; onClose: () => void; onEdit: (f: 'name' | 'price') => void; onMoveStock: () => void; onEditStock: () => void;
 }) {
   const s = STATUS[r.status];
   const [pending, startTransition] = useTransition();
@@ -318,7 +379,7 @@ function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}
           {menuOpen && (
             <RowMenu anchor={menuBtnRef.current} sku={r.product_id} active={r.active} pending={pending}
               onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
-              onAddStock={onAddStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
+              onMoveStock={onMoveStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
           )}
         </div>
       </div>
@@ -332,6 +393,14 @@ function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}
       </div>
       <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2.5 text-xs">
         <div>
+          <dt className="text-muted-foreground">Office</dt>
+          <dd className="mt-0.5 tabular-nums text-muted-foreground">{r.office}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Event</dt>
+          <dd className="mt-0.5 font-medium tabular-nums">{r.event}</dd>
+        </div>
+        <div>
           <dt className="text-muted-foreground">This mo</dt>
           <dd className="mt-0.5 font-medium tabular-nums">{r.monthly.thisMonth}<YoyDelta yoy={r.yoy} thisMonth={r.monthly.thisMonth} /></dd>
         </div>
@@ -342,10 +411,6 @@ function RowCard({r, menuOpen, onMenu, onClose, onEdit, onAddStock, onEditStock}
         <div>
           <dt className="text-muted-foreground">3 mo</dt>
           <dd className="mt-0.5 tabular-nums">{r.monthly.threeMonthTotal}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Stock</dt>
-          <dd className="mt-0.5 font-medium tabular-nums">{r.stock}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground">Lasts</dt>
@@ -392,8 +457,8 @@ function Badge({tone, children}: {tone: 'crit' | 'warn' | 'ok'; children: React.
 // Rendered in a portal with fixed positioning anchored to the ⋯ button, so it
 // escapes the table's overflow container (which would otherwise clip it) and flips
 // above the button when there isn't room below (bottom rows near the viewport edge).
-function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleListing, onAddStock, onEditStock, onUndo, onClose}: {
-  anchor: HTMLElement | null; sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onAddStock: () => void; onEditStock: () => void; onUndo: () => void; onClose: () => void;
+function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleListing, onMoveStock, onEditStock, onUndo, onClose}: {
+  anchor: HTMLElement | null; sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onMoveStock: () => void; onEditStock: () => void; onUndo: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{left: number; top: number} | null>(null);
@@ -432,21 +497,27 @@ function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleLis
     <div ref={ref} onClick={(e) => e.stopPropagation()}
       style={{position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? 'visible' : 'hidden'}}
       className="z-50 w-48 overflow-hidden rounded-xl border bg-popover text-left shadow-lg">
-      <MenuItem href={`/inventory/${sku}`}>View detail</MenuItem>
-      <MenuItem onClick={onAddStock}>Add stock</MenuItem>
-      <MenuItem onClick={onEditStock}>Edit stock</MenuItem>
-      <MenuItem onClick={onUndo} disabled={pending}>Undo last add</MenuItem>
-      <MenuItem onClick={onRename}>Rename</MenuItem>
-      <MenuItem onClick={onReprice}>Change price</MenuItem>
-      <MenuItem onClick={onToggleListing} disabled={pending}>{active ? 'Unlist' : 'List'}</MenuItem>
+      <MenuItem href={`/inventory/${sku}`} icon={Eye}>View detail</MenuItem>
+      <MenuItem onClick={onMoveStock} icon={ArrowLeftRight}>Move stock</MenuItem>
+      <MenuItem onClick={onEditStock} icon={Pencil}>Edit stock</MenuItem>
+      <MenuItem onClick={onUndo} disabled={pending} icon={Undo2}>Undo last add</MenuItem>
+      <MenuItem onClick={onRename} icon={Type}>Rename</MenuItem>
+      <MenuItem onClick={onReprice} icon={Tag}>Change price</MenuItem>
+      <MenuItem onClick={onToggleListing} disabled={pending} icon={active ? EyeOff : Eye}>{active ? 'Unlist' : 'List'}</MenuItem>
     </div>,
     document.body,
   );
 }
-function MenuItem({children, onClick, href, disabled}: {children: React.ReactNode; onClick?: () => void; href?: string; disabled?: boolean}) {
-  const cls = 'block w-full border-b px-4 py-2.5 text-left text-sm font-medium last:border-0 hover:bg-muted disabled:opacity-50';
-  if (href) return <Link href={href} className={cls}>{children}</Link>;
-  return <button type="button" onClick={onClick} disabled={disabled} className={cls}>{children}</button>;
+function MenuItem({children, onClick, href, disabled, icon: Icon}: {children: React.ReactNode; onClick?: () => void; href?: string; disabled?: boolean; icon?: LucideIcon}) {
+  const cls = 'flex w-full items-center gap-2.5 border-b px-4 py-2.5 text-left text-sm font-medium last:border-0 hover:bg-muted disabled:opacity-50';
+  const inner = (
+    <>
+      {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" />}
+      {children}
+    </>
+  );
+  if (href) return <Link href={href} className={cls}>{inner}</Link>;
+  return <button type="button" onClick={onClick} disabled={disabled} className={cls}>{inner}</button>;
 }
 
 function EditDialog({row, field, usingMock, onClose, onSaved}: {
@@ -501,62 +572,6 @@ function EditDialog({row, field, usingMock, onClose, onSaved}: {
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">Cancel</button>
           <button onClick={save} disabled={pending || usingMock} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{pending ? 'Saving…' : 'Save'}</button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function AddStockDialog({row, usingMock, onClose, onDone}: {
-  row: InventoryRow; usingMock: boolean; onClose: () => void; onDone: (added: number) => void;
-}) {
-  const [value, setValue] = useState('');
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {if (e.key === 'Escape') onClose();};
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  function save() {
-    setError(null);
-    const qty = Math.round(Number(value));
-    if (!Number.isFinite(qty) || qty <= 0) {setError('Enter a quantity greater than zero.'); return;}
-    startTransition(async () => {
-      const res = await addStockAction([{sku: row.product_id, qty}]);
-      if (res.ok) {
-        onDone(qty);
-        router.refresh();
-      } else setError(res.error);
-    });
-  }
-  if (typeof document === 'undefined') return null;
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <button type="button" aria-label="Cancel" onClick={onClose} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
-      <div className="relative w-full max-w-sm rounded-xl border bg-popover p-5 shadow-lg">
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Add stock</h2>
-          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
-        </div>
-        <p className="mb-3 font-mono text-[11px] text-muted-foreground">{row.name} · {row.product_id} · {row.stock} on hand</p>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">+</span>
-          <input type="text" inputMode="numeric" value={value} autoFocus
-            onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ''))}
-            onKeyDown={(e) => {if (e.key === 'Enter') save();}}
-            className="w-32 rounded-md border bg-background px-2 py-1.5 text-sm tabular-nums outline-none focus-visible:border-ring" />
-          <span className="text-xs text-muted-foreground">units</span>
-        </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">Logged to the stock ledger. Undo the last add from the row menu.</p>
-        {usingMock && <p className="mt-2 text-xs text-muted-foreground">Demo mode — set the Supabase pos_* env to add stock.</p>}
-        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">Cancel</button>
-          <button onClick={save} disabled={pending || usingMock} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{pending ? 'Adding…' : 'Add stock'}</button>
         </div>
       </div>
     </div>,
@@ -640,13 +655,85 @@ function Th({children, className, onClick, active}: {children: React.ReactNode; 
 function Sc({children}: {children: React.ReactNode}) {
   return <span className="ml-0.5 text-[9px] opacity-60">{children}</span>;
 }
+// A removable applied-filter chip shown under the search row.
+function FilterChip({label, onClear}: {label: string; onClear: () => void}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border bg-muted/40 py-0.5 pl-2.5 pr-1 text-xs">
+      <span className="text-foreground">{label}</span>
+      <button type="button" onClick={onClear} aria-label={`Remove ${label}`} className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+        <X className="size-3" />
+      </button>
+    </span>
+  );
+}
+
+// Secondary filters (Type when Freeze-Dried, Status, Location) in a modal, opened
+// from the Filters button. Selections apply live; Reset clears them, Done closes.
+function FilterModal({
+  line, sub, setSub, status, setStatus, loc, setLoc, onClose,
+}: {
+  line: string;
+  sub: string;
+  setSub: (v: string) => void;
+  status: '' | ForecastStatus | 'unlisted';
+  setStatus: (v: '' | ForecastStatus | 'unlisted') => void;
+  loc: '' | 'office' | 'event';
+  setLoc: (v: '' | 'office' | 'event') => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const hasAny = (line === SUBCATEGORY_CATEGORY && sub !== '') || status !== '' || loc !== '';
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="inv-filter-title">
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
+      <div className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-lg">
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <h2 id="inv-filter-title" className="flex items-center gap-2 text-base font-semibold">
+            <SlidersHorizontal className="size-4" /> Filters
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+
+        <div className="flex flex-col gap-4 px-5 py-4">
+          {line === SUBCATEGORY_CATEGORY && (
+            <PillRow label="Type" items={[{v: '', l: 'All'}, ...POS_SUBCATEGORIES.map((s) => ({v: s as string, l: s}))]} active={sub} onSelect={setSub} />
+          )}
+          <PillRow label="Status" items={[{v: '', l: 'All'}, {v: 'out', l: 'Out'}, {v: 'low', l: 'Low'}, {v: 'healthy', l: 'Healthy'}, {v: 'unlisted', l: 'Unlisted'}]} active={status} onSelect={(v) => setStatus(v as '' | ForecastStatus | 'unlisted')} />
+          <PillRow label="Location" items={[{v: '', l: 'All'}, {v: 'event', l: 'In Event'}, {v: 'office', l: 'In Office'}]} active={loc} onSelect={(v) => setLoc(v as '' | 'office' | 'event')} />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3">
+          <button type="button" onClick={() => {setSub(''); setStatus(''); setLoc('');}} disabled={!hasAny}
+            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+            Reset filters
+          </button>
+          <button type="button" onClick={onClose}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function PillRow({label, items, active, onSelect}: {label: string; items: {v: string; l: string}[]; active: string; onSelect: (v: string) => void}) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="w-10 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="w-16 shrink-0 whitespace-nowrap font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
       {items.map((it) => (
         <button key={it.v || 'all'} type="button" onClick={() => onSelect(it.v)}
-          className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', active === it.v ? 'border-primary bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
+          className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', active === it.v ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')}>
           {it.l}
         </button>
       ))}

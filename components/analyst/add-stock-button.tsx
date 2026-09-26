@@ -11,7 +11,7 @@ import {useEffect, useId, useState, useTransition} from 'react';
 import {createPortal} from 'react-dom';
 import {Package, Plus, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
-import {addStockAction} from '@/src/pos-stock-intake-actions';
+import {addStockAction, type StockLocation} from '@/src/pos-stock-intake-actions';
 
 export interface IntakeProduct {
   product_id: string;
@@ -50,6 +50,7 @@ function AddStockModal({products, onClose}: {products: IntakeProduct[]; onClose:
   const titleId = useId();
   const [lines, setLines] = useState<Line[]>([{key: 1, sku: '', qty: 1}]);
   const [seq, setSeq] = useState(2);
+  const [location, setLocation] = useState<StockLocation>('office');
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ok: boolean; text: string} | null>(null);
 
@@ -82,10 +83,11 @@ function AddStockModal({products, onClose}: {products: IntakeProduct[]; onClose:
     const payload = lines.filter((l) => l.sku && l.qty > 0).map((l) => ({sku: l.sku, qty: l.qty}));
     if (payload.length === 0) return;
     startTransition(async () => {
-      const res = await addStockAction(payload);
+      const res = await addStockAction(payload, location);
       if (res.ok) {
         const units = payload.reduce((s, l) => s + l.qty, 0);
-        setMsg({ok: true, text: `Added ${units} units across ${res.count} product${res.count > 1 ? 's' : ''}.`});
+        const where = location === 'event' ? 'Event' : 'Office';
+        setMsg({ok: true, text: `Added ${units} units across ${res.count} product${res.count > 1 ? 's' : ''} to ${where}.`});
         setLines([{key: seq, sku: '', qty: 1}]);
         setSeq((s) => s + 1);
       } else {
@@ -109,9 +111,35 @@ function AddStockModal({products, onClose}: {products: IntakeProduct[]; onClose:
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <p className="mb-4 text-xs text-muted-foreground">
+          <p className="mb-3 text-xs text-muted-foreground">
             Each line picks a product and a quantity. On Update, every line is recorded as a receipt in the stock ledger.
           </p>
+
+          <div className="mb-4">
+            <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Receive into</span>
+            <div className="inline-flex rounded-lg border bg-muted/40 p-1">
+              {(['office', 'event'] as const).map((loc) => (
+                <button
+                  key={loc}
+                  type="button"
+                  onClick={() => setLocation(loc)}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    location === loc ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {loc === 'office' ? 'Office' : 'Event'}
+                  <span className="ml-1.5 font-mono text-[9px] opacity-70">{loc === 'office' ? 'back-stock' : 'sellable'}</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              {location === 'office'
+                ? 'Lands in Office back-stock. Use Move stock to send units to Event for the POS to sell.'
+                : 'Lands directly in Event — immediately sellable at the POS.'}
+            </p>
+          </div>
+
           <div className="flex flex-col gap-3">
             {lines.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No lines yet — click Add product to start.</p>}
             {lines.map((line) => (
