@@ -15,10 +15,13 @@ export interface SampledProduct {
   name: string;
   units: number;
   count: number;
+  lastClientUuid: string | null; // newest sample's idempotency key, for the pill's undo
+  lastQty: number; // qty of that newest sample (restored on undo)
 }
 
 export interface RecentFreeTaste {
   client_uuid: string | null;
+  product_id: string;
   product_name: string;
   qty: number;
   oversold: boolean;
@@ -53,13 +56,15 @@ const freeTasteSummaryCached = unstable_cache(async (sinceIso: string): Promise<
   if (error) throw new Error(`pos_free_tastes read failed: ${error.message}`);
 
   const nameById = new Map(products.map((p) => [p.product_id, p.name]));
-  const agg = new Map<string, {units: number; count: number}>();
+  // data is ordered newest-first, so the FIRST row seen for a product is its most
+  // recent sample -> that's the one a pill's X undoes.
+  const agg = new Map<string, {units: number; count: number; lastClientUuid: string | null; lastQty: number}>();
   let totalUnits = 0;
   let oversoldCount = 0;
   for (const r of data ?? []) {
     const id = r.product_id as string;
     const qty = Number(r.qty ?? 0);
-    const cur = agg.get(id) ?? {units: 0, count: 0};
+    const cur = agg.get(id) ?? {units: 0, count: 0, lastClientUuid: (r.client_uuid as string | null) ?? null, lastQty: qty};
     cur.units += qty;
     cur.count += 1;
     agg.set(id, cur);
@@ -68,11 +73,12 @@ const freeTasteSummaryCached = unstable_cache(async (sinceIso: string): Promise<
   }
 
   const byProduct = [...agg.entries()]
-    .map(([product_id, v]) => ({product_id, name: nameById.get(product_id) ?? product_id, units: v.units, count: v.count}))
+    .map(([product_id, v]) => ({product_id, name: nameById.get(product_id) ?? product_id, units: v.units, count: v.count, lastClientUuid: v.lastClientUuid, lastQty: v.lastQty}))
     .sort((a, b) => b.units - a.units);
 
   const recent: RecentFreeTaste[] = (data ?? []).slice(0, 15).map((r) => ({
     client_uuid: (r.client_uuid as string | null) ?? null,
+    product_id: r.product_id as string,
     product_name: nameById.get(r.product_id as string) ?? (r.product_id as string),
     qty: Number(r.qty ?? 0),
     oversold: Boolean(r.oversold),
