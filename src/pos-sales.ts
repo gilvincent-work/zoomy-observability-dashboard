@@ -13,6 +13,7 @@ import {
   type PageInfo,
 } from './pos-sales-compute';
 import {MOCK_POS_EVENTS, MOCK_POS_ORDERS, MOCK_POS_SYNC_LOG} from './pos-sales-mock';
+import {fetchAllRows} from './pos-fetch-paginate';
 
 /** Normalize a raw pet_type cell to the union, unknown/absent -> null. */
 function normalizePetType(raw: unknown): PetType | null {
@@ -62,30 +63,42 @@ export const getPosOrders = cache((): Promise<PosOrder[]> =>
 
 // Cached across navigations/prefetches; order writes revalidate POS_TAGS.orders,
 // POS-originated sales heal within the window.
+//
+// Every bulk read below is paged via fetchAllRows: PostgREST silently caps each
+// response at db.max_rows (default 1000), so an unbounded .select() on a table
+// past that size drops rows — which once zeroed Units and mis-booked sales as
+// "bundles". Each read is ordered by a unique key so pages don't overlap/skip.
+// TODO(Option A): replace this ship-everything-and-aggregate-in-JS approach with
+// server-side aggregation. See src/pos-fetch-paginate.ts + CHANGELOG 2026-09-27.
 const posOrdersCached = unstable_cache(async (): Promise<PosOrder[]> => {
   const supabase = posClient();
-  const [ordersRes, itemsRes, productsRes, bundlesRes] = await Promise.all([
-    supabase
-      .from('pos_orders')
-      .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at,event_id,pet_type')
-      .order('created_at', {ascending: false}),
-    supabase.from('pos_order_items').select('order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total'),
-    supabase.from('pos_products').select('product_id,name'),
-    supabase.from('pos_bundles').select('bundle_id,name'),
+  const [orders, items, products, bundles] = await Promise.all([
+    fetchAllRows('pos_orders', (from, to) =>
+      supabase
+        .from('pos_orders')
+        .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at,event_id,pet_type')
+        .order('created_at', {ascending: false})
+        .order('id', {ascending: true})
+        .range(from, to)),
+    fetchAllRows('pos_order_items', (from, to) =>
+      supabase
+        .from('pos_order_items')
+        .select('order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total')
+        .order('id', {ascending: true})
+        .range(from, to)),
+    fetchAllRows('pos_products', (from, to) =>
+      supabase.from('pos_products').select('product_id,name').order('product_id', {ascending: true}).range(from, to)),
+    fetchAllRows('pos_bundles', (from, to) =>
+      supabase.from('pos_bundles').select('bundle_id,name').order('bundle_id', {ascending: true}).range(from, to)),
   ]);
 
-  if (ordersRes.error) throw new Error(`pos_orders read failed: ${ordersRes.error.message}`);
-  if (itemsRes.error) throw new Error(`pos_order_items read failed: ${itemsRes.error.message}`);
-  if (productsRes.error) throw new Error(`pos_products read failed: ${productsRes.error.message}`);
-  if (bundlesRes.error) throw new Error(`pos_bundles read failed: ${bundlesRes.error.message}`);
-
   const nameBySku = new Map<string, string>();
-  for (const p of productsRes.data ?? []) nameBySku.set(p.product_id as string, p.name as string);
+  for (const p of products) nameBySku.set(p.product_id as string, p.name as string);
   const nameByBundle = new Map<string, string>();
-  for (const b of bundlesRes.data ?? []) nameByBundle.set(b.bundle_id as string, b.name as string);
+  for (const b of bundles) nameByBundle.set(b.bundle_id as string, b.name as string);
 
   const itemsByOrder = new Map<string, PosOrderLine[]>();
-  for (const it of itemsRes.data ?? []) {
+  for (const it of items) {
     const orderId = it.order_id as string;
     const productId = (it.product_id as string | null) ?? null;
     const bundleId = (it.bundle_id as string | null) ?? null;
@@ -103,7 +116,7 @@ const posOrdersCached = unstable_cache(async (): Promise<PosOrder[]> => {
     itemsByOrder.set(orderId, arr);
   }
 
-  return (ordersRes.data ?? []).map((o): PosOrder => ({
+  return orders.map((o): PosOrder => ({
     id: o.id as string,
     client_uuid: o.client_uuid as string,
     subtotal: Number(o.subtotal ?? 0),

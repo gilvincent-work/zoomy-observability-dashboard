@@ -12,6 +12,29 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-27 — Fix Units = 0 / phantom "Bundle deals": paginate POS aggregation reads — `fix(offline-sales)`
+
+**Bug.** The event detail (and any line-item aggregate) showed **Units = 0** and booked all
+revenue as **"Bundle deals · priced as a set" (Itemized ₱0)** for the newest event, even though
+the sales were correctly itemized in the DB. Not a data bug — a **fetch-truncation** bug.
+`getPosOrders` (`src/pos-sales.ts`) pulled whole tables in single unbounded `.select()`s to
+aggregate in JS; PostgREST silently caps each response at `db.max_rows` (**1000**). With
+`pos_order_items` at 1264 rows, the last 264 (the newest sales — the live event's later days)
+were dropped, so those orders got `items: []` → `Units = Σ qty = 0`, and `total − Σ line_total`
+made every order register as a bundle.
+
+**Fix (Option B).** Added `fetchAllRows(label, makePage)` — pages every bulk read in 1000-row
+chunks (`.range(from, to)`), ordered by a unique key (`pos_orders.id`, `pos_order_items.id`,
+`product_id`, `bundle_id`) so pages don't overlap/skip, until a short page ends it. Applied to
+all four reads in `posOrdersCached` (orders were also nearing the cap at 493 rows). Header
+metrics (revenue/orders/pet mix/payment split) were always correct and are unchanged.
+Typecheck clean, 292 tests pass.
+
+**TODO (Option A, deferred).** Paging only postpones the ceiling and still transfers all history
+per render. Durable fix: move KPI / top-seller / bundle math into Postgres (RPC or SQL view
+returning small aggregates) so row caps never apply. Tracked in-code at the `posOrdersCached`
+comment (`src/pos-sales.ts`); add a regression test seeding >1000 item rows when picked up.
+
 ## 2026-09-27 — v1.4.0: ship to prod (locations, free taste, free item) — `chore(release)`
 
 **Version 1.3.7 → 1.4.0.** Promotes the inventory location UI (Office/Event columns +
