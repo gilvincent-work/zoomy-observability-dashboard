@@ -143,6 +143,9 @@ const ordersCached = unstable_cache(async (): Promise<CrmOrder[]> => {
       fulfilledAt: o.fulfilledAt ?? null,
       reviewRequestSentAt: o.reviewRequestSentAt ?? null,
       reviewSubmittedAt: o.reviewSubmittedAt ?? null,
+      // ponytail: raw Shopify JSON (~2.3KB/order); past ~850 orders this cache entry
+      // nears Next's 2MB limit — slim it to title/quantity/price/discounts then.
+      lineItems: o.lineItems ?? null,
     }));
   } catch (err) {
     console.warn(`CRM orders read failed: ${(err as Error).message}`);
