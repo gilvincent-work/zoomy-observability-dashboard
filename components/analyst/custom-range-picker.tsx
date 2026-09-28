@@ -16,7 +16,8 @@ import {periodDays} from '../../src/custom-range';
  * the period are disabled; the page clamps and recomputes what it can (see
  * src/custom-range.ts).
  */
-export function CustomRangePicker({windowFrom, windowTo}: {windowFrom: string; windowTo: string}) {
+// fullPeriodOnly: marketplaces with no per-day series for this period (older rows).
+export function CustomRangePicker({windowFrom, windowTo, fullPeriodOnly = []}: {windowFrom: string; windowTo: string; fullPeriodOnly?: string[]}) {
   const router = useRouter();
   const pathname = usePathname() || '/';
   const searchParams = useSearchParams();
@@ -64,7 +65,9 @@ export function CustomRangePicker({windowFrom, windowTo}: {windowFrom: string; w
                 {range.start && !range.end ? 'Pick an end date' : 'Dates within this period'}
               </div>
               <p className="mb-3 text-[11px] leading-snug text-muted-foreground">
-                Website and Offline recalculate. Lazada and Shopee stay full-period for now.
+                {fullPeriodOnly.length
+                  ? `Website and Offline recalculate. ${fullPeriodOnly.join(' and ')} only have full-period totals for this period.`
+                  : 'Sales, orders and units recalculate for every channel. Ad spend and ROAS stay full-period.'}
               </p>
               <Calendar value={range} onChange={setRange} min={min} max={max} />
               <Button
