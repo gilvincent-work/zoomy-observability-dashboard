@@ -11,6 +11,7 @@ import {fmtRange} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
+import {CustomRangePicker} from './custom-range-picker';
 
 // The left rail. Overview is a group (accordion in the expanded rail) whose
 // children are the sub-views that live under it; the rest are flat tabs.
@@ -294,6 +295,9 @@ export function DashboardShell({
                       // so changing period reloads the same view instead of bouncing home.
                       const params = new URLSearchParams(searchParams.toString());
                       params.set('week', d.window_from);
+                      // A custom range belongs to its period — drop it on switch.
+                      params.delete('from');
+                      params.delete('to');
                       return (
                         <Link
                           key={d.window_from}
@@ -320,6 +324,11 @@ export function DashboardShell({
               </>
             )}
           </div>
+        )}
+
+        {/* Custom dates within the period — only the Sales overview recomputes for it */}
+        {showPeriod && current && pathname === '/' && channel && (
+          <CustomRangePicker windowFrom={current.window_from} windowTo={current.window_to} />
         )}
 
         {/* Right cluster: Ask Coop · theme · avatar */}

@@ -12,6 +12,34 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-28 — Custom dates within a reporting period on the Sales overview — `feat(overview)`
+
+**What.** A **Custom dates** button beside the reporting-period switcher (Sales overview,
+`/?channel=…`, only) narrows the view to PH days inside the selected period, via
+`?from=YYYY-MM-DD&to=YYYY-MM-DD`. Days outside the period are disabled in the calendar
+(`Calendar` gained optional `min`/`max`; default behaviour unchanged). Switching period
+drops the range; the × clears it.
+
+**Decision — only per-order channels follow the range.** The digest archive stores one
+row of *whole-period totals*, so a sub-range can only be recomputed where we hold orders:
+**Website** from live CRM orders (`getCrmOrders`, now carrying `lineItems`) and **Offline**
+from POS orders. **Lazada and Shopee** exist here only as digest totals, so under custom
+dates they are left out of the totals and chart (with a note) rather than mixing a
+full-period figure into a range total. KPI deltas are hidden (no like-for-like prior for an
+arbitrary range); recommended actions are labelled "based on the full period" (they are
+written once per digest — recomputing means a new AI run).
+
+**Reconciles with the digest.** `src/custom-range.ts` ports the batch's website formulas
+(revenue = Σ `totalPrice`, AOV = revenue ÷ orders, units + top products from line items) and
+clamps the range to the period, so selecting the whole period reproduces the digest window.
+Checked against live data: full-period recompute matched `digest.comparison.website`
+(revenue, orders, units) exactly on all 6 archived periods.
+
+**Next.** Lazada needs the batch to persist per-day order rows; Shopee's Business Insights
+exports are whole-window only (only `Order.all`, monthly, has per-order dates).
+
+---
+
 ## 2026-09-27 — Fix Units = 0 / phantom "Bundle deals": paginate POS aggregation reads — `fix(offline-sales)`
 
 **Bug.** The event detail (and any line-item aggregate) showed **Units = 0** and booked all
