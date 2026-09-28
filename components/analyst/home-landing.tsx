@@ -75,7 +75,7 @@ export function HomeLanding({row, progress}: {row: DigestArchiveRow; progress?: 
   const actions = collectActions(row);
   // Lead with the real synthesized verdict from the archived digest, so the first
   // thing an owner reads is how the store is actually doing — not a capability list.
-  const verdict = row.digest.headline?.trim() || 'Your latest store-ops brief is ready.';
+  const verdict = (!row.digest.degraded && row.digest.headline?.trim()) || 'Your latest store-ops brief is ready.';
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12 md:px-10 max-md:px-4 max-md:py-8">
