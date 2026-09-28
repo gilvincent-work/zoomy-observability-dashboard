@@ -12,6 +12,24 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-28 — Spin-the-wheel v2: Instagram handles + pets — `feat(leads)`
+
+The Sep 26–27 Modern Market booth changed what the wheel collects: **Contact** is
+now an email *or* an Instagram handle, and a **Pet** column was added. Coop now
+reads both layouts.
+
+- `supabase/spin_wheel_leads_instagram.sql` (additive only) adds the `instagram`
+  and `pet` columns and makes `email` nullable, with a check that every lead has
+  an email or a handle. It also adds a unique key on `(instagram, collected_at)`.
+  **Run on prod 2026-09-28.**
+- `scripts/import-spin-leads.mjs` finds columns by header name instead of
+  position, and now only inserts new rows (`ignoreDuplicates`), so re-importing
+  a newer export never rewrites older rows. Prod import of the 263-row export:
+  150 new (9 email, 141 handle), the 113 Sep 18–20 rows untouched.
+- `/customers/leads` and the event card: an Email → Contact column (email or
+  `@handle`), a Pet column when there is pet data, and "Copy N emails" copies
+  only real emails. In All contacts, a handle-only lead is headed by its handle.
+
 ## 2026-09-28 — Shopee and Lazada follow custom dates — `feat(overview)`
 
 **What.** A custom date range now recomputes Shopee and Lazada revenue, orders, AOV and
