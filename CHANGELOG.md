@@ -12,6 +12,18 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-28 — Shopee and Lazada follow custom dates — `feat(overview)`
+
+**What.** A custom date range now recomputes Shopee and Lazada revenue, orders, AOV and
+units from the digest's per-PH-day series (`digest.daily`, stamped by the batch from
+Shopee's daily sales table and Lazada's order timestamps; `dailyRangeMetrics` in
+`src/custom-range.ts`). A full-period range equals the period view (Sep 21–27: ₱91,156).
+Ad spend / ROAS have no daily source, so under custom dates the chart says so instead
+of drawing ₱0 bars. Rows archived before the series existed stay "full period only".
+Marketplace top products stay full-period (labelled).
+
+---
+
 ## 2026-09-28 — Periods show whenever there's sales data; Weekly / Monthly period groups — `fix(periods)`
 
 **What.** A period is only "no data" when it has no sales from any channel (`hasNoSalesData`

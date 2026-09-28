@@ -56,12 +56,23 @@ function figVal(figs: DigestFigure[] | undefined, re: RegExp, exclude?: RegExp):
 type ChannelMetrics = Record<Metric, number | null>;
 
 /** A custom date range inside the period, resolved server-side (app/page.tsx). */
-export type CustomView = {label: string; metrics: ChannelMetrics | null; topProducts: {title: string; revenue: number; units?: number}[]};
-// Channels that only exist as whole-period digest totals (no per-order data here).
+// shopee/lazada: summed from the digest's per-day series; undefined when the row
+// has none (then they're full-period only), null when no sales fall in the range.
+export type CustomView = {
+  label: string;
+  metrics: ChannelMetrics | null;
+  topProducts: {title: string; revenue: number; units?: number}[];
+  shopee?: ChannelMetrics | null;
+  lazada?: ChannelMetrics | null;
+};
+// Marketplaces whose top products are whole-period digest lists (no per-day products).
 const FULL_PERIOD_ONLY: Channel[] = ['shopee', 'lazada'];
-// A custom range with no per-order sales is an empty stretch of days, not missing data.
-const noSalesOnDays = (cs: Channel[]) => {
-  const names = cs.filter((c) => !FULL_PERIOD_ONLY.includes(c)).map((c) => CH[c].label);
+/** Marketplaces that can't follow this custom range (the row has no per-day series). */
+const fullPeriodOnly = (custom?: CustomView | null): Channel[] =>
+  custom ? FULL_PERIOD_ONLY.filter((c) => custom[c as 'shopee' | 'lazada'] === undefined) : [];
+// A custom range with no sales is an empty stretch of days, not missing data.
+const noSalesOnDays = (cs: Channel[], custom?: CustomView | null) => {
+  const names = cs.filter((c) => !fullPeriodOnly(custom).includes(c)).map((c) => CH[c].label);
   return names.length ? `No ${names.join(' or ')} sales on these days.` : 'No sales on these days.';
 };
 const fullOnlyNote = (cs: Channel[]) => `${cs.map((c) => CH[c].label).join(' and ')} only report full-period totals, so they're left out for custom dates.`;
@@ -114,14 +125,15 @@ const fmt = (m: Metric, n: number) => {
 };
 
 // ── comparison chart ─────────────────────────────────────────────────────────────
-function ComparisonChart({metrics, channels, metric, setMetric, custom}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]; metric: Metric; setMetric: (m: Metric) => void; custom?: boolean}) {
+function ComparisonChart({metrics, channels, metric, setMetric, custom}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]; metric: Metric; setMetric: (m: Metric) => void; custom?: CustomView | null}) {
   // Ad-spend / ROAS: show every channel with a value of 0 when it has no spend
-  // (rather than dropping it), so the comparison reads at a glance.
+  // (rather than dropping it), so the comparison reads at a glance. Not under a
+  // custom range: no channel has per-day ad data, so a 0 there would be false.
   const isAdMetric = metric === 'adSpend' || metric === 'roas';
   const rows = channels
     .map((c) => {
       const raw = metrics[c]?.[metric] ?? null;
-      return {c, value: raw == null && isAdMetric ? 0 : raw};
+      return {c, value: raw == null && isAdMetric && !custom ? 0 : raw};
     })
     .filter((r): r is {c: Channel; value: number} => r.value != null);
   const max = Math.max(1, ...rows.map((r) => r.value));
@@ -165,7 +177,7 @@ function ComparisonChart({metrics, channels, metric, setMetric, custom}: {metric
         </div>
         {rows.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            {custom ? noSalesOnDays(channels) : 'No data for this metric in the selected channels.'}
+            {custom ? (isAdMetric ? 'Ad spend and ROAS are only reported for the full period.' : noSalesOnDays(channels, custom)) : 'No data for this metric in the selected channels.'}
           </p>
         ) : (
           <>
@@ -213,7 +225,9 @@ function ComparisonChart({metrics, channels, metric, setMetric, custom}: {metric
         {(() => {
           // Under a custom range, Lazada/Shopee are omitted because they only have
           // whole-period totals — say that instead of "no data".
-          const fullOnly = custom ? channels.filter((c) => FULL_PERIOD_ONLY.includes(c)) : [];
+          const fullOnly = channels.filter((c) => fullPeriodOnly(custom).includes(c));
+          // Ad spend / ROAS under custom dates: the centred message already explains.
+          if (custom && isAdMetric) return null;
           const omitted = channels.filter((c) => !rows.some((r) => r.c === c) && !fullOnly.includes(c));
           if (fullOnly.length && !omitted.length)
             return <p className="mt-3 text-[11px] text-muted-foreground">{fullOnlyNote(fullOnly)}</p>;
@@ -222,7 +236,7 @@ function ComparisonChart({metrics, channels, metric, setMetric, custom}: {metric
           if (custom && !rows.length) return fullOnly.length ? <p className="mt-3 text-[11px] text-muted-foreground">{fullOnlyNote(fullOnly)}</p> : null;
           const names = omitted.map((c) => CH[c].label).join(', ');
           const why = custom
-            ? noSalesOnDays(omitted)
+            ? noSalesOnDays(omitted, custom)
             : metric === 'units'
               ? `Shopee doesn’t report units in its sales export, so it’s omitted here.`
               : `No ${METRICS.find((m) => m.key === metric)?.label.toLowerCase()} data for ${names} in this window.`;
@@ -531,11 +545,14 @@ export function ChannelOverview({row, priorRow, initialChannels, offline, custom
   const [metric, setMetric] = useState<Metric>('revenue');
   // Offline metrics come from pos_orders (passed in), merged over the digest-derived
   // channels. Offline has no ad spend / ROAS, so those metric views show it as N-A.
-  // A custom range keeps only per-order channels: Website recomputed for the range,
-  // Offline filtered to it (both server-side). Lazada/Shopee have no in-period
-  // detail, so they drop out of the chart and totals rather than mix bases.
+  // A custom range recomputes every channel server-side: Website from CRM orders,
+  // Offline from POS orders, Shopee/Lazada from the digest's per-day series. A
+  // marketplace without a series (older rows) drops out rather than mix bases.
   const metrics = useMemo(
-    () => (custom ? {shopee: null, lazada: null, website: custom.metrics, offline: offline ?? null} : {...channelMetrics(row), offline: offline ?? null}),
+    () =>
+      custom
+        ? {shopee: custom.shopee ?? null, lazada: custom.lazada ?? null, website: custom.metrics, offline: offline ?? null}
+        : {...channelMetrics(row), offline: offline ?? null},
     [row, offline, custom],
   );
   // No like-for-like prior for an arbitrary range → no deltas.
@@ -588,7 +605,13 @@ export function ChannelOverview({row, priorRow, initialChannels, offline, custom
         {custom && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/[0.08] px-3 py-1 text-[12px] font-medium text-foreground">
             Showing {custom.label}
-            <InfoTip text="Website and Offline are recalculated for these dates. Lazada and Shopee only have full-period totals, so they're left out of the totals and chart. Recommended actions are from the full-period digest." />
+            <InfoTip
+              text={
+                fullPeriodOnly(custom).length
+                  ? `Website and Offline are recalculated for these dates. ${fullPeriodOnly(custom).map((c) => CH[c].label).join(' and ')} only have full-period totals for this period, so they're left out of the totals and chart. Ad spend, ROAS and recommended actions are from the full period.`
+                  : 'Sales, orders, AOV and units are recalculated for these dates across every channel. Ad spend, ROAS, marketplace top products and recommended actions are from the full period.'
+              }
+            />
           </span>
         )}
 
@@ -689,7 +712,7 @@ export function ChannelOverview({row, priorRow, initialChannels, offline, custom
           </section>
 
           <main className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:self-start">
-            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={setMetric} custom={Boolean(custom)} />
+            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={setMetric} custom={custom} />
             <TopProducts row={row} channels={selected} custom={custom} />
           </main>
         </div>
