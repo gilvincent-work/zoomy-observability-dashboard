@@ -16,7 +16,7 @@ export default async function Page() {
       <header>
         <h1 className="font-serif text-3xl font-normal tracking-tight">Event lead contacts</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Emails and mobile numbers given in person at the booth, in exchange for a spin. Market to
+          Emails, Instagram handles and mobile numbers given in person at the booth, in exchange for a spin. Market to
           them on that basis only, and honour an unsubscribe on either channel.
         </p>
       </header>
