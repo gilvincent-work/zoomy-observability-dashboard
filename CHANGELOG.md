@@ -12,6 +12,32 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-28 — Event leads: what they bought + follow-up messages — `feat(leads)`
+
+The spin-the-wheel and the POS share no id, so `src/lead-order-match.ts` links
+each lead to the order they paid for **by time**. It considers orders within
+±5 min on the same day, one order per lead, and settles near-ties with two
+checks: the lead's pet species vs the order's dog/cat tag, and prize orders
+going to the lead who won that prize. A match is *confident* only when no rival
+order came within 2 cost-minutes.
+
+Checked offline on a read-only snapshot of Sep 18–27 (257 leads, 353 orders)
+against orders where the cashier typed the pet's name or a prize note: 18 of 19
+confident matches were right, while unsure ones were about a coin flip. Result:
+166 confident, 60 unsure, 31 with no order nearby. Of the 141 Instagram leads,
+89 are confident.
+
+- `/customers/leads` → **Contacts**: a **Bought** column (items; order time,
+  total and gap in the tooltip), with an *unsure* badge where it's a near-tie.
+- `/customers/leads` → **Follow-ups**: for a chosen day (default today, Manila),
+  lists who is due the day-1 thank-you and the day-5 website-promo message.
+  Messages are filled in from the pet's name and what was bought, with a Copy
+  button. Confident matches only. It's a copy-and-paste list; nothing is sent.
+- Computed on the fly from `pos_orders` + `spin_wheel_leads`; no new table,
+  nothing written. A POS read failure leaves the contact list working.
+- `scripts/export-lead-match-data.mjs`: a read-only snapshot for re-checking the
+  matcher offline.
+
 ## 2026-09-28 — Spin-the-wheel v2: Instagram handles + pets — `feat(leads)`
 
 The Sep 26–27 Modern Market booth changed what the wheel collects: **Contact** is
