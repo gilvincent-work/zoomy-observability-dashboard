@@ -10,7 +10,7 @@ import {Activity, ArrowLeft, Gauge, Globe, Lightbulb, Package, Sparkles, Triangl
 import type {DigestArchiveRow} from '../../src/types';
 import type {AnalystBrief, Category} from '../../src/salesSignals';
 import {cn} from '@/lib/utils';
-import {fmtRange} from '../../src/week';
+import {fmtRange, hasNoSalesData} from '../../src/week';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {ConversionFunnel, TopSkusChart, TrafficDonut} from './charts-lazy';
 import {PreferencesForm} from './settings/preferences-form';
@@ -118,7 +118,7 @@ function ChannelSwitch({value, onChange}: {value: Channel; onChange: (c: Channel
 // ── Overview — the executive summary, scoped by channel ─────────────────────────
 export function OverviewTab({brief, row, initialChannel}: TabProps & {initialChannel?: Channel}) {
   const [channel, setChannel] = useState<Channel>(initialChannel ?? 'shopee');
-  if (row.digest.degraded) return <TabContainer><DegradedNote row={row} /></TabContainer>;
+  if (hasNoSalesData(row)) return <TabContainer><DegradedNote row={row} /></TabContainer>;
   const s = brief.signals;
   const showWebsite = channel === 'website';
   const showShopee = channel === 'shopee';
@@ -205,7 +205,7 @@ export function OverviewTab({brief, row, initialChannel}: TabProps & {initialCha
 
 // ── Inventory ────────────────────────────────────────────────────────────────────
 export function InventoryTab({brief, row}: TabProps) {
-  if (row.digest.degraded) return <TabContainer><DegradedNote row={row} /></TabContainer>;
+  if (hasNoSalesData(row)) return <TabContainer><DegradedNote row={row} /></TabContainer>;
   const {recs, predictions, anomalies} = byCat(brief, 'inventory');
   return (
     <TabContainer>
@@ -240,7 +240,7 @@ export function InventoryTab({brief, row}: TabProps) {
 
 // ── Customers / CRM ──────────────────────────────────────────────────────────────
 export function CustomersTab({brief, row}: TabProps) {
-  if (row.digest.degraded) return <TabContainer><DegradedNote row={row} /></TabContainer>;
+  if (hasNoSalesData(row)) return <TabContainer><DegradedNote row={row} /></TabContainer>;
   const {recs, predictions, anomalies} = byCat(brief, 'crm');
   const c = brief.signals.customers;
   return (
@@ -283,7 +283,7 @@ export function CustomersTab({brief, row}: TabProps) {
 
 // ── Traffic & Funnel ────────────────────────────────────────────────────────────
 export function TrafficTab({brief, row}: TabProps) {
-  if (row.digest.degraded) return <TabContainer><DegradedNote row={row} /></TabContainer>;
+  if (hasNoSalesData(row)) return <TabContainer><DegradedNote row={row} /></TabContainer>;
   const {recs, anomalies} = byCat(brief, 'traffic');
   const s = brief.signals;
   return (
