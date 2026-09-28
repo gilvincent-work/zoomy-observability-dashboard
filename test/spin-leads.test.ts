@@ -15,6 +15,8 @@ d@x.com,09260385539,Poop Bag,modern-market-sept2026,,
 function asLeads(): SpinLead[] {
   return parseSpinLeadsCsv(CSV).map((r) => ({
     email: r.email,
+    instagram: r.instagram,
+    pet: r.pet,
     mobile: r.mobile,
     prize: r.prize,
     campaign: r.campaign,
@@ -40,6 +42,27 @@ describe('spin-the-wheel CSV import', () => {
     expect(rows[2].campaign).toBeNull();
     expect(rows[2].consent_at).toBeNull();
     expect(rows[0].consent_at).toBe('2026-09-20T21:32:00+08:00');
+  });
+});
+
+// Sep 27 onwards: Contact is an email or an @handle, plus a Pet column, and the
+// columns are matched by header so the new order can't shift data around.
+const CSV_V2 = `Contact,Pet,Mobile number,Prize,Event,Collected at (PH time),Consent given at (PH time)
+'@KylRvr,Mimi / Puspin,,Poop Bag,modern-market-sept2026,"Sep 27, 2026, 9:58 PM","Sep 27, 2026, 9:58 PM"
+e@x.com,"Natto / Shih Tzu, Pomeranian",'+639179947218,35% Off,modern-market-sept2026,"Sep 27, 2026, 2:28 PM",
+not-a-contact,Rex / Aspin,,Poop Bag,modern-market-sept2026,"Sep 27, 2026, 1:00 PM",
+`;
+
+describe('spin-the-wheel CSV import, v2 layout', () => {
+  it('splits handles from emails and keeps the pet', () => {
+    const rows = parseSpinLeadsCsv(CSV_V2);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({email: null, instagram: 'kylrvr', pet: 'Mimi / Puspin', mobile: null, prize: 'Poop Bag'});
+    expect(rows[1]).toMatchObject({email: 'e@x.com', instagram: null, pet: 'Natto / Shih Tzu, Pomeranian', mobile: '+639179947218', consent_at: null});
+  });
+
+  it('still reads the old layout with no pet or handle', () => {
+    expect(parseSpinLeadsCsv(CSV).every((r) => r.instagram === null && r.pet === null)).toBe(true);
   });
 });
 

@@ -24,7 +24,7 @@ const spinLeadsCached = unstable_cache(async (): Promise<SpinLead[]> => {
   const supabase = posClient();
   const {data, error} = await supabase
     .from('spin_wheel_leads')
-    .select('email,mobile,prize,campaign,collected_at')
+    .select('*')
     .order('collected_at', {ascending: false});
 
   // Fail soft, unlike the pos_* readers. Leads are one optional block at the
@@ -37,7 +37,10 @@ const spinLeadsCached = unstable_cache(async (): Promise<SpinLead[]> => {
   }
 
   return (data ?? []).map((l): SpinLead => ({
-    email: l.email as string,
+    email: (l.email as string | null) ?? null,
+    // Absent until spin_wheel_leads_instagram.sql has run on this environment.
+    instagram: (l.instagram as string | null) ?? null,
+    pet: (l.pet as string | null) ?? null,
     mobile: (l.mobile as string | null) ?? null,
     prize: (l.prize as string | null) ?? 'Unknown',
     campaign: (l.campaign as string | null) ?? null,

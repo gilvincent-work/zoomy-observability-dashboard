@@ -47,24 +47,44 @@ function splitRow(line) {
   return out;
 }
 
+/** Header → column, for both export layouts: the Sep 18–20 one (Email, …) and
+ * the Sep 27 one onwards (Contact, Pet, …), where Contact is an email OR an
+ * Instagram handle. Matched by name, so a new or reordered column can't shift
+ * data into the wrong field. */
+const HEADERS = {
+  email: 'contact', contact: 'contact', pet: 'pet', 'mobile number': 'mobile', mobile: 'mobile',
+  prize: 'prize', event: 'campaign', 'collected at (ph time)': 'collected', 'consent given at (ph time)': 'consent',
+};
+
+/** Sheets prefixes "'" to anything starting with + or @; strip it. */
+const unquote = (v) => (v ? v.replace(/^'/, '').trim() : '');
+
 /**
- * Parse the export into table rows. Rows with no email or an unreadable
- * collection stamp are dropped; the mobile column keeps Sheets' leading
- * apostrophe on "'+639…", so that is stripped.
+ * Parse the export into table rows. Rows with no contact or an unreadable
+ * collection stamp are dropped. A contact starting with "@" is an Instagram
+ * handle (stored lowercased, without the "@"); anything else with an "@" is an email.
  */
 export function parseSpinLeadsCsv(csv) {
+  const [head, ...lines] = csv.split(/\r?\n/).filter((l) => l.trim());
+  const cols = splitRow(head).map((h) => HEADERS[h.trim().toLowerCase()]);
   const rows = [];
-  for (const line of csv.split(/\r?\n/).filter((l) => l.trim()).slice(1)) {
-    const [email, mobile, prize, campaign, collected, consent] = splitRow(line).map((c) => c.trim());
-    const collected_at = collected ? parsePhTimestamp(collected) : null;
-    if (!email || !collected_at) continue;
+  for (const line of lines) {
+    const r = {};
+    splitRow(line).forEach((v, i) => { if (cols[i]) r[cols[i]] = unquote(v); });
+    const collected_at = r.collected ? parsePhTimestamp(r.collected) : null;
+    const contact = r.contact ?? '';
+    const instagram = contact.startsWith('@') ? contact.slice(1).toLowerCase() : null;
+    const email = !instagram && contact.includes('@') ? contact : null;
+    if ((!email && !instagram) || !collected_at) continue;
     rows.push({
       email,
-      mobile: mobile ? mobile.replace(/^'/, '') : null,
-      prize: prize || 'Unknown',
-      campaign: campaign || null,
+      instagram,
+      pet: r.pet || null,
+      mobile: r.mobile || null,
+      prize: r.prize || 'Unknown',
+      campaign: r.campaign || null,
       collected_at,
-      consent_at: consent ? parsePhTimestamp(consent) : null,
+      consent_at: r.consent ? parsePhTimestamp(r.consent) : null,
     });
   }
   return rows;
@@ -90,11 +110,17 @@ async function main() {
   if (!url || !key) throw new Error('SUPABASE_URL_ARCHIVE / SUPABASE_SERVICE_ROLE_KEY_ARCHIVE not set');
 
   const supabase = createClient(url, key, {auth: {persistSession: false}});
-  const {error, count} = await supabase
-    .from('spin_wheel_leads')
-    .upsert(rows, {onConflict: 'email,collected_at', ignoreDuplicates: false, count: 'exact'});
-  if (error) throw new Error(`spin_wheel_leads upsert failed: ${error.message}`);
-  console.log(`upserted ${count ?? rows.length} rows into spin_wheel_leads`);
+  // Insert-only: a lead already in the table (same person, same second) is left
+  // exactly as it is, so re-importing a newer export never rewrites older rows.
+  // Email and handle leads dedupe on their own unique key, hence two calls.
+  for (const [col, batch] of [['email', rows.filter((r) => r.email)], ['instagram', rows.filter((r) => !r.email)]]) {
+    if (!batch.length) continue;
+    const {error, count} = await supabase
+      .from('spin_wheel_leads')
+      .upsert(batch, {onConflict: `${col},collected_at`, ignoreDuplicates: true, count: 'exact'});
+    if (error) throw new Error(`spin_wheel_leads insert (${col}) failed: ${error.message}`);
+    console.log(`${col} leads: ${batch.length} in file, ${count ?? '?'} new rows inserted`);
+  }
 }
 
 // Importable for tests; only runs the import when executed directly.
