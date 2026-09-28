@@ -59,6 +59,11 @@ type ChannelMetrics = Record<Metric, number | null>;
 export type CustomView = {label: string; metrics: ChannelMetrics | null; topProducts: {title: string; revenue: number; units?: number}[]};
 // Channels that only exist as whole-period digest totals (no per-order data here).
 const FULL_PERIOD_ONLY: Channel[] = ['shopee', 'lazada'];
+// A custom range with no per-order sales is an empty stretch of days, not missing data.
+const noSalesOnDays = (cs: Channel[]) => {
+  const names = cs.filter((c) => !FULL_PERIOD_ONLY.includes(c)).map((c) => CH[c].label);
+  return names.length ? `No ${names.join(' or ')} sales on these days.` : 'No sales on these days.';
+};
 const fullOnlyNote = (cs: Channel[]) => `${cs.map((c) => CH[c].label).join(' and ')} only report full-period totals, so they're left out for custom dates.`;
 
 function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics | null> {
@@ -159,7 +164,9 @@ function ComparisonChart({metrics, channels, metric, setMetric, custom}: {metric
           </div>
         </div>
         {rows.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {custom ? noSalesOnDays(channels) : 'No data for this metric in the selected channels.'}
+          </p>
         ) : (
           <>
           {/* Columns flex to share the panel width (min-w-0 so they can shrink),
@@ -211,9 +218,12 @@ function ComparisonChart({metrics, channels, metric, setMetric, custom}: {metric
           if (fullOnly.length && !omitted.length)
             return <p className="mt-3 text-[11px] text-muted-foreground">{fullOnlyNote(fullOnly)}</p>;
           if (!omitted.length) return null;
+          // Custom range, nothing to chart: the centred message already says the days were empty.
+          if (custom && !rows.length) return fullOnly.length ? <p className="mt-3 text-[11px] text-muted-foreground">{fullOnlyNote(fullOnly)}</p> : null;
           const names = omitted.map((c) => CH[c].label).join(', ');
-          const why =
-            metric === 'units'
+          const why = custom
+            ? noSalesOnDays(omitted)
+            : metric === 'units'
               ? `Shopee doesn’t report units in its sales export, so it’s omitted here.`
               : `No ${METRICS.find((m) => m.key === metric)?.label.toLowerCase()} data for ${names} in this window.`;
           return <p className="mt-3 text-[11px] text-muted-foreground">{why}{fullOnly.length ? ` ${fullOnlyNote(fullOnly)}` : ''}</p>;
