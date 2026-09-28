@@ -23,6 +23,10 @@ days, and the amber dot now means "no sales data". `fmtRange` reads timestamps a
 days with an exclusive PHT-midnight end, so Sep 20 16:00Z – Sep 27 16:00Z shows as
 **Sep 21 – 27** (older UTC-midnight rows keep their labels). Tests: `test/week.test.ts`.
 
+**Offline follows the period.** Compare Channels' Offline was every POS order to date
+(₱214k for Sep 21–27); it is now filtered to the period's window, same as with a custom
+range (Sep 21–27 → ₱81,370, the Sep 24–27 event days).
+
 ---
 
 ## 2026-09-28 — Custom dates within a reporting period on the Sales overview — `feat(overview)`

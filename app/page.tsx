@@ -17,10 +17,9 @@ import {fmtRange} from '@/src/week';
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
 // All channels, including offline, are selected by default on the compare
-// Overview (PO decision 2026-09-07). Note: offline totals are all-time (offline
-// isn't tied to the digest's weekly window), so the headline totals mix bases;
-// the period-over-period trend arrows stay like-for-like (offline is excluded
-// from that comparison in CombinedKpis, since it has no prior-window data).
+// Overview (PO decision 2026-09-07). Offline is filtered to the same window as
+// the digest (the period, or the custom range inside it), so the headline totals
+// share one basis. Trend arrows still exclude offline (see CombinedKpis).
 const ALL_CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
 const DEFAULT_CHANNELS: Channel[] = ['shopee', 'lazada', 'website', 'offline'];
 
@@ -36,12 +35,12 @@ async function offlineKpis(): Promise<SalesKpis | null> {
   }
 }
 
-// Offline metrics (all orders to date, or only a custom range's) for the Compare
+// Offline metrics for the period's (or custom range's) window, for the Compare
 // Channels chart. Same fail-soft contract: null on any error so the chart just omits offline.
-async function offlineCompare(range?: {from: string; to: string}): Promise<ReturnType<typeof offlineCompareMetrics>> {
+async function offlineCompare(range: {from: string; to: string}): Promise<ReturnType<typeof offlineCompareMetrics>> {
   try {
     const orders = await getPosOrders();
-    return offlineCompareMetrics(range ? orders.filter((o) => inRange(o.created_at, range)) : orders);
+    return offlineCompareMetrics(orders.filter((o) => inRange(o.created_at, range)));
   } catch {
     return null;
   }
@@ -90,7 +89,7 @@ export default async function Page(props: {searchParams: Promise<{week?: string;
   // ?from&to (PH days) narrow the overview inside the period. Only per-order
   // channels can follow: Website from live CRM orders, Offline from POS orders.
   const range = resolveCustomRange(row.window_from, row.window_to, searchParams.from, searchParams.to);
-  const offline = await offlineCompare(range ?? undefined);
+  const offline = await offlineCompare(range ?? {from: row.window_from, to: row.window_to});
   const custom = range
     ? {label: fmtRange(range.fromDay, range.toDay), ...websiteRangeMetrics(await getCrmOrders(), range)}
     : null;
