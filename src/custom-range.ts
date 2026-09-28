@@ -107,3 +107,27 @@ export function websiteRangeMetrics(orders: RangeOrder[], range: {from: string; 
       .slice(0, limit),
   };
 }
+
+export type DaySales = {day: string; revenue: number; orders: number; units: number};
+
+/**
+ * Shopee/Lazada figures for a range, summed from the digest's per-PH-day series
+ * (`digest.daily`, stamped by the batch). `undefined` when the period has no series
+ * (older rows → still "full period only"); null when no sales fall in the range.
+ * Ad spend / ROAS have no daily source, so they stay null.
+ */
+export function dailyRangeMetrics(days: DaySales[] | undefined, range: {fromDay: string; toDay: string}): RangeMetrics | null | undefined {
+  if (!days?.length) return undefined;
+  let revenue = 0;
+  let orders = 0;
+  let units = 0;
+  for (const d of days) {
+    if (d.day < range.fromDay || d.day > range.toDay) continue;
+    revenue += d.revenue;
+    orders += d.orders;
+    units += d.units;
+  }
+  if (!orders) return null;
+  const rev = round2(revenue);
+  return {revenue: rev, orders, aov: round2(rev / orders), units, adSpend: null, roas: null};
+}
