@@ -11,7 +11,7 @@ import {progress as computeProgress, todaysRevenue} from '@/src/pos-target-compu
 import type {SalesKpis} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
 import {getCrmOrders} from '@/src/crm-data';
-import {resolveCustomRange, websiteRangeMetrics, inRange} from '@/src/custom-range';
+import {resolveCustomRange, websiteRangeMetrics, inRange, dailyRangeMetrics} from '@/src/custom-range';
 import {fmtRange} from '@/src/week';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
@@ -86,12 +86,18 @@ export default async function Page(props: {searchParams: Promise<{week?: string;
     );
   }
   const initial = ALL_CHANNELS.includes(ch as Channel) ? [ch as Channel] : DEFAULT_CHANNELS;
-  // ?from&to (PH days) narrow the overview inside the period. Only per-order
-  // channels can follow: Website from live CRM orders, Offline from POS orders.
+  // ?from&to (PH days) narrow the overview inside the period: Website from live CRM
+  // orders, Offline from POS orders, Shopee/Lazada from the digest's per-day series
+  // (when the row has one — older rows stay full-period only).
   const range = resolveCustomRange(row.window_from, row.window_to, searchParams.from, searchParams.to);
   const offline = await offlineCompare(range ?? {from: row.window_from, to: row.window_to});
   const custom = range
-    ? {label: fmtRange(range.fromDay, range.toDay), ...websiteRangeMetrics(await getCrmOrders(), range)}
+    ? {
+        label: fmtRange(range.fromDay, range.toDay),
+        ...websiteRangeMetrics(await getCrmOrders(), range),
+        shopee: dailyRangeMetrics(row.digest.daily?.shopee, range),
+        lazada: dailyRangeMetrics(row.digest.daily?.lazada, range),
+      }
     : null;
   return <ChannelOverview brief={getBrief()} row={row} priorRow={priorRow} initialChannels={initial} offline={offline} custom={custom} />;
 }

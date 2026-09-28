@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {periodDays, resolveCustomRange, websiteRangeMetrics, inRange} from '../src/custom-range';
+import {periodDays, resolveCustomRange, websiteRangeMetrics, inRange, dailyRangeMetrics} from '../src/custom-range';
 
 // A period on PHT midnights (how the scheduled digest writes windows) and one on
 // UTC midnights (how older archive rows were written — starts 08:00 PHT).
@@ -84,5 +84,28 @@ describe('websiteRangeMetrics (mirrors the batch sales.js formulas)', () => {
 
   it('inRange is [from, to)', () => {
     expect([inRange('2026-09-21T16:00:00.000Z', range), inRange('2026-09-23T16:00:00.000Z', range), inRange(null, range)]).toEqual([true, false, false]);
+  });
+});
+
+describe('dailyRangeMetrics', () => {
+  // Sep 21–27 Shopee, as archived by the batch (sums to the period's ₱8,272 / 14 orders / 28 units).
+  const shopee = [
+    {day: '2026-09-21', revenue: 249, orders: 1, units: 1},
+    {day: '2026-09-22', revenue: 955, orders: 2, units: 5},
+    {day: '2026-09-23', revenue: 1305, orders: 4, units: 5},
+    {day: '2026-09-24', revenue: 1347, orders: 2, units: 3},
+    {day: '2026-09-25', revenue: 229, orders: 1, units: 1},
+    {day: '2026-09-26', revenue: 1796, orders: 1, units: 4},
+    {day: '2026-09-27', revenue: 2391, orders: 3, units: 9},
+  ];
+  it('a full-period range equals the period totals', () => {
+    expect(dailyRangeMetrics(shopee, {fromDay: '2026-09-21', toDay: '2026-09-27'})).toEqual({revenue: 8272, orders: 14, aov: 590.86, units: 28, adSpend: null, roas: null});
+  });
+  it('sums only the days inside the range (inclusive)', () => {
+    expect(dailyRangeMetrics(shopee, {fromDay: '2026-09-24', toDay: '2026-09-24'})).toMatchObject({revenue: 1347, orders: 2, units: 3});
+  });
+  it('null when no sales fall in the range; undefined when the period has no series', () => {
+    expect(dailyRangeMetrics([{day: '2026-09-26', revenue: 149, orders: 1, units: 1}], {fromDay: '2026-09-22', toDay: '2026-09-23'})).toBeNull();
+    expect(dailyRangeMetrics(undefined, {fromDay: '2026-09-22', toDay: '2026-09-23'})).toBeUndefined();
   });
 });
