@@ -17,7 +17,7 @@ import {Sparkles} from 'lucide-react';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {usePlaybook, usePlaybookProgress, recAction, recSteps, recIsComplete} from './playbook';
 import {InfoTip} from './info-tip';
-import {fmtRange} from '../../src/week';
+import {fmtRange, hasNoSalesData} from '../../src/week';
 import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, ConversationsSection} from './sections';
 
 export type Channel = 'shopee' | 'lazada' | 'website' | 'offline';
@@ -549,7 +549,7 @@ export function ChannelOverview({row, priorRow, initialChannels, offline, custom
   }, [recs, recQuery, recChannel, hideDone, selected]);
   const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
 
-  if (row.digest.degraded) {
+  if (hasNoSalesData(row)) {
     return <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 text-muted-foreground max-md:px-4">No data for this window — check the batch job.</div>;
   }
 

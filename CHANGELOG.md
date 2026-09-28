@@ -12,6 +12,19 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-28 — Periods show whenever there's sales data; Weekly / Monthly period groups — `fix(periods)`
+
+**What.** A period is only "no data" when it has no sales from any channel (`hasNoSalesData`
+in `src/week.ts`). The batch's `degraded` flag means "no PawPal chats scanned", and it was
+blanking whole weeks (Sep 21–27) that had full Shopee/Lazada/website data. The home
+verdict skips the chat-driven "no data — check the job" headline. The period switcher
+groups rows under **Weekly** (≤ 8 days) and **Monthly**, the sub-line shows the length in
+days, and the amber dot now means "no sales data". `fmtRange` reads timestamps as PHT
+days with an exclusive PHT-midnight end, so Sep 20 16:00Z – Sep 27 16:00Z shows as
+**Sep 21 – 27** (older UTC-midnight rows keep their labels). Tests: `test/week.test.ts`.
+
+---
+
 ## 2026-09-28 — Custom dates within a reporting period on the Sales overview — `feat(overview)`
 
 **What.** A **Custom dates** button beside the reporting-period switcher (Sales overview,
