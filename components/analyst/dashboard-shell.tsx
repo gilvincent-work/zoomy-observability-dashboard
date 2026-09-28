@@ -339,7 +339,11 @@ export function DashboardShell({
 
         {/* Custom dates within the period — only the Sales overview recomputes for it */}
         {showPeriod && current && pathname === '/' && channel && (
-          <CustomRangePicker windowFrom={current.window_from} windowTo={current.window_to} />
+          <CustomRangePicker
+            windowFrom={current.window_from}
+            windowTo={current.window_to}
+            fullPeriodOnly={(['shopee', 'lazada'] as const).filter((c) => !current.digest.daily?.[c]?.length).map((c) => (c === 'shopee' ? 'Shopee' : 'Lazada'))}
+          />
         )}
 
         {/* Right cluster: Ask Coop · theme · avatar */}
