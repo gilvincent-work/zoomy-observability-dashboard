@@ -1,7 +1,7 @@
 'use client';
 
-import {useMemo, useState} from 'react';
-import {Check, Copy} from 'lucide-react';
+import {useMemo, useRef, useState} from 'react';
+import {Check, Copy, Info} from 'lucide-react';
 import type {SpinLead} from '@/src/spin-leads-types';
 import {prizeTally} from '@/src/spin-leads-types';
 import {leadKey, treatPhrase, type LeadMatch} from '@/src/lead-order-match';
@@ -160,7 +160,11 @@ export function LeadCapture({leads, orders, matches}: {leads: SpinLead[]; orders
                 {hasPets && <th className="px-3 py-2 text-left font-semibold">Pet</th>}
                 <th className="px-3 py-2 text-left font-semibold">Mobile</th>
                 <th className="px-3 py-2 text-left font-semibold">Prize</th>
-                {matches && <th className="px-3 py-2 text-left font-semibold">Bought</th>}
+                {matches && (
+                  <th className="px-3 py-2 text-left font-semibold">
+                    <span className="inline-flex items-center gap-1">Bought <BoughtHelp /></span>
+                  </th>
+                )}
                 <th className="px-3 py-2 text-right font-semibold">Collected</th>
               </tr>
             </thead>
@@ -202,9 +206,9 @@ function BoughtCell({match}: {match: LeadMatch | undefined}) {
   if (!match) return <td className="px-3 py-2 text-muted-foreground">—</td>;
   const detail = `Order ${stamp(match.orderAt)} · ${formatPeso(match.total)} · ${Math.abs(match.minutes)} min ${match.minutes >= 0 ? 'before' : 'after'} the spin`;
   return (
-    <td className="max-w-[240px] px-3 py-2" title={`${match.products.join(', ')}\n${detail}`}>
-      <span className="flex items-center gap-1.5">
-        <span className={cn('truncate', match.confidence === 'unsure' && 'text-muted-foreground')}>{treatPhrase(match.products)}</span>
+    <td className="min-w-[200px] max-w-[320px] px-3 py-2" title={detail}>
+      <span className="flex items-start gap-1.5">
+        <span className={cn('leading-snug', match.confidence === 'unsure' && 'text-muted-foreground')}>{treatPhrase(match.products)}</span>
         {match.confidence === 'unsure' && (
           <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-300">
             unsure
@@ -212,6 +216,71 @@ function BoughtCell({match}: {match: LeadMatch | undefined}) {
         )}
       </span>
     </td>
+  );
+}
+
+/**
+ * The ⓘ beside "Bought": what the three kinds of entry mean and how a lead was
+ * matched. Opens on hover or tap. Fixed-positioned from the icon, so the table's
+ * horizontal-scroll container can't clip it.
+ */
+function BoughtHelp() {
+  const btn = useRef<HTMLButtonElement>(null);
+  const [at, setAt] = useState<{top: number; left: number} | null>(null);
+  const open = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (r) setAt({top: r.bottom + 6, left: Math.max(16, Math.min(r.left - 12, window.innerWidth - 336))});
+  };
+  const close = () => setAt(null);
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        aria-label="How Bought is matched"
+        aria-expanded={at !== null}
+        onClick={() => (at ? close() : open())}
+        onMouseEnter={open}
+        onMouseLeave={close}
+        onBlur={close}
+        onKeyDown={(e) => e.key === 'Escape' && close()}
+        className="rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+      >
+        <Info className="size-3" />
+      </button>
+      {at && (
+        <div
+          role="tooltip"
+          style={{top: at.top, left: at.left}}
+          className="fixed z-50 w-80 rounded-lg border bg-popover p-3.5 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-popover-foreground shadow-lg"
+        >
+          <p className="mb-2 font-semibold">How &ldquo;Bought&rdquo; is matched</p>
+          <p className="mb-2.5 text-muted-foreground">
+            The wheel and the till don&rsquo;t share an ID, so each lead is linked to the POS order rung up
+            closest to their spin: within 5 minutes either side, on the same day, one order per lead. Close
+            calls are settled by pet species (a cat owner goes to a cat-tagged order) and prize (a
+            free-item order goes to a free-item winner).
+          </p>
+          <dl className="flex flex-col gap-2">
+            <div>
+              <dt className="font-medium">Items listed</dt>
+              <dd className="text-muted-foreground">Confident: no other order came close. 18 of 19 were right when checked against orders where the cashier noted the pet&rsquo;s name or prize.</dd>
+            </div>
+            <div>
+              <dt className="font-medium">
+                Items +{' '}
+                <span className="rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-300">unsure</span>
+              </dt>
+              <dd className="text-muted-foreground">Another order was rung up within a minute or two, so it could be either. Roughly a coin flip, so check before messaging. Left out of Follow-ups.</dd>
+            </div>
+            <div>
+              <dt className="font-medium">—</dt>
+              <dd className="text-muted-foreground">No order could be linked. Either nothing was rung up within 5 minutes (they likely spun without buying, or someone else paid), or the nearby orders were better fits for other leads.</dd>
+            </div>
+          </dl>
+        </div>
+      )}
+    </>
   );
 }
 

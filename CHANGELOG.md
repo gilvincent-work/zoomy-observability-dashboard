@@ -27,8 +27,10 @@ confident matches were right, while unsure ones were about a coin flip. Result:
 166 confident, 60 unsure, 31 with no order nearby. Of the 141 Instagram leads,
 89 are confident.
 
-- `/customers/leads` → **Contacts**: a **Bought** column (items; order time,
-  total and gap in the tooltip), with an *unsure* badge where it's a near-tie.
+- `/customers/leads` → **Contacts**: a **Bought** column listing every item
+  (order time, total and gap on hover), with an *unsure* badge where it's a
+  near-tie. An ⓘ beside the header explains the listed, *unsure* and blank
+  entries and how a lead is matched.
 - `/customers/leads` → **Follow-ups**: for a chosen day (default today, Manila),
   lists who is due the day-1 thank-you and the day-5 website-promo message.
   Messages are filled in from the pet's name and what was bought, with a Copy
