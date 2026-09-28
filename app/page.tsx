@@ -10,6 +10,9 @@ import {getDailyTarget} from '@/src/pos-target';
 import {progress as computeProgress, todaysRevenue} from '@/src/pos-target-compute';
 import type {SalesKpis} from '@/src/pos-sales-types';
 import type {DailyProgress} from '@/src/pos-target-types';
+import {getCrmOrders} from '@/src/crm-data';
+import {resolveCustomRange, websiteRangeMetrics, inRange} from '@/src/custom-range';
+import {fmtRange} from '@/src/week';
 
 export const dynamic = 'force-dynamic'; // reflect the latest archive when live
 
@@ -33,11 +36,12 @@ async function offlineKpis(): Promise<SalesKpis | null> {
   }
 }
 
-// Offline metrics (all orders to date) for the Compare Channels chart. Same
-// fail-soft contract: null on any error so the chart just omits offline.
-async function offlineCompare(): Promise<ReturnType<typeof offlineCompareMetrics>> {
+// Offline metrics (all orders to date, or only a custom range's) for the Compare
+// Channels chart. Same fail-soft contract: null on any error so the chart just omits offline.
+async function offlineCompare(range?: {from: string; to: string}): Promise<ReturnType<typeof offlineCompareMetrics>> {
   try {
-    return offlineCompareMetrics(await getPosOrders());
+    const orders = await getPosOrders();
+    return offlineCompareMetrics(range ? orders.filter((o) => inRange(o.created_at, range)) : orders);
   } catch {
     return null;
   }
@@ -55,7 +59,7 @@ async function offlineDailyProgress(): Promise<DailyProgress | null> {
   }
 }
 
-export default async function Page(props: {searchParams: Promise<{week?: string; channel?: string}>}) {
+export default async function Page(props: {searchParams: Promise<{week?: string; channel?: string; from?: string; to?: string}>}) {
   const searchParams = await props.searchParams;
   // Customer PII is masked inside getDigests() (server-only) rather than here, so
   // every route is fail-closed — see src/data.ts + src/pii.ts.
@@ -83,6 +87,12 @@ export default async function Page(props: {searchParams: Promise<{week?: string;
     );
   }
   const initial = ALL_CHANNELS.includes(ch as Channel) ? [ch as Channel] : DEFAULT_CHANNELS;
-  const offline = await offlineCompare();
-  return <ChannelOverview brief={getBrief()} row={row} priorRow={priorRow} initialChannels={initial} offline={offline} />;
+  // ?from&to (PH days) narrow the overview inside the period. Only per-order
+  // channels can follow: Website from live CRM orders, Offline from POS orders.
+  const range = resolveCustomRange(row.window_from, row.window_to, searchParams.from, searchParams.to);
+  const offline = await offlineCompare(range ?? undefined);
+  const custom = range
+    ? {label: fmtRange(range.fromDay, range.toDay), ...websiteRangeMetrics(await getCrmOrders(), range)}
+    : null;
+  return <ChannelOverview brief={getBrief()} row={row} priorRow={priorRow} initialChannels={initial} offline={offline} custom={custom} />;
 }
