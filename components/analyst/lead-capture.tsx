@@ -4,6 +4,8 @@ import {useMemo, useState} from 'react';
 import {Check, Copy} from 'lucide-react';
 import type {SpinLead} from '@/src/spin-leads-types';
 import {prizeTally} from '@/src/spin-leads-types';
+import {leadKey, treatPhrase, type LeadMatch} from '@/src/lead-order-match';
+import {formatPeso} from '@/src/pos-format';
 import {manilaDayKey} from '@/src/pos-sales-compute';
 import {Pagination} from './pagination';
 import {cn} from '@/lib/utils';
@@ -34,7 +36,7 @@ function stamp(iso: string): string {
  * many left a number worth texting, and which prizes the wheel actually paid out.
  * Scoped by the day toggle above it, same as every other block on the card.
  */
-export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}) {
+export function LeadCapture({leads, orders, matches}: {leads: SpinLead[]; orders: number; matches?: Record<string, LeadMatch>}) {
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState(false);
   const [prize, setPrize] = useState('all');
@@ -158,6 +160,7 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
                 {hasPets && <th className="px-3 py-2 text-left font-semibold">Pet</th>}
                 <th className="px-3 py-2 text-left font-semibold">Mobile</th>
                 <th className="px-3 py-2 text-left font-semibold">Prize</th>
+                {matches && <th className="px-3 py-2 text-left font-semibold">Bought</th>}
                 <th className="px-3 py-2 text-right font-semibold">Collected</th>
               </tr>
             </thead>
@@ -168,6 +171,7 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
                   {hasPets && <td className="max-w-[180px] truncate px-3 py-2 text-muted-foreground" title={l.pet ?? undefined}>{l.pet ?? '—'}</td>}
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">{l.mobile ?? '—'}</td>
                   <td className="px-3 py-2 text-muted-foreground">{l.prize}</td>
+                  {matches && <BoughtCell match={matches[leadKey(l)]} />}
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{stamp(l.collectedAt)}</td>
                 </tr>
               ))}
@@ -187,6 +191,27 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * What the lead bought at the till, as matched by time (src/lead-order-match.ts).
+ * "Unsure" means another order sat within a minute or two — check before using it.
+ */
+function BoughtCell({match}: {match: LeadMatch | undefined}) {
+  if (!match) return <td className="px-3 py-2 text-muted-foreground">—</td>;
+  const detail = `Order ${stamp(match.orderAt)} · ${formatPeso(match.total)} · ${Math.abs(match.minutes)} min ${match.minutes >= 0 ? 'before' : 'after'} the spin`;
+  return (
+    <td className="max-w-[240px] px-3 py-2" title={`${match.products.join(', ')}\n${detail}`}>
+      <span className="flex items-center gap-1.5">
+        <span className={cn('truncate', match.confidence === 'unsure' && 'text-muted-foreground')}>{treatPhrase(match.products)}</span>
+        {match.confidence === 'unsure' && (
+          <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-300">
+            unsure
+          </span>
+        )}
+      </span>
+    </td>
   );
 }
 
