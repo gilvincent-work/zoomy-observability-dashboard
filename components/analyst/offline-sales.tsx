@@ -511,6 +511,7 @@ function TopSellersColumn({
             )}
           </div>
         )}
+        {ranked.length > 0 && <ViewAllFooter href="/offline-sales/rankings?tab=products" label="View all products" />}
       </Panel>
 
       {topBundles.length > 0 && (
@@ -532,8 +533,21 @@ function TopSellersColumn({
               </li>
             ))}
           </ul>
+          <ViewAllFooter href="/offline-sales/rankings?tab=bundles" label="View all bundles" />
         </Panel>
       )}
+    </div>
+  );
+}
+
+/** Right-aligned "View all → " footer link, used under the Top products / Top
+ *  bundles lists to reach the full paginated rankings page. */
+function ViewAllFooter({href, label}: {href: string; label: string}) {
+  return (
+    <div className="mt-3 border-t pt-3 text-right">
+      <Link href={href} className="text-xs font-medium text-primary hover:underline">
+        {label} →
+      </Link>
     </div>
   );
 }

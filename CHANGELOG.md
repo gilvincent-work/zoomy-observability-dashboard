@@ -12,6 +12,32 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-30 — Offline Sales: "View all" product & bundle rankings — `feat(offline-sales)`
+
+The overview's **Top products** and **Top bundles** cards stay capped at 5 but
+now each carry a **View all** footer link to a new **Product rankings** page
+(`/offline-sales/rankings`) — one page, two tabs (Products · Bundles), so both
+links deep-link their tab via `?tab=`.
+
+- **Decision — full-page rankings over a taller card.** More room than the card,
+  so the list becomes a **sortable-column table** (Products: Product · Units ·
+  Bundled · Revenue; Bundles: Bundle · Orders · Revenue). Any column header sorts
+  (`aria-sort`, arrow); the **Revenue/Units** + **Top/Bottom** segmented toggles
+  from the card carry over and share one sort state with the headers.
+- **Controls:** name **search** (case-insensitive, per tab) and a **10 / 25 / 50
+  per-page** selector (default 10) on top of numbered pagination.
+- **Independent per-tab state** — each tab keeps its own sort, search, and page
+  across tab switches (state lifted in `rankings-view.tsx`); only `?tab=` is in
+  the URL, for the two deep-links.
+- **Product rows link to `/inventory/[sku]`** (keyed by `product_id`); a delisted
+  SKU still in historical orders renders as plain text (gated on catalog
+  membership) so it never 404s. Bundles have no detail page → static rows.
+- Additive and read-only: new `app/offline-sales/rankings/page.tsx` re-derives the
+  **full** lists via `topProducts(orders, Infinity)` / `topBundles(orders,
+  Infinity)`; the overview cards and `pos_*` schema are untouched. Pure helpers in
+  `src/pos-rankings.ts` (`filterByName`, `sortRows`) with unit tests; `leafActive`
+  already highlights *Offline Sales* for the new subpath (no nav change needed).
+
 ## 2026-09-28 — Event leads: what they bought + follow-up messages — `feat(leads)`
 
 The spin-the-wheel and the POS share no id, so `src/lead-order-match.ts` links
