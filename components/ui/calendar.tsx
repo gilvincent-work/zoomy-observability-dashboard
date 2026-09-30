@@ -31,11 +31,12 @@ function monthGrid(year: number, month: number): {leading: number; days: number}
 /**
  * A single-month range calendar. Two picks define an inclusive [start, end]
  * range; a third pick starts over. Future days are disabled (a sale can't be
- * dated ahead). Fully themed from the design tokens and keyboard-operable.
+ * dated ahead), as are days outside the optional `min`/`max` (YYYY-MM-DD,
+ * inclusive). Fully themed from the design tokens and keyboard-operable.
  */
-export function Calendar({value, onChange}: {value: DateRange; onChange: (next: DateRange) => void}) {
+export function Calendar({value, onChange, min, max}: {value: DateRange; onChange: (next: DateRange) => void; min?: string; max?: string}) {
   const today = todayYmd();
-  const anchor = value.end ?? value.start ?? today;
+  const anchor = value.end ?? value.start ?? min ?? today;
   const [ay, am] = anchor.split('-').map(Number);
   const [view, setView] = useState<{y: number; m: number}>({y: ay, m: am - 1});
 
@@ -97,7 +98,7 @@ export function Calendar({value, onChange}: {value: DateRange; onChange: (next: 
           const isEnd = day === value.end;
           const inRange = value.start && value.end && day > value.start && day < value.end;
           const isToday = day === today;
-          const disabled = day > today;
+          const disabled = day > today || (min != null && day < min) || (max != null && day > max);
           const endpoint = isStart || isEnd;
           return (
             <div

@@ -118,6 +118,10 @@ export function mergeContacts(
     })),
     ...leads.map((l) => ({
       source: 'booth' as const,
+      // A handle-only lead has no email or phone to merge on, so it stands alone;
+      // the handle is at least something to show as its headline.
+      // ponytail: handle isn't an identity key; add one if the same handle spins at several events.
+      name: l.instagram ? `@${l.instagram}` : null,
       email: l.email,
       mobile: l.mobile,
       prize: l.prize,

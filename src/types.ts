@@ -121,6 +121,9 @@ export interface DigestDocument {
   headline: string;
   themes: DigestTheme[];
   comparison?: Partial<Record<'shopee' | 'lazada' | 'website', ChannelComparison>>;
+  // Per-PH-day sales (batch-stamped) — lets a custom date range recompute the
+  // marketplaces. Absent on rows archived before 2026-09-28.
+  daily?: Partial<Record<'shopee' | 'lazada', {day: string; revenue: number; orders: number; units: number}[]>>;
   figures: DigestFigure[];
   recommendations: DigestRec[];
   // Optional sections — present only when the batch job passed the corresponding

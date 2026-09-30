@@ -12,6 +12,133 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-09-30 — Offline Sales: "View all" product & bundle rankings — `feat(offline-sales)`
+
+The overview's **Top products** and **Top bundles** cards stay capped at 5 but
+now each carry a **View all** footer link to a new **Product rankings** page
+(`/offline-sales/rankings`) — one page, two tabs (Products · Bundles), so both
+links deep-link their tab via `?tab=`.
+
+- **Decision — full-page rankings over a taller card.** More room than the card,
+  so the list becomes a **sortable-column table** (Products: Product · Units ·
+  Bundled · Revenue; Bundles: Bundle · Orders · Revenue). Any column header sorts
+  (`aria-sort`, arrow); the **Revenue/Units** + **Top/Bottom** segmented toggles
+  from the card carry over and share one sort state with the headers.
+- **Controls:** name **search** (case-insensitive, per tab) and a **10 / 25 / 50
+  per-page** selector (default 10) on top of numbered pagination.
+- **Independent per-tab state** — each tab keeps its own sort, search, and page
+  across tab switches (state lifted in `rankings-view.tsx`); only `?tab=` is in
+  the URL, for the two deep-links.
+- **Product rows link to `/inventory/[sku]`** (keyed by `product_id`); a delisted
+  SKU still in historical orders renders as plain text (gated on catalog
+  membership) so it never 404s. Bundles have no detail page → static rows.
+- Additive and read-only: new `app/offline-sales/rankings/page.tsx` re-derives the
+  **full** lists via `topProducts(orders, Infinity)` / `topBundles(orders,
+  Infinity)`; the overview cards and `pos_*` schema are untouched. Pure helpers in
+  `src/pos-rankings.ts` (`filterByName`, `sortRows`) with unit tests; `leafActive`
+  already highlights *Offline Sales* for the new subpath (no nav change needed).
+
+## 2026-09-28 — Event leads: what they bought + follow-up messages — `feat(leads)`
+
+The spin-the-wheel and the POS share no id, so `src/lead-order-match.ts` links
+each lead to the order they paid for **by time**. It considers orders within
+±5 min on the same day, one order per lead, and settles near-ties with two
+checks: the lead's pet species vs the order's dog/cat tag, and prize orders
+going to the lead who won that prize. A match is *confident* only when no rival
+order came within 2 cost-minutes.
+
+Checked offline on a read-only snapshot of Sep 18–27 (257 leads, 353 orders)
+against orders where the cashier typed the pet's name or a prize note: 18 of 19
+confident matches were right, while unsure ones were about a coin flip. Result:
+166 confident, 60 unsure, 31 with no order nearby. Of the 141 Instagram leads,
+89 are confident.
+
+- `/customers/leads` → **Contacts**: a **Bought** column (items; order time,
+  total and gap in the tooltip), with an *unsure* badge where it's a near-tie.
+- `/customers/leads` → **Follow-ups**: for a chosen day (default today, Manila),
+  lists who is due the day-1 thank-you and the day-5 website-promo message.
+  Messages are filled in from the pet's name and what was bought, with a Copy
+  button. Confident matches only. It's a copy-and-paste list; nothing is sent.
+- Computed on the fly from `pos_orders` + `spin_wheel_leads`; no new table,
+  nothing written. A POS read failure leaves the contact list working.
+- `scripts/export-lead-match-data.mjs`: a read-only snapshot for re-checking the
+  matcher offline.
+
+## 2026-09-28 — Spin-the-wheel v2: Instagram handles + pets — `feat(leads)`
+
+The Sep 26–27 Modern Market booth changed what the wheel collects: **Contact** is
+now an email *or* an Instagram handle, and a **Pet** column was added. Coop now
+reads both layouts.
+
+- `supabase/spin_wheel_leads_instagram.sql` (additive only) adds the `instagram`
+  and `pet` columns and makes `email` nullable, with a check that every lead has
+  an email or a handle. It also adds a unique key on `(instagram, collected_at)`.
+  **Run on prod 2026-09-28.**
+- `scripts/import-spin-leads.mjs` finds columns by header name instead of
+  position, and now only inserts new rows (`ignoreDuplicates`), so re-importing
+  a newer export never rewrites older rows. Prod import of the 263-row export:
+  150 new (9 email, 141 handle), the 113 Sep 18–20 rows untouched.
+- `/customers/leads` and the event card: an Email → Contact column (email or
+  `@handle`), a Pet column when there is pet data, and "Copy N emails" copies
+  only real emails. In All contacts, a handle-only lead is headed by its handle.
+
+## 2026-09-28 — Shopee and Lazada follow custom dates — `feat(overview)`
+
+**What.** A custom date range now recomputes Shopee and Lazada revenue, orders, AOV and
+units from the digest's per-PH-day series (`digest.daily`, stamped by the batch from
+Shopee's daily sales table and Lazada's order timestamps; `dailyRangeMetrics` in
+`src/custom-range.ts`). A full-period range equals the period view (Sep 21–27: ₱91,156).
+Ad spend / ROAS have no daily source, so under custom dates the chart says so instead
+of drawing ₱0 bars. Rows archived before the series existed stay "full period only".
+Marketplace top products stay full-period (labelled).
+
+---
+
+## 2026-09-28 — Periods show whenever there's sales data; Weekly / Monthly period groups — `fix(periods)`
+
+**What.** A period is only "no data" when it has no sales from any channel (`hasNoSalesData`
+in `src/week.ts`). The batch's `degraded` flag means "no PawPal chats scanned", and it was
+blanking whole weeks (Sep 21–27) that had full Shopee/Lazada/website data. The home
+verdict skips the chat-driven "no data — check the job" headline. The period switcher
+groups rows under **Weekly** (≤ 8 days) and **Monthly**, the sub-line shows the length in
+days, and the amber dot now means "no sales data". `fmtRange` reads timestamps as PHT
+days with an exclusive PHT-midnight end, so Sep 20 16:00Z – Sep 27 16:00Z shows as
+**Sep 21 – 27** (older UTC-midnight rows keep their labels). Tests: `test/week.test.ts`.
+
+**Offline follows the period.** Compare Channels' Offline was every POS order to date
+(₱214k for Sep 21–27); it is now filtered to the period's window, same as with a custom
+range (Sep 21–27 → ₱81,370, the Sep 24–27 event days).
+
+---
+
+## 2026-09-28 — Custom dates within a reporting period on the Sales overview — `feat(overview)`
+
+**What.** A **Custom dates** button beside the reporting-period switcher (Sales overview,
+`/?channel=…`, only) narrows the view to PH days inside the selected period, via
+`?from=YYYY-MM-DD&to=YYYY-MM-DD`. Days outside the period are disabled in the calendar
+(`Calendar` gained optional `min`/`max`; default behaviour unchanged). Switching period
+drops the range; the × clears it.
+
+**Decision — only per-order channels follow the range.** The digest archive stores one
+row of *whole-period totals*, so a sub-range can only be recomputed where we hold orders:
+**Website** from live CRM orders (`getCrmOrders`, now carrying `lineItems`) and **Offline**
+from POS orders. **Lazada and Shopee** exist here only as digest totals, so under custom
+dates they are left out of the totals and chart (with a note) rather than mixing a
+full-period figure into a range total. KPI deltas are hidden (no like-for-like prior for an
+arbitrary range); recommended actions are labelled "based on the full period" (they are
+written once per digest — recomputing means a new AI run).
+
+**Reconciles with the digest.** `src/custom-range.ts` ports the batch's website formulas
+(revenue = Σ `totalPrice`, AOV = revenue ÷ orders, units + top products from line items) and
+clamps the range to the period, so selecting the whole period reproduces the digest window.
+Checked against live data: full-period recompute matched `digest.comparison.website`
+(revenue, orders, units) exactly on all 6 archived periods.
+
+**Next.** Lazada needs the batch to persist per-day order rows; Shopee's Business Insights
+exports are whole-window only (only `Order.all`, monthly, has per-order dates).
+
+---
+
 ## 2026-09-27 — Fix Units = 0 / phantom "Bundle deals": paginate POS aggregation reads — `fix(offline-sales)`
 
 **Bug.** The event detail (and any line-item aggregate) showed **Units = 0** and booked all

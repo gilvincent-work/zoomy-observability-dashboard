@@ -1,6 +1,8 @@
 /** One spin-the-wheel booth lead, as the event card consumes it. */
 export interface SpinLead {
-  email: string;
+  email: string | null; // null when the lead gave an Instagram handle instead
+  instagram: string | null; // handle without the "@" (Sep 27 event onwards)
+  pet: string | null; // e.g. "Mimi / Puspin" (Sep 27 event onwards)
   mobile: string | null;
   prize: string;
   campaign: string | null; // the storefront admin's event slug, e.g. "modern-market-sept2026"

@@ -2,7 +2,9 @@
 // typechecks with the rest of the project.
 /** A parsed export row, shaped like a public.spin_wheel_leads insert. */
 export interface SpinLeadRow {
-  email: string;
+  email: string | null;
+  instagram: string | null;
+  pet: string | null;
   mobile: string | null;
   prize: string;
   campaign: string | null;

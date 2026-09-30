@@ -17,7 +17,7 @@ import {Sparkles} from 'lucide-react';
 import {ShopeeIcon, LazadaIcon} from './brand-icons';
 import {usePlaybook, usePlaybookProgress, recAction, recSteps, recIsComplete} from './playbook';
 import {InfoTip} from './info-tip';
-import {fmtRange} from '../../src/week';
+import {fmtRange, hasNoSalesData} from '../../src/week';
 import {ShopeeSection, LazadaSection, SalesSection, CustomersSection, ConversationsSection} from './sections';
 
 export type Channel = 'shopee' | 'lazada' | 'website' | 'offline';
@@ -54,6 +54,28 @@ function figVal(figs: DigestFigure[] | undefined, re: RegExp, exclude?: RegExp):
   return f ? f.value : null;
 }
 type ChannelMetrics = Record<Metric, number | null>;
+
+/** A custom date range inside the period, resolved server-side (app/page.tsx). */
+// shopee/lazada: summed from the digest's per-day series; undefined when the row
+// has none (then they're full-period only), null when no sales fall in the range.
+export type CustomView = {
+  label: string;
+  metrics: ChannelMetrics | null;
+  topProducts: {title: string; revenue: number; units?: number}[];
+  shopee?: ChannelMetrics | null;
+  lazada?: ChannelMetrics | null;
+};
+// Marketplaces whose top products are whole-period digest lists (no per-day products).
+const FULL_PERIOD_ONLY: Channel[] = ['shopee', 'lazada'];
+/** Marketplaces that can't follow this custom range (the row has no per-day series). */
+const fullPeriodOnly = (custom?: CustomView | null): Channel[] =>
+  custom ? FULL_PERIOD_ONLY.filter((c) => custom[c as 'shopee' | 'lazada'] === undefined) : [];
+// A custom range with no sales is an empty stretch of days, not missing data.
+const noSalesOnDays = (cs: Channel[], custom?: CustomView | null) => {
+  const names = cs.filter((c) => !fullPeriodOnly(custom).includes(c)).map((c) => CH[c].label);
+  return names.length ? `No ${names.join(' or ')} sales on these days.` : 'No sales on these days.';
+};
+const fullOnlyNote = (cs: Channel[]) => `${cs.map((c) => CH[c].label).join(' and ')} only report full-period totals, so they're left out for custom dates.`;
 
 function channelMetrics(row: DigestArchiveRow): Record<Channel, ChannelMetrics | null> {
   const d = row.digest;
@@ -103,14 +125,15 @@ const fmt = (m: Metric, n: number) => {
 };
 
 // ── comparison chart ─────────────────────────────────────────────────────────────
-function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]; metric: Metric; setMetric: (m: Metric) => void}) {
+function ComparisonChart({metrics, channels, metric, setMetric, custom}: {metrics: Record<Channel, ChannelMetrics | null>; channels: Channel[]; metric: Metric; setMetric: (m: Metric) => void; custom?: CustomView | null}) {
   // Ad-spend / ROAS: show every channel with a value of 0 when it has no spend
-  // (rather than dropping it), so the comparison reads at a glance.
+  // (rather than dropping it), so the comparison reads at a glance. Not under a
+  // custom range: no channel has per-day ad data, so a 0 there would be false.
   const isAdMetric = metric === 'adSpend' || metric === 'roas';
   const rows = channels
     .map((c) => {
       const raw = metrics[c]?.[metric] ?? null;
-      return {c, value: raw == null && isAdMetric ? 0 : raw};
+      return {c, value: raw == null && isAdMetric && !custom ? 0 : raw};
     })
     .filter((r): r is {c: Channel; value: number} => r.value != null);
   const max = Math.max(1, ...rows.map((r) => r.value));
@@ -153,7 +176,9 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           </div>
         </div>
         {rows.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No data for this metric in the selected channels.</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {custom ? (isAdMetric ? 'Ad spend and ROAS are only reported for the full period.' : noSalesOnDays(channels, custom)) : 'No data for this metric in the selected channels.'}
+          </p>
         ) : (
           <>
           {/* Columns flex to share the panel width (min-w-0 so they can shrink),
@@ -198,14 +223,24 @@ function ComparisonChart({metrics, channels, metric, setMetric}: {metrics: Recor
           </>
         )}
         {(() => {
-          const omitted = channels.filter((c) => !rows.some((r) => r.c === c));
+          // Under a custom range, Lazada/Shopee are omitted because they only have
+          // whole-period totals — say that instead of "no data".
+          const fullOnly = channels.filter((c) => fullPeriodOnly(custom).includes(c));
+          // Ad spend / ROAS under custom dates: the centred message already explains.
+          if (custom && isAdMetric) return null;
+          const omitted = channels.filter((c) => !rows.some((r) => r.c === c) && !fullOnly.includes(c));
+          if (fullOnly.length && !omitted.length)
+            return <p className="mt-3 text-[11px] text-muted-foreground">{fullOnlyNote(fullOnly)}</p>;
           if (!omitted.length) return null;
+          // Custom range, nothing to chart: the centred message already says the days were empty.
+          if (custom && !rows.length) return fullOnly.length ? <p className="mt-3 text-[11px] text-muted-foreground">{fullOnlyNote(fullOnly)}</p> : null;
           const names = omitted.map((c) => CH[c].label).join(', ');
-          const why =
-            metric === 'units'
+          const why = custom
+            ? noSalesOnDays(omitted, custom)
+            : metric === 'units'
               ? `Shopee doesn’t report units in its sales export, so it’s omitted here.`
               : `No ${METRICS.find((m) => m.key === metric)?.label.toLowerCase()} data for ${names} in this window.`;
-          return <p className="mt-3 text-[11px] text-muted-foreground">{why}</p>;
+          return <p className="mt-3 text-[11px] text-muted-foreground">{why}{fullOnly.length ? ` ${fullOnlyNote(fullOnly)}` : ''}</p>;
         })()}
       </CardContent>
     </Card>
@@ -376,8 +411,9 @@ function MergedActions({items}: {items: {channel: Channel; rec: DigestRec}[]}) {
 type SkuRow = {title: string; revenue: number; units?: number};
 
 /** Per-SKU ranking for a channel, or [] when that channel has no per-product data. */
-function productsFor(row: DigestArchiveRow, c: Channel): SkuRow[] {
+function productsFor(row: DigestArchiveRow, c: Channel, custom?: CustomView | null): SkuRow[] {
   if (c === 'offline') return []; // offline's top products live on the Offline Sales page, not the digest
+  if (c === 'website' && custom) return custom.topProducts;
   const d = row.digest;
   const raw =
     c === 'shopee'
@@ -388,11 +424,12 @@ function productsFor(row: DigestArchiveRow, c: Channel): SkuRow[] {
   return [...(raw ?? [])].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
 }
 
-function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[]}) {
-  const sources = channels.map((c) => ({channel: c, meta: CH[c], items: productsFor(row, c)})).filter((s) => s.items.length);
+function TopProducts({row, channels, custom}: {row: DigestArchiveRow; channels: Channel[]; custom?: CustomView | null}) {
+  const sources = channels.map((c) => ({channel: c, meta: CH[c], items: productsFor(row, c, custom)})).filter((s) => s.items.length);
   const [tab, setTab] = useState<Channel | null>(null);
   if (!sources.length) return null;
-  const active = sources.find((s) => s.channel === tab) ?? sources[0];
+  // Under custom dates, open on Website — the list that actually follows the range.
+  const active = sources.find((s) => s.channel === tab) ?? (custom && sources.find((s) => s.channel === 'website')) ?? sources[0];
   const max = Math.max(1, ...active.items.map((p) => p.revenue));
   // channels selected but without any per-SKU feed yet (e.g. Shopee before its export).
   // Offline is excluded — its per-SKU breakdown lives on the Offline Sales page, not here.
@@ -455,6 +492,9 @@ function TopProducts({row, channels}: {row: DigestArchiveRow; channels: Channel[
           ))}
         </ol>
 
+        {custom && FULL_PERIOD_ONLY.includes(active.channel) && (
+          <p className="mt-3.5 text-[11px] text-muted-foreground">{active.meta.label} covers the full period, not {custom.label}.</p>
+        )}
         {missing.length > 0 && (
           <p className="mt-3.5 text-[11px] text-muted-foreground">
             No per-SKU feed yet for {missing.map((c) => CH[c].label).join(', ')}.
@@ -498,15 +538,25 @@ function ChannelDetail({channel, row}: {channel: Channel; row: DigestArchiveRow}
 }
 
 // ── the unified overview ─────────────────────────────────────────────────────────
-export function ChannelOverview({row, priorRow, initialChannels, offline}: {brief: AnalystBrief; row: DigestArchiveRow; priorRow?: DigestArchiveRow | null; initialChannels: Channel[]; offline?: ChannelMetrics | null}) {
+export function ChannelOverview({row, priorRow, initialChannels, offline, custom}: {brief: AnalystBrief; row: DigestArchiveRow; priorRow?: DigestArchiveRow | null; initialChannels: Channel[]; offline?: ChannelMetrics | null; custom?: CustomView | null}) {
   const [selected, setSelected] = useState<Channel[]>(initialChannels.length ? initialChannels : ['shopee', 'lazada', 'website']);
   // Default to Revenue (not Ad spend) so every channel — including offline, which
   // has no ad spend — shows a bar on first paint.
   const [metric, setMetric] = useState<Metric>('revenue');
   // Offline metrics come from pos_orders (passed in), merged over the digest-derived
   // channels. Offline has no ad spend / ROAS, so those metric views show it as N-A.
-  const metrics = useMemo(() => ({...channelMetrics(row), offline: offline ?? null}), [row, offline]);
-  const priorMetrics = useMemo(() => (priorRow ? channelMetrics(priorRow) : null), [priorRow]);
+  // A custom range recomputes every channel server-side: Website from CRM orders,
+  // Offline from POS orders, Shopee/Lazada from the digest's per-day series. A
+  // marketplace without a series (older rows) drops out rather than mix bases.
+  const metrics = useMemo(
+    () =>
+      custom
+        ? {shopee: custom.shopee ?? null, lazada: custom.lazada ?? null, website: custom.metrics, offline: offline ?? null}
+        : {...channelMetrics(row), offline: offline ?? null},
+    [row, offline, custom],
+  );
+  // No like-for-like prior for an arbitrary range → no deltas.
+  const priorMetrics = useMemo(() => (priorRow && !custom ? channelMetrics(priorRow) : null), [priorRow, custom]);
   const priorRange = priorRow ? fmtRange(priorRow.window_from, priorRow.window_to, priorRow.digest.window?.label) : null;
   // Merged recs, reordered so those relevant to the metric on the chart come first.
   const recs = useMemo(() => orderRecsByMetric(collectRecs(row, selected), metric), [row, selected, metric]);
@@ -526,7 +576,7 @@ export function ChannelOverview({row, priorRow, initialChannels, offline}: {brie
   }, [recs, recQuery, recChannel, hideDone, selected]);
   const backHref = row.window_from ? `/?week=${encodeURIComponent(row.window_from)}` : '/';
 
-  if (row.digest.degraded) {
+  if (hasNoSalesData(row)) {
     return <div className="mx-auto max-w-6xl px-6 py-8 md:px-10 text-muted-foreground max-md:px-4">No data for this window — check the batch job.</div>;
   }
 
@@ -552,6 +602,18 @@ export function ChannelOverview({row, priorRow, initialChannels, offline}: {brie
         <h1 className="font-serif text-[2.6rem] font-normal leading-[1.05] tracking-tight text-foreground max-md:text-[2rem]">
           {fmtRange(row.window_from, row.window_to, row.digest.window.label)}
         </h1>
+        {custom && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/[0.08] px-3 py-1 text-[12px] font-medium text-foreground">
+            Showing {custom.label}
+            <InfoTip
+              text={
+                fullPeriodOnly(custom).length
+                  ? `Website and Offline are recalculated for these dates. ${fullPeriodOnly(custom).map((c) => CH[c].label).join(' and ')} only have full-period totals for this period, so they're left out of the totals and chart. Ad spend, ROAS and recommended actions are from the full period.`
+                  : 'Sales, orders, AOV and units are recalculated for these dates across every channel. Ad spend, ROAS, marketplace top products and recommended actions are from the full period.'
+              }
+            />
+          </span>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           {CHANNELS.map((c, i) => {
@@ -597,7 +659,7 @@ export function ChannelOverview({row, priorRow, initialChannels, offline}: {brie
             <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground/80">
               <Sparkles className="size-3.5 text-primary" /> Recommended actions
               <InfoTip text="AI-generated actions from this period's digest, grounded in the numbers. Reordered so those relevant to the chart metric come first." />
-              <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first</span>
+              <span className="font-medium normal-case tracking-normal text-muted-foreground/70">· {METRICS.find((m) => m.key === metric)?.label} first{custom ? ' · based on the full period' : ''}</span>
               <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">{filteredRecs.length}</span>
             </div>
 
@@ -650,8 +712,8 @@ export function ChannelOverview({row, priorRow, initialChannels, offline}: {brie
           </section>
 
           <main className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:self-start">
-            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={setMetric} />
-            <TopProducts row={row} channels={selected} />
+            <ComparisonChart metrics={metrics} channels={selected} metric={metric} setMetric={setMetric} custom={custom} />
+            <TopProducts row={row} channels={selected} custom={custom} />
           </main>
         </div>
       )}

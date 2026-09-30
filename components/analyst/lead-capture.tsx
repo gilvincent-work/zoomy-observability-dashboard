@@ -4,11 +4,16 @@ import {useMemo, useState} from 'react';
 import {Check, Copy} from 'lucide-react';
 import type {SpinLead} from '@/src/spin-leads-types';
 import {prizeTally} from '@/src/spin-leads-types';
+import {leadKey, treatPhrase, type LeadMatch} from '@/src/lead-order-match';
+import {formatPeso} from '@/src/pos-format';
 import {manilaDayKey} from '@/src/pos-sales-compute';
 import {Pagination} from './pagination';
 import {cn} from '@/lib/utils';
 
 const PAGE_SIZE = 10;
+
+/** What the lead gave us to reach them: an email, or (Sep 27 onwards) an Instagram handle. */
+const contactOf = (l: SpinLead) => l.email ?? (l.instagram ? `@${l.instagram}` : '—');
 
 /** "2026-09-18" → "Sep 18" for the date filter. */
 function dayShort(key: string): string {
@@ -31,7 +36,7 @@ function stamp(iso: string): string {
  * many left a number worth texting, and which prizes the wheel actually paid out.
  * Scoped by the day toggle above it, same as every other block on the card.
  */
-export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}) {
+export function LeadCapture({leads, orders, matches}: {leads: SpinLead[]; orders: number; matches?: Record<string, LeadMatch>}) {
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState(false);
   const [prize, setPrize] = useState('all');
@@ -39,6 +44,8 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
 
   const prizes = useMemo(() => prizeTally(leads), [leads]);
   const withMobile = leads.filter((l) => l.mobile).length;
+  // Only Sep 27 onwards collects pets; older events keep the table as it was.
+  const hasPets = leads.some((l) => l.pet);
   const top = prizes[0]?.count ?? 1;
 
   // Every day these leads actually span, newest first — the filter only offers
@@ -68,10 +75,12 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
   const current = Math.min(page, pageCount);
   const start = (current - 1) * PAGE_SIZE;
   const rows = filtered.slice(start, start + PAGE_SIZE);
+  // Handle-only leads have no email to paste into a mailing list.
+  const emails = filtered.flatMap((l) => (l.email ? [l.email] : []));
 
   const copyEmails = async () => {
     try {
-      await navigator.clipboard.writeText(filtered.map((l) => l.email).join('\n'));
+      await navigator.clipboard.writeText(emails.join('\n'));
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -135,30 +144,34 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
             <button
               type="button"
               onClick={copyEmails}
-              disabled={filtered.length === 0}
+              disabled={emails.length === 0}
               className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             >
               {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-              {copied ? 'Copied' : `Copy ${filtered.length} email${filtered.length === 1 ? '' : 's'}`}
+              {copied ? 'Copied' : `Copy ${emails.length} email${emails.length === 1 ? '' : 's'}`}
             </button>
           </div>
         </div>
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-xs">
             <thead className="bg-muted/40 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 text-left font-semibold">Email</th>
+                <th className="px-3 py-2 text-left font-semibold">Contact</th>
+                {hasPets && <th className="px-3 py-2 text-left font-semibold">Pet</th>}
                 <th className="px-3 py-2 text-left font-semibold">Mobile</th>
                 <th className="px-3 py-2 text-left font-semibold">Prize</th>
+                {matches && <th className="px-3 py-2 text-left font-semibold">Bought</th>}
                 <th className="px-3 py-2 text-right font-semibold">Collected</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((l, i) => (
-                <tr key={`${l.email}-${l.collectedAt}`} className={cn(i > 0 && 'border-t')}>
-                  <td className="max-w-[220px] truncate px-3 py-2" title={l.email}>{l.email}</td>
+                <tr key={`${contactOf(l)}-${l.collectedAt}`} className={cn(i > 0 && 'border-t')}>
+                  <td className="max-w-[220px] truncate px-3 py-2" title={contactOf(l)}>{contactOf(l)}</td>
+                  {hasPets && <td className="max-w-[180px] truncate px-3 py-2 text-muted-foreground" title={l.pet ?? undefined}>{l.pet ?? '—'}</td>}
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">{l.mobile ?? '—'}</td>
                   <td className="px-3 py-2 text-muted-foreground">{l.prize}</td>
+                  {matches && <BoughtCell match={matches[leadKey(l)]} />}
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{stamp(l.collectedAt)}</td>
                 </tr>
               ))}
@@ -178,6 +191,27 @@ export function LeadCapture({leads, orders}: {leads: SpinLead[]; orders: number}
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * What the lead bought at the till, as matched by time (src/lead-order-match.ts).
+ * "Unsure" means another order sat within a minute or two — check before using it.
+ */
+function BoughtCell({match}: {match: LeadMatch | undefined}) {
+  if (!match) return <td className="px-3 py-2 text-muted-foreground">—</td>;
+  const detail = `Order ${stamp(match.orderAt)} · ${formatPeso(match.total)} · ${Math.abs(match.minutes)} min ${match.minutes >= 0 ? 'before' : 'after'} the spin`;
+  return (
+    <td className="max-w-[240px] px-3 py-2" title={`${match.products.join(', ')}\n${detail}`}>
+      <span className="flex items-center gap-1.5">
+        <span className={cn('truncate', match.confidence === 'unsure' && 'text-muted-foreground')}>{treatPhrase(match.products)}</span>
+        {match.confidence === 'unsure' && (
+          <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-300">
+            unsure
+          </span>
+        )}
+      </span>
+    </td>
   );
 }
 

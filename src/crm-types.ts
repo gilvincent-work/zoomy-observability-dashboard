@@ -47,6 +47,9 @@ export type CrmOrder = {
   fulfilledAt: string | null;
   reviewRequestSentAt: string | null;
   reviewSubmittedAt: string | null;
+  // Shopify line items as the CRM sends them (a JSON string). Only the Overview's
+  // custom date range reads it (units + top products) — see src/custom-range.ts.
+  lineItems?: string | null;
 };
 
 export type CrmCheckout = {

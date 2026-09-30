@@ -7,10 +7,11 @@ import {signOut} from 'next-auth/react';
 import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
-import {fmtRange} from '../../src/week';
+import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
+import {CustomRangePicker} from './custom-range-picker';
 
 // The left rail. Overview is a group (accordion in the expanded rail) whose
 // children are the sub-views that live under it; the rest are flat tabs.
@@ -284,16 +285,24 @@ export function DashboardShell({
               <>
                 <button className="fixed inset-0 z-10 cursor-default" aria-hidden onClick={() => setPeriodOpen(false)} />
                 <div className="absolute left-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
-                  <div className="px-3 pb-1.5 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Reporting periods
-                  </div>
-                  <div className="max-h-72 overflow-y-auto pb-1">
-                    {digests.map((d) => {
+                  <div className="max-h-80 overflow-y-auto pb-1">
+                    {(['weekly', 'monthly'] as const).map((kind) => {
+                      const group = digests.filter((d) => periodKind(d) === kind);
+                      if (!group.length) return null;
+                      return (
+                        <div key={kind}>
+                          <div className="px-3 pb-1.5 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {kind === 'weekly' ? 'Weekly' : 'Monthly'}
+                          </div>
+                    {group.map((d) => {
                       const active = d.window_from === currentWeek;
                       // Preserve the current view's params (e.g. ?channel=) — only swap the week,
                       // so changing period reloads the same view instead of bouncing home.
                       const params = new URLSearchParams(searchParams.toString());
                       params.set('week', d.window_from);
+                      // A custom range belongs to its period — drop it on switch.
+                      params.delete('from');
+                      params.delete('to');
                       return (
                         <Link
                           key={d.window_from}
@@ -305,14 +314,20 @@ export function DashboardShell({
                           )}
                         >
                           <span
-                            className={cn('size-1.5 shrink-0 rounded-full', d.digest.degraded ? 'bg-amber-500' : 'bg-primary')}
+                            className={cn('size-1.5 shrink-0 rounded-full', hasNoSalesData(d) ? 'bg-amber-500' : 'bg-primary')}
                           />
                           <span className="flex min-w-0 flex-1 flex-col">
                             <span className="truncate tabular-nums">{fmtRange(d.window_from, d.window_to, d.digest.window.label)}</span>
-                            <span className="truncate text-[11px] text-muted-foreground">{d.digest.window.label}</span>
+                            <span className="truncate text-[11px] text-muted-foreground">
+                              {Math.round((Date.parse(d.window_to) - Date.parse(d.window_from)) / 86_400_000)} days
+                              {hasNoSalesData(d) && ' · no sales data'}
+                            </span>
                           </span>
                           {d.emailed_at && <Mail className="size-3.5 shrink-0 text-muted-foreground" />}
                         </Link>
+                      );
+                    })}
+                        </div>
                       );
                     })}
                   </div>
@@ -320,6 +335,15 @@ export function DashboardShell({
               </>
             )}
           </div>
+        )}
+
+        {/* Custom dates within the period — only the Sales overview recomputes for it */}
+        {showPeriod && current && pathname === '/' && channel && (
+          <CustomRangePicker
+            windowFrom={current.window_from}
+            windowTo={current.window_to}
+            fullPeriodOnly={(['shopee', 'lazada'] as const).filter((c) => !current.digest.daily?.[c]?.length).map((c) => (c === 'shopee' ? 'Shopee' : 'Lazada'))}
+          />
         )}
 
         {/* Right cluster: Ask Coop · theme · avatar */}
