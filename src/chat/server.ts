@@ -1,8 +1,12 @@
 import 'server-only';
 import {unstable_cache} from 'next/cache';
+import {MOCK_DIGESTS} from '../mock';
+import {maskRows} from '../pii';
 import {MOCK_POS_EVENTS, MOCK_POS_ORDERS} from '../pos-sales-mock';
 import {logGuardTrip} from './audit';
-import {chatReadClient} from './read/client';
+import type {DigestSource} from './digest-lookup';
+import {chatDigestClient, chatReadClient} from './read/client';
+import {readDigestRows, DIGEST_ROW_LIMIT, type DigestRow} from './read/digest';
 import {loadMetricData} from './read/metric-data';
 import {assertChatReadable} from './read/mode';
 import type {ChatReadMode} from './read/relations';
@@ -72,4 +76,25 @@ export async function getChatMetricDataOrDegrade(): Promise<ChatDataResult> {
     }
     return {ok: false, reason};
   }
+}
+
+// F10: the stored weekly digests for get_digest. Its own guarded client (one relation, `bundle` refused), cached for five
+// minutes like the dashboard's digest read, under the same tag so revalidateTag('digest-archive') refreshes both.
+const loadDigestCached = unstable_cache(
+  async (mode: ChatReadMode): Promise<DigestRow[]> => {
+    const {client} = chatDigestClient({mode, onTrip: (b) => logGuardTrip({layer: 'http_guard', detail: b})});
+    return readDigestRows(client, mode);
+  },
+  ['chat-digest'],
+  {revalidate: 300, tags: ['digest-archive']},
+);
+
+export async function getChatDigest(): Promise<DigestSource> {
+  if (!process.env.SUPABASE_URL_ARCHIVE) {
+    const rows = maskRows([...MOCK_DIGESTS].sort((a, b) => b.window_to.localeCompare(a.window_to)).slice(0, DIGEST_ROW_LIMIT));
+    return {source: 'mock', rows};
+  }
+  const readable = assertChatReadable(process.env);
+  if (!readable.ok) throw new ChatUnavailableError(readable.message);
+  return {source: 'live', rows: await loadDigestCached(readable.mode)};
 }

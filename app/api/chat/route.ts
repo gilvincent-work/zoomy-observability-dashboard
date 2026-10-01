@@ -8,7 +8,7 @@ import {buildDegradedPreamble, buildPreamble} from '@/src/chat/preamble';
 import {openReportSession} from '@/src/chat/report-session';
 import {CHAT_TOOLS} from '@/src/chat/tool-defs';
 import {createExecutors} from '@/src/chat/tool-executors';
-import {getChatMetricDataOrDegrade} from '@/src/chat/server';
+import {getChatDigest, getChatMetricDataOrDegrade} from '@/src/chat/server';
 import type {ChatStreamEvent} from '@/src/chat/stream-types';
 import {auth} from '@/auth';
 import {devAuthEnabled, DEV_SESSION} from '@/src/dev-auth';
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       preamble: live.ok && report ? buildPreamble(live.data, now, report.outline()) : buildDegradedPreamble(now),
       executors:
         live.ok && report
-          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec})})
+          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest})
           : {},
       emit,
       user,

@@ -2,7 +2,7 @@ import 'server-only';
 import {createClient} from '@supabase/supabase-js';
 import {buildChatReadConfig} from './config';
 import {createGuardedFetch, type GuardedFetchOptions, type GuardStats} from './guarded-fetch';
-import {relationsForMode, type ChatReadMode, type ChatRelation} from './relations';
+import {digestRelationForMode, relationsForMode, type ChatDigestRelation, type ChatReadMode, type ChatRelation} from './relations';
 import type {ReadBuilder} from '../../pos-orders-read';
 
 // The ONLY file under src/chat that imports @supabase/supabase-js (layer 2).
@@ -24,20 +24,25 @@ export interface ChatReadClient {
   from(relation: ChatRelation): {select(columns: string): ChatReadBuilder};
 }
 
+/** The digest client: one relation (the digest view or table), select only. */
+export interface ChatDigestClient {
+  from(relation: ChatDigestRelation): {select(columns: string): ChatReadBuilder};
+}
+
 export interface ChatReadClientOptions {
   mode?: ChatReadMode;
   env?: Record<string, string | undefined>;
   onTrip?: GuardedFetchOptions['onTrip'];
 }
 
-export function chatReadClient(opts: ChatReadClientOptions = {}): {client: ChatReadClient; stats: GuardStats; mode: ChatReadMode} {
+function build(opts: ChatReadClientOptions, relations: (mode: ChatReadMode) => readonly string[]) {
   const env = opts.env ?? process.env;
   const mode = opts.mode ?? 'guarded_service';
   const {url, key, apikey} = buildChatReadConfig({mode, env});
 
   const {fetch: guarded, stats} = createGuardedFetch({
     baseUrl: url,
-    relations: relationsForMode(mode).allowed,
+    relations: relations(mode),
     underlying: fetch,
     onTrip: opts.onTrip,
   });
@@ -46,5 +51,16 @@ export function chatReadClient(opts: ChatReadClientOptions = {}): {client: ChatR
     // ro_role: the minted JWT stays the bearer token; an optional apikey header overrides supabase-js's default (key).
     global: {fetch: guarded, headers: apikey ? {apikey} : undefined},
   });
+  return {supabase, stats, mode};
+}
+
+export function chatReadClient(opts: ChatReadClientOptions = {}): {client: ChatReadClient; stats: GuardStats; mode: ChatReadMode} {
+  const {supabase, stats, mode} = build(opts, (m) => relationsForMode(m).allowed);
   return {client: supabase as unknown as ChatReadClient, stats, mode};
+}
+
+/** Same layers, but the guard allows ONLY the digest relation for the mode: no POS table is reachable through it. */
+export function chatDigestClient(opts: ChatReadClientOptions = {}): {client: ChatDigestClient; stats: GuardStats; mode: ChatReadMode} {
+  const {supabase, stats, mode} = build(opts, (m) => [digestRelationForMode(m)]);
+  return {client: supabase as unknown as ChatDigestClient, stats, mode};
 }

@@ -22,6 +22,8 @@ export const FORBIDDEN_COLUMNS: readonly string[] = Object.freeze([
   'closing_cash',
   'cash_note',
   'organizer',
+  // digest_archive.bundle holds the verbatim customer quotes behind a digest (never selected; see pii-and-secrets.md).
+  'bundle',
 ]);
 
 // ro_role: dashboard-owned definer views (created in F2, not yet present).
@@ -95,4 +97,20 @@ export interface ChatRelationSet {
 export function relationsForMode(mode: ChatReadMode): ChatRelationSet {
   const r = CHAT_RELATIONS[mode];
   return {tables: r.tables, columns: r.columns, allowed: Object.freeze(Object.values(r.tables))};
+}
+
+// The weekly digest (F10). A separate, single-relation allowlist: the digest client may read this and nothing else, and
+// only these columns. ro_role reads a dashboard-owned definer view (supabase/coop_chat_digest.sql) that has no `bundle`;
+// guarded_service reads digest_archive with the same explicit column list (the guard refuses `bundle` and `*`).
+export const DIGEST_COLUMNS = 'window_from,window_to,digest,created_at';
+
+export const DIGEST_RELATIONS = Object.freeze({
+  ro_role: 'coop_chat_digest',
+  guarded_service: 'digest_archive',
+} as const);
+
+export type ChatDigestRelation = (typeof DIGEST_RELATIONS)[ChatReadMode];
+
+export function digestRelationForMode(mode: ChatReadMode): ChatDigestRelation {
+  return DIGEST_RELATIONS[mode];
 }
