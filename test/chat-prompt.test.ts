@@ -5,6 +5,7 @@ vi.mock('server-only', () => ({}));
 import {buildCoopSystemPrompt, buildDigestBlock, buildStaticSystem} from '../src/chat/context';
 import {READ_ONLY_STATEMENT} from '../src/chat/read-only-statement';
 import {buildStaticCatalog} from '../src/chat/preamble';
+import {COOP_CHAT} from '../src/chat/config';
 import {MOCK_DIGESTS} from '../src/mock';
 
 describe('system prompt carries the read-only statement', () => {
@@ -84,13 +85,24 @@ describe('degraded (digest-only) system prompt', () => {
   });
 });
 
-describe('guardrails: no overclaiming from a cut list, no home-made numbers', () => {
-  it('the static prompt tells Coop to limit rank claims to the rows shown and to quote figures exactly', () => {
+describe('analyst skill replaces the F5 stopgap guardrails', () => {
+  it('the static prompt carries the cut-list rule (BI-08) and the number-words rule (ANL-04) from the skill', () => {
     const text = buildStaticSystem();
+    expect(text).toContain('[BI-08 ⚙]');
     expect(text).toMatch(/Showing the first N of M/);
     expect(text).toMatch(/among these/);
+    expect(text).toContain('[ANL-04]');
     expect(text).toMatch(/about half/);
-    expect(text).toMatch(/exactly as the tool gave them/);
+    expect(text).toMatch(/exactly as the tools returned them/);
+  });
+  it('the guardrails no longer repeat those two lines', () => {
+    expect(COOP_CHAT.guardrails).not.toMatch(/Showing the first N of M/);
+    expect(COOP_CHAT.guardrails).not.toMatch(/about half/);
+    expect(COOP_CHAT.guardrails).toMatch(/Never calculate, estimate or round/);
+  });
+  it('the skill sits after the read-only statement and before the output format', () => {
+    const text = buildStaticSystem();
+    expect(text.indexOf(READ_ONLY_STATEMENT)).toBeLessThan(text.indexOf('## How you think'));
+    expect(text.indexOf('## How you think')).toBeLessThan(text.indexOf('## Output format'));
   });
 });
-

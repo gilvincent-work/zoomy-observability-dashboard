@@ -5,6 +5,7 @@ import {COOP_CHAT} from './config';
 import {buildStaticCatalog} from './preamble';
 import {COOP_KNOWLEDGE} from './knowledge';
 import {READ_ONLY_STATEMENT} from './read-only-statement';
+import {renderSkill} from './skills/load';
 
 // Reference facts (brand, glossary, ad products, policies) — appended to every
 // prompt. Explicitly framed as background, NOT a source of live figures.
@@ -66,6 +67,9 @@ export function buildStaticSystem(opts: {tools?: boolean} = {}): string {
     COOP_CHAT.guardrails,
     READ_ONLY_STATEMENT,
     `If a request is out of scope, reply exactly: "${COOP_CHAT.refusal}"`,
+    '',
+    '## Analyst skill',
+    renderSkill(),
     '',
     '## Output format',
     COOP_CHAT.output,
