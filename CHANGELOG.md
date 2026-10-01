@@ -15,7 +15,10 @@ Dates are local working dates (GMT+8). Newest first.
 - Colors follow the entity (`entity-colors.ts`); "No tag"/"Other" are neutral. Every chart has a table twin with all rows. New skill topics `viz-forms`, `dashboard-composition` (VIZ/PREF/DASH rules, gear rules tested).
 - UI: `chat-blocks.tsx`, `chat-charts.tsx`, blocks interleaved in the assistant message, persisted tolerantly in `coop-chat-v1`. Dev-only preview at `/dev/chat-blocks`.
 - Decision: `cat-1..4` palette not yet validated for colorblind safety (design-owner decision open); ships with relief channels (legend, table twin). Per-bar entity colors on single-series bars deferred (needs an optional contract field).
-- Checked: full suite 1,003 pass, tsc clean, preview page in light and dark at 440/360px. Not yet checked: live model run in the drawer.
+- Checked: full suite pass, tsc clean, preview page in light and dark at 440/360px, and a live run in the drawer with the real model on PROD data (bundle dashboard: 4 tiles, stacked bar with a separate gray untagged bar, table with a total; then "as a pie").
+- Live run found and fixed a bug the tests missed: the UI read a pie as rows-as-slices while the server emits categories-as-series, so the pie drew one slice. `pieSlices` now reads the server shape, with a test over real `recommendView` output (lesson: parallel-agents-need-a-shared-fixture-from-real-output).
+- Added VIZ-11: a form catalog (job to form, marking what is not drawn yet) from the UX Magazine handbook; THINK-01 now looks the form up before rendering.
+- Open: the model still writes the caveat and headline AFTER the render calls (DASH-01 says before). A prompt rule and a worked example did not change it; enforcing it needs a code gate.
 
 ---
 

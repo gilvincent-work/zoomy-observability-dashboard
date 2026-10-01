@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import type {ColorToken} from '../src/chat/block-types';
 import {
+  pieSlices,
   ariaSummary,
   axisTicks,
   formatAxis,
@@ -163,5 +164,23 @@ describe('upsertBlock / interleave', () => {
     const pieces = interleave('', [{at: 0, block: kpiRow[0]}, {at: 0, block: kpiRow[1]}]);
     expect(pieces).toHaveLength(1);
     expect(pieces[0].type === 'blocks' && pieces[0].blocks).toHaveLength(2);
+  });
+});
+
+describe('pieSlices reads the shape the server really emits', () => {
+  it('a recommendView pie has one slice per category, not one slice', async () => {
+    const {recommendView} = await import('../src/chat/recommend-view');
+    const rows = [{pet: 'dog', revenue: 71050}, {pet: 'cat', revenue: 18050}, {pet: 'both', revenue: 17850}, {pet: 'untagged', revenue: 40350}];
+    const result = {
+      id: 'r1', metric: 'bundle_sales', dimension: 'pet',
+      columns: [{key: 'pet', label: 'Pet', unit: 'text', role: 'category'}, {key: 'revenue', label: 'Revenue', unit: 'PHP', role: 'measure'}],
+      rows,
+      meta: {source: 'live', range: {from: '2026-09-11', to: '2026-09-27', label: 'Sep 11 to Sep 27, 2026'}, dataFrom: null, dataTo: null, rowCount: 4, coverage: 'full', coveredFrom: null, coveredTo: null, caveats: [], share_basis: null, measure: 'revenue', measures: [], insights: [], checks: [], reliable: true},
+    } as never;
+    const d = recommendView(result, {kind: 'pie', orientation: 'auto'}).decisions[0];
+    if (d.block !== 'chart') throw new Error('expected a chart');
+    const slices = pieSlices(d.chart);
+    expect(slices.map((s) => s.name).sort()).toEqual(['both', 'cat', 'dog', 'untagged']);
+    expect(slices.reduce((a, s) => a + s.value, 0)).toBe(147300);
   });
 });

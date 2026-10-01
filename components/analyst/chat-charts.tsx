@@ -10,7 +10,7 @@ import type {ChartBlock, ColorToken, Series} from '@/src/chat/block-types';
 import type {MetricRow} from '@/src/chat/result-types';
 import {ChartContainer, type ChartConfig} from '@/components/ui/chart';
 import {cn} from '@/lib/utils';
-import {NEUTRAL_TOKEN, ariaSummary, formatAxis, formatCategory, formatValue, shortLabel, tokenToCssVar} from './chat-blocks-format';
+import {NEUTRAL_TOKEN, ariaSummary, formatAxis, formatCategory, formatValue, pieSlices, shortLabel, tokenToCssVar, type PieSlice} from './chat-blocks-format';
 
 const GRID = 'var(--border)'; // hairline, one shade off the card surface; solid, never dashed
 const SURFACE = 'var(--card)'; // the 2px gap between stacked fills is a surface-colored stroke
@@ -77,7 +77,7 @@ function RowTooltip({active, payload, block}: TipProps) {
   );
 }
 
-type Slice = {name: string; value: number; token: ColorToken; unit: Series['unit']};
+type Slice = PieSlice;
 
 function PieTooltip({active, payload}: {active?: boolean; payload?: ReadonlyArray<{payload?: unknown}>}) {
   const s = payload?.[0]?.payload as Slice | undefined;
@@ -89,13 +89,6 @@ function PieTooltip({active, payload}: {active?: boolean; payload?: ReadonlyArra
   );
 }
 
-function sliceToken(name: string, index: number, series: Series[]): ColorToken {
-  const hit = series.find((s) => s.entity.toLowerCase() === name.toLowerCase());
-  if (hit) return hit.color;
-  if (/^(other|no tag|untagged)$/i.test(name.trim())) return NEUTRAL_TOKEN;
-  return SLICE_ORDER[index % SLICE_ORDER.length];
-}
-
 function labelWidth(labels: string[], max: number): number {
   const longest = Math.min(max, Math.max(...labels.map((l) => l.length), 4));
   return Math.round(longest * 6.2 + 10);
@@ -103,12 +96,7 @@ function labelWidth(labels: string[], max: number): number {
 
 function PiePlot({block, aria}: {block: ChartBlock; aria: string}) {
   const {chart} = block;
-  const value = chart.series[0];
-  const slices: Slice[] = chart.rows
-    .map((r, i) => ({name: formatCategory(cat(r, chart.x.key), chart.x.unit), value: r[value.key], i}))
-    .filter((r): r is {name: string; value: number; i: number} => typeof r.value === 'number' && r.value > 0)
-    .slice(0, MAX_SLICES)
-    .map((r, i) => ({name: r.name, value: r.value, token: sliceToken(r.name, i, chart.series), unit: value.unit}));
+  const slices: Slice[] = pieSlices(chart, MAX_SLICES);
   const total = slices.reduce((a, s) => a + s.value, 0);
   return (
     <>
