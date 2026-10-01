@@ -2,8 +2,8 @@
 
 import {useEffect, useMemo, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, CalendarDays, ChevronDown, MapPin, Pencil, Plus, Search, Store, X} from 'lucide-react';
-import type {EventRollup, PosOrder} from '@/src/pos-sales-types';
+import {ArrowLeft, CalendarDays, ChevronDown, MapPin, Pencil, Plus, Search, Shuffle, Store, Tag, X} from 'lucide-react';
+import type {EventRollup, PosEvent, PosOrder} from '@/src/pos-sales-types';
 import type {SpinLead} from '@/src/spin-leads-types';
 import {formatPeso} from '@/src/pos-format';
 import {
@@ -22,6 +22,7 @@ import {SegmentedControl} from './segmented-control';
 import {Pagination} from './pagination';
 import {EventForm} from './event-form';
 import {EventAnalytics} from './event-analytics';
+import {ReassignList} from './event-reassign';
 
 const EVENTS_PER_PAGE = 6;
 
@@ -47,7 +48,8 @@ export function OfflineEventsView({
   rollups,
   orders,
   leads,
-  currentEventId,
+  currentEventIds,
+  untagged,
   todayKey,
   usingMock,
   fetchedAt,
@@ -55,7 +57,8 @@ export function OfflineEventsView({
   rollups: EventRollup[];
   orders: PosOrder[];
   leads: SpinLead[];
-  currentEventId: string | null;
+  currentEventIds: string[];
+  untagged: PosOrder[];
   todayKey: string;
   usingMock: boolean;
   fetchedAt: string;
@@ -84,17 +87,20 @@ export function OfflineEventsView({
     return m;
   }, [orders]);
 
-  // Every event, for the form's live overlap check.
+  // Every event, for the form's live "runs alongside" note and the reassign targets.
   const allEvents = useMemo(() => rollups.map((r) => r.event), [rollups]);
 
-  // Filter + sort, then pin the live event to the very top so it stays on page 1.
+  // Which events are live today (same-day events allowed, so there can be several).
+  const currentSet = useMemo(() => new Set(currentEventIds), [currentEventIds]);
+
+  // Filter + sort, then pin every live event to the top so they stay on page 1.
   const ordered = useMemo(() => {
     const list = filterAndSortEvents(rollups, {query, when, sort}, todayKey);
-    if (!currentEventId) return list;
-    const idx = list.findIndex((r) => r.event.event_id === currentEventId);
-    if (idx <= 0) return list;
-    return [list[idx], ...list.slice(0, idx), ...list.slice(idx + 1)];
-  }, [rollups, query, when, sort, todayKey, currentEventId]);
+    if (currentSet.size === 0) return list;
+    const live = list.filter((r) => currentSet.has(r.event.event_id));
+    const rest = list.filter((r) => !currentSet.has(r.event.event_id));
+    return [...live, ...rest];
+  }, [rollups, query, when, sort, todayKey, currentSet]);
 
   const total = rollups.length;
   const matches = ordered.length;
@@ -166,6 +172,8 @@ export function OfflineEventsView({
             </p>
           )}
 
+          <UntaggedBucket untagged={untagged} events={allEvents} />
+
           {matches === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center gap-3 py-10 text-center text-sm text-muted-foreground">
@@ -191,7 +199,8 @@ export function OfflineEventsView({
                     orders={ordersByEvent.get(r.event.event_id) ?? []}
                     leads={leads}
                     todayKey={todayKey}
-                    spotlight={r.event.event_id === currentEventId}
+                    spotlight={currentSet.has(r.event.event_id)}
+                    events={allEvents}
                     onEdit={() => { setCreating(false); setEditingId(r.event.event_id); }}
                   />
                 ),
@@ -266,7 +275,7 @@ function ToolbarGroup({label, children}: {label: string; children: React.ReactNo
   );
 }
 
-function EventCard({rollup, orders: eventOrders, leads, todayKey, spotlight, onEdit}: {rollup: EventRollup; orders: PosOrder[]; leads: SpinLead[]; todayKey: string; spotlight: boolean; onEdit: () => void}) {
+function EventCard({rollup, orders: eventOrders, leads, todayKey, spotlight, events, onEdit}: {rollup: EventRollup; orders: PosOrder[]; leads: SpinLead[]; todayKey: string; spotlight: boolean; events: PosEvent[]; onEdit: () => void}) {
   const {event, revenue, orders, cashSales, expectedCash} = rollup;
   const closed = event.status === 'closed';
   // Status badge is time-derived, not the raw status field: a past bazaar should
@@ -278,6 +287,8 @@ function EventCard({rollup, orders: eventOrders, leads, todayKey, spotlight, onE
   const variance = closed && event.closing_cash != null && expectedCash != null ? event.closing_cash - expectedCash : null;
   // The live event opens expanded; the rest collapse to the summary + a toggle.
   const [open, setOpen] = useState(spotlight);
+  const [reassigning, setReassigning] = useState(false);
+  const hasReassignable = eventOrders.some((o) => o.status !== 'voided');
 
   return (
     <Card className={cn(spotlight && 'border-transparent ring-1 ring-[var(--status-good)]/40')}>
@@ -390,7 +401,66 @@ function EventCard({rollup, orders: eventOrders, leads, todayKey, spotlight, onE
               <ChevronDown className={cn('size-3.5 transition-transform duration-200 ease-out', open && 'rotate-180')} />
             </button>
           </div>
+
+          {hasReassignable && (
+            <div className="mt-4">
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setReassigning((v) => !v)}
+                  aria-expanded={reassigning}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Shuffle className="size-3.5" /> {reassigning ? 'Done reassigning' : 'Reassign sales'}
+                </button>
+              </div>
+              {reassigning && (
+                <div className="mt-3">
+                  <p className="mb-2 text-xs text-muted-foreground">Move a sale to another event if it was tagged here by mistake.</p>
+                  <ReassignList orders={eventOrders} events={events} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Null-event sales that landed on a day an event covers, collected so the owner
+ * can assign each to the right event. The POS normally tags sales at checkout, but
+ * an ambiguous same-day pick or a legacy/offline sale can leave one blank. Hidden
+ * when there are none; walk-ins on true non-event days are not counted here.
+ */
+function UntaggedBucket({untagged, events}: {untagged: PosOrder[]; events: PosEvent[]}) {
+  const [open, setOpen] = useState(false);
+  if (untagged.length === 0) return null;
+  const count = untagged.length;
+  return (
+    <Card className="mb-3 border-[var(--status-warn)]/40">
+      <CardContent className="p-4">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex w-full items-center justify-between gap-2 text-left"
+        >
+          <span className="inline-flex items-center gap-2 text-sm font-semibold">
+            <Tag className="size-4 text-[var(--status-warn)]" />
+            {count} untagged {count === 1 ? 'sale' : 'sales'} on event days
+          </span>
+          <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        </button>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Recorded on a day an event covers but not tagged to one. Assign each to the right event.
+        </p>
+        {open && (
+          <div className="mt-3">
+            <ReassignList orders={untagged} events={events} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
