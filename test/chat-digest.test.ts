@@ -317,11 +317,12 @@ describe('the get_digest executor', () => {
     expect(r.meta.method).toMatch(/exactly as published/);
     expect(r.meta).not.toHaveProperty('measures');
 
+    await ex.render_chart?.({block: 'new', source: 'r1', kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: 'Chart'});
     const drawn = (await ex.render_table?.({block: 'new', source: 'r1', columns: ['auto'], title: 'Channels'})) as {ok?: boolean; error?: string};
     expect(drawn.error).toBeUndefined();
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0]).toMatchObject({kind: 'table', source: 'r1'});
-    expect(reports).toEqual([null]); // no recipe to re-run, so nothing is recorded into a saved report
+    expect(blocks).toHaveLength(2); // the chart first (the default), then its table companion
+    expect(blocks[1]).toMatchObject({kind: 'table', source: 'r1'});
+    expect(reports).toEqual([null, null]); // no recipe to re-run, so nothing is recorded into a saved report
   });
 
   it('shares the r-counter with query_metric and lookup_product', async () => {

@@ -66,11 +66,12 @@ describe('the multi-turn bundle script', () => {
     expect(month?.filters).toMatchObject({pet: 'cat', range: 'last_month', from: '', to: ''});
     expect(blockJson(month)).toEqual(afterPie);
     // "add top SKUs": the next id, existing blocks untouched
-    expect(skus?.blocks.map((b) => b.id)).toEqual(['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7']);
+    expect(skus?.blocks.map((b) => b.id)).toEqual(['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8']);
     for (const id of ['b1', 'b2', 'b3', 'b4', 'b5', 'b6']) expect(blockJson(skus)[id], id).toBe(afterPie[id]);
-    expect(skus?.blocks[6]).toMatchObject({id: 'b7', kind: 'table', query: {metric: 'top_products', limit: 5}});
+    expect(skus?.blocks[6]).toMatchObject({id: 'b7', kind: 'chart', query: {metric: 'top_products', limit: 5}}); // the chart first, as the default
+    expect(skus?.blocks[7]).toMatchObject({id: 'b8', kind: 'table', query: {metric: 'top_products', limit: 5}});
     // "remove the KPIs": b1..b4 go, nothing is renumbered
-    expect(final?.blocks.map((b) => b.id)).toEqual(['b5', 'b6', 'b7']);
+    expect(final?.blocks.map((b) => b.id)).toEqual(['b5', 'b6', 'b7', 'b8']);
   });
 
   it('the saved recipe never carries data', async () => {

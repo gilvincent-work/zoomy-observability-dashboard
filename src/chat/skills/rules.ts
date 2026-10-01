@@ -56,6 +56,7 @@ export const RULES: readonly {id: string; enforcedBy: RuleEnforcement; where: st
   {id: 'VIZ-09', enforcedBy: 'guide', where: 'guide'},
   {id: 'VIZ-10', enforcedBy: 'guide', where: 'guide'},
   {id: 'VIZ-11', enforcedBy: 'guide', where: 'guide'},
+  {id: 'VIZ-12', enforcedBy: 'code', where: 'src/chat/render-executors.ts (chart-first nudge)'},
   {id: 'PREF-01', enforcedBy: 'code', where: 'src/chat/recommend-view.ts tier A honored as asked'},
   {id: 'PREF-02', enforcedBy: 'code', where: 'src/chat/recommend-view.ts tier B folds or notes, the twin keeps every row'},
   {id: 'PREF-03', enforcedBy: 'code', where: 'src/chat/recommend-view.ts tier C substitutes the nearest valid form with a reason'},

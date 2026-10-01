@@ -97,7 +97,7 @@ const FORM_WORD: Record<ChartBlock['chart']['form'], string> = {
   stacked_bar_100: '100% stacked bar chart',
   line: 'line chart',
   area: 'area chart',
-  pie: 'donut chart',
+  pie: 'pie chart',
   diverging_bar: 'diverging bar chart',
 };
 

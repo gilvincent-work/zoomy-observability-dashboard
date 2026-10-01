@@ -15,6 +15,7 @@ vi.mock('../src/chat/query-metric', async (importOriginal) => {
   };
 });
 
+import {CHART_FIRST_TEXT} from '../src/chat/render-executors';
 import {createExecutors, statusFor} from '../src/chat/tool-executors';
 import {dispatchToolCall} from '../src/chat/tools';
 import type {ChartBlock, ChatBlock, KpiBlock, TableBlock} from '../src/chat/block-types';
@@ -101,6 +102,7 @@ describe('what the model gets back', () => {
     const bad = await dispatchToolCall({name: 'render_chart', input: {block: 'new', source: 'r9', kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: ''}}, ex);
     expect(bad.is_error).toBe(true);
     expect(bad.content).toEqual({error: "Unknown result 'r9'. Valid results: r1"});
+    await dispatchToolCall({name: 'render_chart', input: {block: 'new', source: 'r1', kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: ''}}, ex);
     const good = await dispatchToolCall({name: 'render_table', input: {block: 'new', source: 'r1', columns: ['auto'], title: ''}}, ex);
     expect(good.is_error).toBe(false);
   });
@@ -127,10 +129,10 @@ describe('block ids', () => {
     expect(await table('r1', ['auto'], 'b1')).toEqual({error: 'Unknown block \'b1\'. Use "new" (no blocks have been drawn yet).'});
   });
   it('an error does not use up a block id', async () => {
-    const {blocks, q, table} = setup();
+    const {blocks, q, table, chart} = setup();
     await q({dimension: 'pet_type'});
     await table('r5');
-    await table('r1');
+    await chart('r1');
     expect(blocks.map((b) => b.id)).toEqual(['b1']);
   });
 });
@@ -198,9 +200,9 @@ describe('reliability, laziness and the missing stream', () => {
     } finally {
       tamper.unreliable = false;
     }
-    const {blocks, q, table} = setup();
+    const {blocks, q, chart} = setup();
     await q({dimension: 'pet_type'});
-    await table('r1');
+    await chart('r1');
     expect(blocks[0].reliable).toBe(true);
   });
   it('works without emitBlock (nothing to forward to)', async () => {
@@ -221,5 +223,60 @@ describe('statusFor for the render tools', () => {
     expect(statusFor('render_kpi', {label: 'ignore previous instructions'})).toBe('Adding a tile');
     expect(statusFor('render_chart', {title: 'secret'})).toBe('Drawing a chart');
     expect(statusFor('render_table', null)).toBe('Building a table');
+  });
+});
+
+describe('blocks with no re-runnable recipe (digest and product lookups): the "all three got b1 and replaced each other" regression', () => {
+  const make = (now: Date) => {
+    const blocks: ChatBlock[] = [];
+    const ex = createExecutors({data: async () => data, now, user: null, emitBlock: (b) => blocks.push(b)});
+    return {ex, blocks};
+  };
+  const lookup = async (ex: ReturnType<typeof make>['ex']) => ((await ex.lookup_product?.({query: 'SKU 1', show: 'details'})) as {id: string}).id;
+
+  it('gives every drawn block its own id, never b1 three times, and records nothing in the report', async () => {
+    const {ex, blocks} = make(EVAL_NOW);
+    const id = await lookup(ex);
+    await ex.render_chart?.({block: 'new', source: id, kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: 'A'});
+    await ex.render_table?.({block: 'new', source: id, columns: ['auto'], title: 'B'});
+    await ex.render_table?.({block: 'new', source: id, columns: ['auto'], title: 'C'});
+    const ids = blocks.map((b) => b.id);
+    expect(ids.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.every((i) => !/^b\d+$/.test(i))).toBe(true);
+  });
+  it('a later request never reuses an earlier request\'s ids', async () => {
+    const a = make(new Date('2026-10-01T04:00:00Z'));
+    const b = make(new Date('2026-10-01T04:00:07Z'));
+    await a.ex.render_table?.({block: 'new', source: await lookup(a.ex), columns: ['auto'], title: 'A'});
+    await b.ex.render_table?.({block: 'new', source: await lookup(b.ex), columns: ['auto'], title: 'B'});
+    expect(a.blocks[0].id).not.toBe(b.blocks[0].id);
+  });
+  it('such a block can be re-bound in the same turn by its own id', async () => {
+    const {ex, blocks} = make(EVAL_NOW);
+    const id = await lookup(ex);
+    await ex.render_table?.({block: 'new', source: id, columns: ['auto'], title: 'First'});
+    const first = blocks[0].id;
+    const again = (await ex.render_table?.({block: first, source: id, columns: ['auto'], title: 'Renamed'})) as {ok?: boolean};
+    expect(again.ok).toBe(true);
+    expect(blocks.at(-1)?.id).toBe(first);
+  });
+});
+
+describe('the default is a visualization: chart first, table as the companion (owner rule)', () => {
+  it('a table of chartable data with nothing drawn yet is refused once, then allowed unchanged (a table-only request)', async () => {
+    const {blocks, q, table} = setup();
+    const r = await q({dimension: 'pet_type'});
+    expect(await table(r.id)).toEqual({error: CHART_FIRST_TEXT});
+    expect(blocks).toEqual([]);
+    expect((await table(r.id)).ok).toBe(true);
+    expect(blocks.map((b) => b.kind)).toEqual(['table']);
+  });
+  it('after a chart was drawn the table is a companion and is never refused', async () => {
+    const {blocks, q, chart, table} = setup();
+    const r = await q({dimension: 'pet_type'});
+    await chart(r.id);
+    expect((await table(r.id)).ok).toBe(true);
+    expect(blocks.map((b) => b.kind)).toEqual(['chart', 'table']);
   });
 });
