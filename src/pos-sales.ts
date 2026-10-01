@@ -30,6 +30,7 @@ function normalizePetType(raw: unknown): PetType | null {
 type OrderFilterOp =
   | ['or', string]
   | ['eq', string, string]
+  | ['is', string, null]
   | ['gte', string, string | number]
   | ['lte', string, string | number];
 
@@ -43,6 +44,8 @@ function orderFilterOps(filter: PosOrdersFilter): OrderFilterOp[] {
     );
   }
   if (filter.status !== 'all') ops.push(['eq', 'status', filter.status]);
+  if (filter.event === 'untagged') ops.push(['is', 'event_id', null]);
+  else if (filter.event !== 'all') ops.push(['eq', 'event_id', filter.event]);
   if (filter.startDate) ops.push(['gte', 'created_at', filter.startDate]);
   if (filter.endDate) ops.push(['lte', 'created_at', filter.endDate]);
   if (filter.minPrice != null) ops.push(['gte', 'total', filter.minPrice]);
@@ -169,6 +172,7 @@ const posOrdersPageCached = unstable_cache(async (
   for (const op of ops) {
     countQuery = op[0] === 'or' ? countQuery.or(op[1])
       : op[0] === 'eq' ? countQuery.eq(op[1], op[2])
+      : op[0] === 'is' ? countQuery.is(op[1], op[2])
       : op[0] === 'gte' ? countQuery.gte(op[1], op[2])
       : countQuery.lte(op[1], op[2]);
   }
@@ -184,6 +188,7 @@ const posOrdersPageCached = unstable_cache(async (
   for (const op of ops) {
     rowQuery = op[0] === 'or' ? rowQuery.or(op[1])
       : op[0] === 'eq' ? rowQuery.eq(op[1], op[2])
+      : op[0] === 'is' ? rowQuery.is(op[1], op[2])
       : op[0] === 'gte' ? rowQuery.gte(op[1], op[2])
       : rowQuery.lte(op[1], op[2]);
   }
