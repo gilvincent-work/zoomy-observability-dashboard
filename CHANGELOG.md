@@ -33,6 +33,32 @@ old 3-argument function. Office edits need `zoomy-pos/supabase/phase4_set_stock_
 which is written but **not applied** (it drops the 3-argument function, because a
 defaulted 4th parameter would make 3-argument calls ambiguous).
 
+## 2026-10-01 — Multi-event: same-day events, ambiguity-safe attribution, reassign control — `feat(events)`
+
+Companion to the POS multi-event feature (`../zoomy-pos/CHANGELOG.md`). Coop can
+now schedule overlapping / same-day events, and a sale tagged to the wrong event
+can be moved from the dashboard.
+
+- **DB (Staging RPCs)**: `upsert_pos_event` no longer raises on overlapping dates
+  (the no-overlap guard is removed); `attribute_untagged_orders_to_event` only
+  back-tags a sale on a day covered by exactly one event (ambiguous days are left
+  untagged); new `set_pos_order_event(p_order_id, p_event_id)` powers reassign and
+  is granted to `service_role` only (off the POS anon key).
+- **Attribution** (`pos-sales-compute.ts`): `effectiveEventId` only date-attributes
+  an untagged sale on an unambiguous (single-event) day; two or more covering
+  events leave it untagged rather than guessing the later-starting one. Added
+  `currentEventIds` (pin every live event) and `untaggedOnEventDays` (the Untagged
+  bucket source).
+- **Events page** (`offline-events`): pins all live events, not just one; a new
+  "Untagged sales on event days" bucket and a per-event "Reassign sales" control
+  (`event-reassign.tsx`) move an order to another event or untag it, through
+  `reassignOrderEventAction`.
+- **Form** (`event-form`): the overlap error is now a neutral "runs alongside"
+  note and no longer blocks Save.
+
+Staging-only. Tests: new multi-event attribution / pinning / untagged-bucket
+units; full suite green (346); `tsc` clean.
+
 ## 2026-10-01 — Pagination audit: forecast + Lazada reads no longer truncate at 1000 — `fix(data)`
 
 Workspace-wide audit of every Supabase read across the three repos for the
