@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {logGuardTrip, logToolCall, scrubParams} from '../src/chat/audit';
+import {logGuardTrip, logToolCall, logTurn, scrubParams} from '../src/chat/audit';
 import {dispatchToolCall} from '../src/chat/tools';
 
 afterEach(() => vi.restoreAllMocks());
@@ -24,6 +24,13 @@ describe('audit log', () => {
     logGuardTrip({layer: 'tool_allowlist', detail: {name: 'update_price'}, user: 'u'});
     expect(err).toHaveBeenCalledTimes(1);
     expect(JSON.parse(err.mock.calls[0][0] as string)).toMatchObject({event: 'chat_guard_trip', layer: 'tool_allowlist', detail: {name: 'update_price'}, user: 'u'});
+  });
+
+  it('logs one chat_turn JSON line', () => {
+    const sink = {info: vi.fn(), error: vi.fn()};
+    logTurn({steps: 2, usage: {input: 10, output: 5, cacheRead: 100, cacheWrite: 0}, ms: 1234, stopReason: 'end_turn', user: 'a@b.c'}, sink);
+    expect(sink.info).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(sink.info.mock.calls[0][0] as string)).toEqual({event: 'chat_turn', steps: 2, usage: {input: 10, output: 5, cacheRead: 100, cacheWrite: 0}, ms: 1234, stopReason: 'end_turn', user: 'a@b.c'});
   });
 
   it('redacts secret-looking keys, nested too', () => {

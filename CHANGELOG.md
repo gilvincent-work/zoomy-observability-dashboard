@@ -12,6 +12,42 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-10-01 — Talk to Data: Ask Coop answers from live POS data — `feat(chat)`
+
+The first real answer. A question in the Ask Coop drawer is answered from live offline POS
+data through the metrics registry, streamed, with the data check first. Verified in a real
+browser against the real (read-only) data: the dog/cat bundle split reproduces the plan's
+figures with the caveats first.
+
+- **Data check:** `describe_data` and a short coverage note on every question (today's date
+  in Philippine time, the date range, how much is untagged, what is not available), so the
+  model learns the limits before it queries. This fixes the wrong-year date seen in the spike.
+- **Tool loop** (`src/chat/loop.ts`): a manual, streamed Messages-API loop on Sonnet 5.5 with
+  two strict tools, up to 8 steps, the model's thinking blocks passed back unchanged, every
+  request through the layer-1 shape check. NDJSON stream; the drawer shows a status line
+  ("Looking at bundle sales") while it works.
+- **Decision:** where the live-data path is not ready (production before the read-only
+  database role is applied, a missing secret, a failed load) the chat **degrades to
+  digest-only** (no tools, no POS reads, one `chat_degraded` log line) instead of returning
+  503, so today's working digest chat does not go down on staging or PROD. The plan had a hard
+  503. Safety is unchanged: no POS data is read without the guarded path.
+- A tool that refuses a request (unknown dimension, undeclared measure) now reaches the
+  model flagged as an error with the allowed values.
+- **Live measurements** (14 questions, real model, effort medium, estimates): median 6.3 s,
+  data questions 8.4 s, p95 12.8 s, cost median $0.014 and max $0.044, prompt cache hits on
+  every call after the first, 0 guard trips, 0 errors.
+- Reading the live answers found three defects, fixed before shipping: a rank claim from a cut
+  list ("sold the most units" when only the top 5 by revenue were shown), home-made number
+  words ("about half"), and a misleading "34% untagged" caveat on the SKU split (the share now
+  counts only orders that have pick detail). Two guardrail lines cover the first two until the
+  analyst skill lands.
+- The digest stays in the prompt for Shopee, Lazada and Website questions (the pinned legacy
+  import remains until `get_digest` exists).
+- Known, pre-existing and dev-only: `ask()` calls `send()` inside a React state updater, so
+  React Strict Mode sends the first question twice in development. Production runs it once.
+
+---
+
 ## 2026-10-01 — Talk to Data: metrics registry, exact bundle allocation and checks — `feat(chat)`
 
 The semantic layer behind Ask Coop: every figure comes from one registry definition computed
