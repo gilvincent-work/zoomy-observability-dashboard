@@ -1,4 +1,4 @@
-// Layer 9: one JSON line per tool call, and one error line per guard trip.
+// Layer 9: one JSON line per tool call, one per turn, and one error line per guard trip.
 // Never log secrets; keep params small.
 export type AuditSink = Pick<Console, 'info' | 'error'>;
 
@@ -47,6 +47,28 @@ export function logGuardTrip(
       event: 'chat_guard_trip',
       layer: e.layer,
       detail: scrubParams(e.detail),
+      user: e.user ?? null,
+    }),
+  );
+}
+
+export function logTurn(
+  e: {
+    steps: number;
+    usage: {input: number; output: number; cacheRead: number; cacheWrite: number};
+    ms: number;
+    stopReason: string | null;
+    user?: string | null;
+  },
+  sink: AuditSink = console,
+): void {
+  sink.info(
+    JSON.stringify({
+      event: 'chat_turn',
+      steps: e.steps,
+      usage: e.usage,
+      ms: e.ms,
+      stopReason: e.stopReason,
       user: e.user ?? null,
     }),
   );

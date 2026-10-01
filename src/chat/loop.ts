@@ -1,0 +1,140 @@
+// F5: the manual Messages-API tool loop. Pure of Next/server-only: the client is injected, so tests need no network.
+// Pattern from Spike A (knowledge/tasks/2026-10-01-talk-to-data-spikes.md): assistant content is appended UNCHANGED
+// (thinking blocks included), all tool_result blocks go back in ONE user message with results first, and the
+// system + tools prefix is identical on every request so the prompt cache holds.
+import type Anthropic from '@anthropic-ai/sdk';
+import {logTurn, type AuditSink} from './audit';
+import {assertRequestShape} from './request-shape';
+import type {ChatStreamEvent, ChatUsage, ToolDefinition} from './stream-types';
+import {statusFor} from './tool-executors';
+import {dispatchToolCall, type ToolExecutors} from './tools';
+
+/** The only part of the Anthropic SDK the loop touches. The real `new Anthropic()` satisfies it. */
+export interface MessageStreamLike extends AsyncIterable<Anthropic.MessageStreamEvent> {
+  finalMessage(): Promise<Anthropic.Message>;
+}
+export interface MessagesClient {
+  messages: {
+    stream(params: Anthropic.MessageStreamParams, options?: {signal?: AbortSignal}): MessageStreamLike;
+  };
+}
+
+export type SystemBlock = {type: 'text'; text: string; cache_control?: {type: 'ephemeral'}};
+export type ChatEffort = 'low' | 'medium' | 'high';
+
+export interface ChatLoopOptions {
+  client: MessagesClient;
+  model: string;
+  maxTokens: number;
+  effort: ChatEffort;
+  system: SystemBlock[];
+  tools: readonly ToolDefinition[];
+  /** The sanitised conversation from the client; the last entry is the new user question. */
+  messages: {role: 'user' | 'assistant'; content: string}[];
+  /** Per-turn context (today's date, coverage). Goes ONLY into the latest user turn, never into the cached prefix. */
+  preamble: string;
+  executors: ToolExecutors;
+  emit: (e: ChatStreamEvent) => void;
+  user: string | null;
+  maxSteps?: number;
+  signal?: AbortSignal;
+  sink?: AuditSink;
+}
+
+export interface ChatLoopSummary {
+  steps: number;
+  usage: ChatUsage;
+  stopReason: string | null;
+}
+
+export const REFUSAL_TEXT = "I can't help with that one.";
+export const CUT_OFF_TEXT = '\n\nThe answer was cut off.';
+export const MAX_STEPS_TEXT = 'That took more steps than I allow. Try asking a narrower question.';
+export const SAFE_ERROR_TEXT = 'Coop hit a problem answering that. Please try again.';
+
+export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummary> {
+  const {client, emit, signal, sink} = opts;
+  const maxSteps = opts.maxSteps ?? 8;
+  const t0 = Date.now();
+  const usage: ChatUsage = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0};
+  let steps = 0;
+  let stopReason: string | null = null;
+
+  const convo: Anthropic.MessageParam[] = opts.messages.map((m, i) =>
+    i === opts.messages.length - 1 && m.role === 'user'
+      ? {role: 'user', content: [{type: 'text', text: opts.preamble}, {type: 'text', text: m.content}]}
+      : {role: m.role, content: m.content},
+  );
+
+  const finish = (reason: string | null, done: boolean): ChatLoopSummary => {
+    stopReason = reason;
+    if (done) emit({t: 'done', steps, usage});
+    logTurn({steps, usage, ms: Date.now() - t0, stopReason, user: opts.user}, sink);
+    return {steps, usage, stopReason};
+  };
+
+  for (;;) {
+    if (signal?.aborted) return finish('aborted', false);
+    steps += 1;
+
+    let res: Anthropic.Message;
+    try {
+      const params = {
+        model: opts.model,
+        max_tokens: opts.maxTokens,
+        thinking: {type: 'adaptive' as const},
+        output_config: {effort: opts.effort},
+        system: opts.system,
+        // No tools (degraded digest-only mode): the API rejects an empty tools list, so omit tools and tool_choice.
+        ...(opts.tools.length > 0 ? {tools: [...opts.tools], tool_choice: {type: 'auto' as const}} : {}),
+        messages: [...convo],
+      };
+      assertRequestShape(params, sink);
+      const stream = client.messages.stream(params, {signal});
+      for await (const ev of stream) {
+        if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') emit({t: 'text', d: ev.delta.text});
+      }
+      res = await stream.finalMessage();
+    } catch (err) {
+      if (signal?.aborted) return finish('aborted', false);
+      const e = err as {name?: unknown; status?: unknown};
+      (sink ?? console).error(JSON.stringify({event: 'chat_error', name: String(e?.name ?? 'Error'), status: typeof e?.status === 'number' ? e.status : null, user: opts.user}));
+      emit({t: 'error', message: SAFE_ERROR_TEXT});
+      return finish('error', false);
+    }
+
+    usage.input += res.usage?.input_tokens ?? 0;
+    usage.output += res.usage?.output_tokens ?? 0;
+    usage.cacheRead += res.usage?.cache_read_input_tokens ?? 0;
+    usage.cacheWrite += res.usage?.cache_creation_input_tokens ?? 0;
+
+    if (res.stop_reason === 'refusal') {
+      emit({t: 'text', d: REFUSAL_TEXT});
+      return finish('refusal', true);
+    }
+    if (res.stop_reason === 'max_tokens') {
+      emit({t: 'text', d: CUT_OFF_TEXT});
+      return finish('max_tokens', true);
+    }
+    const calls = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+    if (res.stop_reason !== 'tool_use' || calls.length === 0) return finish(res.stop_reason, true);
+
+    if (steps >= maxSteps) {
+      emit({t: 'text', d: MAX_STEPS_TEXT});
+      return finish('max_steps', true);
+    }
+    // The assistant turn goes back exactly as returned (thinking blocks included), then ONE user message of results.
+    convo.push({role: 'assistant', content: res.content as Anthropic.ContentBlockParam[]});
+    for (const c of calls) emit({t: 'status', text: statusFor(c.name, c.input)});
+    const results = await Promise.all(calls.map((c) => dispatchToolCall({name: c.name, input: c.input, user: opts.user}, opts.executors, sink)));
+    convo.push({
+      role: 'user',
+      content: calls.map((c, i): Anthropic.ToolResultBlockParam => ({
+        type: 'tool_result',
+        tool_use_id: c.id,
+        content: JSON.stringify(results[i].content) ?? 'null',
+        ...(results[i].is_error ? {is_error: true} : {}),
+      })),
+    });
+  }
+}

@@ -28,6 +28,21 @@ describe('assertRequestShape', () => {
     expect(s.error).not.toHaveBeenCalled();
   });
 
+  it('allows output_config with only a known effort', () => {
+    const s = sink();
+    for (const effort of ['low', 'medium', 'high']) expect(() => assertRequestShape(req({output_config: {effort}}), s)).not.toThrow();
+    expect(s.error).not.toHaveBeenCalled();
+  });
+
+  it.each([{effort: 'max'}, {effort: 'medium', format: {type: 'json_schema'}}, {format: {}}, {}, null, 'high', []])(
+    'fails output_config %j',
+    (oc) => {
+      const s = sink();
+      expect(() => assertRequestShape(req({output_config: oc}), s)).toThrow(/output_config/);
+      expect(s.error).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('fails an extra top-level key and logs a guard trip', () => {
     const s = sink();
     expect(() => assertRequestShape(req({mcp_servers: []}), s)).toThrow(/top-level key/);

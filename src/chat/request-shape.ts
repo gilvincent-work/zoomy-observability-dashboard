@@ -3,7 +3,8 @@
 import {logGuardTrip, type AuditSink} from './audit';
 import {isAllowedTool} from './tools';
 
-const TOP_KEYS = new Set(['model', 'max_tokens', 'thinking', 'system', 'messages', 'tools', 'tool_choice', 'cache_control']);
+const TOP_KEYS = new Set(['model', 'max_tokens', 'thinking', 'system', 'messages', 'tools', 'tool_choice', 'cache_control', 'output_config']);
+const EFFORTS = new Set(['low', 'medium', 'high']);
 const TOOL_KEYS = new Set(['name', 'description', 'input_schema', 'strict', 'cache_control', 'type']);
 
 function fail(rule: string, detail: unknown, sink?: AuditSink): never {
@@ -15,6 +16,13 @@ export function assertRequestShape(params: unknown, sink?: AuditSink): void {
   if (params === null || typeof params !== 'object' || Array.isArray(params)) fail('request must be an object', typeof params, sink);
   const p = params as Record<string, unknown>;
   for (const k of Object.keys(p)) if (!TOP_KEYS.has(k)) fail('unexpected top-level key', k, sink);
+  if ('output_config' in p) {
+    const oc = p.output_config as Record<string, unknown> | null;
+    const keys = oc && typeof oc === 'object' && !Array.isArray(oc) ? Object.keys(oc) : [];
+    if (!oc || typeof oc !== 'object' || Array.isArray(oc) || keys.length !== 1 || keys[0] !== 'effort' || !EFFORTS.has(oc.effort as string)) {
+      fail('output_config may only be {effort: low|medium|high}', oc, sink);
+    }
+  }
   if ('tool_choice' in p) {
     const tc = p.tool_choice as {type?: unknown} | null;
     const keys = tc && typeof tc === 'object' ? Object.keys(tc) : [];

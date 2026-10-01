@@ -6,6 +6,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {Sparkles, X, ArrowUp, Plus, Copy, Check, Square, RotateCcw, ArrowRight, AlertCircle} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {createLineDecoder} from '@/src/chat/stream-protocol';
 
 type Msg = {role: 'user' | 'assistant'; content: string; error?: boolean};
 type NavAction = {label: string; path: string};
@@ -68,6 +69,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   const [side, setSide] = useState<Side>('right');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -114,19 +116,40 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
               : res.status === 429
                 ? 'Coop is getting a lot of questions right now — give it a few seconds and try again.'
                 : res.status === 503
-                  ? 'Coop isn’t configured yet (missing API key). Ping your admin.'
+                  ? raw.startsWith('Ask Coop is unavailable') ? raw : 'Coop isn’t configured yet (missing API key). Ping your admin.'
                   : raw || 'Coop is unavailable right now. Please try again.';
           setMessages([...history, {role: 'assistant', content: msg, error: true}]);
           return;
         }
         const reader = res.body.getReader();
         const dec = new TextDecoder();
+        const decode = createLineDecoder();
         let acc = '';
-        for (;;) {
-          const {done, value} = await reader.read();
-          if (done) break;
-          acc += dec.decode(value, {stream: true});
+        let finished = false;
+        const apply = (events: ReturnType<typeof decode>) => {
+          for (const ev of events) {
+            if (ev.t === 'text') {
+              acc += ev.d;
+              setStatus('');
+            } else if (ev.t === 'status') {
+              setStatus(ev.text);
+            } else if (ev.t === 'error') {
+              acc += `${acc ? '\n\n' : ''}⚠️ ${ev.message}`;
+              setStatus('');
+            } else if (ev.t === 'done') {
+              finished = true;
+              setStatus('');
+            }
+          }
           setMessages([...history, {role: 'assistant', content: acc}]);
+        };
+        while (!finished) {
+          const {done, value} = await reader.read();
+          if (done) {
+            apply(decode(dec.decode(), true));
+            break;
+          }
+          apply(decode(dec.decode(value, {stream: true})));
         }
       } catch (e) {
         // A user-initiated stop keeps the partial answer; other errors show a bubble.
@@ -134,6 +157,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         setMessages([...history, {role: 'assistant', content: `Something went wrong: ${(e as Error).message}`, error: true}]);
       } finally {
         setBusy(false);
+        setStatus('');
         abortRef.current = null;
       }
     },
@@ -432,8 +456,9 @@ function CoopChatDrawer({
                 return (
                   <div key={i} className="flex flex-col items-start">
                     <div className="max-w-[90%] overflow-hidden rounded-2xl border border-border bg-card px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_strong]:font-semibold [&_table]:my-1.5 [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4">
-                      {text ? <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown> : streamingThis ? <span className="text-muted-foreground">Coop is thinking…</span> : null}
+                      {text ? <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown> : streamingThis ? <span className="text-muted-foreground">{status || 'Coop is thinking…'}</span> : null}
                     </div>
+                    {streamingThis && text && status && <span className="mt-1 px-1 text-[12px] text-muted-foreground">{status}</span>}
 
                     {!streamingThis && actions.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
