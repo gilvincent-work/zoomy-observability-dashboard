@@ -184,3 +184,14 @@ export function interleave(text: string, placed: PlacedBlock[]): Piece[] {
   if (cursor < text.length) pieces.push({type: 'text', text: text.slice(cursor)});
   return pieces;
 }
+
+export interface PieSlice {name: string; value: number; token: ColorToken; unit: ColumnUnit}
+
+/** Slices of a pie block. The server emits a pie as one row with each category as a series (recommend-view.ts), so a slice is a series. */
+export function pieSlices(chart: ChartBlock['chart'], max = 6): PieSlice[] {
+  const row = chart.rows[0] ?? {};
+  return chart.series
+    .map((s) => ({name: s.label, value: row[s.key], token: s.color, unit: s.unit}))
+    .filter((r): r is PieSlice => typeof r.value === 'number' && r.value > 0)
+    .slice(0, max);
+}

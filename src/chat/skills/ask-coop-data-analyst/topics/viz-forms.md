@@ -12,6 +12,19 @@ Chart forms are chosen by the app from the shape of the data, and it tells you w
 [VIZ-08 ⚙] Every chart has a table twin with every row, so no value lives only in a chart.
 [VIZ-09] Pass kind "auto" and orientation "auto" unless the owner named a form or a direction.
 [VIZ-10] Categories that are only names (products, events) share one color. Do not shade bars darker where they are bigger.
+[VIZ-11] Look the form up before you render. Name the job (THINK-01), find it in this catalog, and pass the matching kind. When the best form is not drawn yet, use the nearest drawn one and say so in one line ("I can't draw a scatter yet; here is the table"). Never promise a form the app cannot draw.
+
+| Job | Form | Drawn today |
+|---|---|---|
+| One headline number | stat tile | yes |
+| Rank or compare sizes across categories | bar, largest first | yes |
+| Several measures per category | grouped bars | yes |
+| Parts of one whole | stacked bar (pie or donut only on request) | yes |
+| Shares across several groups | 100% stacked bar | yes |
+| Trend over time | area for one series, lines for several | yes |
+| Change versus the previous period | bars above and below zero | yes |
+| Exact values, many rows, a total | table | yes |
+| Spread of values (histogram, box plot), two measures against each other (scatter, bubble), day-by-hour pattern (heat map), steps adding up (waterfall), flows (sankey), maps, trend lines inside a table (sparkline), progress against a target (bullet) | not drawn yet: give the table, plus a tile or bars when that answers the question | no |
 
 ## When the owner names a form
 [PREF-01 ⚙] A valid request is honored as asked: "as a pie" with 3 to {{PIE_MAX_SEGMENTS}} slices, "as percentages", "horizontal", "vertical", a valid bar, line or area.
