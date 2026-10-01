@@ -2,10 +2,14 @@ import {describe, expect, it} from 'vitest';
 import {
   LEGACY_ALLOWED_IMPORTS,
   LEGACY_ROUTE,
+  REPORTS_IO_FILES,
   WRITE_CALL_EXCEPTIONS,
   buildClosure,
   extractImports,
   forbiddenInClosure,
+  impureInClosure,
+  importersOf,
+  loadDirs,
   loadRealTree,
   strip,
   supabaseImporters,
@@ -33,6 +37,113 @@ describe('real tree', () => {
   it('the legacy exception is exactly the old digest import and is not traversed', () => {
     expect(closure.legacyHits).toEqual(['src/data.ts']);
     expect(closure.files.has('src/data.ts')).toBe(false);
+  });
+});
+
+// Layer 7 (F9): the reports write path is unreachable from chat, and the module that renders a saved report stays pure.
+describe('reports write separation (layer 7), real tree', () => {
+  const PURE = ['src/reports-run.ts', 'src/reports-access.ts', 'src/reports-suggest.ts', 'src/reports-types.ts'];
+  const {files, entries} = loadRealTree(process.cwd(), [...PURE, ...REPORTS_IO_FILES]);
+  const all = loadDirs(process.cwd(), ['src', 'app', 'components', 'lib']);
+
+  it('the chat tree (and the chat route) reaches none of the reports actions, clients, readers or session modules', () => {
+    const closure = buildClosure(entries, files);
+    for (const f of REPORTS_IO_FILES) expect(closure.files.has(f)).toBe(false);
+    expect(forbiddenInClosure(closure, files).filter((v) => v.includes('reports-'))).toEqual([]);
+  });
+
+  it('no file under src/chat names reportsWriteClient, reportsReadClient, saveReport or deleteReport', () => {
+    const hits = Object.keys(files)
+      .filter((f) => f.startsWith('src/chat/') && !/\.(test|spec)\./.test(f))
+      .filter((f) => /reportsWriteClient|reportsReadClient|\b(saveReport|updateReport|restoreVersion|deleteReport|renameReport|setPinned|setVisibility)\b/.test(strip(files[f], true)));
+    expect(hits).toEqual([]);
+  });
+
+  it.each(PURE)('%s stays pure: no server-only, Supabase, Anthropic, Next or auth anywhere in its import closure', (entry) => {
+    const closure = buildClosure([entry], files);
+    expect(impureInClosure(closure, files)).toEqual([]);
+  });
+
+  it('src/reports-run.ts really is walked (it reaches the chat machinery it reuses), so the purity test is not vacuous', () => {
+    const closure = buildClosure(['src/reports-run.ts'], files);
+    expect(closure.files.has('src/chat/report-session.ts')).toBe(true);
+    expect(closure.files.has('src/chat/report-spec.ts')).toBe(true);
+    expect(closure.files.has('src/chat/query-metric.ts')).toBe(true);
+  });
+
+  it('the write client is imported by src/reports-actions.ts alone; the read client by the readers only', () => {
+    const importers = (t: string) => importersOf(t, all).filter((f) => !f.startsWith('test/'));
+    expect(importers('src/reports-client.ts')).toEqual(['src/reports-actions.ts', 'src/reports-data.ts']);
+    const writeClientUsers = Object.keys(all).filter((f) => /\breportsWriteClient\b/.test(strip(all[f], true)));
+    expect(writeClientUsers.sort()).toEqual(['src/reports-actions.ts', 'src/reports-client.ts']);
+  });
+
+  it('nothing under src/ imports the actions module (only UI under app/ and components/ may, from a click)', () => {
+    expect(importersOf('src/reports-actions.ts', all).filter((f) => f.startsWith('src/'))).toEqual([]);
+  });
+
+  it('only the actions file and the reports modules carry the write verbs for the report tables', () => {
+    const writers = Object.keys(all)
+      .filter((f) => /coop_report_versions|coop_reports/.test(strip(all[f], false)) && !f.startsWith('src/chat/'))
+      .filter((f) => !f.startsWith('src/reports-'));
+    expect(writers).toEqual([]);
+  });
+
+  it('reports-actions.ts is a use-server file, so any chat import of it would also trip the use-server rule', () => {
+    expect(files['src/reports-actions.ts'].trimStart().startsWith("'use server'")).toBe(true);
+  });
+});
+
+describe('reports separation rules fire on planted violations', () => {
+  const base: FileMap = {
+    'src/chat/ok.ts': 'export const ok = 1;',
+    'src/reports-actions.ts': "'use server';\nexport async function saveReport() {}",
+    'src/reports-client.ts': "import 'server-only';\nexport const reportsWriteClient = () => null;",
+    'src/reports-data.ts': "import {reportsReadClient} from './reports-client';\nexport const listReports = () => reportsReadClient();",
+    'src/reports-session.ts': "import 'server-only';\nexport const reportsViewerEmail = () => null;",
+    'src/reports-run.ts': "import {x} from './chat/ok';\nexport const runReport = () => x;",
+  };
+  const closureOf = (extra: FileMap, entries: string[]) => {
+    const files = {...base, ...extra};
+    return {files, closure: buildClosure(entries, files)};
+  };
+
+  it.each(REPORTS_IO_FILES)('a chat file importing %s fails', (target) => {
+    const spec = `@/${target.replace(/\.ts$/, '')}`;
+    const {files, closure} = closureOf({'src/chat/bad.ts': `import {x} from '${spec}';`}, ['src/chat/ok.ts', 'src/chat/bad.ts']);
+    expect(forbiddenInClosure(closure, files).join()).toContain(target);
+  });
+
+  it('a transitive chat import of reports-actions through a helper fails', () => {
+    const {files, closure} = closureOf({'src/chat/bad.ts': "import {h} from './helper';", 'src/chat/helper.ts': "export {saveReport as h} from '../reports-actions';"}, ['src/chat/bad.ts']);
+    expect(forbiddenInClosure(closure, files).join()).toContain('src/reports-actions.ts');
+  });
+
+  it('a pure reports module importing server-only, supabase-js, the model SDK, next or auth is reported', () => {
+    for (const spec of ['server-only', '@supabase/supabase-js', '@anthropic-ai/sdk', 'next/cache', 'next-auth']) {
+      const {files, closure} = closureOf({'src/reports-run.ts': `import '${spec}';\nexport const runReport = 1;`}, ['src/reports-run.ts']);
+      expect(impureInClosure(closure, files).join()).toContain(spec);
+    }
+  });
+
+  it('a pure reports module that reaches the client, the actions or a use-server file is reported', () => {
+    const viaClient = closureOf({'src/reports-run.ts': "import {reportsWriteClient} from './reports-client';"}, ['src/reports-run.ts']);
+    expect(impureInClosure(viaClient.closure, viaClient.files).join()).toContain('src/reports-client.ts');
+    const viaHelper = closureOf({'src/reports-run.ts': "import {h} from './helper';", 'src/helper.ts': "import {saveReport} from './reports-actions';"}, ['src/reports-run.ts']);
+    expect(impureInClosure(viaHelper.closure, viaHelper.files).join()).toContain('src/reports-actions.ts');
+    const useServer = closureOf({'src/reports-run.ts': "import {p} from './plain';", 'src/plain.ts': "'use server'\nexport const p = 1;"}, ['src/reports-run.ts']);
+    expect(impureInClosure(useServer.closure, useServer.files).join()).toContain("'use server' directive");
+  });
+
+  it('a clean pure module reports nothing, and a type-only import of the client is ignored', () => {
+    const {files, closure} = closureOf({'src/reports-run.ts': "import type {DbRow} from './reports-client';\nexport const runReport = 1;"}, ['src/reports-run.ts']);
+    expect(impureInClosure(closure, files)).toEqual([]);
+  });
+
+  it('importersOf lists exactly the files that import a target', () => {
+    const files = {...base, 'src/other.ts': "import {listReports} from './reports-data';"};
+    expect(importersOf('src/reports-data.ts', files)).toEqual(['src/other.ts']);
+    expect(importersOf('src/reports-client.ts', files)).toEqual(['src/reports-data.ts']);
   });
 });
 
