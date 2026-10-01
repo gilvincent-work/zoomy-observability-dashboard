@@ -4,7 +4,7 @@ import {useCallback, useEffect, useRef, useState, useTransition} from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
 import {ArrowLeft, Ban, Gift, Minus, PawPrint, Pencil, Plus, Receipt, RotateCcw, TriangleAlert, X} from 'lucide-react';
-import type {PosOrder, PosOrdersFilter, PriceBounds, PosCatalogItem, PosBundleDef, EditEntry} from '@/src/pos-sales-types';
+import type {PosOrder, PosOrdersFilter, PriceBounds, PosCatalogItem, PosBundleDef, EditEntry, PosEvent} from '@/src/pos-sales-types';
 import {isFilterActive, orderToEntries, type PageInfo} from '@/src/pos-sales-compute';
 import {formatPeso, paymentMethodLabel, paymentMethodBadgeClass} from '@/src/pos-format';
 import {voidOrderAction, unvoidOrderAction, editOrderAction} from '@/src/pos-sales-actions';
@@ -17,6 +17,7 @@ import {Button} from '@/components/ui/button';
 import {Eyebrow, MockNote} from './sections';
 import {SearchableSelect} from './searchable-select';
 import {TransactionFilters} from './transaction-filters';
+import {OrderEventBadge} from './order-event-badge';
 import {RefreshControl} from './refresh-control';
 import {Pagination} from './pagination';
 
@@ -42,6 +43,9 @@ export function OfflineOrdersView({
   catalog,
   bundles,
   prizeOrderUuids,
+  events,
+  eventOptions,
+  showEventFilter,
   usingMock,
   fetchedAt,
 }: {
@@ -52,6 +56,9 @@ export function OfflineOrdersView({
   catalog: PosCatalogItem[];
   bundles: PosBundleDef[];
   prizeOrderUuids: string[]; // client_uuids of orders with a non-voided prize
+  events: PosEvent[]; // all events, for the per-tile event badge + reassign
+  eventOptions: PosEvent[]; // events in scope for the Event filter (2+ => shown)
+  showEventFilter: boolean;
   usingMock: boolean;
   fetchedAt: string;
 }) {
@@ -132,7 +139,7 @@ export function OfflineOrdersView({
         </MockNote>
       )}
 
-      <TransactionFilters filter={filter} bounds={bounds} />
+      <TransactionFilters filter={filter} bounds={bounds} eventOptions={eventOptions} showEventFilter={showEventFilter} />
 
       <Card>
         <CardContent className="p-0">
@@ -151,6 +158,7 @@ export function OfflineOrdersView({
                       <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', paymentMethodBadgeClass(o.payment_method))}>
                         {paymentMethodLabel(o.payment_method)}
                       </span>
+                      <OrderEventBadge order={o} events={events} />
                       {prizeOrders.has(o.client_uuid) && (
                         <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
                           <Gift className="size-3" /> Free item

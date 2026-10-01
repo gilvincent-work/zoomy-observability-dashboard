@@ -723,11 +723,46 @@ export function topBundles(orders: PosOrder[], limit = 5): TopBundle[] {
 export const DEFAULT_ORDERS_FILTER: PosOrdersFilter = {
   method: 'all',
   status: 'all',
+  event: 'all',
   startDate: null,
   endDate: null,
   minPrice: null,
   maxPrice: null,
 };
+
+/**
+ * The events in scope for the Transactions Event filter, per the show rule: when a
+ * date range is selected, the events overlapping that range; otherwise the events
+ * live today. The filter is only shown (and worth showing) when this returns 2+.
+ * All dated events count (including closed ones), since a closed event's sales are
+ * still in the list. Manila day keys throughout.
+ */
+export function eventFilterScope(events: PosEvent[], filter: PosOrdersFilter, todayKey: string): PosEvent[] {
+  const dated = events.filter((e) => e.starts_on || e.ends_on);
+  const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
+  const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
+  if (filter.startDate || filter.endDate) {
+    const lo = filter.startDate ? manilaDayKey(filter.startDate) : null;
+    const hi = filter.endDate ? manilaDayKey(filter.endDate) : null;
+    const rangeLo = (lo ?? hi) as string;
+    const rangeHi = (hi ?? lo) as string;
+    return dated.filter((e) => from(e) <= rangeHi && rangeLo <= to(e));
+  }
+  return dated.filter((e) => from(e) <= todayKey && todayKey <= to(e));
+}
+
+/**
+ * The dated events whose range covers a given order's Manila day. These are the
+ * plausible events a sale could belong to, so the reassign control offers exactly
+ * these (plus Untagged), and only makes the badge interactive when there are 2+
+ * (an unambiguous day has nothing to switch to).
+ */
+export function eventsCoveringOrder(order: {created_at: string}, events: PosEvent[]): PosEvent[] {
+  const day = manilaDayKey(order.created_at);
+  const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
+  const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
+  return events.filter((e) => (e.starts_on || e.ends_on) && from(e) <= day && day <= to(e));
+}
 
 /** Methods offered as filter chips (mirrors the POS cart Pay control order). */
 export const ORDER_METHOD_FILTERS: {value: string; label: string}[] = [
@@ -763,6 +798,7 @@ export function parseInstantParam(raw: string | undefined): string | null {
 export function parseOrdersFilter(sp: {
   method?: string;
   status?: string;
+  event?: string;
   from?: string;
   to?: string;
   min?: string;
@@ -770,6 +806,10 @@ export function parseOrdersFilter(sp: {
 }): PosOrdersFilter {
   const method = ORDER_METHOD_FILTERS.some((m) => m.value === sp.method) ? (sp.method as string) : 'all';
   const status = ORDER_STATUS_FILTERS.some((s) => s.value === sp.status) ? (sp.status as string) : 'all';
+  // event is an event_id (uuid) or the literal 'untagged'; anything else (incl.
+  // blank) means no event filter. An unknown id simply matches nothing, which is
+  // harmless. Visibility of the control is decided separately (eventFilterScope).
+  const event = sp.event && sp.event.trim() !== '' ? sp.event.trim() : 'all';
   let startDate = parseInstantParam(sp.from);
   let endDate = parseInstantParam(sp.to);
   // A reversed range is a user error; swap so it always reads earliest → latest.
@@ -782,12 +822,12 @@ export function parseOrdersFilter(sp: {
   if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
     [minPrice, maxPrice] = [maxPrice, minPrice];
   }
-  return {method, status, startDate, endDate, minPrice, maxPrice};
+  return {method, status, event, startDate, endDate, minPrice, maxPrice};
 }
 
 /** True when any filter is narrowing the results (used to show a Reset). */
 export function isFilterActive(f: PosOrdersFilter): boolean {
-  return f.method !== 'all' || f.status !== 'all' || f.startDate != null || f.endDate != null || f.minPrice != null || f.maxPrice != null;
+  return f.method !== 'all' || f.status !== 'all' || f.event !== 'all' || f.startDate != null || f.endDate != null || f.minPrice != null || f.maxPrice != null;
 }
 
 /** A null payment_method is a legacy row; the UI reads it as Cash, so match it. */
@@ -802,6 +842,8 @@ export function filterOrders(orders: PosOrder[], f: PosOrdersFilter): PosOrder[]
   return orders.filter((o) => {
     if (!methodMatches(o.payment_method, f.method)) return false;
     if (f.status !== 'all' && o.status !== f.status) return false;
+    if (f.event === 'untagged') { if (o.event_id != null) return false; }
+    else if (f.event !== 'all' && o.event_id !== f.event) return false;
     if (f.startDate && o.created_at < f.startDate) return false;
     if (f.endDate && o.created_at > f.endDate) return false;
     if (f.minPrice != null && o.total < f.minPrice) return false;
