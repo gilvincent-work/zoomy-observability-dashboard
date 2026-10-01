@@ -1,5 +1,6 @@
-// F5 + F7 + F8: the eight strict tool definitions sent to the Messages API, built from the registry. Frozen.
-// Strict-mode limits honoured: 8 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
+// F5 + F7 + F8 + F10: the ten strict tool definitions sent to the Messages API, built from the registry. Frozen.
+// Strict-mode limits honoured: 10 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
+import {DIGEST_SECTIONS, DIGEST_WINDOWS, PRODUCT_SHOWS} from './digest-lookup';
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {ToolDefinition} from './stream-types';
 
@@ -54,6 +55,43 @@ const queryMetric: ToolDefinition = {
       limit: {type: 'integer', enum: [3, 5, 10, 25], description: 'Maximum rows for ranked lists.'},
     },
     required: ['metric', 'dimension', 'measure', 'range', 'from', 'to', 'channel', 'event', 'pet', 'compare_to', 'sort', 'limit'],
+    additionalProperties: false,
+  },
+};
+
+const getDigest: ToolDefinition = {
+  name: 'get_digest',
+  description:
+    'Read the stored WEEKLY DIGEST: Shopee, Lazada and Website figures (revenue, orders, ad spend, ROAS, top products, customers), published once a week. ' +
+    'Call it for any question about Shopee, Lazada or the website, or a channel comparison, that the digest in the conversation does not already answer, and for the previous week. ' +
+    'It returns a result id you can pass to render_table or render_chart; the figures are as published and every row says its time basis (never present an all-time figure as this week). ' +
+    'For offline POS sales use query_metric instead. Use "comparison" for Lazada vs Shopee vs Website.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      window: {type: 'string', enum: [...DIGEST_WINDOWS], description: '"latest" is the newest stored weekly digest, "previous" the one before it.'},
+      section: {type: 'string', enum: [...DIGEST_SECTIONS], description: '"comparison" is one row per channel; "figures", "sales" and "customers" are the digest\'s own figure lists; "shopee" and "lazada" their marketplace figures; "products" the top products per channel.'},
+    },
+    required: ['window', 'section'],
+    additionalProperties: false,
+  },
+};
+
+const lookupProduct: ToolDefinition = {
+  name: 'lookup_product',
+  description:
+    'Look up ONE product by SKU or name in the offline POS data: its current price, units and revenue sold, first and last sale, or its price changes. ' +
+    'Call it when the owner names a specific product or SKU. To rank or list products use query_metric (top_products) instead. ' +
+    'If the name is ambiguous or unknown it returns the matches or close matches: call it again with the exact SKU. Stock levels are not available.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {type: 'string', description: 'The SKU (for example "P1") or the product name as the owner said it.'},
+      show: {type: 'string', enum: [...PRODUCT_SHOWS], description: '"details" for price and sales, "price_history" for its recorded price changes.'},
+    },
+    required: ['query', 'show'],
     additionalProperties: false,
   },
 };
@@ -171,4 +209,4 @@ const setReportTitle: ToolDefinition = {
   cache_control: {type: 'ephemeral'},
 };
 
-export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);
+export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, getDigest, lookupProduct, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);

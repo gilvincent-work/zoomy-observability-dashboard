@@ -1,6 +1,7 @@
-// F5 + F7 + F8: executors for describe_data, query_metric, the three render tools and the three report-edit tools, and the progress line for the stream.
+// F5 + F7 + F8 + F10: executors for describe_data, query_metric, get_digest, lookup_product, the three render tools and the three report-edit tools, and the progress line for the stream.
 // Pure; data loads lazily. query_metric keeps the FULL result in a per-request store that the render tools bind from.
 import {describeData} from './coverage';
+import {lookupProduct, shapeDigest} from './digest-lookup';
 import {METRICS} from './metrics-registry';
 import {createRenderExecutors} from './render-executors';
 import {createReportSession} from './report-session';
@@ -29,6 +30,30 @@ export function createExecutors(ctx: ChatToolContext): ToolExecutors {
       counter += 1;
       const id = `r${counter}`;
       session.remember(id, input as MetricRequest, {...result, id}); // runMetric accepted the input, so it IS a MetricRequest
+      return compact(result, id);
+    },
+    // F10. These results are stored for the render tools but have no MetricRequest recipe, so a block drawn from one is shown in
+    // the chat and is not recorded into a saved report (nothing could re-run it).
+    get_digest: async (input) => {
+      let source: Awaited<ReturnType<NonNullable<ChatToolContext['digest']>>> | null = null;
+      try {
+        source = ctx.digest ? await ctx.digest() : null;
+      } catch {
+        source = null; // an unreadable digest is "not available", never a crash
+      }
+      const out = shapeDigest(input, source, ctx.now);
+      if ('error' in out) return {error: out.error};
+      counter += 1;
+      const id = `r${counter}`;
+      session.store.set(id, {...out.result, id});
+      return {...compact(out.result, id), window: out.window, headline: out.headline};
+    },
+    lookup_product: async (input) => {
+      const result = lookupProduct(input, await data());
+      if ('error' in result) return {error: result.error};
+      counter += 1;
+      const id = `r${counter}`;
+      session.store.set(id, {...result, id});
       return compact(result, id);
     },
   };
@@ -60,6 +85,8 @@ export function statusFor(name: string, input: unknown): string {
       return `Looking at ${def.label.toLowerCase()}${dim ? ` by ${dim.label.toLowerCase().replace(/^by /, '').replace(/\s*\(.*\)/, '')}` : ''}`;
     }
   }
+  if (name === 'get_digest') return 'Reading the weekly digest';
+  if (name === 'lookup_product') return 'Looking up a product';
   if (name === 'render_kpi') return 'Adding a tile';
   if (name === 'render_chart') return 'Drawing a chart';
   if (name === 'render_table') return 'Building a table';

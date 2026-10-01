@@ -13,6 +13,9 @@ export type MetricId =
   | 'bundle_sales'
   | 'bundle_picks';
 
+/** What a stored result may be: a registry metric, or one of the lookup tools' results (F10). Only registry metrics can be re-run or saved. */
+export type ResultMetricId = MetricId | 'digest' | 'product_lookup';
+
 export type PetKey = 'dog' | 'cat' | 'both' | 'untagged';
 
 /** The closed query shape. Every field is required; sentinels replace optionals. */
@@ -109,7 +112,7 @@ export interface ResultMeta {
 
 export interface MetricResult {
   id: string; // 'r1', 'r2', ... assigned by the loop's result store, '' until stored
-  metric: MetricId;
+  metric: ResultMetricId;
   dimension: string;
   columns: ResultColumn[];
   rows: MetricRow[];

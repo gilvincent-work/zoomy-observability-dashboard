@@ -24,8 +24,8 @@ const data = (orders = ORDERS): MetricData => ({source: 'live', orders, events: 
 const ctx = (d: MetricData = data()) => ({data: vi.fn(async () => d), now: NOW, user: null});
 
 describe('executors', () => {
-  it('provides the eight tools', () => {
-    expect(Object.keys(createExecutors(ctx())).sort()).toEqual(['describe_data', 'query_metric', 'remove_block', 'render_chart', 'render_kpi', 'render_table', 'set_report_filters', 'set_report_title']);
+  it('provides the ten tools', () => {
+    expect(Object.keys(createExecutors(ctx())).sort()).toEqual(['describe_data', 'get_digest', 'lookup_product', 'query_metric', 'remove_block', 'render_chart', 'render_kpi', 'render_table', 'set_report_filters', 'set_report_title']);
   });
 
   it('describe_data happy path', async () => {
@@ -130,6 +130,8 @@ describe('statusFor', () => {
     expect(statusFor('set_report_filters', {pet: 'cat'})).toBe('Updating the dashboard filters');
     expect(statusFor('remove_block', {block: 'b1'})).toBe('Removing a block');
     expect(statusFor('set_report_title', {title: 'Secret'})).toBe('Renaming the dashboard');
+    expect(statusFor('get_digest', {window: 'latest', section: 'comparison'})).toBe('Reading the weekly digest');
+    expect(statusFor('lookup_product', {query: 'SECRET-SKU', show: 'details'})).toBe('Looking up a product');
     for (const bad of [null, undefined, 5, 'x', {metric: 'drop table'}, {metric: '__proto__'}, {metric: 'constructor'}]) {
       expect(statusFor('query_metric', bad)).toBe('Working on it');
     }

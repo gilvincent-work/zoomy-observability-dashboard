@@ -4,15 +4,15 @@ import {METRIC_IDS, METRICS} from '../src/chat/metrics-registry';
 import {assertRequestShape} from '../src/chat/request-shape';
 
 type Prop = {type?: unknown; enum?: unknown[]; description?: string; [k: string]: unknown};
-const [describe_data, query_metric, render_kpi, render_chart, render_table, set_report_filters, remove_block, set_report_title] = CHAT_TOOLS;
+const [describe_data, query_metric, get_digest, lookup_product, render_kpi, render_chart, render_table, set_report_filters, remove_block, set_report_title] = CHAT_TOOLS;
 const props = (t: (typeof CHAT_TOOLS)[number]) => t.input_schema.properties as Record<string, Prop>;
 const sortedUnion = (pick: (id: (typeof METRIC_IDS)[number]) => string[]) => [...new Set(METRIC_IDS.flatMap(pick))].sort();
 
 const SINK = {info: () => undefined, error: () => undefined};
 
 describe('CHAT_TOOLS', () => {
-  it('has exactly the eight tools in order', () => {
-    expect(CHAT_TOOLS.map((t) => t.name)).toEqual(['describe_data', 'query_metric', 'render_kpi', 'render_chart', 'render_table', 'set_report_filters', 'remove_block', 'set_report_title']);
+  it('has exactly the ten tools in order', () => {
+    expect(CHAT_TOOLS.map((t) => t.name)).toEqual(['describe_data', 'query_metric', 'get_digest', 'lookup_product', 'render_kpi', 'render_chart', 'render_table', 'set_report_filters', 'remove_block', 'set_report_title']);
   });
 
   it('meets the strict-mode limits', () => {
@@ -61,7 +61,7 @@ describe('CHAT_TOOLS', () => {
   });
 
   it('puts the cache breakpoint on the last tool only', () => {
-    for (const t of [describe_data, query_metric, render_kpi, render_chart, render_table, set_report_filters, remove_block]) expect(t.cache_control).toBeUndefined();
+    for (const t of [describe_data, query_metric, get_digest, lookup_product, render_kpi, render_chart, render_table, set_report_filters, remove_block]) expect(t.cache_control).toBeUndefined();
     expect(set_report_title.cache_control).toEqual({type: 'ephemeral'});
   });
 
@@ -82,8 +82,8 @@ describe('CHAT_TOOLS', () => {
     expect(render_kpi.description).toMatch(/one-row/);
   });
 
-  it('F8 criterion 11: eight strict tools, 0 optionals, 0 unions, and the report tools take enums, a block id and a title only', () => {
-    expect(CHAT_TOOLS).toHaveLength(8);
+  it('F8 criterion 11 and F10: ten strict tools, 0 optionals, 0 unions, and the report tools take enums, a block id and a title only', () => {
+    expect(CHAT_TOOLS).toHaveLength(10);
     expect(CHAT_TOOLS.every((t) => t.strict === true)).toBe(true);
     for (const t of CHAT_TOOLS) {
       expect(t.input_schema.required.length).toBe(Object.keys(t.input_schema.properties).length); // 0 optional
@@ -121,6 +121,21 @@ describe('CHAT_TOOLS', () => {
   it('tells the model when to call each tool', () => {
     expect(describe_data.description).toMatch(/unclear|what you can answer/);
     expect(query_metric.description).toMatch(/ANY figure/);
+  });
+
+  it('F10: get_digest and lookup_product take only enums and a name, all required, and say when to call them', () => {
+    expect(Object.keys(props(get_digest))).toEqual(['window', 'section']);
+    expect(props(get_digest).window.enum).toEqual(['latest', 'previous']);
+    expect(props(get_digest).section.enum).toEqual(['comparison', 'figures', 'sales', 'customers', 'shopee', 'lazada', 'products']);
+    expect(Object.keys(props(lookup_product))).toEqual(['query', 'show']);
+    expect(props(lookup_product).show.enum).toEqual(['details', 'price_history']);
+    expect(props(lookup_product).query.enum).toBeUndefined();
+    expect(get_digest.description).toMatch(/Shopee, Lazada or the website/);
+    expect(get_digest.description).toMatch(/query_metric/);
+    expect(lookup_product.description).toMatch(/names a specific product or SKU/);
+    expect(lookup_product.description).toMatch(/top_products/);
+    // The digest tool cannot name a column, a table or a bundle: its whole input is two enums.
+    expect(JSON.stringify(get_digest.input_schema)).not.toMatch(/bundle|select|column|sql/i);
   });
 
   it('passes the request-shape check, and a wrong tool list fails it', () => {
