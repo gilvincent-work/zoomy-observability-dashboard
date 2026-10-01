@@ -18,7 +18,7 @@ Dates are local working dates (GMT+8). Newest first.
 - Checked: full suite pass, tsc clean, preview page in light and dark at 440/360px, and a live run in the drawer with the real model on PROD data (bundle dashboard: 4 tiles, stacked bar with a separate gray untagged bar, table with a total; then "as a pie").
 - Live run found and fixed a bug the tests missed: the UI read a pie as rows-as-slices while the server emits categories-as-series, so the pie drew one slice. `pieSlices` now reads the server shape, with a test over real `recommendView` output (lesson: parallel-agents-need-a-shared-fixture-from-real-output).
 - Added VIZ-11: a form catalog (job to form, marking what is not drawn yet) from the UX Magazine handbook; THINK-01 now looks the form up before rendering.
-- Open: the model still writes the caveat and headline AFTER the render calls (DASH-01 says before). A prompt rule and a worked example did not change it; enforcing it needs a code gate.
+- DASH-01 is now a code gate: a render call made before any text this turn is refused once ("write the caveat and headline as text now, then repeat the same render calls"). A prompt rule and a worked example alone never changed the order. Live: caveat and headline now come first. Cost: 5 to 6 model steps (about 28 s) instead of 3 (about 14 s) on a dashboard ask. The first wording of the refusal made the model give up and print a text table, so the message says the call was fine.
 
 ---
 
