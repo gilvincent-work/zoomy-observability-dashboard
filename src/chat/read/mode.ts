@@ -1,3 +1,4 @@
+import {MIN_SECRET_LENGTH} from './mint-jwt';
 import {CHAT_READ_MODES, type ChatReadMode} from './relations';
 
 // Fail-closed read mode. In production only CHAT_READ_MODE=ro_role is accepted
@@ -7,6 +8,7 @@ import {CHAT_READ_MODES, type ChatReadMode} from './relations';
 export interface ChatReadEnv {
   NODE_ENV?: string;
   CHAT_READ_MODE?: string;
+  CHAT_RO_JWT_SECRET?: string;
 }
 
 export type ChatReadability =
@@ -28,6 +30,9 @@ export function resolveChatReadMode(env: ChatReadEnv): ChatReadMode {
 export function assertChatReadable(env: ChatReadEnv): ChatReadability {
   try {
     const mode = resolveChatReadMode(env);
+    if (mode === 'ro_role' && (env.CHAT_RO_JWT_SECRET?.length ?? 0) < MIN_SECRET_LENGTH) {
+      return {ok: false, status: 503, message: `Ask Coop is unavailable: CHAT_RO_JWT_SECRET must be set (at least ${MIN_SECRET_LENGTH} characters) for CHAT_READ_MODE=ro_role`};
+    }
     return mode === 'guarded_service'
       ? {ok: true, mode, warning: 'CHAT_READ_MODE is guarded_service: read-only is enforced in code only, not by the database. Not for production.'}
       : {ok: true, mode};

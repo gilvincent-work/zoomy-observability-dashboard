@@ -1,5 +1,6 @@
 import 'server-only';
 import {createClient} from '@supabase/supabase-js';
+import {buildChatReadConfig} from './config';
 import {createGuardedFetch, type GuardedFetchOptions, type GuardStats} from './guarded-fetch';
 import {relationsForMode, type ChatReadMode, type ChatRelation} from './relations';
 import type {ReadBuilder} from '../../pos-orders-read';
@@ -32,10 +33,7 @@ export interface ChatReadClientOptions {
 export function chatReadClient(opts: ChatReadClientOptions = {}): {client: ChatReadClient; stats: GuardStats; mode: ChatReadMode} {
   const env = opts.env ?? process.env;
   const mode = opts.mode ?? 'guarded_service';
-  const url = env.SUPABASE_URL_ARCHIVE;
-  // ro_role: a short-lived minted JWT (minting is a later task; just read it).
-  const key = mode === 'ro_role' ? env.CHAT_RO_JWT : env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE;
-  if (!url || !key) throw new Error(`chat read client: env not configured for mode ${mode}`);
+  const {url, key, apikey} = buildChatReadConfig({mode, env});
 
   const {fetch: guarded, stats} = createGuardedFetch({
     baseUrl: url,
@@ -45,7 +43,8 @@ export function chatReadClient(opts: ChatReadClientOptions = {}): {client: ChatR
   });
   const supabase = createClient(url, key, {
     auth: {persistSession: false, autoRefreshToken: false},
-    global: {fetch: guarded},
+    // ro_role: the minted JWT stays the bearer token; an optional apikey header overrides supabase-js's default (key).
+    global: {fetch: guarded, headers: apikey ? {apikey} : undefined},
   });
   return {client: supabase as unknown as ChatReadClient, stats, mode};
 }
