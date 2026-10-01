@@ -10,11 +10,11 @@ import {useMemo, useState, useTransition, useEffect, useLayoutEffect, useRef} fr
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {createPortal} from 'react-dom';
-import {ArrowLeftRight, Eye, EyeOff, MoreHorizontal, Pencil, Search, SlidersHorizontal, Tag, Type, Undo2, X, type LucideIcon} from 'lucide-react';
+import {ArrowLeftRight, Eye, EyeOff, MoreHorizontal, Pencil, Search, Tag, Type, Undo2, X, type LucideIcon} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Card, CardContent} from '@/components/ui/card';
 import {POS_CATEGORIES, POS_SUBCATEGORIES, SUBCATEGORY_CATEGORY, formatPeso} from '@/src/pos-format';
-import {compareByCategory} from '@/src/pos-inventory-compute';
+import {compareByCategory, filterInventoryRows} from '@/src/pos-inventory-compute';
 import {renameProductAction, repriceProductAction, setListingAction, setStockAction} from '@/src/pos-actions';
 import {voidLastAddAction} from '@/src/pos-stock-intake-actions';
 import {TransferModal} from './transfer-stock-button';
@@ -32,8 +32,6 @@ const STATUS: Record<ForecastStatus, {label: string; dot: string; text: string; 
   out: {label: 'Out', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/10'},
 };
 const STATUS_RANK: Record<ForecastStatus, number> = {out: 0, low: 1, healthy: 2};
-const STATUS_FILTER_LABELS: Record<'out' | 'low' | 'healthy' | 'unlisted', string> = {out: 'Out', low: 'Low', healthy: 'Healthy', unlisted: 'Unlisted'};
-const LOC_FILTER_LABELS: Record<'office' | 'event', string> = {office: 'In Office', event: 'In Event'};
 const fmt1 = (n: number) => (Math.round(n * 10) / 10).toLocaleString();
 
 export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryRow[]; usingMock: boolean}) {
@@ -44,8 +42,9 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   const [sub, setSub] = useState('');
   const [status, setStatus] = useState<'' | ForecastStatus | 'unlisted'>('');
   const [loc, setLoc] = useState<'' | 'office' | 'event'>('');
+  // Switch: include products tagged Out (status 'out'). On = today's behavior.
+  const [showOut, setShowOut] = useState(true);
   const [search, setSearch] = useState('');
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'category', dir: 1});
   const [menuFor, setMenuFor] = useState<string | null>(null);
   // Separate menu state for the mobile card list. The card RowMenu portals to
@@ -58,19 +57,12 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   const [editStockRow, setEditStockRow] = useState<InventoryRow | null>(null);
   const [page, setPage] = useState(1);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (line && (r.category ?? '') !== line) return false;
-      if (line === SUBCATEGORY_CATEGORY && sub && (r.subcategory ?? '') !== sub) return false;
-      if (status === 'unlisted' && r.active) return false;
-      if (status && status !== 'unlisted' && r.status !== status) return false;
-      if (loc === 'office' && r.office <= 0) return false;
-      if (loc === 'event' && r.event <= 0) return false;
-      if (q && !(r.name.toLowerCase().includes(q) || r.product_id.toLowerCase().includes(q))) return false;
-      return true;
-    });
-  }, [rows, line, sub, status, loc, search]);
+  const outCount = useMemo(() => rows.filter((r) => r.status === 'out').length, [rows]);
+
+  const filtered = useMemo(
+    () => filterInventoryRows(rows, {line, sub, status, loc, showOut, search}),
+    [rows, line, sub, status, loc, search, showOut],
+  );
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -101,7 +93,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   // Paginate the filtered+sorted rows client-side. Snap back to page 1 whenever the
   // result set changes (filter/search/sort), and clamp so a shrunk set never leaves
   // us stranded past the last page.
-  useEffect(() => setPage(1), [line, sub, status, loc, search, sort]);
+  useEffect(() => setPage(1), [line, sub, status, loc, search, showOut, sort]);
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const from = (safePage - 1) * PAGE_SIZE;
@@ -116,20 +108,21 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
   }
   const caret = (key: SortKey) => (sort.key !== key ? '↕' : sort.dir === 1 ? '↑' : '↓');
 
-  // Type only applies within the Freeze-Dried line; count it only when it's live.
-  const typeActive = line === SUBCATEGORY_CATEGORY && sub !== '';
-  const advancedCount = (typeActive ? 1 : 0) + (status ? 1 : 0) + (loc ? 1 : 0);
-
   return (
     <div>
-      {/* Filters: Line is the primary filter (quick-tap on top); search + the rest
-          behind a Filters modal, with the applied ones shown as chips below. */}
+      {/* Filters: Line, then (Freeze-Dried only) Type, Status and Location as pill rows,
+          then search. All inline; there is no separate Filters modal. */}
       <div className="mb-4 flex flex-col gap-2.5">
         <PillRow label="Line" items={[{v: '', l: 'All'}, ...POS_CATEGORIES.map((c) => ({v: c as string, l: c}))]} active={line}
           onSelect={(v) => {setLine(v); if (v !== SUBCATEGORY_CATEGORY) setSub('');}} />
+        {line === SUBCATEGORY_CATEGORY && (
+          <PillRow label="Type" items={[{v: '', l: 'All'}, ...POS_SUBCATEGORIES.map((c) => ({v: c as string, l: c}))]} active={sub} onSelect={setSub} />
+        )}
+        <PillRow label="Status" items={[{v: '', l: 'All'}, {v: 'out', l: 'Out'}, {v: 'low', l: 'Low'}, {v: 'healthy', l: 'Healthy'}, {v: 'unlisted', l: 'Unlisted'}]} active={status} onSelect={(v) => {setStatus(v as '' | ForecastStatus | 'unlisted'); if (v === 'out') setShowOut(true);}} />
+        <PillRow label="Location" items={[{v: '', l: 'All'}, {v: 'event', l: 'In Event'}, {v: 'office', l: 'In Office'}]} active={loc} onSelect={(v) => setLoc(v as '' | 'office' | 'event')} />
 
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="relative min-w-[200px] flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={search}
@@ -145,44 +138,17 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
               </button>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => setFiltersOpen(true)}
-            aria-label="More filters"
-            className={cn(
-              'inline-flex shrink-0 items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium transition-colors',
-              advancedCount > 0 ? 'border-primary/50 text-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <SlidersHorizontal className="size-4" /> Filters
-            {advancedCount > 0 && (
-              <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold tabular-nums text-primary-foreground">{advancedCount}</span>
-            )}
+          <button type="button" role="switch" aria-checked={showOut}
+            onClick={() => {const next = !showOut; setShowOut(next); if (!next && status === 'out') setStatus('');}}
+            className="group inline-flex shrink-0 items-center gap-2 rounded-md py-1 text-sm font-medium transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            <span aria-hidden className={cn('relative h-5 w-9 rounded-full transition-colors duration-150', showOut ? 'bg-primary' : 'bg-muted-foreground/30')}>
+              <span className={cn('absolute left-0.5 top-0.5 size-4 rounded-full bg-background shadow-sm transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none', showOut && 'translate-x-4')} />
+            </span>
+            <span className={showOut ? 'text-foreground' : 'text-muted-foreground'}>Show out of stock</span>
+            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{outCount}</span>
           </button>
         </div>
-
-        {advancedCount > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Applied</span>
-            {typeActive && <FilterChip label={`Type: ${sub}`} onClear={() => setSub('')} />}
-            {status && <FilterChip label={`Status: ${STATUS_FILTER_LABELS[status]}`} onClear={() => setStatus('')} />}
-            {loc && <FilterChip label={`Location: ${LOC_FILTER_LABELS[loc]}`} onClear={() => setLoc('')} />}
-            <button type="button" onClick={() => {setSub(''); setStatus(''); setLoc('');}}
-              className="ml-1 text-[11px] font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline">
-              Clear all
-            </button>
-          </div>
-        )}
       </div>
-
-      {filtersOpen && (
-        <FilterModal
-          line={line} sub={sub} setSub={setSub}
-          status={status} setStatus={setStatus}
-          loc={loc} setLoc={setLoc}
-          onClose={() => setFiltersOpen(false)}
-        />
-      )}
 
       <Card>
         <CardContent className="p-0">
@@ -191,7 +157,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
           ) : (
             <>
             <div className="overflow-x-auto max-md:hidden">
-              <table className="w-full min-w-[1000px] text-sm">
+              <table className="w-full min-w-[860px] text-sm">
                 <thead>
                   <tr className="border-b text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
                     <Th onClick={() => toggleSort('name')} active={sort.key === 'name' || sort.key === 'category'}>Product <Sc>{sort.key === 'category' ? '▲cat' : caret('name')}</Sc></Th>
@@ -199,13 +165,13 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
                     <Th className="text-right" onClick={() => toggleSort('price')} active={sort.key === 'price'}>Price <Sc>{caret('price')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('office')} active={sort.key === 'office'}>Office <Sc>{caret('office')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'}>Event <Sc>{caret('stock')}</Sc></Th>
-                    <th className="px-4 py-3 text-left">Trend</th>
+                    <th className="px-3 py-3 text-left">Trend</th>
                     <Th className="text-right" onClick={() => toggleSort('thisMonth')} active={sort.key === 'thisMonth'}>This mo <Sc>{caret('thisMonth')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('lastMonth')} active={sort.key === 'lastMonth'}>Last mo <Sc>{caret('lastMonth')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('threeMo')} active={sort.key === 'threeMo'}>3mo <Sc>{caret('threeMo')}</Sc></Th>
                     <Th onClick={() => toggleSort('cover')} active={sort.key === 'cover'}>Lasts <Sc>{caret('cover')}</Sc></Th>
                     <Th className="text-right" onClick={() => toggleSort('reorder')} active={sort.key === 'reorder'}>Suggested <Sc>{caret('reorder')}</Sc></Th>
-                    <th className="px-2 py-3"></th>
+                    <th className="sticky right-0 bg-card px-2 py-3"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -263,7 +229,7 @@ export function InventoryTable({rows: initialRows, usingMock}: {rows: InventoryR
       {editStockRow && (
         <EditStockDialog row={editStockRow} usingMock={usingMock}
           onClose={() => setEditStockRow(null)}
-          onDone={(newQty) => {setRows((rs) => rs.map((r) => (r.product_id === editStockRow.product_id ? {...r, stock: newQty, event: newQty} : r))); setEditStockRow(null);}} />
+          onDone={(newQty, loc) => {setRows((rs) => rs.map((r) => (r.product_id === editStockRow.product_id ? (loc === 'office' ? {...r, office: newQty} : {...r, stock: newQty, event: newQty}) : r))); setEditStockRow(null);}} />
       )}
     </div>
   );
@@ -276,6 +242,9 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onMoveStock, onEditStock}: {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const menuBtnRef = useRef<HTMLButtonElement>(null);
+  // Right-clicking anywhere on the row opens the same menu at the cursor, so
+  // editing stock doesn't need a scroll to the ⋯ column. null = anchored to the ⋯.
+  const [ctxPoint, setCtxPoint] = useState<MenuPoint | null>(null);
   function toggleListing() {
     startTransition(async () => {
       await setListingAction(r.product_id, !r.active);
@@ -295,24 +264,30 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onMoveStock, onEditStock}: {
   // edit, the ⋯ menu) stopPropagation so they keep their own behavior.
   return (
     <tr onClick={() => router.push(`/inventory/${r.product_id}`)}
-      className={cn('cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50', !r.active && 'opacity-55')}>
-      <td className="px-4 py-3">
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setCtxPoint({x: e.clientX, y: e.clientY});
+        if (!menuOpen) onMenu();
+      }}
+      className={cn('group cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50', !r.active && 'opacity-55')}>
+      <td className="px-3 py-3">
         <Link href={`/inventory/${r.product_id}`} onClick={(e) => e.stopPropagation()} className="font-medium transition-colors hover:text-primary">{r.name}</Link>
         <div className="font-mono text-[10px] text-muted-foreground">{r.product_id}{!r.active && ' · unlisted'}</div>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-3 py-3">
         <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', s.bg, s.text)}>
           <span className={cn('size-1.5 rounded-full', s.dot)} />{s.label}
         </span>
       </td>
-      <td className="px-4 py-3 text-right">
+      <td className="px-3 py-3 text-right">
         <button onClick={(e) => {e.stopPropagation(); onEdit('price');}} className="inline-flex items-center gap-1.5 tabular-nums transition-colors hover:text-primary" title="Change price">
           {formatPeso(r.price)} <Pencil className="size-3 text-muted-foreground" />
         </button>
       </td>
-      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.office}</td>
-      <td className="px-4 py-3 text-right tabular-nums font-medium">{r.event}</td>
-      <td className="px-4 py-3">
+      <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{r.office}</td>
+      <td className="px-3 py-3 text-right tabular-nums font-medium">{r.event}</td>
+      <td className="px-3 py-3">
         <span className="inline-flex h-5 items-end gap-[3px]">
           {r.monthly.trend.map((v, i) => (
             <span key={i} className={cn('w-[5px] rounded-sm', r.monthly.threeMonthTotal > 0 ? 'bg-emerald-500' : 'bg-muted')}
@@ -320,20 +295,20 @@ function Row({r, menuOpen, onMenu, onClose, onEdit, onMoveStock, onEditStock}: {
           ))}
         </span>
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">
+      <td className="px-3 py-3 text-right tabular-nums">
         <span>{r.monthly.thisMonth}</span>
         <YoyDelta yoy={r.yoy} thisMonth={r.monthly.thisMonth} />
       </td>
-      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.monthly.lastMonth}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{r.monthly.threeMonthTotal}</td>
-      <td className="whitespace-nowrap px-4 py-3">
+      <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{r.monthly.lastMonth}</td>
+      <td className="px-3 py-3 text-right tabular-nums">{r.monthly.threeMonthTotal}</td>
+      <td className="whitespace-nowrap px-3 py-3">
         <LastsBadge row={r} />
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">{r.reorderQty != null ? r.reorderQty : <span className="text-muted-foreground">—</span>}</td>
-      <td className="px-2 py-3 text-right">
-        <button ref={menuBtnRef} onClick={(e) => {e.stopPropagation(); onMenu();}} aria-label="Row actions" className="rounded p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></button>
+      <td className="px-3 py-3 text-right tabular-nums">{r.reorderQty != null ? r.reorderQty : <span className="text-muted-foreground">—</span>}</td>
+      <td className="sticky right-0 bg-card px-2 py-3 text-right transition-colors group-hover:bg-muted">
+        <button ref={menuBtnRef} onClick={(e) => {e.stopPropagation(); setCtxPoint(null); onMenu();}} aria-label="Row actions" className="rounded p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></button>
         {menuOpen && (
-          <RowMenu anchor={menuBtnRef.current} sku={r.product_id} active={r.active} pending={pending}
+          <RowMenu anchor={ctxPoint ?? menuBtnRef.current} sku={r.product_id} active={r.active} pending={pending}
             onRename={() => onEdit('name')} onReprice={() => onEdit('price')} onToggleListing={toggleListing}
             onMoveStock={onMoveStock} onEditStock={onEditStock} onUndo={undoLastAdd} onClose={onClose} />
         )}
@@ -457,18 +432,23 @@ function Badge({tone, children}: {tone: 'crit' | 'warn' | 'ok'; children: React.
 // Rendered in a portal with fixed positioning anchored to the ⋯ button, so it
 // escapes the table's overflow container (which would otherwise clip it) and flips
 // above the button when there isn't room below (bottom rows near the viewport edge).
+type MenuPoint = {x: number; y: number};
+
 function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleListing, onMoveStock, onEditStock, onUndo, onClose}: {
-  anchor: HTMLElement | null; sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onMoveStock: () => void; onEditStock: () => void; onUndo: () => void; onClose: () => void;
+  anchor: HTMLElement | MenuPoint | null; sku: string; active: boolean; pending: boolean; onRename: () => void; onReprice: () => void; onToggleListing: () => void; onMoveStock: () => void; onEditStock: () => void; onUndo: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{left: number; top: number} | null>(null);
 
   useLayoutEffect(() => {
     if (!anchor || !ref.current) return;
-    const a = anchor.getBoundingClientRect();
+    const isPoint = !(anchor instanceof HTMLElement);
+    const a = isPoint ? {left: anchor.x, right: anchor.x, top: anchor.y, bottom: anchor.y} : anchor.getBoundingClientRect();
     const m = ref.current.getBoundingClientRect();
-    const gap = 6, pad = 8;
-    const left = Math.max(pad, Math.min(a.right - m.width, window.innerWidth - m.width - pad));
+    const gap = isPoint ? 2 : 6, pad = 8;
+    // Kebab: right-align under the button. Cursor: open with the corner at the pointer.
+    const wantLeft = isPoint ? a.left : a.right - m.width;
+    const left = Math.max(pad, Math.min(wantLeft, window.innerWidth - m.width - pad));
     let top = a.bottom + gap;
     if (top + m.height > window.innerHeight - pad) {
       const above = a.top - gap - m.height;
@@ -479,7 +459,7 @@ function RowMenu({anchor, sku, active, pending, onRename, onReprice, onToggleLis
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node) && anchor && !anchor.contains(e.target as Node)) onClose();
+      if (ref.current && !ref.current.contains(e.target as Node) && !(anchor instanceof HTMLElement && anchor.contains(e.target as Node))) onClose();
     };
     const dismiss = () => onClose();
     document.addEventListener('mousedown', onDoc);
@@ -579,13 +559,16 @@ function EditDialog({row, field, usingMock, onClose, onSaved}: {
   );
 }
 
-// Set a product's on-hand to an exact count (set_product_stock -> a 'recount'
-// movement carrying the signed delta). Distinct from Add stock: this overwrites
-// the total. Prefilled with the current count; the ledger records previous -> new.
+// Set a product's on-hand in one location (Event or Office) to an exact count
+// (set_product_stock -> a 'recount' movement carrying the signed delta). Distinct
+// from Add stock: this overwrites that location's total. Prefilled with the current
+// count; the ledger records previous -> new.
 function EditStockDialog({row, usingMock, onClose, onDone}: {
-  row: InventoryRow; usingMock: boolean; onClose: () => void; onDone: (newQty: number) => void;
+  row: InventoryRow; usingMock: boolean; onClose: () => void; onDone: (newQty: number, loc: 'office' | 'event') => void;
 }) {
-  const [value, setValue] = useState(String(row.stock));
+  const [loc, setLoc] = useState<'office' | 'event'>('event');
+  const current = loc === 'office' ? row.office : row.event;
+  const [value, setValue] = useState(String(row.event));
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -597,15 +580,15 @@ function EditStockDialog({row, usingMock, onClose, onDone}: {
 
   const parsed = value.trim() === '' ? NaN : Math.round(Number(value));
   const valid = Number.isFinite(parsed) && parsed >= 0;
-  const diff = valid ? parsed - row.stock : 0;
+  const diff = valid ? parsed - current : 0;
 
   function save() {
     setError(null);
     if (!valid) {setError('Enter a stock count of zero or more.'); return;}
     startTransition(async () => {
-      const res = await setStockAction(row.product_id, String(parsed));
+      const res = await setStockAction(row.product_id, String(parsed), loc);
       if (res.ok) {
-        onDone(parsed);
+        onDone(parsed, loc);
         router.refresh();
       } else setError(res.error);
     });
@@ -619,7 +602,15 @@ function EditStockDialog({row, usingMock, onClose, onDone}: {
           <h2 className="text-sm font-semibold">Edit stock</h2>
           <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
-        <p className="mb-3 font-mono text-[11px] text-muted-foreground">{row.name} · {row.product_id} · {row.stock} on hand now</p>
+        <p className="mb-3 font-mono text-[11px] text-muted-foreground">{row.name} · {row.product_id} · {current} in {loc === 'office' ? 'Office' : 'Event'} now</p>
+        <div className="mb-3 inline-flex rounded-lg border bg-muted/40 p-1" role="group" aria-label="Location">
+          {(['event', 'office'] as const).map((l) => (
+            <button key={l} type="button" onClick={() => {setLoc(l); setValue(String(l === 'office' ? row.office : row.event));}}
+              className={cn('rounded-md px-3 py-1.5 text-xs font-medium transition-colors', loc === l ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              {l === 'office' ? 'Office' : 'Event'}<span className="ml-1.5 font-mono text-[9px] opacity-70">{l === 'office' ? row.office : row.event}</span>
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Set to</span>
           <input type="text" inputMode="numeric" value={value} autoFocus
@@ -630,8 +621,8 @@ function EditStockDialog({row, usingMock, onClose, onDone}: {
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
           {valid && diff !== 0
-            ? `Changes ${row.stock} → ${parsed} (${diff > 0 ? '+' : ''}${diff}). Logged to the stock history with the previous and new amounts.`
-            : 'Overwrites the on-hand count. Logged to the stock history with the previous and new amounts.'}
+            ? `Changes ${current} → ${parsed} (${diff > 0 ? '+' : ''}${diff}). Logged to the stock history with the previous and new amounts.`
+            : `Overwrites the ${loc === 'office' ? 'Office' : 'Event'} count. Logged to the stock history with the previous and new amounts.`}
         </p>
         {usingMock && <p className="mt-2 text-xs text-muted-foreground">Demo mode — set the Supabase pos_* env to edit stock.</p>}
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
@@ -647,84 +638,13 @@ function EditStockDialog({row, usingMock, onClose, onDone}: {
 
 function Th({children, className, onClick, active}: {children: React.ReactNode; className?: string; onClick?: () => void; active?: boolean}) {
   return (
-    <th onClick={onClick} className={cn('cursor-pointer select-none whitespace-nowrap px-4 py-3 text-left transition-colors hover:text-foreground', active && 'text-primary', className)}>
+    <th onClick={onClick} className={cn('cursor-pointer select-none whitespace-nowrap px-3 py-3 text-left transition-colors hover:text-foreground', active && 'text-primary', className)}>
       {children}
     </th>
   );
 }
 function Sc({children}: {children: React.ReactNode}) {
   return <span className="ml-0.5 text-[9px] opacity-60">{children}</span>;
-}
-// A removable applied-filter chip shown under the search row.
-function FilterChip({label, onClear}: {label: string; onClear: () => void}) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border bg-muted/40 py-0.5 pl-2.5 pr-1 text-xs">
-      <span className="text-foreground">{label}</span>
-      <button type="button" onClick={onClear} aria-label={`Remove ${label}`} className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-        <X className="size-3" />
-      </button>
-    </span>
-  );
-}
-
-// Secondary filters (Type when Freeze-Dried, Status, Location) in a modal, opened
-// from the Filters button. Selections apply live; Reset clears them, Done closes.
-function FilterModal({
-  line, sub, setSub, status, setStatus, loc, setLoc, onClose,
-}: {
-  line: string;
-  sub: string;
-  setSub: (v: string) => void;
-  status: '' | ForecastStatus | 'unlisted';
-  setStatus: (v: '' | ForecastStatus | 'unlisted') => void;
-  loc: '' | 'office' | 'event';
-  setLoc: (v: '' | 'office' | 'event') => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const hasAny = (line === SUBCATEGORY_CATEGORY && sub !== '') || status !== '' || loc !== '';
-
-  if (typeof document === 'undefined') return null;
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="inv-filter-title">
-      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-[1px]" />
-      <div className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-lg">
-        <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2 id="inv-filter-title" className="flex items-center gap-2 text-base font-semibold">
-            <SlidersHorizontal className="size-4" /> Filters
-          </h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
-        </div>
-
-        <div className="flex flex-col gap-4 px-5 py-4">
-          {line === SUBCATEGORY_CATEGORY && (
-            <PillRow label="Type" items={[{v: '', l: 'All'}, ...POS_SUBCATEGORIES.map((s) => ({v: s as string, l: s}))]} active={sub} onSelect={setSub} />
-          )}
-          <PillRow label="Status" items={[{v: '', l: 'All'}, {v: 'out', l: 'Out'}, {v: 'low', l: 'Low'}, {v: 'healthy', l: 'Healthy'}, {v: 'unlisted', l: 'Unlisted'}]} active={status} onSelect={(v) => setStatus(v as '' | ForecastStatus | 'unlisted')} />
-          <PillRow label="Location" items={[{v: '', l: 'All'}, {v: 'event', l: 'In Event'}, {v: 'office', l: 'In Office'}]} active={loc} onSelect={(v) => setLoc(v as '' | 'office' | 'event')} />
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3">
-          <button type="button" onClick={() => {setSub(''); setStatus(''); setLoc('');}} disabled={!hasAny}
-            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
-            Reset filters
-          </button>
-          <button type="button" onClick={onClose}
-            className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
-            Done
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
 }
 
 function PillRow({label, items, active, onSelect}: {label: string; items: {v: string; l: string}[]; active: string; onSelect: (v: string) => void}) {
