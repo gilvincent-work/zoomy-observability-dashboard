@@ -1,6 +1,8 @@
-// F5: executors for describe_data and query_metric, and the progress line for the stream. Pure; data loads lazily.
+// F5 + F7: executors for describe_data, query_metric and the three render tools, and the progress line for the stream.
+// Pure; data loads lazily. query_metric keeps the FULL result in a per-request store that the render tools bind from.
 import {describeData} from './coverage';
 import {METRICS} from './metrics-registry';
+import {createRenderExecutors} from './render-executors';
 import {runMetric} from './query-metric';
 import type {MetricId, MetricResult} from './result-types';
 import type {ToolExecutors} from './tools';
@@ -12,14 +14,18 @@ export function createExecutors(ctx: ChatToolContext): ToolExecutors {
   let loaded: ReturnType<ChatToolContext['data']> | null = null;
   const data = () => (loaded ??= ctx.data());
   let counter = 0;
+  const store = new Map<string, MetricResult>();
 
   return {
+    ...createRenderExecutors(ctx, store),
     describe_data: async (input) => describeData(input as {metric: string}, await data(), ctx.now),
     query_metric: async (input) => {
       const result = runMetric(input, await data(), ctx.now);
       if ('error' in result) return {error: result.error};
       counter += 1;
-      return compact(result, `r${counter}`);
+      const id = `r${counter}`;
+      store.set(id, {...result, id});
+      return compact(result, id);
     },
   };
 }
@@ -50,5 +56,8 @@ export function statusFor(name: string, input: unknown): string {
       return `Looking at ${def.label.toLowerCase()}${dim ? ` by ${dim.label.toLowerCase().replace(/^by /, '').replace(/\s*\(.*\)/, '')}` : ''}`;
     }
   }
+  if (name === 'render_kpi') return 'Adding a tile';
+  if (name === 'render_chart') return 'Drawing a chart';
+  if (name === 'render_table') return 'Building a table';
   return 'Working on it';
 }

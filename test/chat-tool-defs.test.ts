@@ -4,15 +4,15 @@ import {METRIC_IDS, METRICS} from '../src/chat/metrics-registry';
 import {assertRequestShape} from '../src/chat/request-shape';
 
 type Prop = {type?: unknown; enum?: unknown[]; description?: string; [k: string]: unknown};
-const [describe_data, query_metric] = CHAT_TOOLS;
+const [describe_data, query_metric, render_kpi, render_chart, render_table] = CHAT_TOOLS;
 const props = (t: (typeof CHAT_TOOLS)[number]) => t.input_schema.properties as Record<string, Prop>;
 const sortedUnion = (pick: (id: (typeof METRIC_IDS)[number]) => string[]) => [...new Set(METRIC_IDS.flatMap(pick))].sort();
 
 const SINK = {info: () => undefined, error: () => undefined};
 
 describe('CHAT_TOOLS', () => {
-  it('has exactly describe_data then query_metric', () => {
-    expect(CHAT_TOOLS.map((t) => t.name)).toEqual(['describe_data', 'query_metric']);
+  it('has exactly the five tools in order', () => {
+    expect(CHAT_TOOLS.map((t) => t.name)).toEqual(['describe_data', 'query_metric', 'render_kpi', 'render_chart', 'render_table']);
   });
 
   it('meets the strict-mode limits', () => {
@@ -61,13 +61,36 @@ describe('CHAT_TOOLS', () => {
   });
 
   it('puts the cache breakpoint on the last tool only', () => {
-    expect(describe_data.cache_control).toBeUndefined();
-    expect(query_metric.cache_control).toEqual({type: 'ephemeral'});
+    for (const t of [describe_data, query_metric, render_kpi, render_chart]) expect(t.cache_control).toBeUndefined();
+    expect(render_table.cache_control).toEqual({type: 'ephemeral'});
+  });
+
+  it('render_kpi, render_chart and render_table: every field required, enums where possible, ids and names only', () => {
+    expect(Object.keys(props(render_kpi)).sort()).toEqual(['block', 'format', 'label', 'source', 'value']);
+    expect(props(render_kpi).format.enum).toEqual(['peso', 'count', 'percent']);
+    expect(Object.keys(props(render_chart)).sort()).toEqual(['block', 'kind', 'orientation', 'source', 'title', 'x', 'y']);
+    expect(props(render_chart).kind.enum).toEqual(['auto', 'line', 'area', 'bar', 'grouped_bar', 'stacked_bar', 'stacked_bar_100', 'pie', 'diverging_bar']);
+    expect(props(render_chart).orientation.enum).toEqual(['auto', 'vertical', 'horizontal']);
+    expect(props(render_chart).y).toMatchObject({type: 'array', items: {type: 'string'}});
+    expect(Object.keys(props(render_table)).sort()).toEqual(['block', 'columns', 'source', 'title']);
+    for (const t of [render_kpi, render_chart, render_table]) {
+      expect(props(t).block.description).toMatch(/"new"/);
+      expect(props(t).source.description).toMatch(/never values/);
+      expect(t.description).toMatch(/never (the number|values)/);
+    }
+    expect(render_chart.description).toMatch(/"auto"/);
+    expect(render_kpi.description).toMatch(/one-row/);
+  });
+
+  it('has no axis, color or free-text data option in any chart schema', () => {
+    const all = [render_kpi, render_chart, render_table].flatMap((t) => Object.keys(props(t)));
+    for (const banned of ['axis', 'secondary_axis', 'color', 'colors', 'palette', 'data', 'values', 'rows']) expect(all).not.toContain(banned);
   });
 
   it('is deep-frozen', () => {
     expect(Object.isFrozen(CHAT_TOOLS)).toBe(true);
     expect(Object.isFrozen(query_metric)).toBe(true);
+    expect(Object.isFrozen(render_chart.input_schema.properties)).toBe(true);
     expect(Object.isFrozen(query_metric.input_schema)).toBe(true);
     expect(Object.isFrozen(query_metric.input_schema.properties)).toBe(true);
     expect(Object.isFrozen(props(query_metric).range.enum)).toBe(true);

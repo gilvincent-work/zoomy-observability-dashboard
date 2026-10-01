@@ -79,7 +79,7 @@ export async function POST(req: Request) {
       tools: live.ok ? CHAT_TOOLS : [],
       messages,
       preamble: live.ok ? buildPreamble(live.data, now) : buildDegradedPreamble(now),
-      executors: live.ok ? createExecutors({data: async () => live.data, now, user}) : {},
+      executors: live.ok ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block})}) : {},
       emit,
       user,
       signal: req.signal,

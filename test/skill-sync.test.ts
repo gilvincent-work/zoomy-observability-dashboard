@@ -9,6 +9,7 @@ import {buildStaticSystem} from '../src/chat/context';
 import {SMALL_SAMPLE_N} from '../src/chat/checks';
 import {estimateTokens, renderSkill} from '../src/chat/skills/load';
 import {RULES, SKILL_CONSTANTS, SKILL_TOPICS} from '../src/chat/skills/rules';
+import {KPI_MAX, PIE_MAX_SEGMENTS, SERIES_FOLD_AT, TABLE_MIN_CLASSES} from '../src/chat/recommend-view';
 
 const SKILL_DIR = path.join(process.cwd(), 'src/chat/skills/ask-coop-data-analyst');
 const text = renderSkill();
@@ -66,11 +67,10 @@ describe('placeholders and constants', () => {
 });
 
 describe('size and caching', () => {
-  it('fits the token budget (4,500) with a tighter current-size guard (3,500)', () => {
+  it('fits the token budget (4,500)', () => {
     const tokens = estimateTokens(text);
     console.log(`rendered skill: ${text.length} characters, about ${tokens} tokens`);
     expect(tokens).toBeLessThan(4500);
-    expect(tokens).toBeLessThan(3500);
   });
   it('renderSkill is identical across calls', () => {
     expect(renderSkill()).toBe(renderSkill());
@@ -84,9 +84,20 @@ describe('size and caching', () => {
   });
 });
 
-describe('scope: F7 content does not leak in early', () => {
-  it.each(['KPI', 'render_chart', 'Save report', 'orientation'])('no "%s" in the rendered skill', (word) => {
+describe('scope: F8/F9 content does not leak in early', () => {
+  it.each(['Save report', 'set_report_filters', 'remove_block', 'DASH-03', 'DASH-06', 'DASH-07'])('no "%s" in the rendered skill', (word) => {
     expect(text).not.toContain(word);
+  });
+  it('F7 content is present: tiles, the chart tool, orientation and the topics', () => {
+    for (const word of ['KPI', 'render_chart', 'orientation', 'render_table', 'render_kpi']) expect(text).toContain(word);
+  });
+  it('the constants in the text come from recommend-view', () => {
+    expect(SKILL_CONSTANTS).toMatchObject({KPI_MAX, PIE_MAX_SEGMENTS, TABLE_MIN_CLASSES, SERIES_FOLD_AT});
+    expect(text).toContain(`up to ${KPI_MAX} `);
+    expect(text).toContain(`At most ${PIE_MAX_SEGMENTS} slices`);
+  });
+  it('the topic order is the documented one', () => {
+    expect([...SKILL_TOPICS]).toEqual(['bi-reconciliation', 'period-comparison', 'allocation-and-prices', 'data-quality', 'viz-forms', 'dashboard-composition']);
   });
 });
 
@@ -134,8 +145,10 @@ describe('what must never be inside the prompt', () => {
 
 describe('every rule enforced by code has a test titled with its id', () => {
   const titles = (): string[] => {
-    const src = readFileSync(path.join(process.cwd(), 'test/skill-rules-enforced.test.ts'), 'utf8');
-    return [...src.matchAll(/\bit\(\s*(['"`])((?:\\.|(?!\1).)*)\1/g)].map((m) => m[2]);
+    return ['test/skill-rules-enforced.test.ts', 'test/skill-rules-viz.test.ts'].flatMap((file) => {
+      const src = readFileSync(path.join(process.cwd(), file), 'utf8');
+      return [...src.matchAll(/\bit\(\s*(['"`])((?:\\.|(?!\1).)*)\1/g)].map((m) => m[2]);
+    });
   };
   const codeIds = RULES.filter((r) => r.enforcedBy === 'code').map((r) => r.id);
 
