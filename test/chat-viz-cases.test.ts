@@ -1,3 +1,4 @@
+import {CHART_FIRST_TEXT} from '../src/chat/render-executors';
 import {describe, expect, it} from 'vitest';
 import {recommendView} from '../src/chat/recommend-view';
 import {createReportSession} from '../src/chat/report-session';
@@ -102,6 +103,12 @@ const CASES: VizCase[] = [
 
 type Out = {ok?: boolean; error?: string; block?: string; blocks?: string[]; chosen?: {form: string; orientation: string | null; adjustments: string[]; mode: string}; also?: {form: string}[]};
 
+// A table-only request is the owner's explicit choice: after the one chart-first nudge the model repeats the call unchanged.
+async function tableWithEscapeHatch(call: () => Promise<unknown> | undefined): Promise<unknown> {
+  const first = (await call()) as {error?: string} | undefined;
+  return first?.error === CHART_FIRST_TEXT ? call() : first;
+}
+
 async function run(c: VizCase): Promise<{out: Out; blocks: ChatBlock[]}> {
   const blocks: ChatBlock[] = [];
   const session = createReportSession();
@@ -125,7 +132,7 @@ async function run(c: VizCase): Promise<{out: Out; blocks: ChatBlock[]}> {
   const r = c.render;
   const out =
     r.tool === 'render_table'
-      ? await ex.render_table?.({block: 'new', source, columns: r.columns ?? ['auto'], title: 'T'})
+      ? await tableWithEscapeHatch(() => ex.render_table?.({block: 'new', source, columns: r.columns ?? ['auto'], title: 'T'}))
       : r.tool === 'render_kpi'
         ? await ex.render_kpi?.({block: 'new', source, value: r.value, label: 'L', format: 'peso'})
         : await ex.render_chart?.({block: 'new', source, kind: r.kind ?? 'auto', orientation: r.orientation ?? 'auto', x: r.x ?? 'auto', y: r.y ?? ['auto'], title: 'T'});

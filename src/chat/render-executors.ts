@@ -4,6 +4,7 @@
 // successful call is recorded into the report spec, which is then emitted. Pure, no server-only.
 import {bindBlock, type RenderTool} from './bind';
 import type {ChatBlock, ChosenView} from './block-types';
+import {recommendView} from './recommend-view';
 import {filtersOf, queryOf, sameFilters} from './report-spec';
 import {REPORT_FULL, type ReportSession} from './report-session';
 import {REPORT_MAX_BLOCKS, type ReportBlockSpec, type ReportQuery} from './report-types';
@@ -13,6 +14,8 @@ import type {ChatToolContext} from './stream-types';
 const TOOLS: readonly RenderTool[] = ['render_kpi', 'render_chart', 'render_table'];
 const BLOCK_ID = /^b[1-9][0-9]{0,2}$/;
 const MAX_Y = 8;
+// The default of every analytical answer is a visualization; a table is its companion. One nudge per request.
+export const CHART_FIRST_TEXT = 'Nothing was drawn and your call was fine. A chart is the default for this data: call render_chart (kind auto, or the form the owner named) first, then render_table again as its companion. If the owner explicitly asked for only a table, call render_table again unchanged.';
 
 const summary = (c: ChosenView) => ({form: c.form, orientation: c.orientation, reason: c.reason, adjustments: c.adjustments});
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -33,12 +36,19 @@ function specOf(tool: RenderTool, input: Record<string, unknown>, block: ChatBlo
 }
 
 export function createRenderExecutors(ctx: ChatToolContext, session: ReportSession): Pick<ToolExecutors, RenderTool> {
+  // Blocks with no re-runnable recipe (digest and product lookups) are drawn but never recorded in the report, so the report's
+  // counter cannot number them. They get ids of their own, unique within this request (counter) and across requests (the
+  // request time), so they never overwrite each other or an older block on screen, and can be re-bound within the turn.
+  const tag = `u${ctx.now.getTime().toString(36).slice(-5)}`;
+  const drawn: string[] = [];
+  let charted = false; // a chart or tile was bound in this request
+  let chartNudged = false;
   const run = (tool: RenderTool) => async (input: unknown): Promise<unknown> => {
     const rec = isRecord(input) ? input : {};
     const target = rec.block;
     const reuse = typeof target === 'string' && target !== 'new' && target !== '' ? target : null;
     const ids = session.ids();
-    if (reuse !== null && !session.has(reuse)) {
+    if (reuse !== null && !session.has(reuse) && !drawn.includes(reuse)) {
       return {error: `Unknown block '${reuse}'. Use "new"${ids.length ? ` or one of: ${ids.join(', ')}` : ' (no blocks have been drawn yet)'}.`};
     }
     // A block id as `source` must name a block that is still on the dashboard (a removed block's result is gone).
@@ -52,7 +62,16 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
       return {error: `Result '${source}' was asked with different filters than the dashboard. Do not mix scopes: call set_report_filters to change the filters of every block, then query again with the dashboard's filters.`};
     }
 
-    let pending = reuse;
+    // Chart first: a table of data that could be charted, with nothing visual drawn yet, is refused once.
+    if (tool === 'render_table' && !charted && !chartNudged) {
+      const result = session.store.get(source);
+      if (result && recommendView(result, {kind: 'auto', orientation: 'auto'}).decisions.some((d) => d.block === 'chart')) {
+        chartNudged = true;
+        return {error: CHART_FIRST_TEXT};
+      }
+    }
+
+    let pending = reuse !== null && (request ? session.has(reuse) : drawn.includes(reuse)) ? reuse : null;
     let n = session.counter();
     const nextId = (): string => {
       if (pending !== null) {
@@ -60,12 +79,17 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
         pending = null;
         return id;
       }
+      if (!request) {
+        const id = `${tag}-${drawn.length + 1}`;
+        drawn.push(id);
+        return id;
+      }
       n += 1;
       return `b${n}`;
     };
     const out = bindBlock(tool, input, session.store, nextId);
     if ('error' in out) return {error: out.error};
-    const added = out.blocks.length - (reuse !== null ? 1 : 0);
+    const added = request ? out.blocks.length - (reuse !== null && session.has(reuse) ? 1 : 0) : 0;
     if (session.size() + added > REPORT_MAX_BLOCKS) return {error: REPORT_FULL};
 
     if (request) {
@@ -76,6 +100,7 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
         session.alias(block.id, source);
       }
     }
+    if (tool !== 'render_table') charted = true;
     for (const block of out.blocks) ctx.emitBlock?.(block);
     ctx.emitReport?.(session.snapshot());
     const blockIds = out.blocks.map((b) => b.id);

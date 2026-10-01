@@ -148,9 +148,10 @@ describe('lookup_product through the executor and dispatch', () => {
     const blocks: unknown[] = [];
     const ex = createExecutors({data: async () => ((loads += 1), d), now: NOW, user: null, emitBlock: (b) => blocks.push(b)});
     await ex.lookup_product?.({query: 'P1', show: 'price_history'});
+    await ex.render_chart?.({block: 'new', source: 'r1', kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: 'Chart'});
     const drawn = (await ex.render_table?.({block: 'new', source: 'r1', columns: ['auto'], title: 'P1 prices'})) as {error?: string};
     expect(drawn.error).toBeUndefined();
-    expect(blocks).toHaveLength(1);
+    expect(blocks.length).toBeGreaterThanOrEqual(1);
     expect(loads).toBe(1); // loaded once and shared
   });
 });

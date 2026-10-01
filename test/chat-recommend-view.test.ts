@@ -310,3 +310,25 @@ describe('degenerate shapes', () => {
     }
   });
 });
+
+describe('an explicit pie on a result with several measures (owner report: pie + AOV on channels)', () => {
+  const channels = mk(
+    [col('channel', 'text', 'category', 'Channel'), col('revenue', 'PHP', 'measure', 'Revenue'), col('orders', 'count', 'measure', 'Orders'), col('aov', 'PHP', 'measure', 'Average order value')],
+    [{channel: 'Shopee', revenue: 18400.5, orders: 41, aov: 448.8}, {channel: 'Lazada', revenue: 26250, orders: 52, aov: 504.81}, {channel: 'Website', revenue: 9120, orders: 14, aov: 651.43}],
+    {measure: 'revenue', measures: [{key: 'revenue', kind: 'measured'}, {key: 'orders', kind: 'measured'}, {key: 'aov', kind: 'derived'}] as never},
+  );
+  it('"a pie of the sales on each channel" gives ONE pie of revenue (the primary measure), not a grouped bar or two charts', () => {
+    const out = recommendView(channels, ask('pie'));
+    expect(out.decisions).toHaveLength(1);
+    const d = chartOf(out.decisions[0]);
+    expect(d.chart.form).toBe('pie');
+    expect(d.chart.series.map((s) => s.label).sort()).toEqual(['Lazada', 'Shopee', 'Website']);
+    expect(d.chart.series.map((s) => (s.unit))).toEqual(['PHP', 'PHP', 'PHP']); // revenue, never orders or AOV
+  });
+  it('naming the measure still wins, and a bar of AOV is its own chart', () => {
+    expect(chartOf(first(channels, ask('pie'), {y: ['orders']})).chart.form).toBe('pie');
+    const bar = chartOf(first(channels, ask('bar'), {y: ['aov']}));
+    expect(bar.chart.form).toBe('bar');
+    expect(bar.chart.series.map((s) => s.key)).toEqual(['aov']);
+  });
+});

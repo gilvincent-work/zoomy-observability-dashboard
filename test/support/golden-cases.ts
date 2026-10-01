@@ -76,6 +76,7 @@ export const BASE_SPEC: ReportSpec = {
 const withBlocks = (blocks: ReportBlockSpec[], over: Partial<ReportSpec> = {}): ReportSpec => ({...BASE_SPEC, filters: {...BASE_SPEC.filters}, blocks, ...over});
 const without = (ids: string[]): ReportBlockSpec[] => BASE_SPEC.blocks.filter((b) => !ids.includes(b.id));
 const pieB5: ReportBlockSpec = {id: 'b5', kind: 'chart', query: {metric: 'bundle_sales', ...Q, dimension: 'pet_type'}, view: {kind: 'pie', orientation: 'auto', mode: 'user', x: 'auto', y: ['auto'], title: 'Bundle revenue by pet'}};
+const topSkusChart = (id: string): ReportBlockSpec => ({id, kind: 'chart', query: {metric: 'top_products', dimension: 'none', measure: 'default', compare_to: 'none', sort: 'default', limit: 5}, view: {kind: 'auto', orientation: 'auto', mode: 'auto', x: 'auto', y: ['auto'], title: 'Top SKUs'}});
 const topSkus = (id: string): ReportBlockSpec => ({id, kind: 'table', query: {metric: 'top_products', dimension: 'none', measure: 'default', compare_to: 'none', sort: 'default', limit: 5}, view: {columns: ['auto'], title: 'Top SKUs'}});
 
 /** The multi-turn script of design section 8, end to end. Exact comparison: this literal is written by hand, not computed. */
@@ -86,7 +87,8 @@ export const CHAIN_FINAL_SPEC: ReportSpec = {
   blocks: [
     pieB5,
     {id: 'b6', kind: 'table', query: {metric: 'bundle_sales', dimension: 'bundle_by_pet', measure: 'default', compare_to: 'none', sort: 'default', limit: 25}, view: {columns: ['auto'], title: 'By bundle and pet'}},
-    topSkus('b7'),
+    topSkusChart('b7'),
+    topSkus('b8'),
   ],
 };
 
@@ -331,10 +333,10 @@ export const GOLDEN_CASES: GoldenCase[] = [
   {
     id: 'turn_add_top_skus', category: 'multiturn', prompt: 'add top SKUs', prior: HISTORY, startReport: BASE_SPEC,
     expectTools: [{tool: 'query_metric', input: {metric: 'top_products'}}, {tool: ['render_table', 'render_chart'], input: {block: 'new'}}], captionFirst: true,
-    finalSpec: withBlocks([...BASE_SPEC.blocks, topSkus('b7')]),
+    finalSpec: withBlocks([...BASE_SPEC.blocks, topSkusChart('b7'), topSkus('b8')]),
     rubric: ['A new block is added; the six existing blocks are untouched.'],
     steps: ['DASH-09', 'DASH-01'],
-    script: [{text: 'Adding the top SKUs.', calls: [query({metric: 'top_products', limit: 5})]}, {calls: [call('render_table', {block: 'new', source: 'r1', columns: ['auto'], title: 'Top SKUs'})]}, {text: 'Added the top SKUs as a table.'}],
+    script: [{text: 'Adding the top SKUs.', calls: [query({metric: 'top_products', limit: 5})]}, {calls: [chartCall('new', 'r1', 'auto', 'Top SKUs'), call('render_table', {block: 'new', source: 'r1', columns: ['auto'], title: 'Top SKUs'})]}, {text: 'Added the top SKUs as a chart and a table.'}],
   },
   {
     id: 'turn_remove_kpis', category: 'multiturn', prompt: 'remove the KPIs', prior: HISTORY, startReport: BASE_SPEC,
@@ -412,8 +414,8 @@ export const CHAIN: ChainTurn[] = [
     prompt: 'add top SKUs',
     script: [
       {text: 'Adding the top SKUs for last month and cats.', calls: [query({metric: 'top_products', range: 'last_month', pet: 'cat', limit: 5})]},
-      {calls: [call('render_table', {block: 'new', source: 'r1', columns: ['auto'], title: 'Top SKUs'})]},
-      {text: 'Added the top SKUs as a table.'},
+      {calls: [chartCall('new', 'r1', 'auto', 'Top SKUs'), call('render_table', {block: 'new', source: 'r1', columns: ['auto'], title: 'Top SKUs'})]},
+      {text: 'Added the top SKUs as a chart and a table.'},
     ],
   },
   {prompt: 'remove the KPIs', script: [{calls: ['b1', 'b2', 'b3', 'b4'].map((b) => call('remove_block', {block: b}))}, {text: 'The four tiles are gone.'}]},

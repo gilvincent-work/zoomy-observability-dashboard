@@ -2,6 +2,8 @@ import {describe, expect, it} from 'vitest';
 import {assignColors, colorFor, isNeutral} from '../src/chat/entity-colors';
 import {KPI_MAX, PIE_MAX_SEGMENTS, SERIES_FOLD_AT, TABLE_MIN_CLASSES, recommendView, type BlockDecision} from '../src/chat/recommend-view';
 import {bindBlock} from '../src/chat/bind';
+import {CHART_FIRST_TEXT, createRenderExecutors} from '../src/chat/render-executors';
+import {createReportSession} from '../src/chat/report-session';
 import {CHAT_TOOLS} from '../src/chat/tool-defs';
 import type {ViewRequest} from '../src/chat/block-types';
 import type {ColumnRole, ColumnUnit, MetricResult, MetricRow, ResultColumn} from '../src/chat/result-types';
@@ -161,5 +163,20 @@ describe('skill rules enforced by code: preferences', () => {
     expect(single.chosen.adjustments[0]).toMatch(/stat tile/);
     const mixed = mk([col('c', 'text', 'category'), col('u', 'units', 'measure'), col('r', 'PHP', 'measure')], [{c: 'a', u: 1, r: 2}, {c: 'b', u: 2, r: 1}]);
     expect(recommendView(mixed, ask('bar'), {y: ['u', 'r']}).decisions).toHaveLength(2);
+  });
+});
+
+describe('VIZ-12', () => {
+  it('VIZ-12: the default is a visual: a table of chartable data comes after a chart, a table-only request is refused once then honored', async () => {
+    const result = cats(5);
+    const session = createReportSession();
+    session.store.set('r1', result);
+    const ex = createRenderExecutors({data: async () => ({}) as never, now: new Date('2026-10-01T04:00:00Z'), user: null}, session);
+    const table = {block: 'new', source: 'r1', columns: ['auto'], title: 'T'};
+    expect(await ex.render_table?.(table)).toEqual({error: CHART_FIRST_TEXT});
+    expect(await ex.render_table?.(table)).toMatchObject({ok: true}); // the owner asked for only a table: repeated unchanged
+    const ex2 = createRenderExecutors({data: async () => ({}) as never, now: new Date('2026-10-01T04:00:00Z'), user: null}, session);
+    expect(await ex2.render_chart?.({block: 'new', source: 'r1', kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: 'C'})).toMatchObject({ok: true});
+    expect(await ex2.render_table?.(table)).toMatchObject({ok: true}); // a companion after the chart
   });
 });

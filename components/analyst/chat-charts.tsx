@@ -102,8 +102,8 @@ function PiePlot({block, aria}: {block: ChartBlock; aria: string}) {
     <>
       <ChartContainer config={{}} role="img" aria-label={aria} className="mx-auto aspect-auto h-[180px] w-full">
         <PieChart>
-          {/* Donut: the center stays empty (the title and legend carry the numbers). */}
-          <Pie data={slices} dataKey="value" nameKey="name" innerRadius="60%" outerRadius="92%" paddingAngle={2} cornerRadius={4} stroke="none" startAngle={90} endAngle={-270} isAnimationActive={false}>
+          {/* A real pie when a pie is asked (the owner asked for a pie, not a donut). */}
+          <Pie data={slices} dataKey="value" nameKey="name" innerRadius={0} outerRadius="92%" paddingAngle={2} cornerRadius={4} stroke="none" startAngle={90} endAngle={-270} isAnimationActive={false}>
             {slices.map((s) => (
               <Cell key={s.name} fill={tokenToCssVar(s.token)} />
             ))}

@@ -100,9 +100,9 @@ describe('ariaSummary', () => {
     expect(s).toContain('Cash ₱42,300');
     expect(s).toContain('table');
   });
-  it('lists series for multi-series charts and calls a pie a donut', () => {
+  it('lists series for multi-series charts and calls a pie a pie chart', () => {
     expect(ariaSummary(groupedVertical)).toContain('Dog, Cat, Both');
-    expect(ariaSummary(donut4)).toContain('donut chart');
+    expect(ariaSummary(donut4)).toContain('pie chart');
   });
   it('summarises tiles and tables', () => {
     expect(ariaSummary(kpiRow[0])).toContain('₱128,400');
