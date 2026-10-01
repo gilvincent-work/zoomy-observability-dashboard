@@ -3,6 +3,8 @@ import {runMetric} from '../src/chat/query-metric';
 import {METRICS, METRIC_IDS} from '../src/chat/metrics-registry';
 import type {MetricData, MetricError, MetricRequest, MetricResult} from '../src/chat/result-types';
 import type {PetType, PosEvent, PosOrder, PosOrderLine} from '../src/pos-sales-types';
+import {bundlePickRows} from '../src/pos-bundle-compute';
+import {buildPriceHistory} from '../src/pos-price-history';
 import {buildBundleFixture, CHANGES, PRICES} from './support/bundle-fixture';
 
 // Synthetic data only. Totals are known by construction.
@@ -524,6 +526,22 @@ describe('bundle_sales', () => {
 });
 
 describe('bundle_picks', () => {
+  it('the untagged check counts only orders that have pick detail, not every order in the slice', () => {
+    const r = bq({metric: 'bundle_picks', dimension: 'sku_by_pet'});
+    const picks = bundlePickRows(fx.orders, buildPriceHistory(PRICES, CHANGES));
+    const ordersWithPicks = new Set(picks.rows.map((x) => x.order_id));
+    const untaggedWithPicks = new Set(picks.rows.filter((x) => x.pet === 'untagged').map((x) => x.order_id));
+    const c = check(r, 'untagged_share');
+    if (untaggedWithPicks.size / ordersWithPicks.size > 0.1) {
+      expect(c?.values?.totalOrders).toBe(ordersWithPicks.size);
+      expect(c?.values?.orders).toBe(untaggedWithPicks.size);
+    } else {
+      expect(c).toBeUndefined();
+    }
+    // never the slice-wide count (that mixes in older sales that have no pick detail)
+    expect(c?.values?.totalOrders).not.toBe(fx.orders.length);
+  });
+
   it('says how much bundle revenue the SKU breakdown does NOT cover (sales without pick detail)', () => {
     const r = bq({metric: 'bundle_picks', dimension: 'sku'});
     const all = bq({metric: 'bundle_sales', dimension: 'none'});
