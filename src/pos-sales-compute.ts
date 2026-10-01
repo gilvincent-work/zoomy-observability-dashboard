@@ -119,22 +119,55 @@ export function eventRollups(events: PosEvent[], orders: PosOrder[]): EventRollu
 /**
  * The event a sale effectively belongs to for Coop reporting. A POS-stamped
  * event_id is authoritative and kept as-is; an untagged sale (event_id null) is
- * attributed by its Manila calendar date — if a dated event's starts_on..ends_on
- * covers that day it becomes that event's, else it stays a walk-in (null). Single
- * bound = that one day; on the (write-blocked) chance two events cover a day, the
- * later-starting one wins — the same rule as featuredEvent / the POS's
- * pickEventForDate. Read-time only: this never writes pos_orders.event_id, so the
- * DB row and the POS app still show the original stamp.
+ * attributed by its Manila calendar date ONLY when exactly one dated event covers
+ * that day. Now that overlapping / same-day events are allowed, a date no longer
+ * uniquely identifies an event, so an ambiguous day (two or more events) is left
+ * untagged rather than guessed — the POS stamps event_id explicitly at checkout,
+ * and anything still blank can be reassigned from the dashboard. Single bound =
+ * that one day. Read-time only: never writes pos_orders.event_id.
  */
 export function effectiveEventId(order: {event_id: string | null; created_at: string}, events: PosEvent[]): string | null {
   if (order.event_id) return order.event_id;
   const day = manilaDayKey(order.created_at);
   const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
   const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
-  const covering = events
-    .filter((e) => (e.starts_on || e.ends_on) && from(e) <= day && day <= to(e))
-    .sort((a, b) => from(b).localeCompare(from(a)));
-  return covering[0]?.event_id ?? null;
+  const covering = events.filter((e) => (e.starts_on || e.ends_on) && from(e) <= day && day <= to(e));
+  // Only auto-attribute on an unambiguous day; two or more events covering the day
+  // stays untagged (don't guess which one the sale belonged to).
+  return covering.length === 1 ? covering[0].event_id : null;
+}
+
+/**
+ * Every event whose dates cover today (Manila), newest start first. All live
+ * events are pinned to the top of the events list and spotlighted, since
+ * overlapping / same-day events are now allowed (there can be more than one).
+ */
+export function currentEventIds(events: PosEvent[], todayKey: string): string[] {
+  const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
+  const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
+  return events
+    .filter((e) => (e.starts_on || e.ends_on) && from(e) <= todayKey && todayKey <= to(e))
+    .sort((a, b) => from(b).localeCompare(from(a)))
+    .map((e) => e.event_id);
+}
+
+/**
+ * Null-event sales that fall on a day some event covers — the ones likely needing
+ * a manual event assignment. The POS normally tags these at checkout, but an
+ * ambiguous same-day pick or a legacy/offline sale can leave one blank. Walk-ins
+ * on true non-event days are excluded (those are legitimately untagged). Voided
+ * excluded. Feeds the dashboard's "Untagged" bucket + reassign control.
+ */
+export function untaggedOnEventDays(orders: PosOrder[], events: PosEvent[]): PosOrder[] {
+  const dated = events.filter((e) => e.starts_on || e.ends_on);
+  if (dated.length === 0) return [];
+  const from = (e: PosEvent) => (e.starts_on ?? e.ends_on) as string;
+  const to = (e: PosEvent) => (e.ends_on ?? e.starts_on) as string;
+  return orders.filter((o) => {
+    if (isVoided(o) || o.event_id) return false;
+    const day = manilaDayKey(o.created_at);
+    return dated.some((e) => from(e) <= day && day <= to(e));
+  });
 }
 
 /**
@@ -153,11 +186,11 @@ export function resolveOrderEvents<T extends {event_id: string | null; created_a
 }
 
 /**
- * The first event whose dates clash with a proposed [startsOn, endsOn] range, or
- * null if the range is free. Mirrors the DB overlap guard exactly (single bound =
- * that one day via coalesce; ranges intersect when each starts on/before the
- * other ends), so the form can warn live before upsert_pos_event rejects it. Pass
- * selfId when editing so an event never clashes with itself.
+ * The first existing event whose dates intersect a proposed [startsOn, endsOn]
+ * range, or null if none. Overlapping / same-day events are allowed now (no DB
+ * guard), so this is no longer a blocker — the form uses it to show a neutral
+ * "runs alongside <event>" note so the scheduler knows another event shares the
+ * day. Single bound = that one day; pass selfId when editing to skip itself.
  */
 export function overlappingEvent(events: PosEvent[], startsOn: string | null, endsOn: string | null, selfId?: string): PosEvent | null {
   if (!startsOn && !endsOn) return null;
@@ -177,8 +210,9 @@ export function overlappingEvent(events: PosEvent[], startsOn: string | null, en
  * Pick the event to spotlight on the Offline Sales home: the one covering today
  * ('current'), else the nearest future one by start date ('upcoming'), else null.
  * Uses the same single-bound-as-one-day semantics as POS detection, and ignores
- * events with no dates. Overlaps shouldn't happen (blocked at write), but if two
- * cover today the later-starting one wins, deterministically.
+ * events with no dates. When more than one event covers today (same-day events are
+ * allowed), the later-starting one is the single home spotlight; the events page
+ * pins every live event via currentEventIds.
  */
 export function featuredEvent(events: PosEvent[], todayKey: string): FeaturedEvent | null {
   const dated = events.filter((e) => e.starts_on || e.ends_on);

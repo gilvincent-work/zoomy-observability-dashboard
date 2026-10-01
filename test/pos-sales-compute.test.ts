@@ -7,6 +7,8 @@ import {
   effectiveEventId,
   resolveOrderEvents,
   overlappingEvent,
+  currentEventIds,
+  untaggedOnEventDays,
   featuredEvent,
   eventTimeState,
   eventMatchesQuery,
@@ -764,6 +766,59 @@ describe('effectiveEventId / resolveOrderEvents', () => {
     const oneDay = [event({event_id: 'b', starts_on: '2026-09-20', ends_on: null})];
     expect(overlappingEvent(oneDay, '2026-09-20', '2026-09-20')?.event_id).toBe('b');
     expect(overlappingEvent(oneDay, '2026-09-21', '2026-09-21')).toBeNull();
+  });
+});
+
+describe('multi-event attribution, pinning, and untagged bucket', () => {
+  function ev(over: Partial<PosEvent> & {event_id: string}): PosEvent {
+    return {
+      name: over.event_id, venue: null, city: null, organizer: null,
+      starts_on: null, ends_on: null, opening_cash: null, cash_note: null,
+      closing_cash: null, status: 'active', created_by: null, created_at: null,
+      updated_at: null, ...over,
+    };
+  }
+  const day17 = '2026-09-17T04:00:00.000Z'; // 2026-09-17 Manila
+  const twoSameDay = [
+    ev({event_id: 'a', starts_on: '2026-09-17', ends_on: '2026-09-17'}),
+    ev({event_id: 'b', starts_on: '2026-09-17', ends_on: '2026-09-17'}),
+  ];
+
+  it('effectiveEventId does NOT guess when two events cover the day (stays null)', () => {
+    expect(effectiveEventId({event_id: null, created_at: day17}, twoSameDay)).toBeNull();
+  });
+  it('effectiveEventId still auto-attributes on an unambiguous (single-event) day', () => {
+    const one = [ev({event_id: 'a', starts_on: '2026-09-17', ends_on: '2026-09-17'})];
+    expect(effectiveEventId({event_id: null, created_at: day17}, one)).toBe('a');
+  });
+  it('resolveOrderEvents leaves an ambiguous-day untagged sale untagged', () => {
+    const orders = [order({id: '1', created_at: day17, event_id: null})];
+    expect(resolveOrderEvents(orders, twoSameDay)[0].event_id).toBeNull();
+  });
+
+  it('currentEventIds returns every live event, newest start first', () => {
+    const events = [
+      ev({event_id: 'early', starts_on: '2026-09-15', ends_on: '2026-09-18'}),
+      ev({event_id: 'late', starts_on: '2026-09-17', ends_on: '2026-09-17'}),
+      ev({event_id: 'past', starts_on: '2026-09-10', ends_on: '2026-09-11'}),
+    ];
+    // Both 'early' and 'late' cover the 17th; the later-starting one sorts first.
+    expect(currentEventIds(events, '2026-09-17')).toEqual(['late', 'early']);
+    expect(currentEventIds(events, '2026-09-20')).toEqual([]);
+  });
+
+  it('untaggedOnEventDays collects only null-event sales on event-covered days', () => {
+    const events = [ev({event_id: 'a', starts_on: '2026-09-17', ends_on: '2026-09-17'})];
+    const orders = [
+      order({id: 'onDayUntagged', created_at: day17, event_id: null}),       // counts
+      order({id: 'onDayTagged', created_at: day17, event_id: 'a'}),          // tagged, skip
+      order({id: 'offDay', created_at: '2026-09-20T04:00:00.000Z', event_id: null}), // walk-in, skip
+      {...order({id: 'voided', created_at: day17, event_id: null}), status: 'voided'}, // voided, skip
+    ];
+    expect(untaggedOnEventDays(orders, events).map((o) => o.id)).toEqual(['onDayUntagged']);
+  });
+  it('untaggedOnEventDays returns nothing when there are no dated events', () => {
+    expect(untaggedOnEventDays([order({id: '1', created_at: day17, event_id: null})], [])).toEqual([]);
   });
 });
 
