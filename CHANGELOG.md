@@ -12,6 +12,47 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-10-01 — Pagination audit: forecast + Lazada reads no longer truncate at 1000 — `fix(data)`
+
+Workspace-wide audit of every Supabase read across the three repos for the
+PostgREST `db-max-rows` (1000) silent-truncation class (the Units=0 bug,
+2026-09-27). Ground-truthed against live prod row counts: `pos_stock_movements`
+is at 1,596 (1,175 in the 60-day sale window) and `pos_order_items` at 1,352,
+so the forecast reads were **already** silently truncating and under-counting
+demand. Fixed the high-risk sites by reusing the existing `fetchAllRows`
+paginator (`src/pos-fetch-paginate.ts`):
+
+- **`src/pos-forecast-data.ts`** (`saleMovementsCached`) — the sale-ledger read
+  that drives every forecast band now pages by `id` instead of a bare
+  `.select()`. This was live-broken at 1,175 rows in the window.
+- **`src/lazada-data.ts`** (`lazadaItemsCached`) — replaced a deceptive
+  `.limit(50000)` that did **not** bound the read (PostgREST returns
+  `min(limit, db-max-rows)` = 1000) with real pagination by `order_item_id`,
+  keeping `ordered_at`-desc display order and the missing-table fail-soft.
+- Sibling fix in the Coop backend (`zoomy-observability/src/observability/stock-check.js`)
+  and the POS `stock-digest` edge function: the same sale-ledger read there now
+  paginates too, so the low-stock email and morning digest stop forecasting on
+  a truncated set.
+
+**Hardening (same pass):** paginated every remaining unbounded list read in
+`src/` so none can silently truncate as the data grows — `pos-data.ts`
+(products/inventory/bundles/bundle_items), `pos-sales.ts` (name lookups +
+`posEventsCached`), `pos-prize-data.ts` (`getOrdersWithPrizes`),
+`pos-free-taste-data.ts`, `pos-location-data.ts`, `pos-product-detail.ts`
+(per-SKU movements), all three `reprice-data.ts` reads, `data.ts` (digests),
+`spin-leads.ts`, and `pos-stock-intake.ts` (name lookup) — each wrapped in
+`fetchAllRows` with `.range()` + a stable unique `.order()` by the table PK.
+
+**Regression guard:** added `scripts/check-pagination.mjs` (+ `check:pagination`
+npm script and a `src/check-pagination.test.ts` so `vitest run` enforces it). It
+fails CI on (A) any literal row limit > 1000 (which does NOT bypass the cap) and
+(B) any `.from().select()` with no bound marker (`.range`/`.limit`/`.maybeSingle`/
+`.single`/`count`/`head`). Genuinely-bounded reads carry a `// pagination-ok:`
+note. Backend (`stock-check.js`) and the POS app got the same treatment + their
+own guards. Durable long-term remedy for the ledger reads is still server-side
+aggregation (an RPC/view returning per-product sums). Staging only; not promoted
+to prod.
+
 ## 2026-09-30 — Offline Sales: "View all" product & bundle rankings — `feat(offline-sales)`
 
 The overview's **Top products** and **Top bundles** cards stay capped at 5 but

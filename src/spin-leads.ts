@@ -3,6 +3,7 @@ import {cache} from 'react';
 import {unstable_cache} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
 import {POS_CACHE_REVALIDATE} from './pos-cache';
+import {fetchAllRows} from './pos-fetch-paginate';
 import type {SpinLead} from './spin-leads-types';
 
 /**
@@ -22,21 +23,28 @@ export const getSpinLeads = cache((): Promise<SpinLead[]> =>
 
 const spinLeadsCached = unstable_cache(async (): Promise<SpinLead[]> => {
   const supabase = posClient();
-  const {data, error} = await supabase
-    .from('spin_wheel_leads')
-    .select('*')
-    .order('collected_at', {ascending: false});
-
-  // Fail soft, unlike the pos_* readers. Leads are one optional block at the
-  // bottom of the event card, and the table is created per environment by hand
-  // (supabase/spin_wheel_leads.sql) — an environment that has not run it yet
-  // must still render sales, cash reconciliation and the rest of the page.
-  if (error) {
-    console.warn(`spin_wheel_leads read failed, rendering events without leads: ${error.message}`);
+  // Paged via fetchAllRows (collected_at desc for display, PK `lead_id` as the
+  // unique tiebreaker) so a bare .select() can't be silently capped at
+  // db.max_rows (1000) and drop leads.
+  let data: Record<string, unknown>[];
+  try {
+    data = await fetchAllRows('spin_wheel_leads', (from, to) =>
+      supabase
+        .from('spin_wheel_leads')
+        .select('*')
+        .order('collected_at', {ascending: false})
+        .order('lead_id', {ascending: true})
+        .range(from, to));
+  } catch (error) {
+    // Fail soft, unlike the pos_* readers. Leads are one optional block at the
+    // bottom of the event card, and the table is created per environment by hand
+    // (supabase/spin_wheel_leads.sql) — an environment that has not run it yet
+    // must still render sales, cash reconciliation and the rest of the page.
+    console.warn(`spin_wheel_leads read failed, rendering events without leads: ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
 
-  return (data ?? []).map((l): SpinLead => ({
+  return data.map((l): SpinLead => ({
     email: (l.email as string | null) ?? null,
     // Absent until spin_wheel_leads_instagram.sql has run on this environment.
     instagram: (l.instagram as string | null) ?? null,
