@@ -10,7 +10,10 @@ import {createLineDecoder} from '@/src/chat/stream-protocol';
 import {ChatBlocks} from './chat-blocks';
 import {interleave, sanitizeBlocks, type PlacedBlock} from './chat-blocks-format';
 import {describeFilters, dropBlocks, placeBlock, reportBody, sanitizeReport} from './report-state';
+import {ReportSaveBar} from './reports-save-bar';
+import {lastUserPrompt, loadSavedRef, SAVED_KEY, serializeSavedRef} from './reports-helpers';
 import type {ReportSpec} from '@/src/chat/report-types';
+import type {SavedReportRef} from '@/src/reports-suggest';
 
 // `blocks` (F7): stat tiles, charts and tables the server bound; `at` = length of the accumulated raw text when the block
 // arrived, so the answer reads caveat, headline, block, then whatever streamed after it. `content` stays plain text.
@@ -18,14 +21,16 @@ type Msg = {role: 'user' | 'assistant'; content: string; error?: boolean; blocks
 type NavAction = {label: string; path: string};
 
 type Side = 'left' | 'right';
-const CoopChatCtx = createContext<{ask: (q: string) => void; open: (side?: Side) => void; scopeLabel?: string}>({
+const CoopChatCtx = createContext<{ask: (q: string) => void; open: (side?: Side) => void; scopeLabel?: string; openReport: (spec: ReportSpec, saved: SavedReportRef | null) => void}>({
   ask: () => {},
   open: () => {},
+  openReport: () => {},
 });
 export const useCoopChat = () => useContext(CoopChatCtx);
 
 const STORE_KEY = 'coop-chat-v1';
 const REPORT_KEY = 'coop-report-v1'; // F8: the open dashboard's spec
+// F9: SAVED_KEY (coop-report-saved-v1) holds {id, version, spec} of this conversation's last Save/Update.
 const SUGGESTIONS = [
   'Which channel has the best ROAS?',
   'What should I prioritize this week?',
@@ -102,16 +107,32 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   const reportRef = useRef<ReportSpec | null>(null);
   // Taken when a question is asked: Regenerate re-sends the same report and history so edits never stack.
   const askedRef = useRef<{history: Msg[]; report: ReportSpec | null} | null>(null);
-  const setReport = useCallback((spec: ReportSpec | null) => {
-    reportRef.current = spec;
-    setReportState(spec);
+  // F9: the saved report this conversation's dashboard belongs to (set by Save / Update / openReport), so the drawer can offer
+  // Update instead of a second Save. Persisted alongside the dashboard and cleared with it.
+  const [saved, setSavedState] = useState<SavedReportRef | null>(null);
+  const setSaved = useCallback((ref: SavedReportRef | null) => {
+    setSavedState(ref);
     try {
-      if (spec) localStorage.setItem(REPORT_KEY, JSON.stringify(spec));
-      else localStorage.removeItem(REPORT_KEY);
+      if (ref) localStorage.setItem(SAVED_KEY, serializeSavedRef(ref));
+      else localStorage.removeItem(SAVED_KEY);
     } catch {
       /* ignore */
     }
   }, []);
+  const setReport = useCallback(
+    (spec: ReportSpec | null) => {
+      reportRef.current = spec;
+      setReportState(spec);
+      try {
+        if (spec) localStorage.setItem(REPORT_KEY, JSON.stringify(spec));
+        else localStorage.removeItem(REPORT_KEY);
+      } catch {
+        /* ignore */
+      }
+      if (!spec) setSaved(null); // New chat, Clear dashboard: the next dashboard is a new report
+    },
+    [setSaved],
+  );
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const week = searchParams.get('week') ?? undefined;
@@ -131,6 +152,8 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
       const spec = raw ? sanitizeReport(JSON.parse(raw)) : null;
       reportRef.current = spec;
       setReportState(spec);
+      // A saved reference only means something next to its dashboard.
+      setSavedState(spec ? loadSavedRef(localStorage.getItem(SAVED_KEY)) : null);
     } catch {
       /* ignore */
     }
@@ -264,6 +287,26 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
     setOpen(true);
   }, []);
 
+  // F9: "Ask Coop about this report" on a report page. Starts a clean conversation about that report: the saved recipe becomes
+  // the open dashboard and `ref` the saved reference, so Update targets the same report.
+  const openReport = useCallback(
+    (spec: ReportSpec, ref: SavedReportRef | null) => {
+      abortRef.current?.abort();
+      setMessages([]);
+      askedRef.current = null;
+      try {
+        localStorage.removeItem(STORE_KEY);
+      } catch {
+        /* ignore */
+      }
+      setReport(spec);
+      setSaved(ref);
+      setSide('right');
+      setOpen(true);
+    },
+    [setReport, setSaved],
+  );
+
   // ⌘K / Ctrl+K opens Coop.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -288,7 +331,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   }, [setReport]);
 
   return (
-    <CoopChatCtx.Provider value={{ask, open, scopeLabel}}>
+    <CoopChatCtx.Provider value={{ask, open, scopeLabel, openReport}}>
       {children}
       {!isOpen && <CoopFab onOpen={() => open('left')} />}
       {isOpen && (
@@ -305,6 +348,8 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
           onRegenerate={regenerate}
           report={report}
           onClearReport={() => setReport(null)}
+          saved={saved}
+          onSaved={setSaved}
         />
       )}
     </CoopChatCtx.Provider>
@@ -387,6 +432,8 @@ function CoopChatDrawer({
   onRegenerate,
   report,
   onClearReport,
+  saved,
+  onSaved,
 }: {
   messages: Msg[];
   busy: boolean;
@@ -400,6 +447,8 @@ function CoopChatDrawer({
   onRegenerate: () => void;
   report: ReportSpec | null;
   onClearReport: () => void;
+  saved: SavedReportRef | null;
+  onSaved: (ref: SavedReportRef) => void;
 }) {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -478,6 +527,25 @@ function CoopChatDrawer({
     </form>
   );
 
+  // The open dashboard's chips plus (F9) its save bar. Shown in the empty state too: "Ask Coop about this report" opens the drawer
+  // with a dashboard and no messages yet.
+  const reportBar = report && (
+    <>
+      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]" aria-label="Open dashboard">
+        {describeFilters(report.filters).map((c) => (
+          <span key={c} className="rounded-full border border-border bg-card px-2 py-0.5 text-foreground">
+            {c}
+          </span>
+        ))}
+        <span className="text-muted-foreground">{report.blocks.length === 1 ? '1 block' : `${report.blocks.length} blocks`}</span>
+        <button type="button" onClick={onClearReport} className="ml-auto text-muted-foreground/70 transition-colors hover:text-foreground">
+          Clear dashboard
+        </button>
+      </div>
+      <ReportSaveBar report={report} saved={saved} busy={busy} prompt={lastUserPrompt(messages)} onSaved={onSaved} onNavigate={onClose} />
+    </>
+  );
+
   return (
     <div className="fixed inset-0 z-[80]">
       <button aria-label="Close chat" onClick={onClose} className="absolute inset-0 bg-foreground/20 animate-in fade-in" />
@@ -521,7 +589,10 @@ function CoopChatDrawer({
             <p className="text-center text-[13px] text-muted-foreground">
               {home ? 'New here? Ask coop what you can do, or where to start.' : 'Ask coop about your sales, ads, products, or what to do next.'}
             </p>
-            {composer}
+            <div>
+              {reportBar}
+              {composer}
+            </div>
             <div className="flex flex-col gap-2">
               {(home ? HOME_SUGGESTIONS : SUGGESTIONS).map((s) => (
                 <button key={s} onClick={() => onAsk(s)} className="rounded-xl border border-border bg-card px-3 py-2 text-left text-[13px] text-foreground transition-colors hover:border-primary/50 hover:bg-muted">
@@ -615,19 +686,7 @@ function CoopChatDrawer({
               })}
             </div>
             <div className={cn('border-t border-border p-3', gutter)}>
-              {report && (
-                <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]" aria-label="Open dashboard">
-                  {describeFilters(report.filters).map((c) => (
-                    <span key={c} className="rounded-full border border-border bg-card px-2 py-0.5 text-foreground">
-                      {c}
-                    </span>
-                  ))}
-                  <span className="text-muted-foreground">{report.blocks.length === 1 ? '1 block' : `${report.blocks.length} blocks`}</span>
-                  <button type="button" onClick={onClearReport} className="ml-auto text-muted-foreground/70 transition-colors hover:text-foreground">
-                    Clear dashboard
-                  </button>
-                </div>
-              )}
+              {reportBar}
               {composer}
             </div>
           </>
