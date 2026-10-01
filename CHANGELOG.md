@@ -12,6 +12,36 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-10-01 — Talk to Data: read-only foundation for Ask Coop — `feat(chat)`
+
+Ask Coop is being upgraded to answer from live POS data (design:
+`../knowledge/architecture/2026-10-01-talk-to-data-design.md`). Before any data tool
+exists, this lands the layers that make sure it can only **read**. Nothing changes for
+users yet: `/api/chat` is not rewired, and the existing digest chat behaves as before.
+
+- **Decision:** "no write tool exists" is one layer of nine, not the guarantee. The model
+  reads text other people wrote (product names, notes), so each layer fails closed with
+  its own test. This is a release gate for every Talk to Data deploy.
+- `src/chat/tools.ts` frozen tool allowlist, `request-shape.ts` (no web, code or MCP
+  tools, no forced tool choice), `audit.ts` (`chat_tool` / `chat_guard_trip` log lines).
+- `src/chat/read/`: a typed read client (`select` only), an HTTP guard (GET/HEAD only,
+  allowlisted relations, no `select=*`, no customer columns) and a fail-closed read mode
+  (production returns 503 unless `CHAT_READ_MODE=ro_role`).
+- `src/pos-orders-read.ts`: `readPosOrders(client)` extracted from `src/pos-sales.ts` so
+  chat and the pages share one paged read with an **injected** client. Page behaviour is
+  unchanged (fixture regression test, 1,352 items across two pages).
+- `test/chat-architecture.test.ts` fails the build if chat code imports a write path or
+  a full-power client. One documented legacy exception: the route's `getDigests` import,
+  removed when the route is rewritten.
+- Found while testing: the guard judged the raw path but took the host from the parsed
+  URL, so `https://host\@evil/...` slipped past. Fixed by requiring both to agree; tests
+  cover it.
+- Spike findings behind this: `scripts/spikes/` (strict tools + thinking on Sonnet 5.5,
+  and a SELECT-only database role through PostgREST). Layer 5, the database role, is the
+  next feature and gates production.
+
+---
+
 ## 2026-09-28 — Event leads: what they bought + follow-up messages — `feat(leads)`
 
 The spin-the-wheel and the POS share no id, so `src/lead-order-match.ts` links
