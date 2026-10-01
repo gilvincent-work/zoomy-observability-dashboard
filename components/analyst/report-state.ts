@@ -82,3 +82,13 @@ export function dropBlocks<M extends {blocks?: PlacedBlock[]}>(messages: M[], id
   if (ids.size === 0) return messages;
   return messages.map((m) => (m.blocks?.some((p) => ids.has(p.block.id)) ? {...m, blocks: m.blocks.filter((p) => !ids.has(p.block.id))} : m));
 }
+
+/**
+ * Apply a `{t: 'report'}` event: blocks that were in the previous report and are absent from the new one were removed by the
+ * server, so they leave the screen. Blocks the server drew but never recorded in a report (digest or product lookups have no
+ * re-runnable recipe) are NOT in `held` and stay. `held` is only ever the ids of report specs, never of drawn blocks.
+ */
+export function applyReportEvent<M extends {blocks?: PlacedBlock[]}>(messages: M[], held: ReadonlySet<string>, spec: ReportSpec | null): {messages: M[]; held: Set<string>} {
+  const next = new Set((spec?.blocks ?? []).map((b) => b.id));
+  return {messages: dropBlocks(messages, new Set([...held].filter((id) => !next.has(id)))), held: next};
+}

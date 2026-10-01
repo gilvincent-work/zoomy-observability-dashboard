@@ -9,7 +9,7 @@ import {cn} from '@/lib/utils';
 import {createLineDecoder} from '@/src/chat/stream-protocol';
 import {ChatBlocks} from './chat-blocks';
 import {interleave, sanitizeBlocks, type PlacedBlock} from './chat-blocks-format';
-import {describeFilters, dropBlocks, placeBlock, reportBody, sanitizeReport} from './report-state';
+import {applyReportEvent, describeFilters, placeBlock, reportBody, sanitizeReport} from './report-state';
 import {ReportSaveBar} from './reports-save-bar';
 import {lastUserPrompt, loadSavedRef, SAVED_KEY, serializeSavedRef} from './reports-helpers';
 import type {ReportSpec} from '@/src/chat/report-types';
@@ -201,7 +201,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         let working: Msg[] = [...history, {role: 'assistant', content: ''}];
         const last = working.length - 1;
         let finished = false;
-        // Ids of the blocks the open report holds, so a block the server removes also leaves the screen.
+        // Ids of the blocks the open REPORT holds (not every drawn block), so only a block the server removes leaves the screen.
         let held = new Set((reportAtSend?.blocks ?? []).map((b) => b.id));
         const apply = (events: ReturnType<typeof decode>) => {
           for (const ev of events) {
@@ -210,11 +210,10 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
               setStatus('');
             } else if (ev.t === 'block') {
               working = placeBlock(working, last, ev.block, acc.length);
-              held.add(ev.block.id);
             } else if (ev.t === 'report') {
-              const next = new Set((ev.spec?.blocks ?? []).map((b) => b.id));
-              working = dropBlocks(working, new Set([...held].filter((id) => !next.has(id))));
-              held = next;
+              const applied = applyReportEvent(working, held, ev.spec);
+              working = applied.messages;
+              held = applied.held;
               setReport(ev.spec);
             } else if (ev.t === 'status') {
               setStatus(ev.text);
