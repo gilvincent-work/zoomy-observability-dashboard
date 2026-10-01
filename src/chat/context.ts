@@ -3,6 +3,7 @@ import type {DigestArchiveRow} from '../types';
 import {pickIndex, fmtRange} from '../week';
 import {COOP_CHAT} from './config';
 import {COOP_KNOWLEDGE} from './knowledge';
+import {READ_ONLY_STATEMENT} from './read-only-statement';
 
 // Reference facts (brand, glossary, ad products, policies) — appended to every
 // prompt. Explicitly framed as background, NOT a source of live figures.
@@ -40,6 +41,7 @@ function buildHomePrompt(): string {
     '',
     '## Guardrails',
     COOP_CHAT.guardrails,
+    READ_ONLY_STATEMENT,
     `If a request is out of scope, reply exactly: "${COOP_CHAT.refusal}"`,
     '',
     '## Output format',
@@ -74,6 +76,7 @@ export function buildCoopSystemPrompt(rows: DigestArchiveRow[], week?: string, o
     '',
     '## Guardrails',
     COOP_CHAT.guardrails,
+    READ_ONLY_STATEMENT,
     `If a request is out of scope, reply exactly: "${COOP_CHAT.refusal}"`,
     '',
     '## Output format',
