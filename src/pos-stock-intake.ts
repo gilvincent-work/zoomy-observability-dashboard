@@ -2,6 +2,7 @@ import 'server-only';
 import {cache} from 'react';
 import {unstable_noStore as noStore} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
+import {fetchAllRows} from './pos-fetch-paginate';
 import {MOCK_POS_PRODUCTS} from './pos-mock';
 
 // SERVER-ONLY. Reads the stock-in history (Add-stock receipts + their reversals)
@@ -24,20 +25,22 @@ export const getStockReceipts = cache(async (limit = 100): Promise<StockReceipt[
   if (usingPosMock()) return mockReceipts();
 
   const supabase = posClient();
-  const [movesRes, productsRes] = await Promise.all([
+  const [movesRes, products] = await Promise.all([
     supabase
       .from('pos_stock_movements')
       .select('id,product_id,delta,reason,created_by,created_at')
       .in('reason', ['receipt', 'add-void'])
       .order('id', {ascending: false})
       .limit(limit),
-    supabase.from('pos_products').select('product_id,name'),
+    // Paginate the name lookup so it can't silently truncate past 1000 products.
+    fetchAllRows('pos_products', (from, to) =>
+      supabase.from('pos_products').select('product_id,name').order('product_id', {ascending: true}).range(from, to),
+    ),
   ]);
   if (movesRes.error) throw new Error(`pos_stock_movements read failed: ${movesRes.error.message}`);
-  if (productsRes.error) throw new Error(`pos_products read failed: ${productsRes.error.message}`);
 
   const nameBySku = new Map<string, string>();
-  for (const p of productsRes.data ?? []) nameBySku.set(p.product_id as string, p.name as string);
+  for (const p of products) nameBySku.set(p.product_id as string, p.name as string);
 
   return (movesRes.data ?? []).map((m) => ({
     id: Number(m.id),

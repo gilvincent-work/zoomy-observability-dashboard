@@ -1,5 +1,6 @@
 import 'server-only';
 import {posClient, usingPosMock, getPosProducts} from './pos-data';
+import {fetchAllRows} from './pos-fetch-paginate';
 import {getPosOrders} from './pos-sales';
 import {getStockForecast} from './pos-forecast-data';
 import {manilaMonthKey, monthKeyOffset, monthKeyLabel, yoyDeltaPct} from './pos-inventory-compute';
@@ -258,14 +259,19 @@ export async function getProductDetail(sku: string, now: Date = new Date()): Pro
  *  history. Ordered chronologically so a forward run gives the running on-hand. */
 async function loadAllMovements(sku: string): Promise<Movement[]> {
   if (usingPosMock()) return [];
-  const {data, error} = await posClient()
-    .from('pos_stock_movements')
-    .select('id,delta,created_at,reason,created_by')
-    .eq('product_id', sku)
-    .order('created_at', {ascending: true})
-    .order('id', {ascending: true});
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((m) => ({
+  // A single SKU's ledger can exceed db.max_rows (1000) over its lifetime, so page
+  // it via fetchAllRows under the existing created_at,id order (id is the unique
+  // tiebreaker) — a bare .select() would silently truncate the oldest movements
+  // and skew the reconstructed on-hand.
+  const data = await fetchAllRows('pos_stock_movements', (from, to) =>
+    posClient()
+      .from('pos_stock_movements')
+      .select('id,delta,created_at,reason,created_by')
+      .eq('product_id', sku)
+      .order('created_at', {ascending: true})
+      .order('id', {ascending: true})
+      .range(from, to));
+  return data.map((m) => ({
     id: Number(m.id),
     delta: Number(m.delta ?? 0),
     created_at: m.created_at as string,
