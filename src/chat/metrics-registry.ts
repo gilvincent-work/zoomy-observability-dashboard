@@ -528,7 +528,11 @@ function computeBundlePicks(ctx: ComputeContext): ComputeOutput {
   out.shareBasis = basis;
   out.defaultSort = 'value_desc';
   out.limitable = true;
-  out.untagged = {orders: ctx.orders.filter((o) => !o.pet_type).length, totalOrders: ctx.orders.length};
+  // Untagged share among the orders that actually have pick detail. Older sales without picks are reported separately
+  // (the "no pick detail" note below), so counting every order here would mix two different gaps.
+  const pickOrders = new Set(res.rows.map((r) => r.order_id));
+  const untaggedPickOrders = new Set(res.rows.filter((r) => r.pet === 'untagged').map((r) => r.order_id));
+  out.untagged = {orders: untaggedPickOrders.size, totalOrders: pickOrders.size};
   out.zeroValueLines = {count: res.zeroValueLines, allocatedMeasureUsed: measure === 'revenue'};
   out.priceChanges = priceChangesInRange(ctx.history, dayStartIso(ctx.range.from), dayEndIso(ctx.range.to));
 
