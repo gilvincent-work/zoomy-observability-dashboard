@@ -36,10 +36,21 @@ function mockData(): MetricData {
 
 // The client lives inside the cached function (it cannot be cached), and its guard stats are dropped. Trips are
 // logged through onTrip. A burst of questions inside 60 seconds reads the database once.
+// The cache key is the function's arguments: `project` (the archive host, never a secret) keeps two Supabase projects from ever
+// sharing an entry, and the miss log shows how close the data is to the 2 MiB data-cache item limit.
+const projectOf = (): string => {
+  try {
+    return new URL(process.env.SUPABASE_URL_ARCHIVE ?? '').host;
+  } catch {
+    return 'none';
+  }
+};
 const loadCached = unstable_cache(
-  async (mode: ChatReadMode): Promise<MetricData> => {
+  async (mode: ChatReadMode, _project: string): Promise<MetricData> => {
     const {client} = chatReadClient({mode, onTrip: (b) => logGuardTrip({layer: 'http_guard', detail: b})});
-    return loadMetricData(client, mode);
+    const data = await loadMetricData(client, mode);
+    console.info(JSON.stringify({event: 'chat_data_loaded', orders: data.orders.length, bytes: JSON.stringify(data).length}));
+    return data;
   },
   ['chat-metric-data'],
   {revalidate: 60, tags: ['chat-metric-data']},
@@ -53,7 +64,7 @@ export async function getChatMetricData(): Promise<MetricData> {
     warned = true;
     console.warn(readable.warning);
   }
-  return loadCached(readable.mode);
+  return loadCached(readable.mode, projectOf());
 }
 
 export type ChatDataResult = {ok: true; data: MetricData} | {ok: false; reason: string};
@@ -81,7 +92,7 @@ export async function getChatMetricDataOrDegrade(): Promise<ChatDataResult> {
 // F10: the stored weekly digests for get_digest. Its own guarded client (one relation, `bundle` refused), cached for five
 // minutes like the dashboard's digest read, under the same tag so revalidateTag('digest-archive') refreshes both.
 const loadDigestCached = unstable_cache(
-  async (mode: ChatReadMode): Promise<DigestRow[]> => {
+  async (mode: ChatReadMode, _project: string): Promise<DigestRow[]> => {
     const {client} = chatDigestClient({mode, onTrip: (b) => logGuardTrip({layer: 'http_guard', detail: b})});
     return readDigestRows(client, mode);
   },
@@ -96,5 +107,5 @@ export async function getChatDigest(): Promise<DigestSource> {
   }
   const readable = assertChatReadable(process.env);
   if (!readable.ok) throw new ChatUnavailableError(readable.message);
-  return {source: 'live', rows: await loadDigestCached(readable.mode)};
+  return {source: 'live', rows: await loadDigestCached(readable.mode, projectOf())};
 }

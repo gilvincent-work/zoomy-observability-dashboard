@@ -81,3 +81,12 @@ describe('assertRequestShape', () => {
     expect(() => assertRequestShape(req({tools: [null]}), sink())).toThrow();
   });
 });
+
+describe('top-level cache_control', () => {
+  it('allows exactly {type: ephemeral}', () => {
+    expect(() => assertRequestShape(req({cache_control: {type: 'ephemeral'}}), sink())).not.toThrow();
+  });
+  it.each([{type: 'ephemeral', ttl: '1h'}, {type: 'persistent'}, {}, null, 'x'])('rejects %j', (cc) => {
+    expect(() => assertRequestShape(req({cache_control: cc}), sink())).toThrow(/cache_control/);
+  });
+});

@@ -386,3 +386,17 @@ describe('provider account errors', () => {
     expect(other.events.find((e) => e.t === 'error')).toEqual({t: 'error', message: SAFE_ERROR_TEXT});
   });
 });
+
+describe('automatic prompt caching (ai-expert audit, 2026-10-02)', () => {
+  it('every request carries the top-level ephemeral breakpoint, and the total stays within the 4-breakpoint limit', async () => {
+    const client = new FakeClient((n) => (n === 1 ? toolTurn(toolUse('a', 'query_metric', QUERY)) : {text: ['Done.']}));
+    const {opts} = setup(client);
+    await runChatLoop(opts);
+    for (let i = 0; i < client.requests.length; i++) {
+      const r = client.req(i) as {cache_control?: unknown; system: {cache_control?: unknown}[]; tools: {cache_control?: unknown}[]};
+      expect(r.cache_control).toEqual({type: 'ephemeral'});
+      const explicit = [...r.system, ...r.tools].filter((b) => b.cache_control).length;
+      expect(explicit + 1).toBeLessThanOrEqual(4);
+    }
+  });
+});
