@@ -25,8 +25,8 @@ export interface DigestReadClient {
   from(relation: string): {select(columns: string): DigestReadBuilder};
 }
 
-/** The latest digest and the one before it: all get_digest can ask for. */
-export const DIGEST_ROW_LIMIT = 2;
+/** How many stored weekly digests are read: the latest, the one before it, and the recent weeks of a week-by-week series. */
+export const DIGEST_ROW_LIMIT = 12;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 

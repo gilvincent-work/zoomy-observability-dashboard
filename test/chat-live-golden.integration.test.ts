@@ -31,6 +31,7 @@ import {
   BASE_SPEC, BUNDLE_DASHBOARD_SCRIPT, CHAIN, CHAIN_FINAL_SPEC, GOLDEN_CASES, GOLDEN_DIGEST, GRADER_SYSTEM, PROBE_EXCLUDES, READ_ONLY_PROBES, bodyText, canon, goldenData,
   mechanicalFailures, normalizeSpecForLive, parseVerdict, rubricPrompt, type GoldenCase, type Observed,
 } from './support/golden-cases';
+import {assertLocalSupabase} from './support/local-only';
 import {runScripted} from './support/scripted-model';
 import {EVAL_NOW, SKILL_CASES, type Tamper} from './support/skill-eval-fixtures';
 import {scoreCase, type RecordedCall} from './support/skill-eval-score';
@@ -88,6 +89,7 @@ interface World {
 
 async function loadWorld(): Promise<World> {
   if (SYNTHETIC) return {data: goldenData(), digest: GOLDEN_DIGEST, now: EVAL_NOW, kind: 'synthetic', attemptedNonRead: () => 0};
+  assertLocalSupabase(env.SUPABASE_URL_ARCHIVE); // the shared owner-rule guard, directly before any client exists
   const cfg = buildChatReadConfig({mode: 'guarded_service', env});
   const guard = createGuardedFetch({baseUrl: cfg.url, relations: relationsForMode('guarded_service').allowed, underlying: fetch});
   const sb = createClient(cfg.url, cfg.key, {auth: {persistSession: false}, global: {fetch: guard.fetch}});
