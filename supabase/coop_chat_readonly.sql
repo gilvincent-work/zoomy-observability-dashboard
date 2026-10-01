@@ -1,14 +1,15 @@
 -- coop_chat_readonly.sql
 -- Owner: zoomy-observability-dashboard (Talk to Data / Ask Coop, layer 5: database read-only role).
 -- Applied BY HAND in the archive project's SQL editor: staging first, then PROD by the co-worker.
--- Nothing here touches pos_* DDL: it only creates a role, four dashboard-owned views over pos_* tables, grants on
+-- Nothing here touches pos_* DDL: it only creates a role, seven dashboard-owned views over pos_* tables, grants on
 -- those views, and (optional section 3) one tiny function plus one authenticator setting.
 -- Idempotent: safe to re-run. Run supabase/coop_chat_readonly_checks.sql and _proof.sql afterwards.
 -- Design: knowledge/architecture/2026-10-01-talk-to-data-design.md (Layer 5). Rule: knowledge/best-practices/chat-read-only.md
 --
 -- The views are DEFINER views (no security_invoker): they read the RLS-protected pos_* tables as their owner, so the
 -- role sees only the columns listed here. Customer-level columns (customer_handle, remarks, phone, email, instagram,
--- customer_name, client_uuid, device_id) are never exposed. A later feature may add columns at the END of a view.
+-- customer_name, client_uuid, device_id) and staff/cash columns (created_by, updated_by, changed_by, opening_cash,
+-- closing_cash, cash_note, organizer) are never exposed. A later feature may add columns at the END of a view.
 
 -- 1. Role -------------------------------------------------------------------------------------------------------
 do $$
@@ -40,10 +41,22 @@ create or replace view public.coop_chat_products as
 create or replace view public.coop_chat_bundles as
   select bundle_id, name from public.pos_bundles;
 
-revoke all on public.coop_chat_orders, public.coop_chat_order_items, public.coop_chat_products, public.coop_chat_bundles
+-- Price lookups, price-change log and events (Ask Coop F3). No staff, device or cash columns.
+create or replace view public.coop_chat_prices as
+  select product_id, price from public.pos_prices;
+
+create or replace view public.coop_chat_price_changes as
+  select id, product_id, old_price, new_price, changed_at from public.pos_price_changes;
+
+create or replace view public.coop_chat_events as
+  select event_id, name, venue, city, starts_on, ends_on, status, created_at from public.pos_events;
+
+revoke all on public.coop_chat_orders, public.coop_chat_order_items, public.coop_chat_products, public.coop_chat_bundles,
+  public.coop_chat_prices, public.coop_chat_price_changes, public.coop_chat_events
   from public, anon, authenticated;
 grant usage on schema public to coop_chat_ro;
-grant select on public.coop_chat_orders, public.coop_chat_order_items, public.coop_chat_products, public.coop_chat_bundles
+grant select on public.coop_chat_orders, public.coop_chat_order_items, public.coop_chat_products, public.coop_chat_bundles,
+  public.coop_chat_prices, public.coop_chat_price_changes, public.coop_chat_events
   to coop_chat_ro;
 
 -- 3. OPTIONAL BUT RECOMMENDED: transaction-level read-only lock ----------------------------------------------------

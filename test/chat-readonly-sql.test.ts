@@ -15,6 +15,9 @@ const CONTRACT = {
   coop_chat_order_items: ['id', 'order_id', 'product_id', 'bundle_id', 'bundle_group', 'qty', 'unit_price', 'line_total'],
   coop_chat_products: ['product_id', 'name'],
   coop_chat_bundles: ['bundle_id', 'name'],
+  coop_chat_prices: ['product_id', 'price'],
+  coop_chat_price_changes: ['id', 'product_id', 'old_price', 'new_price', 'changed_at'],
+  coop_chat_events: ['event_id', 'name', 'venue', 'city', 'starts_on', 'ends_on', 'status', 'created_at'],
 } as const;
 
 const viewStatements = statements.filter((s) => /^create (or replace )?view /.test(s));
@@ -41,7 +44,7 @@ describe('supabase/coop_chat_readonly.sql', () => {
     for (const bad of ['login', 'superuser', 'bypassrls', 'createdb', 'createrole', 'replication', 'inherit']) expect(attrs).not.toContain(bad);
   });
 
-  it('creates exactly the four coop_chat_* views', () => {
+  it('creates exactly the seven coop_chat_* views', () => {
     const names = viewStatements.map((s) => /^create or replace view public\.(\w+) /.exec(s)?.[1]);
     expect(viewStatements.every((s) => s.startsWith('create or replace view public.'))).toBe(true);
     expect([...names].sort()).toEqual(Object.keys(CONTRACT).sort());
@@ -60,8 +63,21 @@ describe('supabase/coop_chat_readonly.sql', () => {
       coop_chat_order_items: [...splitCols(reads.columns.items), 'id'],
       coop_chat_products: splitCols(reads.columns.products),
       coop_chat_bundles: splitCols(reads.columns.bundles),
+      coop_chat_prices: splitCols(reads.columns.prices),
+      coop_chat_price_changes: splitCols(reads.columns.priceChanges),
+      coop_chat_events: splitCols(reads.columns.events),
     };
-    expect(reads.tables).toEqual({orders: 'coop_chat_orders', items: 'coop_chat_order_items', products: 'coop_chat_products', bundles: 'coop_chat_bundles'});
+    expect(reads.tables).toEqual({
+      orders: 'coop_chat_orders',
+      items: 'coop_chat_order_items',
+      products: 'coop_chat_products',
+      bundles: 'coop_chat_bundles',
+      events: 'coop_chat_events',
+      prices: 'coop_chat_prices',
+      priceChanges: 'coop_chat_price_changes',
+    });
+    // Every ro_role relation has a view, and the views are the contract (a superset of what is read).
+    expect(Object.values(reads.tables).sort()).toEqual(Object.keys(CONTRACT).sort());
     for (const [name, cols] of Object.entries(needed)) {
       const have = columnsOf(viewStatement(name));
       for (const c of cols) expect(have, `${name} missing ${c}`).toContain(c);
@@ -80,7 +96,7 @@ describe('supabase/coop_chat_readonly.sql', () => {
     expect(sql).not.toMatch(/security_invoker/);
   });
 
-  it('grants coop_chat_ro only select on the four views (plus schema usage)', () => {
+  it('grants coop_chat_ro only select on the seven views (plus schema usage)', () => {
     const grants = statements.filter((s) => /^grant /.test(s));
     const selected: string[] = [];
     for (const g of grants) {

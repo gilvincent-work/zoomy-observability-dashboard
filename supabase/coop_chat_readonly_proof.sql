@@ -7,7 +7,7 @@ begin;
 set local role coop_chat_ro;
 
 do $$ declare r text; n bigint; begin
-  foreach r in array array['coop_chat_orders','coop_chat_order_items','coop_chat_products','coop_chat_bundles'] loop
+  foreach r in array array['coop_chat_orders','coop_chat_order_items','coop_chat_products','coop_chat_bundles','coop_chat_prices','coop_chat_price_changes','coop_chat_events'] loop
     begin
       execute format('select count(*) from public.%I', r) into n;
       raise notice 'PASS read view % (% rows)', r, n;
@@ -16,7 +16,7 @@ do $$ declare r text; n bigint; begin
 end $$;
 
 do $$ declare r text; n bigint; begin
-  foreach r in array array['pos_orders','pos_order_items','pos_products','pos_bundles'] loop
+  foreach r in array array['pos_orders','pos_order_items','pos_products','pos_bundles','pos_prices','pos_price_changes','pos_events'] loop
     begin
       execute format('select count(*) from public.%I', r) into n;
       raise notice 'FAIL base table % was readable', r;
@@ -40,7 +40,7 @@ do $$ declare c text; begin
 end $$;
 
 do $$ declare v text; col text; stmt text; begin
-  foreach v in array array['coop_chat_orders','coop_chat_order_items','coop_chat_products','coop_chat_bundles'] loop
+  foreach v in array array['coop_chat_orders','coop_chat_order_items','coop_chat_products','coop_chat_bundles','coop_chat_prices','coop_chat_price_changes','coop_chat_events'] loop
     select attname into col from pg_attribute
       where attrelid = ('public.' || v)::regclass and attnum > 0 and not attisdropped order by attnum limit 1;
     foreach stmt in array array[
@@ -57,6 +57,25 @@ do $$ declare v text; col text; stmt text; begin
         when others then raise notice 'FAIL unexpected % %: %', sqlstate, sqlerrm, stmt;
       end;
     end loop;
+  end loop;
+end $$;
+
+-- Staff, device and cash columns of the new views' base tables must not be selectable through the views.
+do $$ declare pair text[]; v text; c text; begin
+  foreach pair slice 1 in array array[
+    ['coop_chat_events','created_by'],['coop_chat_events','organizer'],['coop_chat_events','opening_cash'],
+    ['coop_chat_events','closing_cash'],['coop_chat_events','cash_note'],
+    ['coop_chat_prices','updated_by'],
+    ['coop_chat_price_changes','changed_by'],['coop_chat_price_changes','device_id'],['coop_chat_price_changes','reason']
+  ] loop
+    v := pair[1]; c := pair[2];
+    begin
+      execute format('select %I from public.%I limit 1', c, v);
+      raise notice 'FAIL column % selectable through %', c, v;
+    exception
+      when undefined_column then raise notice 'PASS column % absent from %', c, v;
+      when others then raise notice 'FAIL column % of %: unexpected % %', c, v, sqlstate, sqlerrm;
+    end;
   end loop;
 end $$;
 

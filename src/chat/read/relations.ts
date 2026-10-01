@@ -14,6 +14,14 @@ export const FORBIDDEN_COLUMNS: readonly string[] = Object.freeze([
   'customer_name',
   'client_uuid',
   'device_id',
+  // Staff and cash columns of the events, prices and price-change tables.
+  'created_by',
+  'updated_by',
+  'changed_by',
+  'opening_cash',
+  'closing_cash',
+  'cash_note',
+  'organizer',
 ]);
 
 // ro_role: dashboard-owned definer views (created in F2, not yet present).
@@ -21,6 +29,19 @@ export const FORBIDDEN_COLUMNS: readonly string[] = Object.freeze([
 // customer-level columns (edited_at is fine).
 const ORDER_COLS = 'id,subtotal,discount,total,oversold,payment_method,status,created_at,edited_at,event_id,pet_type';
 const ITEM_COLS = 'order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total';
+// Events: no cash, organizer or created_by columns. Prices and price changes: no updated_by / changed_by / device_id.
+const EVENT_COLS = 'event_id,name,venue,city,starts_on,ends_on,status,created_at';
+const PRICE_COLS = 'product_id,price';
+const PRICE_CHANGE_COLS = 'id,product_id,old_price,new_price,changed_at';
+const COLUMNS = Object.freeze({
+  orders: ORDER_COLS,
+  items: ITEM_COLS,
+  products: 'product_id,name',
+  bundles: 'bundle_id,name',
+  events: EVENT_COLS,
+  prices: PRICE_COLS,
+  priceChanges: PRICE_CHANGE_COLS,
+});
 
 export const CHAT_RELATIONS = Object.freeze({
   ro_role: Object.freeze({
@@ -29,8 +50,11 @@ export const CHAT_RELATIONS = Object.freeze({
       items: 'coop_chat_order_items',
       products: 'coop_chat_products',
       bundles: 'coop_chat_bundles',
+      events: 'coop_chat_events',
+      prices: 'coop_chat_prices',
+      priceChanges: 'coop_chat_price_changes',
     }),
-    columns: Object.freeze({orders: ORDER_COLS, items: ITEM_COLS, products: 'product_id,name', bundles: 'bundle_id,name'}),
+    columns: COLUMNS,
   }),
   guarded_service: Object.freeze({
     tables: Object.freeze({
@@ -38,8 +62,11 @@ export const CHAT_RELATIONS = Object.freeze({
       items: 'pos_order_items',
       products: 'pos_products',
       bundles: 'pos_bundles',
+      events: 'pos_events',
+      prices: 'pos_prices',
+      priceChanges: 'pos_price_changes',
     }),
-    columns: Object.freeze({orders: ORDER_COLS, items: ITEM_COLS, products: 'product_id,name', bundles: 'bundle_id,name'}),
+    columns: COLUMNS,
   }),
 });
 
@@ -48,9 +75,19 @@ export type ChatRelation =
   | (typeof CHAT_RELATIONS)['ro_role']['tables'][keyof (typeof CHAT_RELATIONS)['ro_role']['tables']]
   | (typeof CHAT_RELATIONS)['guarded_service']['tables'][keyof (typeof CHAT_RELATIONS)['guarded_service']['tables']];
 
+export interface ChatRelationMap {
+  orders: string;
+  items: string;
+  products: string;
+  bundles: string;
+  events: string;
+  prices: string;
+  priceChanges: string;
+}
+
 export interface ChatRelationSet {
-  tables: {orders: string; items: string; products: string; bundles: string};
-  columns: {orders: string; items: string; products: string; bundles: string};
+  tables: ChatRelationMap;
+  columns: ChatRelationMap;
   /** The names the guard allows for this mode. */
   allowed: readonly string[];
 }
