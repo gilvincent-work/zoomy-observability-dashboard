@@ -6,6 +6,9 @@ import {readChatOrders} from '../src/chat/read/pos-orders';
 import {buildChatReadConfig} from '../src/chat/read/config';
 import {createGuardedFetch} from '../src/chat/read/guarded-fetch';
 import {relationsForMode, type ChatReadMode} from '../src/chat/read/relations';
+import {loadMetricData} from '../src/chat/read/metric-data';
+import {METRICS, METRIC_IDS} from '../src/chat/metrics-registry';
+import {runMetric} from '../src/chat/query-metric';
 
 // LOCAL INTEGRATION (skipped unless pointed at a throwaway local Supabase that already ran
 // scripts/coop-chat-ro-proof.mjs, so the fixture and coop_chat_* views exist):
@@ -61,6 +64,28 @@ describe.skipIf(!local)('ro_role equals guarded_service on the local stack', () 
     const strip = (o: (typeof everything)[number]) => ({...o, customer_handle: null, remarks: null, client_uuid: '', device_id: null});
     expect(viaRole).toEqual(everything.map(strip));
     expect(everything.some((o) => o.customer_handle !== null || o.remarks !== null)).toBe(true); // the fixture does hold customer data
+  });
+
+  it('every registry metric gives identical results in ro_role and guarded_service mode', async () => {
+    const svc = guardedClient('guarded_service');
+    const ro = guardedClient('ro_role');
+    const dataSvc = await loadMetricData(svc.client, 'guarded_service');
+    const dataRo = await loadMetricData(ro.client, 'ro_role');
+    // identical data; only the relation NAMES inside bulkReads differ (tables vs views), so compare their row counts
+    expect({...dataRo, bulkReads: dataRo.bulkReads.map((r) => r.rows)}).toEqual({...dataSvc, bulkReads: dataSvc.bulkReads.map((r) => r.rows)});
+    expect(dataRo.orders.length).toBeGreaterThan(0);
+    expect(dataRo.prices.length).toBeGreaterThan(0);
+    const now = new Date();
+    for (const id of METRIC_IDS) {
+      const def = METRICS[id];
+      const req = {metric: id, dimension: def.defaultDimension, measure: 'default', range: 'all_available', from: '', to: '', channel: 'offline', event: 'all', pet: 'all', compare_to: 'none', sort: 'default', limit: 25};
+      const a = runMetric(req, dataSvc, now);
+      const b = runMetric(req, dataRo, now);
+      expect(b, id).toEqual(a);
+      expect('error' in a, `${id}: ${'error' in a ? a.error : ''}`).toBe(false);
+    }
+    expect(svc.stats.attemptedNonRead).toBe(0);
+    expect(ro.stats.attemptedNonRead).toBe(0);
   });
 
   it('the minted role cannot reach the base table even if the guard were bypassed', async () => {

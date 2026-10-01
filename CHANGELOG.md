@@ -12,6 +12,38 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-10-01 — Talk to Data: metrics registry, exact bundle allocation and checks — `feat(chat)`
+
+The semantic layer behind Ask Coop: every figure comes from one registry definition computed
+by code, never by the model. Nothing user-visible changes yet (`/api/chat` is not rewired;
+`describe_data`, the tool schemas and the model loop are the next features).
+
+- **Nine metrics** with declared measures and one-line methods: `offline_revenue`,
+  `offline_orders`, `offline_aov`, `top_products`, `payment_mix`, `event_rollup`, `pet_mix`,
+  `bundle_sales`, `bundle_picks`. A pure `runMetric(request, data, now)` rejects anything off
+  the closed shape (free-form keys, undeclared measures, bad dates) with the allowed values.
+- **Decision:** a bundle's pick lines carry ₱0, but peso values per SKU are derivable. Each
+  bundle's paid price is split across its picks by list-price weight **on the sale date**
+  (`src/pos-price-history.ts`, `src/pos-bundle-compute.ts`), in whole centavos with the
+  largest-remainder rule, so SKU totals add back to the paid total exactly (₱0 tolerance).
+- Checks and insights are code (`src/chat/checks.ts`, `insights.ts`): reconciles, round
+  row count, ₱0 lines, price changes, small sample, untagged share, partial coverage, sudden
+  change, mock source. A failed check marks the result unreliable.
+- Checked against the real PROD data (read-only, nothing committed): bundle revenue ₱147,300
+  (equals the existing `bundleSalesSummary`), named ₱106,950, dog 66.4% of tagged, Buy Any 4
+  92.8% of named, 582 picks allocating exactly ₱106,950 against ₱139,360 list value.
+- Found in that run: the SKU breakdown covers only ₱106,950 of the ₱147,300, because 68 older
+  bundle orders have no pick detail. The result now says so. Also fixed before shipping:
+  SKU rows were grouped by name, which would merge two products that share a name.
+- Dates are Philippine time, weeks run Monday to Sunday; a range outside the data is valid
+  and reports coverage partial or none (a wrong-year range returns "no data in that range").
+- SQL: three more dashboard-owned views for the role (`coop_chat_prices`,
+  `_price_changes`, `_events`; no cash or staff columns). Still not applied to any hosted
+  project. Local proof: 69 checks pass, and all nine metrics return identical results in
+  `ro_role` and `guarded_service` mode.
+
+---
+
 ## 2026-10-01 — Talk to Data: database read-only role for Ask Coop — `feat(chat)`
 
 Layer 5 of the read-only enforcement: even if every code layer failed, the database
