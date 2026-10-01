@@ -34,7 +34,6 @@ export function logToolCall(
       rowCount: e.rowCount ?? null,
       ms: e.ms,
       user: e.user ?? null,
-      ts: new Date().toISOString(), // bursts vs gaps decide whether the 5-minute prompt cache is warm
     }),
   );
 }
@@ -92,6 +91,7 @@ export function logTurn(
       ms: e.ms,
       stopReason: e.stopReason,
       user: e.user ?? null,
+      ts: new Date().toISOString(), // bursts vs gaps decide whether the 5-minute prompt cache is warm
     }),
   );
 }
