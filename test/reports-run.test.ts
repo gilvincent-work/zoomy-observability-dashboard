@@ -183,3 +183,35 @@ describe('Slice 4 #7: an old version using a metric since removed loads and rend
     expect(run.dataThrough).toBeNull();
   });
 });
+
+describe('one bad block never takes the page down', () => {
+  // A negative bundle header total makes allocateByWeights throw inside bundle_picks (review m5).
+  const poisoned = () => {
+    const d = bundleData();
+    const orders = d.orders.map((o) => ({...o, items: o.items.map((l) => ({...l}))}));
+    const header = orders.flatMap((o) => o.items).find((l) => l.product_id == null && l.bundle_group);
+    if (!header) throw new Error('fixture has no bundle header');
+    header.line_total = -50;
+    return {...d, orders};
+  };
+  const picks = (id: string) => ({id, kind: 'table', query: {metric: 'bundle_picks', dimension: 'sku', measure: 'revenue', compare_to: 'none', sort: 'default', limit: 25}, view: {columns: ['auto'], title: 'Picks'}});
+
+  it('a block whose maths throws becomes an error card; the other blocks still render; nothing throws', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const raw = asJson(spec([kpiBlock('b1'), picks('b2') as never, tableBlock('b3')]));
+    const run = ok(runReport(raw, poisoned(), EVAL_NOW));
+    expect(run.blocks.map((b) => b.id)).toEqual(['b1', 'b2', 'b3']);
+    expect(isBlockError(run.blocks[1])).toBe(true);
+    expect(run.blocks[1]).toEqual({id: 'b2', error: 'This block could not be calculated.'});
+    expect(isBlockError(run.blocks[0])).toBe(false);
+    expect(isBlockError(run.blocks[2])).toBe(false);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('report_block_failed'));
+    expect(JSON.stringify(spy.mock.calls)).not.toMatch(/-50|RangeError: totalPesos/); // no data and no message text in the log
+    spy.mockRestore();
+  });
+
+  it('the same data with only healthy blocks is unaffected', () => {
+    const run = ok(runReport(asJson(spec()), poisoned(), EVAL_NOW));
+    expect(run.blocks.some(isBlockError)).toBe(false);
+  });
+});

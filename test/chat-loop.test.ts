@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
-import {runChatLoop, CUT_OFF_TEXT, MAX_STEPS_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
+import {readFileSync} from 'node:fs';
+import {runChatLoop, CHAT_DEADLINE_MS, CUT_OFF_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
 import {assertRequestShape} from '../src/chat/request-shape';
 import {CHAT_TOOLS} from '../src/chat/tool-defs';
 import type {ChatStreamEvent} from '../src/chat/stream-types';
@@ -144,6 +145,64 @@ describe('runChatLoop', () => {
     expect(events.at(-2)).toEqual({t: 'text', d: MAX_STEPS_TEXT});
     expect(events.at(-1)).toMatchObject({t: 'done', steps: 8});
     expect(turnLines(s)[0]).toMatchObject({steps: 8, stopReason: 'max_steps'});
+  });
+
+  describe('wall-clock deadline', () => {
+    const slowClient = (stepMs: number) => {
+      let t = 0;
+      const client = new FakeClient((n) => toolTurn(toolUse(`t${n}`, 'query_metric', QUERY)));
+      client.onCall = () => void (t += stepMs); // every model step "takes" stepMs
+      return {client, clock: () => t};
+    };
+
+    it('stops gracefully before a step that would start past the budget: one short text, then done', async () => {
+      const {client, clock} = slowClient(30_000);
+      const {events, opts, s} = setup(client, {clock});
+      const summary = await runChatLoop(opts);
+      expect(client.requests).toHaveLength(2); // t=0 and t=30s start; t=60s is past the 50 s budget
+      expect(summary).toMatchObject({steps: 2, stopReason: 'deadline'});
+      expect(events.at(-2)).toEqual({t: 'text', d: DEADLINE_TEXT});
+      expect(events.at(-1)).toMatchObject({t: 'done', steps: 2});
+      expect(DEADLINE_TEXT).toBe('That took longer than I allow. Try a narrower question.');
+      expect(turnLines(s)[0]).toMatchObject({steps: 2, stopReason: 'deadline', ms: 60_000});
+    });
+
+    it('the default budget is 50 s and an explicit one wins', async () => {
+      expect(CHAT_DEADLINE_MS).toBe(50_000);
+      const a = slowClient(50_001); // one step past 50 s: the second step never starts
+      await runChatLoop(setup(a.client, {clock: a.clock}).opts);
+      expect(a.client.requests).toHaveLength(1);
+      const b = slowClient(50_000); // exactly 50 s is not "over"
+      await runChatLoop(setup(b.client, {clock: b.clock, maxSteps: 2}).opts);
+      expect(b.client.requests).toHaveLength(2);
+      const c = slowClient(1_000);
+      await runChatLoop(setup(c.client, {clock: c.clock, deadlineMs: 2_500}).opts);
+      expect(c.client.requests).toHaveLength(3);
+    });
+
+    it('a deadline hit after some text was streamed starts the notice on its own paragraph', async () => {
+      let t = 0;
+      const client = new FakeClient((n) => (n === 1 ? {...toolTurn(toolUse('t1', 'query_metric', QUERY)), text: ['Looking.']} : {text: ['never']}));
+      client.onCall = () => void (t += 60_000);
+      const {events, opts} = setup(client, {clock: () => t});
+      await runChatLoop(opts);
+      expect(events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d)).toEqual(['Looking.', `\n\n${DEADLINE_TEXT}`]);
+      expect(client.requests).toHaveLength(1);
+    });
+
+    it('a fast turn is untouched (no deadline text, normal done)', async () => {
+      const client = new FakeClient(() => ({text: ['Fine.']}));
+      const {events, opts} = setup(client, {clock: () => 0});
+      const summary = await runChatLoop(opts);
+      expect(summary.stopReason).toBe('end_turn');
+      expect(events.map((e) => e.t)).toEqual(['text', 'done']);
+    });
+
+    it('the route passes what is left of the 50 s after its own data loads', () => {
+      const src = readFileSync('app/api/chat/route.ts', 'utf8');
+      expect(src).toMatch(/const started = Date\.now\(\)/);
+      expect(src).toMatch(/deadlineMs: Math\.max\(0, CHAT_DEADLINE_MS - \(Date\.now\(\) - started\)\)/);
+    });
   });
 
   it('(d) refusal and max_tokens', async () => {

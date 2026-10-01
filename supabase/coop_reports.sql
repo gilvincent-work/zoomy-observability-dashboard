@@ -12,13 +12,15 @@
 -- Write ordering (no RPC, no transaction, by design; the write client forbids /rpc):
 --   save:    1. insert coop_reports (current_version = 1)   2. insert coop_report_versions (version 1)
 --            if step 2 fails the report row is soft-deleted (best effort).
---   update / restore (optimistic, PostgREST PATCH with filters, Prefer: return=representation):
---            1. update coop_reports set current_version = N+1 where id = $id and current_version = N and deleted_at is null
---               zero rows returned = a stale expected_version (or deleted): NO version row is written.
---            2. insert coop_report_versions (report_id, N+1, ...)
---            if step 2 fails the bump is rolled back (set current_version = N where id = $id and current_version = N+1).
+--   update / restore: the VERSION ROW is the arbiter, `current_version` is only a cache of it.
+--            1. read the highest version row for the report; it must equal the caller's expected_version (else stale, NOTHING written)
+--            2. insert coop_report_versions (report_id, N+1, ...): the primary key lets exactly one racing writer win;
+--               a duplicate key (23505) is the stale-version error, never retried
+--            3. update coop_reports set current_version = N+1 [, title] where id = $id and current_version < N+1 and deleted_at is null
+--               Step 3 is best effort: if it is lost (crash, lost response) nothing is wedged, because every reader and every action
+--               derives the version from the version rows, and the next successful write repairs the counter.
 --   rename, pin, visibility, delete (soft): update coop_reports only; they create no version.
--- The composite primary key (report_id, version) is the last line of defence: two writers can never both create version N+1.
+-- The composite primary key (report_id, version) is what makes two writers unable to both create version N+1.
 --
 -- Verify after applying (read-only):
 --   select to_regclass('public.coop_reports'), to_regclass('public.coop_report_versions');          -- both non-null

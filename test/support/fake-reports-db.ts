@@ -6,7 +6,7 @@
 import type {DbError, DbResult, DbRow, DbValue, ReportsTable, ReportsWriteClient, RowsBuilder} from '../../src/reports-client';
 
 type Op = 'select' | 'insert' | 'update';
-type Filter = {col: string; kind: 'eq' | 'is'; value: DbValue | null};
+type Filter = {col: string; kind: 'eq' | 'is' | 'lt'; value: DbValue | null};
 
 export interface FakeCall {
   table: ReportsTable;
@@ -22,13 +22,19 @@ export class FakeReportsDb {
   calls: FakeCall[] = [];
   /** Every table answers like a database where coop_reports.sql was never applied. */
   missing = false;
-  /** Make the next matching call fail with a generic error. */
+  /** Make the next matching call fail with a generic error BEFORE it executes (a crash or an outage: nothing is written). */
   private failures: {table: ReportsTable; op: Op}[] = [];
+  /** Make the next matching call execute, then report an error (the write landed, the response was lost). */
+  private lost: {table: ReportsTable; op: Op}[] = [];
   private clock = 0;
   private ids = 0;
 
   failNext(table: ReportsTable, op: Op): void {
     this.failures.push({table, op});
+  }
+
+  loseResponseNext(table: ReportsTable, op: Op): void {
+    this.lost.push({table, op});
   }
 
   /** The time of the Nth write: strictly increasing so "most recently updated" is deterministic. */
@@ -83,6 +89,7 @@ export class FakeReportsDb {
     const self: RowsBuilder = {
       eq: (col, value) => (filters.push({col, kind: 'eq', value}), self),
       is: (col, value) => (filters.push({col, kind: 'is', value}), self),
+      lt: (col, value) => (filters.push({col, kind: 'lt', value}), self),
       order: (col, o) => (order.push({col, asc: o?.ascending !== false}), self),
       limit: (n) => ((limit = n), self),
       select: (c) => ((returning = true), (cols = c ?? cols), self),
@@ -90,6 +97,15 @@ export class FakeReportsDb {
       then: (resolve, reject) => run().then(resolve, reject),
     };
     const run = async (): Promise<DbResult<DbRow[]>> => {
+      const li = this.lost.findIndex((f) => f.table === table && f.op === op);
+      if (li >= 0) {
+        this.lost.splice(li, 1);
+        await execute(); // the database applies it ...
+        return {data: null, error: {message: 'fetch failed'}}; // ... but the caller never hears back
+      }
+      return execute();
+    };
+    const execute = async (): Promise<DbResult<DbRow[]>> => {
       await Promise.resolve(); // a real network hop: concurrent callers interleave here, then each executes atomically
       this.calls.push({table, op, filters: [...filters], values});
       if (this.missing) return {data: null, error: MISSING};
@@ -98,7 +114,7 @@ export class FakeReportsDb {
         this.failures.splice(fi, 1);
         return {data: null, error: {message: 'boom'}};
       }
-      const matches = (r: DbRow) => filters.every((f) => (f.kind === 'is' ? (r[f.col] ?? null) === f.value : r[f.col] === f.value));
+      const matches = (r: DbRow) => filters.every((f) => (f.kind === 'is' ? (r[f.col] ?? null) === f.value : f.kind === 'lt' ? Number(r[f.col]) < Number(f.value) : r[f.col] === f.value));
       const project = (r: DbRow): DbRow => (cols && cols !== '*' ? Object.fromEntries(cols.split(',').map((c) => [c.trim(), r[c.trim()]])) : {...r});
       if (op === 'select') {
         const rows = this.tables[table].filter(matches);

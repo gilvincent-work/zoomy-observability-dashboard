@@ -2,14 +2,14 @@
 
 import {createContext, useCallback, useContext, useEffect, useRef, useState} from 'react';
 import {useSearchParams, usePathname, useRouter} from 'next/navigation';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {Sparkles, X, ArrowUp, Plus, Copy, Check, Square, RotateCcw, ArrowRight, AlertCircle, Maximize2, Minimize2} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {createLineDecoder} from '@/src/chat/stream-protocol';
 import {ChatBlocks} from './chat-blocks';
 import {interleave, sanitizeBlocks, type PlacedBlock} from './chat-blocks-format';
-import {applyReportEvent, describeFilters, placeBlock, reportBody, sanitizeReport} from './report-state';
+import {ChatMarkdown} from './chat-markdown';
+import {applyStreamEvents, closeStream, startStream, StreamSlot} from './chat-stream-state';
+import {describeFilters, reportBody, sanitizeReport} from './report-state';
 import {ReportSaveBar} from './reports-save-bar';
 import {lastUserPrompt, loadSavedRef, SAVED_KEY, serializeSavedRef} from './reports-helpers';
 import type {ReportSpec} from '@/src/chat/report-types';
@@ -98,7 +98,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   const [messages, setMessages] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
+  const slotRef = useRef(new StreamSlot());
   // Latest messages for event handlers: a state updater must stay pure (Strict Mode runs it twice), so sending never happens inside one.
   const messagesRef = useRef<Msg[]>([]);
   messagesRef.current = messages;
@@ -168,8 +168,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
 
   const send = useCallback(
     async (history: Msg[], reportAtSend: ReportSpec | null) => {
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
+      const ctrl = slotRef.current.begin();
       setBusy(true);
       setMessages([...history, {role: 'assistant', content: ''}]);
       try {
@@ -196,59 +195,48 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         const decode = createLineDecoder();
-        let acc = '';
         // Blocks can land in an earlier message (a follow-up edits the open dashboard in place), so work on the whole list.
-        let working: Msg[] = [...history, {role: 'assistant', content: ''}];
-        const last = working.length - 1;
-        let finished = false;
-        // Ids of the blocks the open REPORT holds (not every drawn block), so only a block the server removes leaves the screen.
-        let held = new Set((reportAtSend?.blocks ?? []).map((b) => b.id));
+        const last = history.length;
+        let state = startStream([...history, {role: 'assistant', content: ''} as Msg], reportAtSend);
         const apply = (events: ReturnType<typeof decode>) => {
-          for (const ev of events) {
-            if (ev.t === 'text') {
-              acc += ev.d;
-              setStatus('');
-            } else if (ev.t === 'block') {
-              working = placeBlock(working, last, ev.block, acc.length);
-            } else if (ev.t === 'report') {
-              const applied = applyReportEvent(working, held, ev.spec);
-              working = applied.messages;
-              held = applied.held;
-              setReport(ev.spec);
-            } else if (ev.t === 'status') {
-              setStatus(ev.text);
-            } else if (ev.t === 'error') {
-              acc += `${acc ? '\n\n' : ''}⚠️ ${ev.message}`;
-              setStatus('');
-            } else if (ev.t === 'done') {
-              finished = true;
-              setStatus('');
-            }
-          }
-          setMessages(working.map((m, i) => (i === last ? {...m, content: acc} : m)));
+          const out = applyStreamEvents(state, last, events);
+          state = out.state;
+          if (out.effects.status !== undefined) setStatus(out.effects.status);
+          if (out.effects.report) setReport(out.effects.report.spec);
+          setMessages(state.messages);
         };
-        while (!finished) {
+        while (!state.finished) {
           const {done, value} = await reader.read();
+          if (ctrl.signal.aborted) return; // Stop or New chat: nothing more may touch the conversation
           if (done) {
             apply(decode(dec.decode(), true));
             break;
           }
           apply(decode(dec.decode(value, {stream: true})));
         }
+        // The stream closed without a `done` or an `error` event (the host killed the function, the connection dropped): say so.
+        const closed = closeStream(state, last);
+        if (closed !== state) {
+          state = closed;
+          setMessages(state.messages);
+        }
       } catch (e) {
         // A user-initiated stop keeps the partial answer; other errors show a bubble.
         if ((e as Error).name === 'AbortError') return;
         setMessages([...history, {role: 'assistant', content: `Something went wrong: ${(e as Error).message}`, error: true}]);
       } finally {
-        setBusy(false);
-        setStatus('');
-        abortRef.current = null;
+        // Only the request that is still current may reset the drawer: a stream that was aborted by New chat must not clear the
+        // busy flag or the controller of the request that replaced it.
+        if (slotRef.current.release(ctrl)) {
+          setBusy(false);
+          setStatus('');
+        }
       }
     },
     [week, home, setReport],
   );
 
-  const stop = useCallback(() => abortRef.current?.abort(), []);
+  const stop = useCallback(() => slotRef.current.abort(), []);
 
   const regenerate = useCallback(() => {
     if (busy) return;
@@ -290,7 +278,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   // the open dashboard and `ref` the saved reference, so Update targets the same report.
   const openReport = useCallback(
     (spec: ReportSpec, ref: SavedReportRef | null) => {
-      abortRef.current?.abort();
+      slotRef.current.abort();
       setMessages([]);
       askedRef.current = null;
       try {
@@ -319,6 +307,10 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   }, []);
 
   const newChat = useCallback(() => {
+    // A running stream must stop first, or its next chunk would call setMessages with the old conversation and bring it back.
+    slotRef.current.abort();
+    setBusy(false);
+    setStatus('');
     setMessages([]);
     setReport(null);
     askedRef.current = null;
@@ -639,7 +631,7 @@ function CoopChatDrawer({
                           </div>
                         ) : p.text.trim() ? (
                           <div key={pi} className={ASSISTANT_BUBBLE}>
-                            <Markdown remarkPlugins={[remarkGfm]}>{p.text}</Markdown>
+                            <ChatMarkdown text={p.text} />
                           </div>
                         ) : null,
                       )

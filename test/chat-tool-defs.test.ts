@@ -124,7 +124,7 @@ describe('CHAT_TOOLS', () => {
   });
 
   it('F10: get_digest and lookup_product take only enums and a name, all required, and say when to call them', () => {
-    expect(Object.keys(props(get_digest))).toEqual(['window', 'section']);
+    expect(Object.keys(props(get_digest))).toEqual(['window', 'from', 'to', 'section']);
     expect(props(get_digest).window.enum).toEqual(['latest', 'previous', 'recent_weeks']);
     expect(props(get_digest).section.enum).toEqual(['comparison', 'figures', 'sales', 'customers', 'shopee', 'lazada', 'products', 'weekly_revenue']);
     expect(Object.keys(props(lookup_product))).toEqual(['query', 'show']);

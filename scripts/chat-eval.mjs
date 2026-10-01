@@ -20,8 +20,9 @@ import {existsSync, mkdirSync, mkdtempSync, readFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {LOCAL_HOSTS, isLocalSupabaseUrl} from './local-only.mjs';
 
-export const LOCAL_HOSTS = ['127.0.0.1', 'localhost'];
+export {LOCAL_HOSTS};
 /** Exit criteria, design 7b F11: mechanical cases 100%; grader-scored wording checks at least 90%. */
 export const MECHANICAL_MIN = 1;
 export const RUBRIC_MIN = 0.9;
@@ -32,15 +33,7 @@ export function assertLocalRun(env) {
   if (env.CHAT_LIVE_EVAL !== '1') problems.push('CHAT_LIVE_EVAL is not 1 (real model calls cost money, so it is opt-in)');
   const raw = env.SUPABASE_URL_ARCHIVE;
   if (!raw) problems.push('SUPABASE_URL_ARCHIVE is not set (source scripts/local-supabase/.local-env first)');
-  else {
-    let host = '';
-    try {
-      host = new URL(raw).hostname;
-    } catch {
-      host = '';
-    }
-    if (!LOCAL_HOSTS.includes(host)) problems.push('SUPABASE_URL_ARCHIVE is not a local host (only 127.0.0.1 or localhost is allowed: a hosted project, PROD above all, is never used for evals)');
-  }
+  else if (!isLocalSupabaseUrl(raw)) problems.push('SUPABASE_URL_ARCHIVE is not a local host (only 127.0.0.1 or localhost is allowed: a hosted project, PROD above all, is never used for evals)');
   if (!env.ANTHROPIC_API_KEY) problems.push('ANTHROPIC_API_KEY is not set');
   if (env.CHAT_LIVE_DATA !== 'synthetic' && !env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE) problems.push('SUPABASE_SERVICE_ROLE_KEY_ARCHIVE is not set (or use CHAT_LIVE_DATA=synthetic)');
   return {ok: problems.length === 0, problems};

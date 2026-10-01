@@ -2,7 +2,7 @@ import {describe, expect, it, vi} from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import {buildCoopSystemPrompt, buildDigestBlock, buildStaticSystem} from '../src/chat/context';
+import {buildCoopSystemPrompt, buildDigestBlock, buildLiveContextBlock, buildStaticSystem} from '../src/chat/context';
 import {READ_ONLY_STATEMENT} from '../src/chat/read-only-statement';
 import {buildStaticCatalog} from '../src/chat/preamble';
 import {COOP_CHAT} from '../src/chat/config';
@@ -104,5 +104,15 @@ describe('analyst skill replaces the F5 stopgap guardrails', () => {
     const text = buildStaticSystem();
     expect(text.indexOf(READ_ONLY_STATEMENT)).toBeLessThan(text.indexOf('## How you think'));
     expect(text.indexOf('## How you think')).toBeLessThan(text.indexOf('## Output format'));
+  });
+});
+
+describe('live context block: the owner defines the dates (no digest anchoring)', () => {
+  it('carries no digest, no selected period and no figures, and tells the model to ask for missing dates', () => {
+    const t = buildLiveContextBlock();
+    expect(t).toMatch(/ask which dates/);
+    expect(t).not.toMatch(/Selected period|```json/);
+    expect(t).not.toMatch(/\d{4}-\d{2}-\d{2}|₱\s?\d/); // static text: no dates, no figures
+    expect(buildLiveContextBlock()).toBe(t); // byte-identical: cache-friendly
   });
 });

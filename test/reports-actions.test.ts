@@ -157,6 +157,21 @@ describe('Slice 4 #1: Save creates the report and version 1 from a draft', () =>
     expect(h.db.tables.coop_report_versions).toHaveLength(0);
   });
 
+  it('a LOST response on version 1 also retires the report (it is soft-deleted, so no half-saved report stays visible)', async () => {
+    h.db.loseResponseNext('coop_report_versions', 'insert');
+    expect(await saveReport({spec: draft()})).toMatchObject({ok: false});
+    expect(h.db.tables.coop_reports).toHaveLength(1);
+    expect(h.db.tables.coop_reports[0].deleted_at).not.toBeNull();
+  });
+
+  it('if retiring the orphan fails too it is logged, the action still returns an error and never throws', async () => {
+    h.db.failNext('coop_report_versions', 'insert');
+    h.db.failNext('coop_reports', 'update');
+    const r = await saveReport({spec: draft()});
+    expect(r).toMatchObject({ok: false});
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('reports_orphan_not_retired'));
+  });
+
   it('Pin dates: resolves the range once at save time into fixed dates and stores pinned = true', async () => {
     vi.useFakeTimers({toFake: ['Date']});
     vi.setSystemTime(EVAL_NOW);
@@ -206,10 +221,9 @@ describe('Slice 4 #10: a stale expected_version returns an error and writes no v
     expect(loser).toMatchObject({ok: false, error: expect.stringContaining('changed since you opened it')});
   });
 
-  it('the optimistic filter alone stops a writer that passed the early check (a stale read)', async () => {
+  it('the version primary key alone stops a writer that passed the early check (another writer inserted in between)', async () => {
     const id = await saved();
-    // Another writer bumps the counter between this writer's read and its PATCH.
-    const row = h.db.reportById(id) as {current_version: number};
+    // Another writer inserts version 2 between this writer's read of the latest version and its own insert.
     const real = h.db.client;
     h.db.client = () => {
       const c = real.call(h.db);
@@ -217,24 +231,101 @@ describe('Slice 4 #10: a stale expected_version returns an error and writes no v
         ...c,
         from: (t) => {
           const f = c.from(t);
-          return {...f, update: (v) => ((row.current_version = 2), f.update(v))};
+          return {...f, insert: (v) => (t === 'coop_report_versions' ? (h.db.seedVersion(h.db.reportById(id) as never, 2, draft(), {created_by: B}), f.insert(v)) : f.insert(v))};
         },
       };
     };
-    const r = await updateReport({id, expectedVersion: 1, spec: draft()});
-    expect(r).toMatchObject({ok: false});
-    expect(h.db.versionsOf(id).map((v) => v.version)).toEqual([1]);
+    const r = await updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')])});
+    expect(r).toMatchObject({ok: false, error: expect.stringContaining('changed since you opened it')});
+    expect(h.db.versionsOf(id).map((v) => [v.version, v.created_by])).toEqual([[1, A], [2, B]]); // the other writer's row is untouched
+    expect(h.db.reportById(id)?.title).toBe('Bundle sales');
   });
 
-  it('a failed version insert rolls the bump back, including a title changed in the same step', async () => {
+  it('a failed version insert changes nothing (no counter, no title), and the report is still updatable', async () => {
     const id = await saved();
     h.db.failNext('coop_report_versions', 'insert');
     const r = await updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')]), title: 'Renamed in the same step'});
     expect(r).toMatchObject({ok: false});
     expect(h.db.reportById(id)).toMatchObject({current_version: 1, title: 'Bundle sales'});
     expect(h.db.versionsOf(id).map((v) => v.version)).toEqual([1]);
-    // and the report is still updatable afterwards
+    expect(h.db.calls.filter((c) => c.table === 'coop_reports' && c.op === 'update')).toHaveLength(0); // no rollback needed: the counter was never touched
     expect(await updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')])})).toMatchObject({ok: true, version: 2});
+  });
+
+  it('three concurrent saves with the same expected version: exactly one wins, the rest get the stale error', async () => {
+    const id = await saved();
+    const results = await Promise.all([1, 2, 3].map((n) => updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')]), prompt: `writer ${n}`})));
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    for (const r of results.filter((x) => !x.ok)) expect(r).toMatchObject({error: expect.stringContaining('changed since you opened it')});
+    expect(h.db.versionsOf(id).map((v) => v.version)).toEqual([1, 2]);
+    expect(h.db.reportById(id)?.current_version).toBe(2);
+  });
+
+  it('a stale loser never advances the counter or the title of the winner', async () => {
+    const id = await saved();
+    const [x, y] = await Promise.all([
+      updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')]), title: 'Winner or loser A'}),
+      updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), tableBlock('b2')]), title: 'Winner or loser B'}),
+    ]);
+    const winner = x.ok ? 'Winner or loser A' : 'Winner or loser B';
+    expect([x.ok, y.ok].sort()).toEqual([false, true]);
+    expect(h.db.reportById(id)?.title).toBe(winner);
+  });
+
+  it('crash between the version insert and the counter step: the version exists, the next Update (from the real latest version) works and repairs the counter', async () => {
+    const id = await saved();
+    h.db.failNext('coop_reports', 'update'); // the process dies / the counter PATCH fails after the version row was written
+    const first = await updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')])});
+    expect(first).toMatchObject({ok: true, version: 2}); // the committed fact is the version row
+    expect(h.db.versionsOf(id).map((v) => v.version)).toEqual([1, 2]);
+    expect(h.db.reportById(id)?.current_version).toBe(1); // the counter lags: only a cache
+    // the page derives expected from the real latest version (reports-data latestVersion = 2), so this is not wedged
+    const next = await updateReport({id, expectedVersion: 2, spec: draft([kpiBlock('b1'), chartBlock('b2'), tableBlock('b3')])});
+    expect(next).toMatchObject({ok: true, version: 3});
+    expect(h.db.versionsOf(id).map((v) => v.version)).toEqual([1, 2, 3]);
+    expect(h.db.reportById(id)?.current_version).toBe(3);
+  });
+
+  it('a lagging counter does not stop Restore either (it compares with the real latest version)', async () => {
+    const id = await saved();
+    h.db.failNext('coop_reports', 'update');
+    await updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')])});
+    expect(h.db.reportById(id)?.current_version).toBe(1);
+    expect(await restoreVersion({id, version: 1, expectedVersion: 2})).toMatchObject({ok: true, version: 3});
+    expect(h.db.reportById(id)?.current_version).toBe(3);
+  });
+
+  it('a title changed in a save whose counter step was lost still lands', async () => {
+    const id = await saved();
+    h.db.failNext('coop_reports', 'update');
+    expect(await updateReport({id, expectedVersion: 1, spec: draft(), title: 'Weekly bundles'})).toMatchObject({ok: true, version: 2});
+    expect(h.db.reportById(id)?.title).toBe('Weekly bundles'); // the counter stays a lagging cache; the version row is the fact
+    expect(h.db.versionsOf(id).map((v) => v.version)).toEqual([1, 2]);
+  });
+
+  it('lost insert response (the row landed, the caller saw an error): no retry storm, no wedge', async () => {
+    const id = await saved();
+    h.db.loseResponseNext('coop_report_versions', 'insert');
+    const lost = await updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')])});
+    expect(lost).toMatchObject({ok: false});
+    expect(h.db.versionsOf(id).map((v) => v.version)).toEqual([1, 2]); // it did land
+    // the person presses Update again from the old page (expected 1): one clear "reload" answer, nothing written
+    const calls = h.db.calls.length;
+    const retry = await updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')])});
+    expect(retry).toMatchObject({ok: false, error: expect.stringContaining('now version 2')});
+    expect(h.db.calls.slice(calls).filter((c) => c.op !== 'select')).toEqual([]);
+    expect(h.db.versionsOf(id).map((v) => v.version)).toEqual([1, 2]);
+    // after a reload (expected 2) the report saves normally, the counter catching up
+    expect(await updateReport({id, expectedVersion: 2, spec: draft([kpiBlock('b1'), chartBlock('b2')])})).toMatchObject({ok: true, version: 3});
+    expect(h.db.reportById(id)?.current_version).toBe(3);
+  });
+
+  it('the stale and the failed-write messages carry no database text', async () => {
+    const id = await saved();
+    h.db.failNext('coop_report_versions', 'insert');
+    const r = await updateReport({id, expectedVersion: 1, spec: draft()});
+    expect(r).toEqual({ok: false, error: 'The report could not be saved. Nothing was changed; try again.'});
+    expect(JSON.stringify(r)).not.toContain('boom');
   });
 
   it('update can rename in the same step, validates the draft again, and refuses garbage expected versions', async () => {
@@ -298,7 +389,7 @@ describe('Slice 4 #3: Restore copies version N into a NEW latest version', () =>
     expect(JSON.stringify(specOf(id, 3))).toContain('since_removed');
   });
 
-  it('a failed insert of the restored version rolls the counter back', async () => {
+  it('a failed insert of the restored version changes nothing', async () => {
     const id = await saved();
     await updateReport({id, expectedVersion: 1, spec: draft([kpiBlock('b1'), chartBlock('b2')])});
     h.db.failNext('coop_report_versions', 'insert');
@@ -413,7 +504,7 @@ describe('Slice 4 #9: a deleted report refuses every action', () => {
     expect(snapshot()).toBe(before);
   });
 
-  it('a delete that races an update: the bump filters on deleted_at, so no version is added', async () => {
+  it('a delete that races an update: the counter step filters on deleted_at, the caller is told the report was deleted', async () => {
     const id = await saved();
     const row = h.db.reportById(id) as {deleted_at: string | null};
     const real = h.db.client;
@@ -425,7 +516,7 @@ describe('Slice 4 #9: a deleted report refuses every action', () => {
       }};
     };
     expect(await updateReport({id, expectedVersion: 1, spec: draft()})).toEqual({ok: false, error: 'This report was deleted.'});
-    expect(h.db.versionsOf(id)).toHaveLength(1);
+    expect(h.db.reportById(id)?.deleted_at).toBe('2026-10-01T00:00:00Z'); // still deleted, not resurrected
   });
 });
 
@@ -490,7 +581,8 @@ describe('demo mode and failures: actions return an ActionResult and never throw
     expect(await saveReport({spec: draft()})).toMatchObject({ok: false, error: expect.stringContaining('not set up')});
     h.db.missing = false;
     h.db.failNext('coop_reports', 'insert');
-    expect(await saveReport({spec: draft()})).toMatchObject({ok: false, error: expect.stringContaining('boom')});
+    const generic = await saveReport({spec: draft()});
+    expect(generic).toEqual({ok: false, error: 'The report could not be saved. Nothing was changed; try again.'});
     const real = h.db.client;
     h.db.client = () => ({
       from: (t) => ({

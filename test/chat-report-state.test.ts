@@ -74,10 +74,11 @@ describe('placeBlock', () => {
     {role: 'user', content: 'q2'},
     {role: 'assistant', content: 'second'},
   ];
+  const held = new Set(['b1', 'b2']); // the open dashboard holds b1 and b2
 
-  it('replaces an id from an earlier message in place and leaves the rest untouched', () => {
+  it('replaces an id of the open dashboard from an earlier message in place and leaves the rest untouched', () => {
     const edited = {...b1, title: 'Edited'};
-    const out = placeBlock(base(), 3, edited, 99);
+    const out = placeBlock(base(), 3, edited, 99, held);
     const expected = base();
     expected[1].blocks = [{at: 3, block: edited}, {at: 5, block: b2}];
     expect(out).toEqual(expected);
@@ -85,27 +86,53 @@ describe('placeBlock', () => {
   });
 
   it('appends a new id to the current message at its offset', () => {
-    const out = placeBlock(base(), 3, b3, 6);
+    const out = placeBlock(base(), 3, b3, 6, held);
     expect(out[3].blocks).toEqual([{at: 6, block: b3}]);
     expect(out[1]).toEqual(base()[1]);
   });
 
   it('upserts an id already in the current message', () => {
-    const once = placeBlock(base(), 3, b3, 6);
+    const once = placeBlock(base(), 3, b3, 6, held);
     const edited = {...b3, title: 'Again'};
-    const twice = placeBlock(once, 3, edited, 20);
+    const twice = placeBlock(once, 3, edited, 20, held);
     expect(twice[3].blocks).toEqual([{at: 6, block: edited}]);
   });
 
-  it('never duplicates an id across messages and does not mutate the input', () => {
+  it('never duplicates an id across messages while the dashboard is open, and does not mutate the input', () => {
     const input = base();
     const snapshot = JSON.parse(JSON.stringify(input));
-    let out = placeBlock(input, 3, b1, 1);
-    out = placeBlock(out, 3, b3, 2);
-    out = placeBlock(out, 3, b3, 2);
+    let out = placeBlock(input, 3, b1, 1, held);
+    out = placeBlock(out, 3, b3, 2, held);
+    out = placeBlock(out, 3, b3, 2, held);
     const ids = out.flatMap((m) => (m.blocks ?? []).map((p) => p.block.id));
     expect(ids.sort()).toEqual(['b1', 'b2', 'b3']);
     expect(JSON.parse(JSON.stringify(input))).toEqual(snapshot);
+  });
+
+  it('M4: after Clear dashboard (nothing held) a new b1 is a NEW block of the current message and the old b1 stays', () => {
+    const fresh = {...b1, title: 'Unrelated tile'};
+    const out = placeBlock(base(), 3, fresh, 4, new Set());
+    expect(out[1].blocks).toEqual([{at: 3, block: b1}, {at: 5, block: b2}]); // the earlier answer is untouched
+    expect(out[3].blocks).toEqual([{at: 4, block: fresh}]);
+  });
+
+  it('an id that is NOT in the open dashboard never replaces an earlier block, even if an older message has it', () => {
+    const out = placeBlock(base(), 3, {...b2, title: 'Other'}, 4, new Set(['b1']));
+    expect(out[1].blocks?.find((p) => p.block.id === 'b2')?.block).toEqual(b2);
+    expect(out[3].blocks?.map((p) => p.block.id)).toEqual(['b2']);
+  });
+
+  it('with the same id in two earlier messages the NEWEST one is the open dashboard\'s and is the one replaced', () => {
+    const msgs: M[] = [
+      {role: 'assistant', content: 'old', blocks: [{at: 0, block: b1}]},
+      {role: 'assistant', content: 'newer dashboard', blocks: [{at: 0, block: {...b1, title: 'Newer'}}]},
+      {role: 'assistant', content: 'now'},
+    ];
+    const edited = {...b1, title: 'Edited newer'};
+    const out = placeBlock(msgs, 2, edited, 0, new Set(['b1']));
+    expect(out[0].blocks?.[0].block).toEqual(b1);
+    expect(out[1].blocks?.[0].block).toEqual(edited);
+    expect(out[2].blocks).toBeUndefined();
   });
 });
 
@@ -117,6 +144,12 @@ describe('dropBlocks', () => {
     expect(out[0].blocks?.map((p) => p.block.id)).toEqual(['b2']);
     expect(out[1].blocks).toEqual([]);
     expect(out[2]).toBe(msgs[2]);
+  });
+  it('with the same id in two messages (a cleared dashboard, then a new one) only the NEWEST copy goes', () => {
+    const msgs = [{blocks: [blk('b1')]}, {blocks: [blk('b1'), blk('b2')]}];
+    const out = dropBlocks(msgs, new Set(['b1']));
+    expect(out[0].blocks?.map((p) => p.block.id)).toEqual(['b1']);
+    expect(out[1].blocks?.map((p) => p.block.id)).toEqual(['b2']);
   });
   it('returns the same array when nothing is removed', () => {
     const msgs = [{blocks: [blk('b1')]}];

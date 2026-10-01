@@ -4,11 +4,11 @@
 import { createHmac } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { createClient } from '@supabase/supabase-js'
+import { assertLocalSupabase } from '../local-only.mjs'
 
 const URL_ = process.env.SB_URL, ANON = process.env.SB_ANON, SECRET = process.env.SB_JWT_SECRET
 if (!URL_ || !ANON || !SECRET) throw new Error('set SB_URL, SB_ANON, SB_JWT_SECRET')
-const host = new globalThis.URL(URL_).hostname
-if (!['127.0.0.1', 'localhost'].includes(host)) throw new Error('refusing non-local URL: ' + host)
+assertLocalSupabase(URL_)
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const mint = (claims, secret = SECRET) => {

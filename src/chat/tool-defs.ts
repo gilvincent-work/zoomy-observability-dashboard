@@ -66,15 +66,17 @@ const getDigest: ToolDefinition = {
     'Call it for any question about Shopee, Lazada or the website, or a channel comparison, that the digest in the conversation does not already answer, and for the previous week. ' +
     'It returns a result id you can pass to render_table or render_chart; the figures are as published and every row says its time basis (never present an all-time figure as this week). ' +
     'For offline POS sales use query_metric instead. Use "comparison" for Lazada vs Shopee vs Website. ' +
-    'For a WEEK-BY-WEEK comparison of online channels and offline sales use window "recent_weeks" with section "weekly_revenue" (one row per stored weekly digest, Offline POS added for the same weeks), then ONE render_chart (line when the owner asks for a line, else auto); say how many weeks exist.',
+    'For a WEEK-BY-WEEK comparison of online channels and offline sales use window "recent_weeks" with section "weekly_revenue" (one row per stored weekly digest, Offline POS added for the same weeks), pass the dates the owner gave in from and to (ask if they gave none), then ONE render_chart (line when the owner asks for a line, else auto); say which weeks have no online figures.',
   strict: true,
   input_schema: {
     type: 'object',
     properties: {
       window: {type: 'string', enum: [...DIGEST_WINDOWS], description: '"latest" is the newest stored weekly digest, "previous" the one before it, "recent_weeks" the recent weeks as a series (only with section "weekly_revenue").'},
+      from: {type: 'string', description: 'First date as YYYY-MM-DD, ONLY for window "recent_weeks" (the owner\'s own start date; ask them if they gave none). Otherwise "".'},
+      to: {type: 'string', description: 'Last date as YYYY-MM-DD, ONLY for window "recent_weeks" (the owner\'s own end date). Otherwise "".'},
       section: {type: 'string', enum: [...DIGEST_SECTIONS], description: '"comparison" is one row per channel; "figures", "sales" and "customers" are the digest\'s own figure lists; "shopee" and "lazada" their marketplace figures; "products" the top products per channel.'},
     },
-    required: ['window', 'section'],
+    required: ['window', 'section', 'from', 'to'],
     additionalProperties: false,
   },
 };

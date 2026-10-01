@@ -20,10 +20,16 @@ import type {ReportRow, ReportsActionResult, ReportVisibility, RestoreVersionInp
 // report and asks src/reports-access.ts whether this person may do this; (5) writes; (6) revalidates the pages. Actions
 // return `{ok: false, error}` and never throw. The actor (owner_email, created_by) always comes from the session.
 //
-// Versioning without RPC or transactions (see supabase/coop_reports.sql): an update PATCHes `current_version` with the
-// filters `id = $id and current_version = $expected and deleted_at is null`; zero rows back means a stale expected_version
-// and NO version row is written. The version row is inserted AFTER a successful bump; if that insert fails the bump is
-// rolled back (best effort). Rename, pin, visibility and delete touch `coop_reports` only and create no version.
+// Versioning without RPC or transactions (see supabase/coop_reports.sql). The VERSION ROW is the arbiter, the counter is not:
+//   update / restore: (1) read the real highest version row and compare it with `expectedVersion` (a mismatch writes nothing);
+//   (2) INSERT version N+1: the composite primary key (report_id, version) lets exactly one of any number of racing writers
+//   win, and the losers (23505) get the stale-version error, never a retry; (3) advance `coop_reports.current_version` (and a
+//   title changed in the same step) with `... and current_version < N+1 and deleted_at is null`. Step 3 is a cache: if it never
+//   happens (a crash between the steps) or its response is lost, nothing is wedged, because every reader and every action
+//   derives the version from the version rows (reports-data `latestVersion`, `latestVersionOf` below), and the next successful
+//   write repairs the counter. A lost response on step 2 (the row exists, the caller saw an error) is the same: the next try
+//   sees the real latest version and says "reload". Rename, pin, visibility and delete touch `coop_reports` only and create no
+//   version. Database error text never reaches the UI: it is logged here (code and message, never report content).
 
 const DEMO_MODE = 'Reports are not available in demo mode: set the Supabase archive env to save reports.';
 const NOT_FOUND = 'Report not found.';
@@ -62,8 +68,17 @@ async function run<T extends object>(body: (ctx: Ctx) => Promise<ReportsActionRe
   }
 }
 
-const dbFail = (e: DbError): {ok: false; error: string} =>
-  fail(isMissingTable(e) ? 'Reports are not set up yet: apply supabase/coop_reports.sql.' : `The report could not be saved (${e.message}).`);
+const GENERIC_DB_ERROR = 'The report could not be saved. Nothing was changed; try again.';
+
+/** Missing tables get their own hint; every other database error is logged here and returned as one short generic line. */
+const dbFail = (e: DbError): {ok: false; error: string} => {
+  if (isMissingTable(e)) return fail('Reports are not set up yet: apply supabase/coop_reports.sql.');
+  console.error(JSON.stringify({event: 'reports_db_error', code: e.code ?? null, message: e.message}));
+  return fail(GENERIC_DB_ERROR);
+};
+
+const staleMessage = (latest: number | null, nothing: string): string =>
+  `This report changed since you opened it${latest ? ` (it is now version ${latest})` : ''}. Reload it and try again. Nothing was ${nothing}.`;
 
 const ROW_COLUMNS = 'id,owner_email,title,visibility,pinned,current_version,deleted_at,created_at,updated_at';
 
@@ -131,42 +146,52 @@ async function prepareSpec(raw: unknown, pinDates: boolean, title: string): Prom
   return {ok: true, spec: stored};
 }
 
+/** The highest version row that really exists for a report (the source of truth; `current_version` is only a cache of it). */
+async function latestVersionOf(ctx: Ctx, id: string): Promise<{ok: true; latest: number | null} | {ok: false; error: string}> {
+  const res = await ctx.client.from('coop_report_versions').select('version').eq('report_id', id).order('version', {ascending: false}).limit(1);
+  if (res.error) return dbFail(res.error);
+  const v = Number(res.data?.[0]?.version);
+  return {ok: true, latest: Number.isInteger(v) ? v : null};
+}
+
+/** Best effort, never fails the action: the version row is already the committed fact. Zero rows back = another writer already moved the counter past `next`. */
+async function advanceCounter(ctx: Ctx, id: string, next: number, patch: DbRow): Promise<{deleted: boolean}> {
+  const now = new Date().toISOString();
+  const moved = await ctx.client.from('coop_reports').update({...patch, current_version: next, updated_at: now}).eq('id', id).lt('current_version', next).is('deleted_at', null).select('id');
+  if (moved.error) console.error(JSON.stringify({event: 'reports_counter_not_advanced', code: moved.error.code ?? null, message: moved.error.message}));
+  if (!moved.error && moved.data && moved.data.length > 0) return {deleted: false};
+  // The counter did not move: the report may have been deleted in between, or a faster writer got there first. A title changed in
+  // this step must still land, so it goes in a plain PATCH (the deleted check stays in the filter).
+  if (Object.keys(patch).length > 0) {
+    const plain = await ctx.client.from('coop_reports').update({...patch, updated_at: now}).eq('id', id).is('deleted_at', null).select('id');
+    if (!plain.error && (!plain.data || plain.data.length === 0)) return {deleted: true};
+    if (plain.error) console.error(JSON.stringify({event: 'reports_title_not_saved', code: plain.error.code ?? null, message: plain.error.message}));
+    return {deleted: false};
+  }
+  if (moved.error) return {deleted: false};
+  const again = await ctx.client.from('coop_reports').select(ROW_COLUMNS).eq('id', id).maybeSingle();
+  return {deleted: !!again.data && toRow(again.data).deleted_at !== null};
+}
+
 /**
- * Bump `current_version` from `expected` to `expected + 1` (optimistic: zero rows back = stale, nothing written), then insert
- * the version row; roll the bump back if the insert fails. `patch` rides along with the bump (a rename in the same step).
+ * Insert version `next` (the arbiter: the primary key picks one winner among racing writers; a duplicate is the stale error),
+ * then advance the counter. `patch` rides with the counter step (a rename in the same save).
  */
 async function appendVersion(
   ctx: Ctx,
   row: ReportRow,
-  expected: number,
-  version: {spec: unknown; specVersion: number; prompt: string | null},
+  next: number,
+  version: {spec: unknown; specVersion: number; prompt: string | null; nothing: string},
   patch: DbRow,
 ): Promise<ReportsActionResult<{id: string; version: number}>> {
-  const next = expected + 1;
-  const now = new Date().toISOString();
-  const bump = await ctx.client
-    .from('coop_reports')
-    .update({...patch, current_version: next, updated_at: now})
-    .eq('id', row.id)
-    .eq('current_version', expected)
-    .is('deleted_at', null)
-    .select('id');
-  if (bump.error) return dbFail(bump.error);
-  if (!bump.data || bump.data.length === 0) {
-    const again = await ctx.client.from('coop_reports').select(ROW_COLUMNS).eq('id', row.id).maybeSingle();
-    if (again.data && toRow(again.data).deleted_at) return fail(DELETED);
-    const now2 = again.data ? toRow(again.data).current_version : null;
-    return fail(`This report changed since you opened it${now2 ? ` (it is now version ${now2})` : ''}. Reload it and try again. Nothing was saved.`);
-  }
   const inserted = await ctx.client
     .from('coop_report_versions')
     .insert({report_id: row.id, version: next, spec_version: version.specVersion, spec: version.spec as DbRow, source_prompt: version.prompt, created_by: ctx.email})
     .select('version');
-  if (inserted.error || !inserted.data || inserted.data.length === 0) {
-    // Best effort: put the counter (and a title changed in the same step) back so the report is not left pointing at a missing version.
-    await ctx.client.from('coop_reports').update({current_version: expected, title: row.title}).eq('id', row.id).eq('current_version', next).select('id');
-    return inserted.error ? dbFail(inserted.error) : fail('The new version could not be saved. Nothing was changed.');
-  }
+  if (inserted.error) return inserted.error.code === '23505' ? fail(staleMessage(null, version.nothing)) : dbFail(inserted.error);
+  if (!inserted.data || inserted.data.length === 0) return fail('The new version could not be saved. Nothing was changed.');
+  const {deleted} = await advanceCounter(ctx, row.id, next, patch);
+  if (deleted) return fail(DELETED);
   refresh(row.id);
   return {ok: true, id: row.id, version: next};
 }
@@ -201,8 +226,10 @@ export async function saveReport(input: SaveReportInput): Promise<ReportsActionR
       .insert({report_id: id, version: 1, spec_version: prepared.spec.spec_version, spec: prepared.spec as unknown as DbRow, source_prompt: cleanPrompt(input.prompt), created_by: ctx.email})
       .select('version');
     if (version.error || !version.data || version.data.length === 0) {
-      // No DELETE exists on this client: retire the half-made row softly so it never shows in a gallery.
-      await ctx.client.from('coop_reports').update({deleted_at: new Date().toISOString()}).eq('id', id).select('id');
+      // No DELETE exists on this client: retire the half-made row softly so it never shows in a gallery. Also right when the insert
+      // really landed but its response was lost: the report is then deleted with its version, which is consistent.
+      const retired = await ctx.client.from('coop_reports').update({deleted_at: new Date().toISOString()}).eq('id', id).select('id');
+      if (retired.error) console.error(JSON.stringify({event: 'reports_orphan_not_retired', code: retired.error.code ?? null, message: retired.error.message}));
       return version.error ? dbFail(version.error) : fail('The report could not be saved.');
     }
     refresh(id);
@@ -217,14 +244,14 @@ export async function updateReport(input: UpdateReportInput): Promise<ReportsAct
     const loaded = await loadAllowed(ctx, input.id, 'edit');
     if (!loaded.ok) return loaded;
     const {row} = loaded;
-    if (row.current_version !== input.expectedVersion) {
-      return fail(`This report changed since you opened it (it is now version ${row.current_version}). Reload it and try again. Nothing was saved.`);
-    }
+    const real = await latestVersionOf(ctx, row.id);
+    if (!real.ok) return real;
+    if (real.latest !== input.expectedVersion) return fail(staleMessage(real.latest, 'saved'));
     const title = input.title === undefined ? row.title : plainText(input.title);
     if (title === '') return fail('Give the report a title.');
     const prepared = await prepareSpec(input.spec, input.pinDates === true, title);
     if (!prepared.ok) return prepared;
-    return appendVersion(ctx, row, input.expectedVersion, {spec: prepared.spec, specVersion: prepared.spec.spec_version, prompt: cleanPrompt(input.prompt)}, title === row.title ? {} : {title});
+    return appendVersion(ctx, row, input.expectedVersion + 1, {spec: prepared.spec, specVersion: prepared.spec.spec_version, prompt: cleanPrompt(input.prompt), nothing: 'saved'}, title === row.title ? {} : {title});
   });
 }
 
@@ -235,15 +262,15 @@ export async function restoreVersion(input: RestoreVersionInput): Promise<Report
     const loaded = await loadAllowed(ctx, input.id, 'edit');
     if (!loaded.ok) return loaded;
     const {row} = loaded;
-    if (row.current_version !== input.expectedVersion) {
-      return fail(`This report changed since you opened it (it is now version ${row.current_version}). Reload it and try again. Nothing was restored.`);
-    }
-    if (input.version === row.current_version) return fail('That is already the latest version.');
+    const real = await latestVersionOf(ctx, row.id);
+    if (!real.ok) return real;
+    if (real.latest !== input.expectedVersion) return fail(staleMessage(real.latest, 'restored'));
+    if (input.version === real.latest) return fail('That is already the latest version.');
     const source = await ctx.client.from('coop_report_versions').select('spec,spec_version').eq('report_id', row.id).eq('version', input.version).maybeSingle();
     if (source.error) return dbFail(source.error);
     if (!source.data) return fail(`Version ${input.version} was not found.`);
     // Copied as stored, not re-validated: an old version whose metric was since removed must stay restorable (it renders an error card).
-    return appendVersion(ctx, row, input.expectedVersion, {spec: source.data.spec, specVersion: Number(source.data.spec_version), prompt: `Restored from version ${input.version}`}, {});
+    return appendVersion(ctx, row, input.expectedVersion + 1, {spec: source.data.spec, specVersion: Number(source.data.spec_version), prompt: `Restored from version ${input.version}`, nothing: 'restored'}, {});
   });
 }
 
