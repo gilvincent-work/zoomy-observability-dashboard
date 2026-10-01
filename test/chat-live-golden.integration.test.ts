@@ -6,7 +6,7 @@ import {createClient} from '@supabase/supabase-js';
 
 vi.mock('server-only', () => ({}));
 
-import {buildDigestBlock, buildStaticSystem} from '../src/chat/context';
+import {buildLiveContextBlock, buildStaticSystem} from '../src/chat/context';
 import {CHAT_EFFORT, COOP_CHAT} from '../src/chat/config';
 import type {DigestSource} from '../src/chat/digest-lookup';
 import {runChatLoop, type ChatEffort, type MessagesClient, type SystemBlock} from '../src/chat/loop';
@@ -38,7 +38,7 @@ import {scoreCase, type RecordedCall} from './support/skill-eval-score';
 
 // LIVE GOLDEN EVAL (Slice 6): real Anthropic calls over READ-ONLY data, LOCAL DATABASE ONLY. Skipped unless CHAT_LIVE_EVAL=1, and
 // it REFUSES to run unless SUPABASE_URL_ARCHIVE is 127.0.0.1 or localhost (the .env project is PRODUCTION and is never used).
-// One invocation is ONE pass over: the 25 golden cases, the read-only probes, the 12 skill-behavior cases (mechanical scorers from
+// One invocation is ONE pass over: the 29 golden cases, the read-only probes, the 12 skill-behavior cases (mechanical scorers from
 // F6) and the multi-turn bundle chain. scripts/chat-eval.mjs runs it N times and takes the 3-run majority; run alone it prints
 // one pass. Nothing is written to any database (the read path is the guarded, GET-only client).
 //
@@ -232,8 +232,8 @@ describe.skipIf(!wanted)('live golden eval: real model, local database only', ()
     const client = anthropic as unknown as MessagesClient;
     const world = await loadWorld();
     const system: SystemBlock[] = [
-      {type: 'text', text: buildStaticSystem(), cache_control: {type: 'ephemeral'}},
-      {type: 'text', text: buildDigestBlock([], undefined, {home: true}), cache_control: {type: 'ephemeral'}},
+      {type: 'text', text: buildStaticSystem({tools: true}), cache_control: {type: 'ephemeral'}},
+      {type: 'text', text: buildLiveContextBlock(), cache_control: {type: 'ephemeral'}},
     ];
     const cases: (RunCase & {question: string; calls: string[]; text: string; ms: number; cost: number; numberFigures: string[]})[] = [];
     let numberViolations = 0;

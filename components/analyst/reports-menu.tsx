@@ -29,13 +29,33 @@ export function Menu({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Keyboard: focus moves into the panel on open, arrows move between items, Escape or choosing returns focus to the trigger.
+  const items = () => Array.from(ref.current?.querySelectorAll<HTMLElement>('[role="menu"] button:not(:disabled), [role="menu"] a[href]') ?? []);
+  const close = (restoreFocus = true) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  };
+  useEffect(() => {
+    if (open) items()[0]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- items() reads the DOM, not state
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) close(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return close();
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const list = items();
+      if (list.length === 0) return;
+      e.preventDefault();
+      const at = list.indexOf(document.activeElement as HTMLElement);
+      list[(at + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length].focus();
+    };
     document.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -47,6 +67,7 @@ export function Menu({
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -68,7 +89,7 @@ export function Menu({
             panelClassName,
           )}
         >
-          {children(() => setOpen(false))}
+          {children(() => close())}
         </div>
       )}
     </div>

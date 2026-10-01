@@ -29,6 +29,15 @@ describe('rule ids stay in sync between the text and rules.ts', () => {
     const known = new Set(RULES.map((r) => r.id));
     expect(tags.filter((t) => !known.has(t.id)).map((t) => t.id)).toEqual([]);
   });
+  // S1S#5: a rule id removed from rules.ts but still tagged in the text must fail. Same extraction and predicate as above, on a text
+  // that plants a stale tag and a rule that appears twice, to show the gate can fail.
+  it('the gate can fail: a stale tag in the text, or a rule tagged twice, is caught', () => {
+    const dir = fixtureDir({skill: skillWith('[THINK-01] Understand.\n\n[OLD-99] A rule that was removed from rules.ts.\n\n[THINK-01] Understand, again.')});
+    const planted = [...renderSkill({dir, constants: {}}).matchAll(/\[([A-Z]+-\d+)( ⚙)?\]/g)].map((m) => m[1]);
+    const known = new Set(RULES.map((r) => r.id));
+    expect(planted.filter((id) => !known.has(id))).toEqual(['OLD-99']);
+    expect(planted.filter((id) => id === 'THINK-01')).toHaveLength(2);
+  });
   it('every RULES id appears exactly once in the text', () => {
     const counts = new Map<string, number>();
     for (const t of tags) counts.set(t.id, (counts.get(t.id) ?? 0) + 1);

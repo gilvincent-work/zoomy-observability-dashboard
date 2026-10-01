@@ -207,3 +207,28 @@ describe('logNumberViolation', () => {
     expect(sink.error).not.toHaveBeenCalled();
   });
 });
+
+// GAP-06 (review minor m4): the check matches a displayed figure against ANY number anywhere in the results, whatever its column or
+// kind (checkNumbers documents this under KNOWN LIMITS). So an invented figure that happens to equal an unrelated source number
+// passes. The target behaviour is a violation: these three are written as that target and marked `it.fails`, so today they document
+// the false negative and the suite turns red the day the check is tightened (then remove `.fails`). The control proves the figures
+// below are checked at all.
+describe('checkNumbers: known false negatives (target is a violation; remove .fails when the check matches by column or kind)', () => {
+  const UNITS = [{rows: [{units: 12, revenue: 4800}]}];
+
+  it('control: a figure that is in no result IS flagged', () => {
+    expect(values('There were 13 orders.', UNITS)).toEqual(['13']);
+  });
+
+  it.fails('an order count that equals the units sold (a different quantity) is a violation', () => {
+    expect(values('There were 12 orders.', UNITS)).toEqual(['12']);
+  });
+
+  it.fails('a percentage that equals an unrelated number (12 units is not 12%) is a violation', () => {
+    expect(values('That is 12% of sales.', UNITS)).toEqual(['12%']);
+  });
+
+  it.fails('a peso amount that equals a count (12 units is not ₱12) is a violation', () => {
+    expect(values('Sales were ₱12.', UNITS)).toEqual(['₱12']);
+  });
+});

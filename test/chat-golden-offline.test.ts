@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {describe, expect, it} from 'vitest';
 import {LOCAL_HOSTS, assertLocalRun, majority, renderTable, type LiveRun, type RunCase} from '../scripts/chat-eval.mjs';
-import {BASE_SPEC, GOLDEN_CASES, GOLDEN_DIGEST, goldenData, mechanicalFailures, parseVerdict, rubricPrompt, type GoldenCase} from './support/golden-cases';
+import {BASE_SPEC, GOLDEN_CASES, GOLDEN_DIGEST, askFirstFailures, goldenData, mechanicalFailures, parseVerdict, rubricPrompt, type GoldenCase} from './support/golden-cases';
 import {runScripted, type RunResult} from './support/scripted-model';
 import {EVAL_NOW} from './support/skill-eval-fixtures';
 
@@ -13,11 +13,11 @@ async function run(c: GoldenCase): Promise<RunResult> {
 }
 
 describe('golden set, offline', () => {
-  it('has 25 cases, unique ids, in the documented categories', () => {
-    expect(GOLDEN_CASES).toHaveLength(25);
-    expect(new Set(GOLDEN_CASES.map((c) => c.id)).size).toBe(25);
+  it('has 29 cases, unique ids, in the documented categories', () => {
+    expect(GOLDEN_CASES).toHaveLength(29);
+    expect(new Set(GOLDEN_CASES.map((c) => c.id)).size).toBe(29);
     const by = (k: string) => GOLDEN_CASES.filter((c) => c.category === k).length;
-    expect({data: by('data'), lookup: by('lookup'), dashboard: by('dashboard'), multiturn: by('multiturn'), negative: by('negative')}).toEqual({data: 11, lookup: 2, dashboard: 3, multiturn: 4, negative: 5});
+    expect({data: by('data'), lookup: by('lookup'), dashboard: by('dashboard'), multiturn: by('multiturn'), negative: by('negative'), ask_first: by('ask_first')}).toEqual({data: 11, lookup: 3, dashboard: 3, multiturn: 4, negative: 5, ask_first: 3});
   });
 
   it.each(GOLDEN_CASES.map((c) => [c.id, c] as const))('%s: the scripted run meets every mechanical expectation', async (_id, c) => {
@@ -25,7 +25,7 @@ describe('golden set, offline', () => {
     expect(r.errors, 'no guard trip, no error line').toEqual([]);
     expect(r.events.some((e) => e.t === 'error')).toBe(false);
     expect(r.events.at(-1)).toMatchObject({t: 'done'});
-    expect(r.results.filter((x) => x.is_error), 'a scripted call was refused').toEqual([]);
+    expect(r.results.filter((x) => x.is_error).map((x) => x.name), 'a scripted call was refused').toEqual(c.refusedTools ?? []);
     expect(r.info.filter((l) => l.event === 'chat_number_violation'), 'a scripted answer displayed an invented figure').toEqual([]);
     const failures = mechanicalFailures(c, {calls: r.modelCalls, text: r.text, blocks: r.blocks, finalSpec: r.finalSpec, requests: r.client.requests});
     expect(failures).toEqual([]);
@@ -81,6 +81,124 @@ describe('mechanicalFailures can fail', () => {
   });
 });
 
+// ---- owner rule (TTD-08, THINK-01): the owner defines the dates; ask when they are missing ----------------------------------------
+
+describe('owner rule: the owner defines the dates (golden set)', () => {
+  const PERIOD = /\b(?:last (?:week|month)|week of|from [A-Z][a-z]{2} \d|(?:Aug|Sep)\w* \d|September|August|\d{4}-\d{2}-\d{2})/i;
+  const usesData = (c: GoldenCase) => c.expectTools.some((t) => t.tool === 'query_metric' || t.tool === 'get_digest');
+
+  it('a data, lookup or negative case that reads data names its period in the prompt (no case relies on a default period)', () => {
+    const readers = GOLDEN_CASES.filter((c) => ['data', 'lookup', 'negative'].includes(c.category) && usesData(c));
+    expect(readers.length).toBeGreaterThanOrEqual(10);
+    expect(readers.filter((c) => !PERIOD.test(c.prompt)).map((c) => c.id)).toEqual([]);
+  });
+
+  it('no case expects a digest week as the answer to a period-less prompt: every get_digest case names the week or the dates it uses', () => {
+    const digestCases = GOLDEN_CASES.filter((x) => x.expectTools.some((t) => t.tool === 'get_digest'));
+    expect(digestCases.map((c) => c.id).sort()).toEqual(['neg_roas_scope', 'shopee_vs_lazada', 'weekly_online_offline']);
+    for (const c of digestCases) {
+      const call = c.expectTools.find((t) => t.tool === 'get_digest');
+      if (call?.input?.window === 'recent_weeks') expect(c.prompt, c.id).toContain('from Aug 31 to Sep 27, 2026'); // the owner's own dates are passed on
+      else expect(c.prompt, c.id).toMatch(/week of Sep 21 to 27/);
+    }
+  });
+
+  it('the five formerly period-less cases now pin the owner\'s dates in the tool call they expect', () => {
+    for (const id of ['top_products', 'payment_mix', 'event_most', 'bundles_by_pet', 'pesos_per_sku']) {
+      const c = GOLDEN_CASES.find((x) => x.id === id) as GoldenCase;
+      expect(c.prompt, id).toMatch(/Sep 7 to Sep 27, 2026/);
+      expect(c.expectTools[0].input, id).toMatchObject({range: 'custom', from: '2026-09-07', to: '2026-09-27'});
+    }
+  });
+
+  it('the ask_first cases are the ones with no period in the prompt, and they expect no data tool and no block', () => {
+    const asks = GOLDEN_CASES.filter((c) => c.category === 'ask_first');
+    expect(asks.map((c) => c.prompt)).toEqual(['show me the top SKUs', 'what were my sales?', 'week by week online vs offline as a line']);
+    for (const c of asks) {
+      expect(PERIOD.test(c.prompt), c.id).toBe(false);
+      expect(c.askFirst, c.id).toBeDefined();
+      expect(c.blocks, c.id).toEqual({});
+      expect(c.expectTools, c.id).toEqual([]);
+    }
+  });
+
+  it.each(['ask_top_skus', 'ask_sales'])('%s: no tool is called, nothing is drawn, one question about the dates comes back', async (id) => {
+    const c = GOLDEN_CASES.find((x) => x.id === id) as GoldenCase;
+    const r = await run(c);
+    expect(r.modelCalls).toEqual([]);
+    expect(r.executed).toEqual([]);
+    expect(r.blocks).toEqual([]);
+    expect(r.text).toMatch(/\?/);
+    expect(r.text).toMatch(/last week/i);
+    expect(r.text).toMatch(/last month/i);
+    expect(r.summary.steps).toBe(1);
+  });
+
+  it('week by week with no dates: get_digest itself returns the ask-for-dates error, no week is picked, nothing is drawn', async () => {
+    const c = GOLDEN_CASES.find((x) => x.id === 'ask_weekly_online_offline') as GoldenCase;
+    const r = await run(c);
+    expect(r.modelCalls).toEqual([{step: 1, name: 'get_digest', input: {window: 'recent_weeks', section: 'weekly_revenue', from: '', to: ''}}]);
+    expect(r.executed).toEqual(['get_digest']);
+    expect(r.results).toHaveLength(1);
+    expect(r.results[0].is_error).toBe(true);
+    const err = (r.results[0].content as {error?: string}).error ?? String(r.results[0].content);
+    expect(err).toMatch(/needs the owner's dates/);
+    expect(err).toMatch(/Do not pick dates yourself/);
+    expect(r.blocks).toEqual([]);
+    expect(r.finalSpec).toBeNull();
+    expect(r.errors, 'a refusal is an answer, not a guard trip').toEqual([]);
+  });
+
+  it('...and once the owner answers with dates, the same tool draws the multi-series line and lists the weeks with no digest', async () => {
+    const c = GOLDEN_CASES.find((x) => x.id === 'ask_weekly_online_offline') as GoldenCase;
+    const first = await run(c);
+    const r = await runScripted({
+      script: [
+        {calls: [{name: 'get_digest', input: {window: 'recent_weeks', section: 'weekly_revenue', from: '2026-08-31', to: '2026-09-27'}}]},
+        {text: 'Online figures exist only for the weeks of Sep 14 and Sep 21; Offline POS covers every week. Here is the line.', calls: [{name: 'render_chart', input: {block: 'new', source: 'r1', kind: 'line', orientation: 'auto', x: 'auto', y: ['auto'], title: 'Online vs offline by week'}}]},
+        {text: 'Want it split by pet?'},
+      ],
+      messages: [{role: 'user', content: c.prompt}, {role: 'assistant', content: first.text}, {role: 'user', content: 'Aug 31 to Sep 27'}],
+      data: goldenData(), now: EVAL_NOW, digest: GOLDEN_DIGEST,
+    });
+    expect(r.results[0].is_error).toBe(false);
+    const meta = (r.results[0].content as {meta: {coverage: string; checks: {code: string; text: string}[]}}).meta;
+    expect(meta.coverage).toBe('partial');
+    expect(meta.checks.map((k) => k.text).join(' ')).toMatch(/No online figures for the weeks? starting 2026-08-31/);
+    expect(r.blocks.map((b) => b.kind)).toEqual(['chart']);
+    expect(r.results.every((x) => !x.is_error)).toBe(true);
+  });
+
+  it('the ask-first checker can fail: a data call, a block, no question, no mention of dates, a digest anchor or a figure each trips it', () => {
+    const good = {calls: [] as {name: string; input: unknown}[], text: 'Which dates: last week, last month or a range?', blocks: []};
+    expect(askFirstFailures({}, good)).toEqual([]);
+    expect(askFirstFailures({}, {...good, calls: [{name: 'query_metric', input: {metric: 'top_products'}}]}).join()).toMatch(/query_metric was called before the owner gave dates/);
+    expect(askFirstFailures({}, {...good, calls: [{name: 'get_digest', input: {window: 'recent_weeks', section: 'weekly_revenue', from: '', to: ''}}]}).join()).toMatch(/get_digest was called/);
+    expect(askFirstFailures({undatedDigestOk: true}, {...good, calls: [{name: 'get_digest', input: {window: 'recent_weeks', section: 'weekly_revenue', from: '', to: ''}}]})).toEqual([]);
+    expect(askFirstFailures({undatedDigestOk: true}, {...good, calls: [{name: 'get_digest', input: {window: 'recent_weeks', section: 'weekly_revenue', from: '2026-09-01', to: '2026-09-27'}}]}).join()).toMatch(/get_digest was called/);
+    expect(askFirstFailures({undatedDigestOk: true}, {...good, calls: [{name: 'get_digest', input: {window: 'latest', section: 'comparison', from: '', to: ''}}]}).join()).toMatch(/get_digest was called/);
+    expect(askFirstFailures({}, {...good, blocks: [{kind: 'kpi'}] as never}).join()).toMatch(/1 block\(s\) drawn/);
+    expect(askFirstFailures({}, {...good, text: 'Here are your sales for last week.'}).join()).toMatch(/does not ask a question/);
+    expect(askFirstFailures({}, {...good, text: 'What would you like to see?'}).join()).toMatch(/does not ask about dates/);
+    expect(askFirstFailures({}, {...good, text: 'This week was good. Which dates do you want?'}).join()).toMatch(/anchors on a digest week/);
+    expect(askFirstFailures({}, {...good, text: 'The week of Sep 21 to 27 is the latest. Which dates do you want?'}).join()).toMatch(/anchors on a digest week/);
+    expect(askFirstFailures({}, {...good, text: 'Sales were ₱12,300. Which dates do you want?'}).join()).toMatch(/states a figure/);
+    expect(askFirstFailures({}, {...good, text: 'Cash was 60%. Which dates do you want?'}).join()).toMatch(/states a figure/);
+    expect(askFirstFailures({}, {...good, text: 'Which dates?<suggest>last week | last month</suggest>'})).toEqual([]);
+  });
+
+  it('mechanicalFailures applies the ask-first rule: an immediate query for a period-less prompt fails the case', () => {
+    const c = GOLDEN_CASES.find((x) => x.id === 'ask_top_skus') as GoldenCase;
+    const ok = {calls: [] as {name: string; input: unknown}[], text: 'Which dates should I use?', blocks: [], finalSpec: null, requests: []};
+    expect(mechanicalFailures(c, ok)).toEqual([]);
+    const f = mechanicalFailures(c, {...ok, text: 'The top SKU is SKU 4 with ₱1,300.', calls: [{name: 'query_metric', input: {metric: 'top_products'}}]}).join('|');
+    expect(f).toMatch(/called tools: query_metric/);
+    expect(f).toMatch(/query_metric was called before the owner gave dates/);
+    expect(f).toMatch(/does not ask a question/);
+    expect(f).toMatch(/states a figure/);
+  });
+});
+
 // ---- the live harness, checked offline (nothing here touches a network, a key or a database) -------------------------------------
 
 describe('live eval safety and plumbing (offline)', () => {
@@ -116,6 +234,15 @@ describe('live eval safety and plumbing (offline)', () => {
     const runner = readFileSync('scripts/chat-eval.mjs', 'utf8');
     expect(runner).toMatch(/process\.exit\(2\)/);
     expect(runner).not.toMatch(/\.env['"`]|dotenv|loadEnvFile/);
+  });
+
+  it('both live files build the same system prompt as the route in live mode: the live context block (no digest, no period), tools on', () => {
+    for (const file of ['test/chat-live-golden.integration.test.ts', 'test/chat-live-skill.integration.test.ts']) {
+      const src = readFileSync(file, 'utf8');
+      expect(src, file).toMatch(/buildLiveContextBlock\(\)/);
+      expect(src, file).not.toMatch(/buildDigestBlock/);
+      expect(src, file).toMatch(/buildStaticSystem\(\{tools: true\}\)/);
+    }
   });
 
   it('the grader prompt carries the question, the shortened data, the answer without hidden tags and numbered checks; the verdict parser is strict', () => {

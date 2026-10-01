@@ -33,7 +33,7 @@ const REPORT_KEY = 'coop-report-v1'; // F8: the open dashboard's spec
 // F9: SAVED_KEY (coop-report-saved-v1) holds {id, version, spec} of this conversation's last Save/Update.
 const SUGGESTIONS = [
   'Which channel has the best ROAS?',
-  'What should I prioritize this week?',
+  'What should I prioritize?',
   'Compare Shopee and Lazada ad spend.',
   'Which products are driving revenue?',
 ];

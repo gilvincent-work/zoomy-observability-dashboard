@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 vi.mock('server-only', () => ({}));
 
-import {buildDigestBlock, buildStaticSystem} from '../src/chat/context';
+import {buildLiveContextBlock, buildStaticSystem} from '../src/chat/context';
 import {COOP_CHAT} from '../src/chat/config';
 import {runChatLoop, type ChatEffort, type MessagesClient} from '../src/chat/loop';
 import {buildPreamble} from '../src/chat/preamble';
@@ -40,8 +40,8 @@ describe.skipIf(!live)('live skill eval: real model, synthetic data', () => {
   it(`runs the skill cases at effort ${EFFORT}`, async () => {
     const anthropic = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY}) as unknown as MessagesClient;
     const system = [
-      {type: 'text' as const, text: buildStaticSystem(), cache_control: {type: 'ephemeral' as const}},
-      {type: 'text' as const, text: buildDigestBlock([], undefined, {home: true}), cache_control: {type: 'ephemeral' as const}},
+      {type: 'text' as const, text: buildStaticSystem({tools: true}), cache_control: {type: 'ephemeral' as const}},
+      {type: 'text' as const, text: buildLiveContextBlock(), cache_control: {type: 'ephemeral' as const}},
     ];
     const out: Record<string, unknown>[] = [];
 
