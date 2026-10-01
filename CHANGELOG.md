@@ -12,6 +12,37 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-10-01 — Inventory: filters inline, Filters button removed — `refactor(inventory)`
+
+The Filters button and its modal hid Status and Location behind a click. Type
+(Freeze-Dried only), Status and Location are now pill rows directly under Line, above
+search, so every filter is visible and one tap. Dropped the modal, the "Applied"
+chip row and the count badge, since the pills already show what is selected.
+Added a "Show out of stock" switch beside search (default on, so nothing changes
+until it is turned off). Off hides every product with status Out; turning it off
+clears a selected Status: Out pill, and picking that pill turns the switch back on,
+so the two can never contradict each other.
+
+## 2026-10-01 — Inventory: Edit stock can set Office as well as Event — `feat(inventory)`
+
+`set_product_stock` was hard-wired to the Event (sellable) pool, so Edit stock could
+never correct Office back-stock. The dialog now has an Event / Office toggle (Event
+by default), shows each location's count, and `setStockAction` takes a location.
+It only sends `p_location` for Office, so the Event path still works against the
+old 3-argument function. Office edits need `zoomy-pos/supabase/phase4_set_stock_location_2026-10-01.sql`,
+which is written but **not applied** (it drops the 3-argument function, because a
+defaulted 4th parameter would make 3-argument calls ambiguous).
+
+## 2026-09-30 — Inventory: right-click a row for the actions menu — `feat(inventory)`
+
+The row actions (Move stock, Edit stock, Rename, Change price, List/Unlist…) sat
+behind the ⋯ button in the last column, so editing stock meant scrolling the wide
+table sideways first. Right-clicking anywhere on a desktop row now opens the same
+`RowMenu` at the cursor (same items, same flip-above/clamp logic; the ⋯ still
+works). Decision: reuse the one menu with a point anchor instead of adding a
+second menu component, and leave the native browser menu alone on the mobile
+cards (no ⋯ scroll problem there).
+
 ## 2026-09-28 — Event leads: what they bought + follow-up messages — `feat(leads)`
 
 The spin-the-wheel and the POS share no id, so `src/lead-order-match.ts` links

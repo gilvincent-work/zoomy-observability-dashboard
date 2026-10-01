@@ -87,6 +87,7 @@ function SearchablePanel({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const [pos, setPos] = useState<{left: number; top: number; width: number} | null>(null);
@@ -113,6 +114,22 @@ function SearchablePanel({
 
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  // Keep wheel scrolling inside the list. overscroll-contain covers the list's own
+  // edges, but wheeling over the search row (or a list too short to scroll) would
+  // still chain to the modal / page behind, so swallow those here. Needs a native
+  // non-passive listener; React's onWheel can't preventDefault.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const list = listRef.current;
+      const canScroll = list && list.contains(e.target as Node) && list.scrollHeight > list.clientHeight;
+      if (!canScroll) e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, {passive: false});
+    return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
   useEffect(() => {
@@ -180,7 +197,7 @@ function SearchablePanel({
           className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>
-      <ul className="max-h-60 overflow-y-auto py-1">
+      <ul ref={listRef} className="max-h-60 overflow-y-auto overscroll-contain py-1">
         {value && !q && (
           <li>
             <button
