@@ -38,4 +38,6 @@ export interface ChatToolContext {
   user: string | null;
   /** F7: the render tools call this with each block they bind; the route forwards it to the stream. */
   emitBlock?: (block: ChatBlock) => void;
+  /** F7 order gate (DASH-01): true once the model has written any text this turn. Absent means no gate (tests, scripts). */
+  textSeen?: () => boolean;
 }

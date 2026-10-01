@@ -14,6 +14,8 @@ export function createRenderExecutors(ctx: ChatToolContext, store: ResultStore):
   const known: string[] = []; // block ids created in this turn, in order
 
   const run = (tool: RenderTool) => async (input: unknown): Promise<unknown> => {
+    // DASH-01 as a gate: the caveat and headline come first, so a render call before any text is refused once and retried.
+    if (ctx.textSeen && !ctx.textSeen()) return {error: 'Nothing was drawn and your call was fine. Write the caveat (only if there is one) and one headline sentence as text now, in this same message, then repeat the same render calls.'};
     const target = input !== null && typeof input === 'object' && !Array.isArray(input) ? (input as {block?: unknown}).block : undefined;
     const reuse = typeof target === 'string' && target !== 'new' && target !== '' ? target : null;
     if (reuse !== null && !known.includes(reuse)) {

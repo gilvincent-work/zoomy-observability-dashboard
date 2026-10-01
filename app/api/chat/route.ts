@@ -3,7 +3,7 @@ import {getDigests} from '@/src/data';
 import {buildDigestBlock, buildStaticSystem} from '@/src/chat/context';
 import {CHAT_EFFORT, COOP_CHAT} from '@/src/chat/config';
 import {runChatLoop, SAFE_ERROR_TEXT} from '@/src/chat/loop';
-import {encodeEvent} from '@/src/chat/stream-protocol';
+import {encodeEvent, withTextGate} from '@/src/chat/stream-protocol';
 import {buildDegradedPreamble, buildPreamble} from '@/src/chat/preamble';
 import {CHAT_TOOLS} from '@/src/chat/tool-defs';
 import {createExecutors} from '@/src/chat/tool-executors';
@@ -69,8 +69,9 @@ export async function POST(req: Request) {
   const now = new Date();
   const user = session.user.email ?? null;
   const anthropic = new Anthropic({apiKey: key});
-  return ndjson((emit) =>
-    runChatLoop({
+  return ndjson((rawEmit) => {
+    const {emit, textSeen} = withTextGate(rawEmit);
+    return runChatLoop({
       client: anthropic,
       model: COOP_CHAT.model,
       maxTokens: COOP_CHAT.maxTokens,
@@ -79,12 +80,12 @@ export async function POST(req: Request) {
       tools: live.ok ? CHAT_TOOLS : [],
       messages,
       preamble: live.ok ? buildPreamble(live.data, now) : buildDegradedPreamble(now),
-      executors: live.ok ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block})}) : {},
+      executors: live.ok ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), textSeen}) : {},
       emit,
       user,
       signal: req.signal,
-    }).then(() => undefined),
-  );
+    }).then(() => undefined);
+  });
 }
 
 /** One NDJSON response: run `work` with an emitter, always close the stream. */

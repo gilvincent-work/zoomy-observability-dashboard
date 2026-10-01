@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {createLineDecoder, encodeEvent} from '../src/chat/stream-protocol';
+import {createLineDecoder, encodeEvent, withTextGate} from '../src/chat/stream-protocol';
 import type {ChatStreamEvent} from '../src/chat/stream-types';
 import type {ChatBlock} from '../src/chat/block-types';
 import {createExecutors} from '../src/chat/tool-executors';
@@ -109,5 +109,18 @@ describe('block events (F7)', () => {
     expect(events.map((e) => e.t)).toEqual(['block', 'block']);
     const kinds = events.map((e) => (e.t === 'block' ? e.block.kind : null));
     expect(kinds).toEqual(['chart', 'table']);
+  });
+});
+
+describe('withTextGate', () => {
+  it('flips only on non-blank text and still forwards every event', () => {
+    const out: ChatStreamEvent[] = [];
+    const g = withTextGate((e) => out.push(e));
+    g.emit({t: 'status', text: 'Looking'});
+    g.emit({t: 'text', d: '  \n'});
+    expect(g.textSeen()).toBe(false);
+    g.emit({t: 'text', d: 'Caveat.'});
+    expect(g.textSeen()).toBe(true);
+    expect(out).toHaveLength(3);
   });
 });
