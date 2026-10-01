@@ -1,7 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import {readFileSync} from 'node:fs';
-import {runChatLoop, CHAT_DEADLINE_MS, CUT_OFF_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
+import {runChatLoop, CHAT_DEADLINE_MS, CUT_OFF_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
 import {assertRequestShape} from '../src/chat/request-shape';
 import {CHAT_TOOLS} from '../src/chat/tool-defs';
 import type {ChatStreamEvent} from '../src/chat/stream-types';
@@ -371,5 +371,18 @@ describe('DASH-01 order gate (one nudge per turn)', () => {
   it('nudges only once: a second render step without text is let through (bounded cost)', async () => {
     const {calls} = await run((n) => (n <= 2 ? toolTurn(render(`r${n}`)) : {text: ['Done.']}));
     expect(calls).toEqual(['render']);
+  });
+});
+
+describe('provider account errors', () => {
+  it('a billing 400 gets a clear account message with no provider detail; other errors keep the generic one', async () => {
+    const billing = Object.assign(new Error('400 {"error":{"message":"Your credit balance is too low to access the Anthropic API."}}'), {status: 400});
+    const a = setup(new FakeClient(() => billing));
+    await runChatLoop(a.opts);
+    expect(a.events.find((e) => e.t === 'error')).toEqual({t: 'error', message: ACCOUNT_ERROR_TEXT});
+    expect(JSON.stringify(a.events)).not.toMatch(/credit|anthropic api/i);
+    const other = setup(new FakeClient(() => Object.assign(new Error('boom'), {status: 500})));
+    await runChatLoop(other.opts);
+    expect(other.events.find((e) => e.t === 'error')).toEqual({t: 'error', message: SAFE_ERROR_TEXT});
   });
 });
