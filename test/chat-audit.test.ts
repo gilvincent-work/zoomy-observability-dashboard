@@ -30,7 +30,7 @@ describe('audit log', () => {
     const sink = {info: vi.fn(), error: vi.fn()};
     logTurn({steps: 2, usage: {input: 10, output: 5, cacheRead: 100, cacheWrite: 0}, ms: 1234, stopReason: 'end_turn', user: 'a@b.c'}, sink);
     expect(sink.info).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(sink.info.mock.calls[0][0] as string)).toEqual({event: 'chat_turn', steps: 2, usage: {input: 10, output: 5, cacheRead: 100, cacheWrite: 0}, ms: 1234, stopReason: 'end_turn', user: 'a@b.c'});
+    expect(JSON.parse(sink.info.mock.calls[0][0] as string)).toEqual({event: 'chat_turn', steps: 2, usage: {input: 10, output: 5, cacheRead: 100, cacheWrite: 0}, ms: 1234, stopReason: 'end_turn', user: 'a@b.c', ts: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)});
   });
 
   it('redacts secret-looking keys, nested too', () => {

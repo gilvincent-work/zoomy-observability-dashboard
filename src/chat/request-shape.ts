@@ -23,6 +23,10 @@ export function assertRequestShape(params: unknown, sink?: AuditSink): void {
       fail('output_config may only be {effort: low|medium|high}', oc, sink);
     }
   }
+  if ('cache_control' in p) {
+    const cc = p.cache_control as Record<string, unknown> | null;
+    if (!cc || typeof cc !== 'object' || Array.isArray(cc) || Object.keys(cc).length !== 1 || cc.type !== 'ephemeral') fail('cache_control must be exactly {type:"ephemeral"}', cc, sink);
+  }
   if ('tool_choice' in p) {
     const tc = p.tool_choice as {type?: unknown} | null;
     const keys = tc && typeof tc === 'object' ? Object.keys(tc) : [];

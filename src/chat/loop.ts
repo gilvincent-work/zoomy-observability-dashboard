@@ -124,6 +124,9 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
         max_tokens: opts.maxTokens,
         thinking: {type: 'adaptive' as const},
         output_config: {effort: opts.effort},
+        // Automatic caching: the breakpoint follows the last cacheable block, so the tool results that pile up within a turn are read
+        // from cache on the next step instead of re-sent at full price. With the 3 explicit breakpoints (last tool, 2 system blocks) that is 4, the limit.
+        cache_control: {type: 'ephemeral' as const},
         system: opts.system,
         // No tools (degraded digest-only mode): the API rejects an empty tools list, so omit tools and tool_choice.
         ...(opts.tools.length > 0 ? {tools: [...opts.tools], tool_choice: {type: 'auto' as const}} : {}),
