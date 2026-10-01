@@ -49,8 +49,9 @@ export async function POST(req: Request) {
   }
 
   // Sanitize + cap the conversation the client sends back.
-  const messages = (body.messages || [])
-    .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+  const raw = body !== null && typeof body === 'object' && Array.isArray(body.messages) ? body.messages : [];
+  const messages = raw
+    .filter((m): m is InMsg => m !== null && typeof m === 'object' && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim() !== '')
     .slice(-12)
     .map((m) => ({role: m.role, content: m.content.slice(0, 2000)}));
   if (!messages.length || messages[messages.length - 1].role !== 'user') {

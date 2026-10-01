@@ -2,7 +2,7 @@ import {notFound, redirect} from 'next/navigation';
 import {ReportBlocks} from '@/components/analyst/reports-blocks';
 import {ReportHeader} from '@/components/analyst/reports-header';
 import {ReportsNotice} from '@/components/analyst/reports-notice';
-import {noticeFor, parseVersionParam, statusLine, toDrawerSpec} from '@/components/analyst/reports-helpers';
+import {cleanStoredSpec, noticeFor, parseVersionParam, statusLine, toDrawerSpec} from '@/components/analyst/reports-helpers';
 import {getChatMetricData} from '@/src/chat/server';
 import type {MetricData} from '@/src/chat/result-types';
 import {getReport} from '@/src/reports-data';
@@ -61,7 +61,7 @@ export default async function ReportPage(props: {params: Promise<{id: string}>; 
         status={ran ? {mode: ran.mode, text: statusLine(ran, now)} : null}
         scope={ran ? ran.filtersLabel : null}
         askSpec={detail.isLatest ? toDrawerSpec(viewing.spec) : null}
-        storedSpec={viewing.spec}
+        storedSpec={cleanStoredSpec(viewing.spec)}
       />
       {ran ? (
         <ReportBlocks blocks={ran.blocks} />

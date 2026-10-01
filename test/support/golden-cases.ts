@@ -1,8 +1,10 @@
 // F11: the golden set, one table used twice. OFFLINE (test/chat-golden-offline.test.ts) a scripted model supplies each case's
 // tool calls and the real loop and executors run over the synthetic fixtures. LIVE (test/chat-live-golden.integration.test.ts,
 // local database only) the real model gets the same prompt and the same mechanical expectations are checked against what it did.
-// 25 cases (design section 8): the 14 questions of the F5 live run (ids and wording reused), the F10 lookup cases, the bundle
-// dashboards, four multi-turn edits and five negatives. Everything here is synthetic: no production figure, no secret.
+// 29 cases (design section 8): the 14 questions of the F5 live run (ids and wording reused), the F10 lookup cases (including the weekly online-vs-offline line), the bundle
+// dashboards, four multi-turn edits, five negatives and three ask-first cases. Everything here is synthetic: no production figure, no secret.
+// OWNER RULE (THINK-01): the owner defines the dates. A data case therefore NAMES its period (the dates are part of the prompt) and
+// a question with no period belongs to the `ask_first` category: no data tool, no block, one question about the dates.
 // The viz-choice table lives in test/chat-viz-cases.test.ts and the skill-behavior cases in test/support/skill-eval-fixtures.ts.
 import {ORDER_NUDGE_TEXT} from '../../src/chat/loop';
 import {METRICS} from '../../src/chat/metrics-registry';
@@ -99,6 +101,9 @@ export const query = (over: Partial<Query> & {metric: MetricId}): {name: 'query_
   name: 'query_metric', input: {dimension: 'none', measure: 'default', range: 'all_available', from: '', to: '', channel: 'offline', event: 'all', pet: 'all', compare_to: 'none', sort: 'default', limit: 5, ...over},
 });
 const SEP: Pick<Query, 'range' | 'from' | 'to'> = {range: 'custom', from: '2026-09-01', to: '2026-09-30'};
+/** The whole synthetic dataset (Sep 7 to 27, 2026) as an explicit custom range: the owner's dates for the period-naming data cases. */
+const DATA_DAYS: Pick<Query, 'range' | 'from' | 'to'> = {range: 'custom', from: '2026-09-07', to: '2026-09-27'};
+const DATA_DAYS_INPUT = {range: 'custom', from: '2026-09-07', to: '2026-09-27'};
 const rows = (seen: SeenResult[], i = 0): Record<string, string | number | null>[] => (seen[i]?.content as {rows: Record<string, string | number | null>[]}).rows;
 const call = (name: string, input: Record<string, unknown>) => ({name, input});
 const kpiCall = (source: string, value: string, label: string, format: string) => call('render_kpi', {block: 'new', source, value, label, format});
@@ -127,7 +132,7 @@ export const BUNDLE_DASHBOARD_SCRIPT: Script = [
 
 // ---- the cases ---------------------------------------------------------------------------------------------------------------
 
-export type GoldenCategory = 'data' | 'lookup' | 'dashboard' | 'multiturn' | 'negative';
+export type GoldenCategory = 'data' | 'lookup' | 'dashboard' | 'multiturn' | 'negative' | 'ask_first';
 
 /** `tool` may be a list: any one of them satisfies it. `input` is a PARTIAL match (every key given must equal the call's). */
 export interface ExpectedCall {
@@ -149,6 +154,14 @@ export interface GoldenCase {
   forbidTools?: string[];
   /** The model must call no tool at all. */
   noTools?: boolean;
+  /**
+   * OWNER RULE (THINK-01): the prompt names no period, so the model must ask which dates BEFORE any data tool, draw nothing, state no
+   * figure and anchor on no digest week or "this week". `undatedDigestOk` lets it probe `get_digest` (recent_weeks) WITHOUT dates:
+   * that call only returns the tool's own ask-for-dates error.
+   */
+  askFirst?: {undatedDigestOk?: boolean};
+  /** OFFLINE ONLY: tools whose scripted call the real executor is expected to refuse (an is_error result). Default none. */
+  refusedTools?: string[];
   /** Exact number of blocks EMITTED this turn per kind (a kind left out is 0). Omit to leave the count unchecked. */
   blocks?: {kpi?: number; chart?: number; table?: number};
   /** At most this many blocks emitted (a narrow question is one sentence, at most one block). */
@@ -174,17 +187,24 @@ export interface GoldenCase {
   script: Script;
 }
 
+/** The dates the model may offer or ask for. "last week" / "last month" are offers, never an assumption. */
+const ASKS_FOR_DATES = /\b(?:dates?|period|date range|last week|last month)\b/i;
+/** Wording that anchors an undated question on a digest week or on "this week". */
+const DIGEST_ANCHOR = /\bthis week\b|\bweek of\b|\blatest (?:weekly )?digest\b/i;
+/** A peso amount, a thousands-separated figure or a percentage: no figure may be stated before the dates are known. */
+const A_FIGURE = /(?:₱|\bPHP)\s?\d|\d{1,3}(?:,\d{3})+|\d(?:\.\d+)?\s?%/i;
+
 const HISTORY = [{role: 'user' as const, content: 'Make me a dashboard of bundles for dog and cats'}, {role: 'assistant' as const, content: 'Here is the bundle dashboard.'}];
 const CLAIMS_ACTION = /\b(i(?:'ve| have)? (?:saved|updated|changed|deleted|voided|restored|emailed|shared|scheduled)|has been (?:saved|updated|changed|deleted|voided|restored)|done[.!]|all set)\b/i;
 
 export const GOLDEN_CASES: GoldenCase[] = [
   // ---- data: one metric, a text answer (the first ten are the F5 live questions) -----------------------------------------------
   {
-    id: 'top_products', category: 'data', prompt: 'What are our top 5 products by revenue?',
-    expectTools: [{tool: 'query_metric', input: {metric: 'top_products', limit: 5}}],
+    id: 'top_products', category: 'data', prompt: 'What are our top 5 products by revenue from Sep 7 to Sep 27, 2026?',
+    expectTools: [{tool: 'query_metric', input: {metric: 'top_products', limit: 5, ...DATA_DAYS_INPUT}}],
     rubric: ['The answer names the products in the order the tool returned them.', 'Every figure carries its range or its basis (for example "of all itemized revenue").'],
     steps: ['THINK-03', 'ANL-02'],
-    script: [{calls: [query({metric: 'top_products'})]}, {text: (s) => `${rows(s)[0].product} leads with ${formatPeso(Number(rows(s)[0].revenue))} of itemized revenue.`}],
+    script: [{calls: [query({metric: 'top_products', ...DATA_DAYS})]}, {text: (s) => `${rows(s)[0].product} leads with ${formatPeso(Number(rows(s)[0].revenue))} of itemized revenue.`}],
   },
   {
     id: 'last_week_total', category: 'data', prompt: 'How much did we sell last week?',
@@ -201,11 +221,11 @@ export const GOLDEN_CASES: GoldenCase[] = [
     script: [{calls: [query({metric: 'offline_revenue', dimension: 'week', ...SEP, limit: 25})]}, {text: 'The data only covers Sep 7 to Sep 27, so September is partial. The weeks are in the result.'}],
   },
   {
-    id: 'payment_mix', category: 'data', prompt: 'How did payment methods split overall?',
-    expectTools: [{tool: 'query_metric', input: {metric: 'payment_mix'}}],
+    id: 'payment_mix', category: 'data', prompt: 'How did payment methods split from Sep 7 to Sep 27, 2026?',
+    expectTools: [{tool: 'query_metric', input: {metric: 'payment_mix', ...DATA_DAYS_INPUT}}],
     rubric: ['Each share states its denominator (all revenue) and the period.'],
     steps: ['ANL-02', 'BI-02'],
-    script: [{calls: [query({metric: 'payment_mix'})]}, {text: (s) => `Across Sep 7 to Sep 27, ${rows(s)[0].method} was ${rows(s)[0].share}% of all revenue.`}],
+    script: [{calls: [query({metric: 'payment_mix', ...DATA_DAYS})]}, {text: (s) => `Across Sep 7 to Sep 27, ${rows(s)[0].method} was ${rows(s)[0].share}% of all revenue.`}],
   },
   {
     id: 'aov_vs_last_week', category: 'data', prompt: 'What is our average order value compared with last week?',
@@ -215,25 +235,25 @@ export const GOLDEN_CASES: GoldenCase[] = [
     script: [{calls: [query({metric: 'offline_aov', range: 'last_week', compare_to: 'previous_period', limit: 25})]}, {text: (s) => `Average order value for Sep 21 to Sep 27 was ${formatPeso(Number(rows(s)[0].aov))}.`}],
   },
   {
-    id: 'event_most', category: 'data', prompt: 'Which event earned the most?',
-    expectTools: [{tool: 'query_metric', input: {metric: 'event_rollup'}}],
+    id: 'event_most', category: 'data', prompt: 'Which event earned the most from Sep 7 to Sep 27, 2026?',
+    expectTools: [{tool: 'query_metric', input: {metric: 'event_rollup', ...DATA_DAYS_INPUT}}],
     rubric: ['The answer names the event and says walk-in sales are not part of an event.'],
     steps: ['THINK-03'],
-    script: [{calls: [query({metric: 'event_rollup'})]}, {text: (s) => `${rows(s)[0].event} earned the most, ${formatPeso(Number(rows(s)[0].revenue))}.`}],
+    script: [{calls: [query({metric: 'event_rollup', ...DATA_DAYS})]}, {text: (s) => `${rows(s)[0].event} earned the most, ${formatPeso(Number(rows(s)[0].revenue))}.`}],
   },
   {
-    id: 'bundles_by_pet', category: 'data', prompt: 'How do bundle sales split between dog and cat buyers?',
-    expectTools: [{tool: 'query_metric', input: {metric: 'bundle_sales', dimension: 'pet_type'}}],
+    id: 'bundles_by_pet', category: 'data', prompt: 'How do bundle sales split between dog and cat buyers from Sep 7 to Sep 27, 2026?',
+    expectTools: [{tool: 'query_metric', input: {metric: 'bundle_sales', dimension: 'pet_type', ...DATA_DAYS_INPUT}}],
     rubric: ['The answer states the untagged share and says the pet shares are of tagged bundle revenue.', 'No causal words.'],
     steps: ['BI-02', 'BI-06', 'BI-33', 'ANL-02'],
-    script: [{calls: [query({metric: 'bundle_sales', dimension: 'pet_type', limit: 25})]}, {text: (s) => `Of tagged bundle revenue, cat is ${rows(s)[1].share_of_tagged}%. The untagged sales are shown separately.`}],
+    script: [{calls: [query({metric: 'bundle_sales', dimension: 'pet_type', ...DATA_DAYS, limit: 25})]}, {text: (s) => `Of tagged bundle revenue, cat is ${rows(s)[1].share_of_tagged}%. The untagged sales are shown separately.`}],
   },
   {
-    id: 'pesos_per_sku', category: 'data', prompt: 'Show me how many pesos each SKU brought in inside bundles, split by pet.',
-    expectTools: [{tool: 'query_metric', input: {metric: 'bundle_picks', dimension: 'sku_by_pet', measure: 'revenue'}}],
+    id: 'pesos_per_sku', category: 'data', prompt: 'Show me how many pesos each SKU brought in inside bundles, split by pet, from Sep 7 to Sep 27, 2026.',
+    expectTools: [{tool: 'query_metric', input: {metric: 'bundle_picks', dimension: 'sku_by_pet', measure: 'revenue', ...DATA_DAYS_INPUT}}],
     rubric: ['The answer states the allocation method as written in the result.', 'It does not say the peso figure is not available.'],
     steps: ['THINK-02', 'BI-20', 'BI-23'],
-    script: [{calls: [query({metric: 'bundle_picks', dimension: 'sku_by_pet', measure: 'revenue', limit: 25})]}, {text: (s) => `${rows(s)[0].sku} brought in the most, ${formatPeso(Number(rows(s)[0].total))}. Each bundle price is split across its picks in proportion to their list prices, so this is an allocation, not a receipt.`}],
+    script: [{calls: [query({metric: 'bundle_picks', dimension: 'sku_by_pet', measure: 'revenue', ...DATA_DAYS, limit: 25})]}, {text: (s) => `${rows(s)[0].sku} brought in the most, ${formatPeso(Number(rows(s)[0].total))}. Each bundle price is split across its picks in proportion to their list prices, so this is an allocation, not a receipt.`}],
   },
   {
     id: 'what_can_you_answer', category: 'data', prompt: 'What can you answer?',
@@ -267,11 +287,28 @@ export const GOLDEN_CASES: GoldenCase[] = [
     script: [{calls: [call('lookup_product', {query: 'Duck Strips', show: 'details'})]}, {text: 'I cannot see stock levels. I can tell you what Duck Strips has sold; ask me for its sales.'}],
   },
   {
-    id: 'shopee_vs_lazada', category: 'lookup', prompt: 'Shopee vs Lazada last month',
+    id: 'shopee_vs_lazada', category: 'lookup', prompt: 'Shopee vs Lazada for the week of Sep 21 to 27, 2026',
     expectTools: [{tool: 'get_digest', input: {section: 'comparison'}}], forbidTools: ['query_metric'],
-    rubric: ['The answer says the digest is weekly (it names the week) and does not call it last month.', 'Every figure carries its time basis.'],
+    rubric: ['The answer says the figures are the weekly digest for the week of Sep 21 to 27 (the week the owner named).', 'Every figure carries its time basis.'],
     steps: ['BI-30', 'ANL-02'],
-    script: [{calls: [call('get_digest', {window: 'latest', section: 'comparison'})]}, {text: 'The digest is weekly, so this is the week of Sep 21 to 27, not a month. Lazada has the higher revenue and the higher ROAS of the two.'}],
+    script: [{calls: [call('get_digest', {window: 'latest', section: 'comparison'})]}, {text: 'This is the weekly digest for the week of Sep 21 to 27, the week you asked for. Lazada has the higher revenue and the higher ROAS of the two.'}],
+  },
+  {
+    // OD5 / TTD08-c / GAP-10: the owner NAMES the dates, so the model goes straight to get_digest(recent_weeks) with them, draws the line the owner
+    // asked for and says which weeks have no stored digest BEFORE any figure. The seeded digests cover only the weeks of Sep 14 and Sep 21.
+    id: 'weekly_online_offline', category: 'lookup', prompt: 'Show Shopee, Lazada, Website and Offline revenue week by week from Aug 31 to Sep 27, 2026 as a line.',
+    expectTools: [
+      {tool: 'get_digest', input: {window: 'recent_weeks', section: 'weekly_revenue', from: '2026-08-31', to: '2026-09-27'}},
+      {tool: 'render_chart', input: {kind: 'line'}},
+    ],
+    forbidTools: ['query_metric'], blocks: {chart: 1}, chartForm: 'line', kind: 'line', captionFirst: true, textMatches: [/no (?:online )?(?:figures|digest)|only for the weeks|missing/i],
+    rubric: ['The text lists the weeks with no stored digest (Aug 31 and Sep 7) as missing for the online channels BEFORE any figure.', 'It says Offline POS is shown for every week and does not guess the missing online figures.'],
+    steps: ['THINK-07', 'VIZ-09', 'DASH-01'],
+    script: [
+      {text: 'Online figures exist only for the weeks of Sep 14 and Sep 21, so the weeks of Aug 31 and Sep 7 have no Shopee, Lazada or Website data; Offline POS is shown for every week.', calls: [call('get_digest', {window: 'recent_weeks', section: 'weekly_revenue', from: '2026-08-31', to: '2026-09-27'})]},
+      {calls: [chartCall('new', 'r1', 'line', 'Revenue by week and channel')]},
+      {text: 'Want the same weeks for offline only, split by pet?'},
+    ],
   },
 
   // ---- dashboards (F7) -------------------------------------------------------------------------------------------------------
@@ -377,11 +414,38 @@ export const GOLDEN_CASES: GoldenCase[] = [
     script: [{text: 'I cannot save reports myself. Use the Save button on the dashboard.'}],
   },
   {
-    id: 'neg_roas_scope', category: 'negative', prompt: 'Which channel had the best ROAS in the selected period?',
+    id: 'neg_roas_scope', category: 'negative', prompt: 'Which channel had the best ROAS for the week of Sep 21 to 27, 2026?',
     expectTools: [{tool: 'get_digest'}], forbidTools: ['query_metric'], blocks: {},
     rubric: ['Any ROAS quoted comes from the digest and names its week; none is invented. Offline POS has no ROAS.'],
     steps: ['THINK-02', 'BI-30'],
-    script: [{calls: [call('get_digest', {window: 'latest', section: 'comparison'})]}, {text: 'In the latest weekly digest (Sep 21 to 27), Lazada has the best ROAS of the channels that report one.'}],
+    script: [{calls: [call('get_digest', {window: 'latest', section: 'comparison'})]}, {text: 'In the weekly digest for the week of Sep 21 to 27, Lazada has the best ROAS of the channels that report one.'}],
+  },
+
+  // ---- ask first (owner rule THINK-01, TTD-08): no period in the prompt, so no data tool, no block, one question about the dates ----------
+  {
+    id: 'ask_top_skus', category: 'ask_first', prompt: 'show me the top SKUs',
+    expectTools: [], noTools: true, askFirst: {}, blocks: {},
+    rubric: ['Asks which dates in one short question and offers last week, last month or a range.', 'Gives no figure, names no product and does not pick a period itself.'],
+    steps: ['THINK-01'],
+    script: [{text: 'Which dates should I use for the top SKUs: last week, last month, or a range you choose?'}],
+  },
+  {
+    id: 'ask_sales', category: 'ask_first', prompt: 'what were my sales?',
+    expectTools: [], noTools: true, askFirst: {}, blocks: {},
+    rubric: ['Asks which dates in one short question and offers last week, last month or a range.', 'Gives no figure and does not default to this week or to a digest week.'],
+    steps: ['THINK-01'],
+    script: [{text: 'For which dates? I can look at last week, last month, or any range you give me.'}],
+  },
+  {
+    id: 'ask_weekly_online_offline', category: 'ask_first', prompt: 'week by week online vs offline as a line',
+    expectTools: [], askFirst: {undatedDigestOk: true}, blocks: {}, forbidTools: ['query_metric', 'render_chart', 'render_kpi', 'render_table'],
+    refusedTools: ['get_digest'],
+    rubric: ['Asks for the start and end dates (offers a range such as the last 8 weeks) before drawing anything.', 'Does not choose weeks itself and shows no figure.'],
+    steps: ['THINK-01', 'THINK-07'],
+    script: [
+      {calls: [call('get_digest', {window: 'recent_weeks', section: 'weekly_revenue', from: '', to: ''})]},
+      {text: 'Which dates do you want, for example the last 8 weeks or a start and end date? Then I can draw online and offline week by week.'},
+    ],
   },
 ];
 
@@ -478,11 +542,29 @@ export function normalizeSpecForLive(spec: ReportSpec | null, baseIds: readonly 
   };
 }
 
+/** THINK-01: what an answer to an undated question must and must not do. Empty when it asks for the dates first. */
+export function askFirstFailures(rule: NonNullable<GoldenCase['askFirst']>, o: Pick<Observed, 'calls' | 'text' | 'blocks'>): string[] {
+  const out: string[] = [];
+  for (const call of o.calls) {
+    const i = isRecord(call.input) ? call.input : {};
+    const undatedDigest = call.name === 'get_digest' && i.window === 'recent_weeks' && !i.from && !i.to;
+    if (!(rule.undatedDigestOk && undatedDigest)) out.push(`${call.name} was called before the owner gave dates`);
+  }
+  if (o.blocks.length > 0) out.push(`${o.blocks.length} block(s) drawn before the owner gave dates`);
+  const text = bodyText(o.text);
+  if (!text.includes('?')) out.push('the answer does not ask a question');
+  if (!ASKS_FOR_DATES.test(text)) out.push('the answer does not ask about dates');
+  if (DIGEST_ANCHOR.test(text)) out.push('the answer anchors on a digest week or "this week"');
+  if (A_FIGURE.test(text)) out.push('the answer states a figure before the owner gave dates');
+  return out;
+}
+
 /** Everything a golden case expects that a machine can decide. Empty when the case passes. `live` loosens only the spec comparison; `skipDataText` drops the data-dependent text checks. */
 export function mechanicalFailures(c: GoldenCase, o: Observed, opts: {live?: boolean; skipDataText?: boolean} = {}): string[] {
   const out: string[] = [];
   const names = o.calls.map((x) => x.name);
   if (c.noTools && o.calls.length > 0) out.push(`called tools: ${names.join(', ')}`);
+  if (c.askFirst) out.push(...askFirstFailures(c.askFirst, o));
   for (const m of missingCalls(c.expectTools, o.calls)) out.push(`missing call ${JSON.stringify(m.tool)} ${JSON.stringify(m.input ?? {})}`);
   for (const f of c.forbidTools ?? []) if (names.includes(f)) out.push(`forbidden tool ${f} was called`);
   const kinds = kindsOf(o.blocks);

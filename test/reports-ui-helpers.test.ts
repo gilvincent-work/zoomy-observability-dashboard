@@ -1,3 +1,4 @@
+import {cleanStoredSpec} from '../components/analyst/reports-helpers';
 import {describe, expect, it} from 'vitest';
 import {
   formatReportDay,
@@ -151,5 +152,23 @@ describe('drawer glue', () => {
     expect(pinDatesFor(pinned, spec())).toBe(false);
     expect(pinDatesFor({id: 'a', version: 1, spec: {filters: {pinned: false}}}, custom)).toBe(false);
     expect(pinDatesFor(null, custom)).toBe(false);
+  });
+});
+
+describe('cleanStoredSpec (E2E F3: extra keys of a stored spec must not reach the browser)', () => {
+  const stored = {
+    spec_version: 1, title: 'T', data: [1, 2, 3], rows: [{secret: 1}],
+    filters: {range: 'custom', from: '2026-09-01', to: '2026-09-30', pet: 'all', event: 'all', channel: 'offline', pinned: true},
+    blocks: [{id: 'b1', kind: 'table', values: [9], query: {metric: 'bundle_sales', dimension: 'pet_type', measure: 'default', compare_to: 'none', sort: 'default', limit: 25}, view: {columns: ['auto'], title: 'X'}}],
+  };
+  it('strips data/values/rows at every level and keeps the saved Pin dates flag', () => {
+    const out = cleanStoredSpec(stored);
+    expect(out).not.toBeNull();
+    expect(JSON.stringify(out)).not.toMatch(/"(data|values|rows|secret)"/);
+    expect(out?.filters.pinned).toBe(true);
+  });
+  it('returns null for a spec that does not validate', () => {
+    expect(cleanStoredSpec({...stored, blocks: [{...stored.blocks[0], query: {...stored.blocks[0].query, metric: 'no_such_metric'}}]})).toBeNull();
+    expect(cleanStoredSpec('nope')).toBeNull();
   });
 });

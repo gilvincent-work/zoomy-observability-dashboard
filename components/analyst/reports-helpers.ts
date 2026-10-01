@@ -1,5 +1,6 @@
 // Pure helpers for the F9 Coop Reports UI (gallery, report page, drawer save bar). No React, no I/O, no server-only, so the
 // pages, the client views and the tests all share them. Contracts: src/reports-types.ts, src/reports-suggest.ts.
+import {validateSpec} from '../../src/chat/report-spec';
 import type {ChatBlock, KpiBlock} from '../../src/chat/block-types';
 import type {ReportSpec} from '../../src/chat/report-types';
 import {suggestSave, type SavedReportRef} from '../../src/reports-suggest';
@@ -151,6 +152,17 @@ export function lastUserPrompt(messages: ReadonlyArray<{role: 'user' | 'assistan
     }
   }
   return null;
+}
+
+/**
+ * A stored spec made safe to hand to the browser: validated against the current registry with unknown keys (data, values, rows)
+ * stripped, keeping only the saved Pin dates flag (validateSpec forces it off). null when it does not validate.
+ */
+export function cleanStoredSpec(stored: unknown): ReportSpec | null {
+  const v = validateSpec(stored);
+  if (!v.ok) return null;
+  const pinned = isRecord(stored) && isRecord(stored.filters) && stored.filters.pinned === true;
+  return pinned ? ({...v.spec, filters: {...v.spec.filters, pinned: true}} as unknown as ReportSpec) : v.spec;
 }
 
 /** A stored spec as the drawer's current report: the Pin dates flag is a saved-report property, never part of the draft. */
