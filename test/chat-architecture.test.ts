@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {
   LEGACY_ALLOWED_IMPORTS,
   LEGACY_ROUTE,
+  WRITE_CALL_EXCEPTIONS,
   buildClosure,
   extractImports,
   forbiddenInClosure,
@@ -110,6 +111,17 @@ describe('scanner rules fire on planted violations', () => {
       'src/chat/a.test.ts': 'db.insert(1);',
     };
     expect(writeCallsIn(files)).toEqual([]);
+  });
+
+  it('the crypto update exception covers exactly one file and one method', () => {
+    expect(WRITE_CALL_EXCEPTIONS.map((e) => `${e.file}:${e.method}`)).toEqual(['src/chat/read/mint-jwt.ts:update']);
+    // same call, allowed file: ignored
+    expect(writeCallsIn({'src/chat/read/mint-jwt.ts': "const sig = createHmac('sha256', k).update(data).digest();"})).toEqual([]);
+    // same call, any other file: still flagged
+    expect(writeCallsIn({'src/chat/other.ts': "const sig = createHmac('sha256', k).update(data).digest();"})).toHaveLength(1);
+    // another write method, allowed file: still flagged
+    expect(writeCallsIn({'src/chat/read/mint-jwt.ts': "await db.from('t').insert({a: 1});"})).toHaveLength(1);
+    expect(writeCallsIn({'src/chat/read/mint-jwt.ts': "await db.from('t').delete().eq('id', 1);"})).toHaveLength(1);
   });
 
   it('the legacy allowance applies only to the route and is not traversed', () => {

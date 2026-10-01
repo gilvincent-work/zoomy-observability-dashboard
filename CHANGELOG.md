@@ -12,6 +12,38 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-10-01 — Talk to Data: database read-only role for Ask Coop — `feat(chat)`
+
+Layer 5 of the read-only enforcement: even if every code layer failed, the database
+refuses a write. **Nothing is applied to any hosted project yet**: the SQL is applied by
+hand (staging first, PROD by the co-worker) and gates the PROD release.
+
+- `supabase/coop_chat_readonly.sql` creates role `coop_chat_ro` (no login) and four
+  dashboard-owned definer views (`coop_chat_orders`, `_order_items`, `_products`,
+  `_bundles`) with no customer columns, SELECT only. It does not touch any `pos_*` DDL.
+- **Decision:** the earlier plan to revoke EXECUTE-from-PUBLIC on every `public` function
+  is NOT applied blindly: zoomy-pos owns those functions and may rely on that grant.
+  Instead a `db_pre_request` hook makes every request as `coop_chat_ro` run in a read-only
+  transaction (a callable write function then fails), and a read-only audit query lists
+  what the role can execute. The revoke/grant sweep is a separate optional file that needs
+  zoomy-pos sign-off.
+- Known limit: the hook stops writes, not reads through a callable read function. Layer 4
+  (the HTTP guard) blocks `/rpc` in the app; the sweep closes it in the database.
+- `src/chat/read/mint-jwt.ts` mints a 5-minute HS256 token (`node:crypto`, no new
+  dependency) from `CHAT_RO_JWT_SECRET`; `ro_role` mode fails closed (503) without it and
+  never reads the service-role key. Optional `CHAT_RO_APIKEY` is sent as the `apikey`
+  header (untested against the hosted gateway).
+- Proved on a throwaway local Supabase in Docker (`scripts/coop-chat-ro-proof.mjs`, 53
+  checks, idempotent, refuses non-local URLs), including: a SECURITY DEFINER write
+  function was callable by the role until the hook, and fails with "read-only
+  transaction" after it; service_role, anon and authenticated are unaffected.
+  `test/chat-ro-local.integration.test.ts` (skipped unless pointed at a local stack)
+  shows `ro_role` answers equal `guarded_service` answers and no customer value returns.
+- Architecture scanner: the `.update(` ban gets one pinned exception for `createHmac().update()`
+  in `mint-jwt.ts` only; the same call anywhere else still fails the build.
+
+---
+
 ## 2026-10-01 — Talk to Data: read-only foundation for Ask Coop — `feat(chat)`
 
 Ask Coop is being upgraded to answer from live POS data (design:

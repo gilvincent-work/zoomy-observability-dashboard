@@ -136,12 +136,23 @@ export function supabaseImporters(files: FileMap): string[] {
 
 const WRITE_CALL = /\.\s*(insert|update|upsert|delete|rpc)\s*\(/g;
 
+/**
+ * Calls that look like database writes but are not. Matched on the exact file AND method, and pinned by a
+ * test so the list can only change deliberately. Anything else under src/chat that calls these is still flagged.
+ */
+export const WRITE_CALL_EXCEPTIONS: readonly {file: string; method: string; why: string}[] = [
+  {file: 'src/chat/read/mint-jwt.ts', method: 'update', why: 'node:crypto Hmac.update when signing the read-only token; not a database call'},
+];
+
 /** Method-call writes in non-test files under src/chat/ (comments and strings ignored). */
 export function writeCallsIn(files: FileMap): string[] {
   const hits: string[] = [];
   for (const f of Object.keys(files)) {
     if (!f.startsWith('src/chat/') || /\.(test|spec)\.[tj]sx?$/.test(f)) continue;
-    for (const m of strip(files[f], true).matchAll(WRITE_CALL)) hits.push(`${f}: .${m[1]}(`);
+    for (const m of strip(files[f], true).matchAll(WRITE_CALL)) {
+      if (WRITE_CALL_EXCEPTIONS.some((e) => e.file === f && e.method === m[1])) continue;
+      hits.push(`${f}: .${m[1]}(`);
+    }
   }
   return hits;
 }
