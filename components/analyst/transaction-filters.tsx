@@ -4,14 +4,14 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter, useSearchParams} from 'next/navigation';
 import {Popover} from '@base-ui/react/popover';
-import {CalendarDays, ChevronDown, SlidersHorizontal, X} from 'lucide-react';
+import {CalendarDays, Check, ChevronDown, SlidersHorizontal, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {Button} from '@/components/ui/button';
 import {RangeSlider} from '@/components/ui/slider';
 import {Calendar, type DateRange} from '@/components/ui/calendar';
 import {formatPeso} from '@/src/pos-format';
 import {ORDER_METHOD_FILTERS, ORDER_STATUS_FILTERS, isFilterActive} from '@/src/pos-sales-compute';
-import type {PosOrdersFilter, PriceBounds} from '@/src/pos-sales-types';
+import type {PosEvent, PosOrdersFilter, PriceBounds} from '@/src/pos-sales-types';
 
 /**
  * Filter bar above the transactions list: payment-method pills, a date-range
@@ -20,7 +20,17 @@ import type {PosOrdersFilter, PriceBounds} from '@/src/pos-sales-types';
  * slice. The whole bar reads back from those same params, so it's shareable and
  * survives a refresh.
  */
-export function TransactionFilters({filter, bounds}: {filter: PosOrdersFilter; bounds: PriceBounds}) {
+export function TransactionFilters({
+  filter,
+  bounds,
+  eventOptions,
+  showEventFilter,
+}: {
+  filter: PosOrdersFilter;
+  bounds: PriceBounds;
+  eventOptions: PosEvent[];
+  showEventFilter: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -65,9 +75,15 @@ export function TransactionFilters({filter, bounds}: {filter: PosOrdersFilter; b
         />
       </Group>
 
+      {showEventFilter && (
+        <Group label="Event">
+          <EventFilter filter={filter} options={eventOptions} hrefWith={hrefWith} />
+        </Group>
+      )}
+
       {anyActive && (
         <Link
-          href={hrefWith({method: null, status: null, from: null, to: null, min: null, max: null})}
+          href={hrefWith({method: null, status: null, event: null, from: null, to: null, min: null, max: null})}
           scroll={false}
           className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
@@ -341,6 +357,71 @@ function PriceFilter({
             <Button size="sm" className="mt-3 w-full" onClick={apply}>
               Apply
             </Button>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/**
+ * Event filter dropdown, shown only when the current scope has 2+ events (see
+ * eventFilterScope). Lists All, each scope event, and Untagged. Like the other
+ * controls it writes the `event` URL param so the server re-queries.
+ */
+function EventFilter({
+  filter,
+  options,
+  hrefWith,
+}: {
+  filter: PosOrdersFilter;
+  options: PosEvent[];
+  hrefWith: (patch: Record<string, string | null>) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = filter.event;
+  const name = (ev: PosEvent) => ev.venue?.trim() || ev.name || 'Untitled event';
+  const selected = options.find((e) => e.event_id === active);
+  const currentLabel = active === 'all' ? 'All events' : active === 'untagged' ? 'Untagged' : selected ? name(selected) : 'Event';
+  const rows: {value: string | null; label: string}[] = [
+    {value: null, label: 'All events'},
+    ...options.map((e) => ({value: e.event_id, label: name(e)})),
+    {value: 'untagged', label: 'Untagged'},
+  ];
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+          active !== 'all' ? 'border-primary/50 text-foreground' : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <CalendarDays className="size-3" />
+        {currentLabel}
+        <ChevronDown className="size-3 opacity-60" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="bottom" align="start" sideOffset={8}>
+          <Popover.Popup className="z-50 w-52 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md outline-none">
+            {rows.map((r) => {
+              const isActive = (r.value ?? 'all') === active;
+              return (
+                <Link
+                  key={r.value ?? 'all'}
+                  href={hrefWith({event: r.value})}
+                  scroll={false}
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    'flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs transition-colors hover:bg-muted',
+                    isActive && 'text-primary',
+                  )}
+                >
+                  <span className="truncate">{r.label}</span>
+                  {isActive && <Check className="size-3.5 shrink-0" />}
+                </Link>
+              );
+            })}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

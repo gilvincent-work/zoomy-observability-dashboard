@@ -12,6 +12,32 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-10-01 — Transactions: Event filter + per-sale event badge/reassign; events-page reassign removed — `feat(events)`
+
+Follow-up to the multi-event feature. Reassigning a sale's event now lives only on
+the Transactions tab (not the events page), and transactions can be filtered and
+distinguished by event.
+
+- **Event filter** (`transaction-filters.tsx`, `pos-sales-compute.ts`,
+  `offline-orders`, orders `page.tsx`): a new `event` URL param (an event_id,
+  'untagged', or 'all') applied server-side in `getPosOrdersPage`. The control
+  shows only when the current scope has 2+ events, today's live events by default
+  or the selected date range's events (`eventFilterScope`); default All.
+- **Per-tile event badge** (`order-event-badge.tsx`): each transaction shows which
+  event it's in; on a day with 2+ overlapping events the badge doubles as the
+  reassign control (move to any overlapping event or Untagged, via
+  `reassignOrderEventAction`). `eventsCoveringOrder` enforces the "proper
+  conditions" (only interactive when the day is ambiguous).
+- **Removed** the per-event "Reassign sales" block and the Untagged bucket from the
+  events page (`offline-events.tsx`); correcting a sale's event is Transactions-only now.
+- **Note:** a sale's event can now be changed from two surfaces (this badge, and the
+  POS edit-sale sheet). It is last-write-wins with no version check, so a POS save
+  that lands after a dashboard reassign can revert it, the same pattern as
+  `pet_type` / `remarks` edits.
+
+Staging-only. Tests: event filter / scope / covering-order units; full suite green
+(362); `tsc` clean.
+
 ## 2026-10-01 — Inventory: filters inline, Filters button removed — `refactor(inventory)`
 
 The Filters button and its modal hid Status and Location behind a click. Type
