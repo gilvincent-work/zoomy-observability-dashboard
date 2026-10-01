@@ -1,5 +1,5 @@
-// F5: the two strict tool definitions sent to the Messages API, built from the registry. Frozen.
-// Strict-mode limits honoured: 2 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
+// F5 + F7: the five strict tool definitions sent to the Messages API, built from the registry. Frozen.
+// Strict-mode limits honoured: 5 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {ToolDefinition} from './stream-types';
 
@@ -56,7 +56,72 @@ const queryMetric: ToolDefinition = {
     required: ['metric', 'dimension', 'measure', 'range', 'from', 'to', 'channel', 'event', 'pet', 'compare_to', 'sort', 'limit'],
     additionalProperties: false,
   },
+};
+
+const BLOCK_FIELD = {type: 'string', description: '"new" to add a block, or the id of a block drawn earlier in this answer (b1, b2...) to replace it.'};
+const SOURCE_FIELD = {type: 'string', description: 'The id of a query_metric result (r1, r2...). You give an id and field names, never values: the app reads the numbers from that result.'};
+
+const renderKpi: ToolDefinition = {
+  name: 'render_kpi',
+  description:
+    'Show ONE headline number as a stat tile, from a one-row result. Call it once per tile (up to four) for a dashboard-style ask, after query_metric. ' +
+    'Pass a result id and the field name that holds the number, never the number itself. The source result must have exactly one row.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      block: BLOCK_FIELD,
+      source: SOURCE_FIELD,
+      value: {type: 'string', description: 'The field (column key) of the source result that holds the number.'},
+      label: {type: 'string', description: 'A short plain label for the tile, e.g. "Bundle revenue".'},
+      format: {type: 'string', enum: ['peso', 'count', 'percent'], description: 'How to show the number; it must match the field: peso for pesos, percent for percentages, count for counts and units.'},
+    },
+    required: ['block', 'source', 'value', 'label', 'format'],
+    additionalProperties: false,
+  },
+};
+
+const renderChart: ToolDefinition = {
+  name: 'render_chart',
+  description:
+    'Draw ONE chart from a stored result. The app picks the chart form, orientation, colors, sorting and any "Other" fold from the data, and tells you what it chose; the full table is always kept next to it. ' +
+    'Pass a result id and field names, never values. Use kind "auto" and orientation "auto" unless the owner named a form or a direction (explicit style wins, truth never does: the app may substitute a form and says why). ' +
+    'Use x "auto" and y ["auto"] unless the owner named fields. There is no axis, color or free-text option.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      block: BLOCK_FIELD,
+      source: SOURCE_FIELD,
+      kind: {type: 'string', enum: ['auto', 'line', 'area', 'bar', 'grouped_bar', 'stacked_bar', 'stacked_bar_100', 'pie', 'diverging_bar'], description: '"auto" unless the owner named a chart form.'},
+      orientation: {type: 'string', enum: ['auto', 'vertical', 'horizontal'], description: '"auto" unless the owner asked for vertical or horizontal bars.'},
+      x: {type: 'string', description: 'The category or time field, or "auto".'},
+      y: {type: 'array', items: {type: 'string'}, description: 'The measure fields to plot, or ["auto"].'},
+      title: {type: 'string', description: 'A short plain title, e.g. "Bundle revenue by pet".'},
+    },
+    required: ['block', 'source', 'kind', 'orientation', 'x', 'y', 'title'],
+    additionalProperties: false,
+  },
+};
+
+const renderTable: ToolDefinition = {
+  name: 'render_table',
+  description:
+    'Show a result as a table: the breakdown behind a chart, or a detail listing. Pass a result id and the column keys to show (["auto"] for all columns), never values. ' +
+    'A total row is added by the app when the columns add up.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      block: BLOCK_FIELD,
+      source: SOURCE_FIELD,
+      columns: {type: 'array', items: {type: 'string'}, description: 'Column keys of the source result in the order to show, or ["auto"] for all.'},
+      title: {type: 'string', description: 'A short plain title for the table.'},
+    },
+    required: ['block', 'source', 'columns', 'title'],
+    additionalProperties: false,
+  },
   cache_control: {type: 'ephemeral'},
 };
 
-export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric]);
+export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, renderKpi, renderChart, renderTable]);
