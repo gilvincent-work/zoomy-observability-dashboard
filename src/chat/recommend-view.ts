@@ -358,6 +358,11 @@ function autoY(result: MetricResult): ResultColumn[] {
   if (measures.length === 0) return numeric.slice(0, 1);
   const primary = measures.find((c) => c.key === result.meta.measure) ?? measures[0];
   const sameUnit = measures.filter((c) => c.unit === primary.unit);
+  // Over time, several measures of one unit that are not derived ratios are comparable series (online channels and offline
+  // sales week by week): draw them all together as lines, never only the primary one.
+  const derived = (c: ResultColumn) => result.meta.measures.some((m) => m.key === c.key && m.kind === 'derived');
+  const series = sameUnit.filter((c) => !derived(c));
+  if (result.columns.some((c) => c.role === 'time') && series.length >= 2) return series.slice(0, SERIES_FOLD_AT);
   return sameUnit.length >= 3 && totalColumn(sameUnit, result.rows) ? sameUnit : [primary];
 }
 

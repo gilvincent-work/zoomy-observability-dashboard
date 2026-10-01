@@ -9,6 +9,7 @@ import {relationsForMode, type ChatReadMode} from '../src/chat/read/relations';
 import {loadMetricData} from '../src/chat/read/metric-data';
 import {METRICS, METRIC_IDS} from '../src/chat/metrics-registry';
 import {runMetric} from '../src/chat/query-metric';
+import {assertLocalSupabase} from './support/local-only';
 
 // LOCAL INTEGRATION (skipped unless pointed at a throwaway local Supabase that already ran
 // scripts/coop-chat-ro-proof.mjs, so the fixture and coop_chat_* views exist):
@@ -17,7 +18,8 @@ import {runMetric} from '../src/chat/query-metric';
 // answers in guarded_service mode on the same data, and customer fields never come back.
 const URL_ = process.env.SB_LOCAL_URL;
 const SECRET = process.env.SB_LOCAL_JWT_SECRET;
-const local = !!URL_ && !!SECRET && ['127.0.0.1', 'localhost'].includes(new URL(URL_).hostname);
+if (URL_) assertLocalSupabase(URL_); // a set but non-local URL fails the file loudly instead of skipping: a hosted project is never read
+const local = !!URL_ && !!SECRET;
 
 function serviceJwt(secret: string): string {
   const b = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');

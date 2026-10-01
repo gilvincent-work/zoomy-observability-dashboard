@@ -41,7 +41,17 @@ export function createExecutors(ctx: ChatToolContext): ToolExecutors {
       } catch {
         source = null; // an unreadable digest is "not available", never a crash
       }
-      const out = shapeDigest(input, source, ctx.now);
+      // The week-by-week series adds Offline POS for the same dates, so it needs the POS data (loaded lazily, only here).
+      const wantsOffline = typeof input === 'object' && input !== null && (input as {window?: unknown}).window === 'recent_weeks';
+      const pos = wantsOffline ? await data() : null;
+      const offline = pos
+        ? (from: string, to: string): number | null => {
+            const r = runMetric({metric: 'offline_revenue', dimension: 'none', measure: 'default', range: 'custom', from, to, channel: 'offline', event: 'all', pet: 'all', compare_to: 'none', sort: 'default', limit: 5}, pos, ctx.now);
+            const v = 'error' in r ? null : r.rows[0]?.revenue;
+            return typeof v === 'number' ? v : null;
+          }
+        : null;
+      const out = shapeDigest(input, source, ctx.now, offline);
       if ('error' in out) return {error: out.error};
       counter += 1;
       const id = `r${counter}`;

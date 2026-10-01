@@ -8,6 +8,7 @@ import {chatDigestClient} from '../src/chat/read/client';
 import {mintChatReadJwt} from '../src/chat/read/mint-jwt';
 import {readDigestRows} from '../src/chat/read/digest';
 import type {ChatReadMode} from '../src/chat/read/relations';
+import {assertLocalSupabase} from './support/local-only';
 
 // LOCAL INTEGRATION (skipped unless pointed at the throwaway local stack from scripts/local-supabase/up.sh):
 //   set -a; source scripts/local-supabase/.local-env; set +a; npx vitest run test/chat-digest-local.integration.test.ts
@@ -15,7 +16,8 @@ import type {ChatReadMode} from '../src/chat/read/relations';
 // never comes back, and the database itself refuses the raw table to the read-only role.
 const URL_ = process.env.SB_LOCAL_URL;
 const SECRET = process.env.SB_LOCAL_JWT_SECRET;
-const local = !!URL_ && !!SECRET && ['127.0.0.1', 'localhost'].includes(new URL(URL_).hostname);
+if (URL_) assertLocalSupabase(URL_); // a set but non-local URL fails the file loudly instead of skipping: a hosted project is never read
+const local = !!URL_ && !!SECRET;
 const MARKER = 'SHOULD-NEVER-BE-SELECTED';
 
 function serviceJwt(secret: string): string {

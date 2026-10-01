@@ -24,8 +24,8 @@ const col = (key: string, label: string, unit: ResultColumn['unit'], role: Resul
 
 // ---- get_digest -----------------------------------------------------------------------------------------------------
 
-export const DIGEST_WINDOWS = ['latest', 'previous'] as const;
-export const DIGEST_SECTIONS = ['comparison', 'figures', 'sales', 'customers', 'shopee', 'lazada', 'products'] as const;
+export const DIGEST_WINDOWS = ['latest', 'previous', 'recent_weeks'] as const;
+export const DIGEST_SECTIONS = ['comparison', 'figures', 'sales', 'customers', 'shopee', 'lazada', 'products', 'weekly_revenue'] as const;
 export type DigestSection = (typeof DIGEST_SECTIONS)[number];
 /** A stored digest this old or older (days since its window ended) is flagged as stale. A weekly digest plus two days of grace. */
 export const DIGEST_STALE_DAYS = 9;
@@ -136,6 +136,7 @@ function sectionOf(doc: Rec, section: DigestSection): {columns: ResultColumn[]; 
     case 'shopee': built = {columns: FIGURE_COLUMNS, rows: facetRows('shopee', doc.shopee)}; break;
     case 'lazada': built = {columns: FIGURE_COLUMNS, rows: facetRows('lazada', doc.lazada)}; break;
     case 'products': built = {columns: PRODUCT_COLUMNS, rows: productRows(doc)}; break;
+    case 'weekly_revenue': return null; // built across digests by weeklyRevenue(), not from one document
   }
   return built.rows.length > 0 ? built : null;
 }
@@ -154,12 +155,88 @@ export interface DigestResult {
   window: {label: string; from: string; to: string; which: 'latest' | 'previous'};
 }
 
-export function shapeDigest(input: unknown, src: DigestSource | null, now: Date): DigestResult | MetricError {
+/** Completed offline POS revenue for a date range, or null when there is no POS data for it. Injected so this file stays pure. */
+export type OfflineRevenueFor = (from: string, to: string) => number | null;
+
+const WEEKLY_COLUMNS: ResultColumn[] = [
+  col('week', 'Week starting', 'date', 'time'),
+  col('shopee', 'Shopee', 'PHP', 'measure'),
+  col('lazada', 'Lazada', 'PHP', 'measure'),
+  col('website', 'Website', 'PHP', 'measure'),
+  col('offline_pos', 'Offline POS', 'PHP', 'measure'),
+];
+const OFFLINE_WEEK: MeasureDecl = {
+  key: 'offline_pos',
+  label: 'Offline POS revenue',
+  kind: 'measured',
+  unit: 'PHP',
+  method: 'Completed offline POS sales between the first and last day of each digest week, from the live POS data (not from the digest).',
+};
+
+/** One row per stored weekly digest, oldest first: online channels as published, Offline POS added for the same dates. */
+function weeklyRevenue(src: DigestSource, now: Date, offline: OfflineRevenueFor | null): DigestResult | MetricError {
+  const weeks = [...src.rows].reverse().map((row) => {
+    const doc = row.digest as unknown as Rec;
+    const w = isRec(doc.window) ? doc.window : {};
+    const from = dayOf(text(w.from) || row.window_from);
+    const to = dayOf(text(w.to) || row.window_to);
+    const byChannel = new Map(comparisonRows(doc).map((r) => [String(r.channel), num(r.revenue)] as const));
+    return {from, to, row: {week: from, shopee: byChannel.get('Shopee') ?? null, lazada: byChannel.get('Lazada') ?? null, website: byChannel.get('Website') ?? null, offline_pos: offline ? offline(from, to) : null} as MetricRow};
+  });
+  const usable = weeks.filter((x) => ['shopee', 'lazada', 'website', 'offline_pos'].some((k) => x.row[k] !== null));
+  if (usable.length === 0) return fail('No stored weekly digest has channel revenue. Say so plainly; offline POS weeks can still come from query_metric (offline_revenue by week).');
+  const from = usable[0].from;
+  const to = usable[usable.length - 1].to;
+  const label = `${usable.length} weekly digest${usable.length === 1 ? '' : 's'}, ${from} to ${to}`;
+  const newestTo = usable[usable.length - 1].to;
+  const age = daysBetween(newestTo, phtDate(now));
+  const checks: Check[] = [];
+  if (src.source === 'mock') checks.push({code: 'mock_source', status: 'warn', text: 'These are built-in sample digests, not real figures.'});
+  if (age >= DIGEST_STALE_DAYS) checks.push({code: 'partial_coverage', status: 'warn', text: `The newest stored digest ended ${newestTo}, ${age} days ago, so later weeks are not in it.`, values: {newest_ended: newestTo, days_ago: age}});
+  checks.push({
+    code: 'partial_coverage',
+    status: usable.length < 4 ? 'warn' : 'info',
+    text: `Online channels exist only for the ${usable.length} week${usable.length === 1 ? '' : 's'} that have a stored digest (${from} to ${to}); weeks between or before them are not in the data. Offline POS is added for the same dates from the live POS data.`,
+    values: {weeks: usable.length, from, to},
+  });
+  const result: MetricResult = {
+    id: '',
+    metric: 'digest',
+    dimension: 'weekly_revenue',
+    columns: WEEKLY_COLUMNS,
+    rows: usable.map((x) => x.row),
+    meta: {
+      source: 'digest',
+      range: {from, to, label},
+      dataFrom: from,
+      dataTo: to,
+      rowCount: usable.length,
+      coverage: usable.length < 4 ? 'partial' : 'full',
+      coveredFrom: from,
+      coveredTo: to,
+      caveats: checks.map((c) => c.text),
+      share_basis: null,
+      measure: 'offline_pos',
+      measures: [PUBLISHED, OFFLINE_WEEK],
+      insights: [],
+      checks,
+      reliable: !checks.some((c) => c.status === 'fail'),
+    },
+  };
+  return {result, headline: '', window: {label, from, to, which: 'latest'}};
+}
+
+export function shapeDigest(input: unknown, src: DigestSource | null, now: Date, offline: OfflineRevenueFor | null = null): DigestResult | MetricError {
   const o = isRec(input) ? input : {};
   if (typeof o.window !== 'string' || !(DIGEST_WINDOWS as readonly string[]).includes(o.window)) return fail(`window ${JSON.stringify(o.window ?? null)} is not allowed. Allowed values for window: ${list(DIGEST_WINDOWS)}.`);
   if (typeof o.section !== 'string' || !(DIGEST_SECTIONS as readonly string[]).includes(o.section)) return fail(`section ${JSON.stringify(o.section ?? null)} is not allowed. Allowed values for section: ${list(DIGEST_SECTIONS)}.`);
-  const which = o.window as 'latest' | 'previous';
   const section = o.section as DigestSection;
+  if ((o.window === 'recent_weeks') !== (section === 'weekly_revenue')) return fail('window "recent_weeks" and section "weekly_revenue" go together: use both for a week-by-week series, or "latest"/"previous" with any other section.');
+  if (o.window === 'recent_weeks') {
+    if (!src || src.rows.length === 0) return fail('The weekly digest is not available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric.');
+    return weeklyRevenue(src, now, offline);
+  }
+  const which = o.window as 'latest' | 'previous';
 
   if (!src || src.rows.length === 0) {
     return fail('The weekly digest is not available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric; Shopee, Lazada and Website figures cannot be answered without it.');
