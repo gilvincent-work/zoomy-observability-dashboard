@@ -7,8 +7,12 @@ import remarkGfm from 'remark-gfm';
 import {Sparkles, X, ArrowUp, Plus, Copy, Check, Square, RotateCcw, ArrowRight, AlertCircle} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {createLineDecoder} from '@/src/chat/stream-protocol';
+import {ChatBlocks} from './chat-blocks';
+import {interleave, sanitizeBlocks, upsertBlock, type PlacedBlock} from './chat-blocks-format';
 
-type Msg = {role: 'user' | 'assistant'; content: string; error?: boolean};
+// `blocks` (F7): stat tiles, charts and tables the server bound; `at` = length of the accumulated raw text when the block
+// arrived, so the answer reads caveat, headline, block, then whatever streamed after it. `content` stays plain text.
+type Msg = {role: 'user' | 'assistant'; content: string; error?: boolean; blocks?: PlacedBlock[]};
 type NavAction = {label: string; path: string};
 
 type Side = 'left' | 'right';
@@ -32,6 +36,22 @@ const HOME_SUGGESTIONS = [
   'Where do I see ad spend and ROAS?',
   'What should I look at first?',
 ];
+
+const ASSISTANT_BUBBLE =
+  'max-w-[90%] overflow-hidden rounded-2xl border border-border bg-card px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_strong]:font-semibold [&_table]:my-1.5 [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4';
+
+/** Read the stored conversation tolerantly: old entries have no blocks, malformed blocks are dropped, nothing throws. */
+function loadMessages(raw: string): Msg[] {
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed)) return [];
+  const out: Msg[] = [];
+  for (const m of parsed as Record<string, unknown>[]) {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') continue;
+    const blocks = sanitizeBlocks(m.blocks);
+    out.push({role: m.role, content: m.content, ...(m.error === true ? {error: true} : {}), ...(blocks.length ? {blocks} : {})});
+  }
+  return out;
+}
 
 const APP_PATHS = new Set(['/', '/?channel=all', '/?channel=shopee', '/?channel=lazada', '/?channel=website', '/customers', '/inventory', '/traffic']);
 
@@ -81,7 +101,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) setMessages(JSON.parse(raw));
+      if (raw) setMessages(loadMessages(raw));
     } catch {
       /* ignore */
     }
@@ -104,7 +124,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {'content-type': 'application/json'},
-          body: JSON.stringify({messages: history, week, home}),
+          body: JSON.stringify({messages: history.map(({blocks: _blocks, ...rest}) => rest), week, home}),
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {
@@ -125,12 +145,15 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         const dec = new TextDecoder();
         const decode = createLineDecoder();
         let acc = '';
+        let blocks: PlacedBlock[] = [];
         let finished = false;
         const apply = (events: ReturnType<typeof decode>) => {
           for (const ev of events) {
             if (ev.t === 'text') {
               acc += ev.d;
               setStatus('');
+            } else if (ev.t === 'block') {
+              blocks = upsertBlock(blocks, acc.length, ev.block);
             } else if (ev.t === 'status') {
               setStatus(ev.text);
             } else if (ev.t === 'error') {
@@ -141,7 +164,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
               setStatus('');
             }
           }
-          setMessages([...history, {role: 'assistant', content: acc}]);
+          setMessages([...history, {role: 'assistant', content: acc, ...(blocks.length ? {blocks} : {})}]);
         };
         while (!finished) {
           const {done, value} = await reader.read();
@@ -443,6 +466,11 @@ function CoopChatDrawer({
                   );
                 }
                 const {text, suggestions, actions} = parseAssistant(m.content);
+                // Offsets were taken on the raw text; map each to the same point in the cleaned text (tags only trail it).
+                const pieces = interleave(
+                  text,
+                  (m.blocks ?? []).map((b) => ({at: parseAssistant(m.content.slice(0, b.at)).text.length, block: b.block})),
+                );
                 const streamingThis = busy && i === lastIdx;
                 if (m.error) {
                   return (
@@ -455,10 +483,22 @@ function CoopChatDrawer({
                 const isLastAssistant = i === lastIdx;
                 return (
                   <div key={i} className="flex flex-col items-start">
-                    <div className="max-w-[90%] overflow-hidden rounded-2xl border border-border bg-card px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_strong]:font-semibold [&_table]:my-1.5 [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4">
-                      {text ? <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown> : streamingThis ? <span className="text-muted-foreground">{status || 'Coop is thinking…'}</span> : null}
-                    </div>
-                    {streamingThis && text && status && <span className="mt-1 px-1 text-[12px] text-muted-foreground">{status}</span>}
+                    {pieces.length === 0 ? (
+                      <div className={ASSISTANT_BUBBLE}>{streamingThis ? <span className="text-muted-foreground">{status || 'Coop is thinking…'}</span> : null}</div>
+                    ) : (
+                      pieces.map((p, pi) =>
+                        p.type === 'blocks' ? (
+                          <div key={pi} className="my-2 w-full first:mt-0 last:mb-0">
+                            <ChatBlocks blocks={p.blocks} />
+                          </div>
+                        ) : p.text.trim() ? (
+                          <div key={pi} className={ASSISTANT_BUBBLE}>
+                            <Markdown remarkPlugins={[remarkGfm]}>{p.text}</Markdown>
+                          </div>
+                        ) : null,
+                      )
+                    )}
+                    {streamingThis && pieces.length > 0 && status && <span className="mt-1 px-1 text-[12px] text-muted-foreground">{status}</span>}
 
                     {!streamingThis && actions.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
