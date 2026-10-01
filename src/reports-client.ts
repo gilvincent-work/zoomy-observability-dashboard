@@ -159,6 +159,8 @@ export type DbValue = string | number | boolean;
 export interface RowsBuilder extends PromiseLike<DbResult<DbRow[]>> {
   eq(column: string, value: DbValue): RowsBuilder;
   is(column: string, value: null): RowsBuilder;
+  /** `column < value`: lets the counter advance only forwards. */
+  lt(column: string, value: number): RowsBuilder;
   order(column: string, options?: {ascending?: boolean}): RowsBuilder;
   limit(count: number): RowsBuilder;
   /** After insert or update: return the written rows (Prefer: return=representation). */
@@ -209,6 +211,7 @@ function wrap(b: RowsBuilder): RowsBuilder {
   return {
     eq: (c, v) => wrap(b.eq(c, v)),
     is: (c, v) => wrap(b.is(c, v)),
+    lt: (c, v) => wrap(b.lt(c, v)),
     order: (c, o) => wrap(b.order(c, o)),
     limit: (n) => wrap(b.limit(n)),
     select: (c) => wrap(b.select(c)),

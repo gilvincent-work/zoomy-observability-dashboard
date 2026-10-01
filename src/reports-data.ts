@@ -46,8 +46,14 @@ const toVersion = (d: DbRow): ReportVersionRow => ({
 });
 
 type Failure = {status: 'not_setup'} | {status: 'error'; message: string};
-const failure = (e: DbError): Failure => (isMissingTable(e) ? {status: 'not_setup'} : {status: 'error', message: e.message});
-const caught = (e: unknown): Failure => ({status: 'error', message: e instanceof Error ? e.message : 'The reports could not be read.'});
+const GENERIC_READ_ERROR = 'The reports could not be read right now. Try again in a moment.';
+/** The detail is logged here (code and message, never report content); the page only ever gets the generic line. */
+const logged = (event: string, code: string | null, message: string): Failure => {
+  console.error(JSON.stringify({event, code, message}));
+  return {status: 'error', message: GENERIC_READ_ERROR};
+};
+const failure = (e: DbError): Failure => (isMissingTable(e) ? {status: 'not_setup'} : logged('reports_read_error', e.code ?? null, e.message));
+const caught = (e: unknown): Failure => logged('reports_read_threw', null, e instanceof Error ? e.message : 'unknown');
 
 /** Pinned first, then most recently updated, at most 100, only what `viewerEmail` may see. Deleted reports are not listed. */
 export async function listReports(viewerEmail: string | null): Promise<ReportListResult> {
@@ -107,7 +113,7 @@ export async function getReport(id: string, viewerEmail: string | null, version?
     const list = await client.from('coop_report_versions').select(VERSION_META_COLUMNS).eq('report_id', id).order('version', {ascending: false}).limit(MAX_VERSIONS);
     if (list.error) return failure(list.error);
     const versions = (list.data ?? []).map(toMeta);
-    // The newest version that EXISTS: a bump whose version row failed to write is rolled back, but never trust the counter.
+    // The newest version that EXISTS. `coop_reports.current_version` is only a cache that can lag after a crash (see reports-actions.ts), so it is never trusted.
     const latestVersion = versions[0]?.version;
     if (latestVersion === undefined) return {status: 'error', message: 'This report has no saved version.'};
 

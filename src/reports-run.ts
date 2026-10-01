@@ -115,26 +115,32 @@ export function runReport(raw: unknown, data: MetricData, now: Date): ReportRun 
       blocks.push({id, error: /unknown metric|is not declared by/.test(checked.error) ? METRIC_GONE : `This block is no longer valid: ${checked.error}`});
       return;
     }
-    const block: ReportBlockSpec = checked.spec.blocks[0];
-    const session = createReportSession(checked.spec);
-    // An empty filter patch re-runs the block with the report's own filters and rebinds it exactly as the chat does.
-    const out = session.setFilters({}, data, now);
-    if (!out.ok) {
-      const result = runMetric(requestOf(block.query, filters), data, now);
-      blocks.push({id, error: 'error' in result ? result.error : 'This block could not be run.'});
-      return;
+    try {
+      const block: ReportBlockSpec = checked.spec.blocks[0];
+      const session = createReportSession(checked.spec);
+      // An empty filter patch re-runs the block with the report's own filters and rebinds it exactly as the chat does.
+      const out = session.setFilters({}, data, now);
+      if (!out.ok) {
+        const result = runMetric(requestOf(block.query, filters), data, now);
+        blocks.push({id, error: 'error' in result ? result.error : 'This block could not be run.'});
+        return;
+      }
+      const drawn = out.blocks.find((b) => b.id === id);
+      if (!drawn) {
+        blocks.push({id, error: 'This block could not be drawn.'});
+        return;
+      }
+      blocks.push(drawn);
+      coverage.push(...out.coverage);
+      const meta = session.store.get(id)?.meta;
+      resolved ??= meta?.range.label ?? null;
+      const through = out.coverage[0]?.covered_to ?? null;
+      if (through && (dataThrough === null || through > dataThrough)) dataThrough = through;
+    } catch (e) {
+      // One block's maths throwing (bad data under one metric) must not turn the whole page into a 500: it becomes an error card.
+      console.error(JSON.stringify({event: 'report_block_failed', block: id, name: e instanceof Error ? e.name : 'unknown'}));
+      blocks.push({id, error: 'This block could not be calculated.'});
     }
-    const drawn = out.blocks.find((b) => b.id === id);
-    if (!drawn) {
-      blocks.push({id, error: 'This block could not be drawn.'});
-      return;
-    }
-    blocks.push(drawn);
-    coverage.push(...out.coverage);
-    const meta = session.store.get(id)?.meta;
-    resolved ??= meta?.range.label ?? null;
-    const through = out.coverage[0]?.covered_to ?? null;
-    if (through && (dataThrough === null || through > dataThrough)) dataThrough = through;
   });
 
   return {

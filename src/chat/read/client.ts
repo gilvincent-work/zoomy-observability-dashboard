@@ -30,14 +30,16 @@ export interface ChatDigestClient {
 }
 
 export interface ChatReadClientOptions {
-  mode?: ChatReadMode;
+  /** Required: a caller that forgets it must fail, not silently get the service-role client (fail closed). */
+  mode: ChatReadMode;
   env?: Record<string, string | undefined>;
   onTrip?: GuardedFetchOptions['onTrip'];
 }
 
 function build(opts: ChatReadClientOptions, relations: (mode: ChatReadMode) => readonly string[]) {
   const env = opts.env ?? process.env;
-  const mode = opts.mode ?? 'guarded_service';
+  const mode = opts.mode;
+  if (mode !== 'guarded_service' && mode !== 'ro_role') throw new Error('chat read client: mode is required (guarded_service or ro_role)');
   const {url, key, apikey} = buildChatReadConfig({mode, env});
 
   const {fetch: guarded, stats} = createGuardedFetch({
@@ -54,13 +56,13 @@ function build(opts: ChatReadClientOptions, relations: (mode: ChatReadMode) => r
   return {supabase, stats, mode};
 }
 
-export function chatReadClient(opts: ChatReadClientOptions = {}): {client: ChatReadClient; stats: GuardStats; mode: ChatReadMode} {
+export function chatReadClient(opts: ChatReadClientOptions): {client: ChatReadClient; stats: GuardStats; mode: ChatReadMode} {
   const {supabase, stats, mode} = build(opts, (m) => relationsForMode(m).allowed);
   return {client: supabase as unknown as ChatReadClient, stats, mode};
 }
 
 /** Same layers, but the guard allows ONLY the digest relation for the mode: no POS table is reachable through it. */
-export function chatDigestClient(opts: ChatReadClientOptions = {}): {client: ChatDigestClient; stats: GuardStats; mode: ChatReadMode} {
+export function chatDigestClient(opts: ChatReadClientOptions): {client: ChatDigestClient; stats: GuardStats; mode: ChatReadMode} {
   const {supabase, stats, mode} = build(opts, (m) => [digestRelationForMode(m)]);
   return {client: supabase as unknown as ChatDigestClient, stats, mode};
 }

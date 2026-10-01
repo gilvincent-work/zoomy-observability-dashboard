@@ -38,6 +38,10 @@ export interface ChatLoopOptions {
   emit: (e: ChatStreamEvent) => void;
   user: string | null;
   maxSteps?: number;
+  /** Wall-clock budget in ms (default 50_000; the route's maxDuration is 60 s). Checked before each model step, never mid-step. */
+  deadlineMs?: number;
+  /** Test seam: the clock, in ms. Defaults to Date.now. */
+  clock?: () => number;
   signal?: AbortSignal;
   sink?: AuditSink;
 }
@@ -50,6 +54,9 @@ export interface ChatLoopSummary {
 
 export const REFUSAL_TEXT = "I can't help with that one.";
 export const CUT_OFF_TEXT = '\n\nThe answer was cut off.';
+/** The default wall-clock budget of one turn: the route allows 60 s, so a graceful stop has 10 s of room. */
+export const CHAT_DEADLINE_MS = 50_000;
+export const DEADLINE_TEXT = 'That took longer than I allow. Try a narrower question.';
 export const MAX_STEPS_TEXT = 'That took more steps than I allow. Try asking a narrower question.';
 // DASH-01 as a gate: the first time a step asks to render before any text was written, every render call in that step is
 // refused once with this message. After that the calls go through even if no text came (bounded cost: one extra step).
@@ -62,7 +69,9 @@ const DIGEST_HEADING = '## Selected period';
 export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummary> {
   const {client, emit, signal, sink} = opts;
   const maxSteps = opts.maxSteps ?? 8;
-  const t0 = Date.now();
+  const deadlineMs = opts.deadlineMs ?? CHAT_DEADLINE_MS;
+  const clock = opts.clock ?? Date.now;
+  const t0 = clock();
   const usage: ChatUsage = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0};
   let steps = 0;
   let stopReason: string | null = null;
@@ -93,12 +102,17 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const finish = (reason: string | null, done: boolean): ChatLoopSummary => {
     stopReason = reason;
     if (done) emit({t: 'done', steps, usage});
-    logTurn({steps, usage, ms: Date.now() - t0, stopReason, user: opts.user}, sink);
+    logTurn({steps, usage, ms: clock() - t0, stopReason, user: opts.user}, sink);
     return {steps, usage, stopReason};
   };
 
   for (;;) {
     if (signal?.aborted) return finish('aborted', false);
+    // Wall-clock budget: stop gracefully BEFORE starting another model step, so Vercel never has to kill the stream mid-answer.
+    if (clock() - t0 > deadlineMs) {
+      emit({t: 'text', d: `${answer.trim() ? '\n\n' : ''}${DEADLINE_TEXT}`});
+      return finish('deadline', true);
+    }
     steps += 1;
 
     let res: Anthropic.Message;

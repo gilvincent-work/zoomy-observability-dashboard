@@ -173,32 +173,57 @@ const OFFLINE_WEEK: MeasureDecl = {
   method: 'Completed offline POS sales between the first and last day of each digest week, from the live POS data (not from the digest).',
 };
 
-/** One row per stored weekly digest, oldest first: online channels as published, Offline POS added for the same dates. */
-function weeklyRevenue(src: DigestSource, now: Date, offline: OfflineRevenueFor | null): DigestResult | MetricError {
-  const weeks = [...src.rows].reverse().map((row) => {
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_WEEKS = 26;
+const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const mondayOf = (day: string): string => addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7));
+
+/**
+ * Week by week over the owner's dates (Monday to Sunday weeks, so the first and last may stick out of the range). Offline POS is
+ * computed for every week; the online channels are filled only where a stored weekly digest starts in that week, and the weeks
+ * without one are listed, never guessed. The dates are the OWNER's: without them the tool asks for them instead of defaulting.
+ */
+function weeklyRevenue(src: DigestSource, now: Date, offline: OfflineRevenueFor | null, rawFrom: unknown, rawTo: unknown): DigestResult | MetricError {
+  const from = typeof rawFrom === 'string' ? rawFrom : '';
+  const to = typeof rawTo === 'string' ? rawTo : '';
+  if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) return fail('A week-by-week series needs the owner\'s dates. Ask them for a start and an end date (for example "last 8 weeks" or "1 Sep to 30 Sep"), then call again with from and to as YYYY-MM-DD. Do not pick dates yourself.');
+  if (from > to) return fail('from is after to. Ask the owner for the dates again.');
+  const first = mondayOf(from);
+  const starts: string[] = [];
+  for (let d = first; d <= to; d = addDays(d, 7)) starts.push(d);
+  if (starts.length > MAX_WEEKS) return fail(`That is ${starts.length} weeks; the limit is ${MAX_WEEKS}. Ask the owner for a shorter range.`);
+
+  const digests = src.rows.map((row) => {
     const doc = row.digest as unknown as Rec;
     const w = isRec(doc.window) ? doc.window : {};
-    const from = dayOf(text(w.from) || row.window_from);
-    const to = dayOf(text(w.to) || row.window_to);
-    const byChannel = new Map(comparisonRows(doc).map((r) => [String(r.channel), num(r.revenue)] as const));
-    return {from, to, row: {week: from, shopee: byChannel.get('Shopee') ?? null, lazada: byChannel.get('Lazada') ?? null, website: byChannel.get('Website') ?? null, offline_pos: offline ? offline(from, to) : null} as MetricRow};
+    return {start: dayOf(text(w.from) || row.window_from), byChannel: new Map(comparisonRows(doc).map((r) => [String(r.channel), num(r.revenue)] as const))};
+  });
+  const weeks = starts.map((start) => {
+    const end = addDays(start, 6);
+    const hit = digests.find((g) => g.start >= start && g.start <= end);
+    const row: MetricRow = {week: start, shopee: hit?.byChannel.get('Shopee') ?? null, lazada: hit?.byChannel.get('Lazada') ?? null, website: hit?.byChannel.get('Website') ?? null, offline_pos: offline ? offline(start, end) : null};
+    return {start, end, online: hit !== undefined, row};
   });
   const usable = weeks.filter((x) => ['shopee', 'lazada', 'website', 'offline_pos'].some((k) => x.row[k] !== null));
-  if (usable.length === 0) return fail('No stored weekly digest has channel revenue. Say so plainly; offline POS weeks can still come from query_metric (offline_revenue by week).');
-  const from = usable[0].from;
-  const to = usable[usable.length - 1].to;
-  const label = `${usable.length} weekly digest${usable.length === 1 ? '' : 's'}, ${from} to ${to}`;
-  const newestTo = usable[usable.length - 1].to;
-  const age = daysBetween(newestTo, phtDate(now));
+  if (usable.length === 0) return fail(`There is no data for ${from} to ${to}: no stored weekly digest and no offline POS sales in those weeks. Say so plainly and ask which dates they want instead.`);
+
+  const lastEnd = weeks[weeks.length - 1].end;
+  const missing = weeks.filter((x) => !x.online).map((x) => x.start);
+  const label = `${weeks.length} week${weeks.length === 1 ? '' : 's'}, ${first} to ${lastEnd}`;
+  const newestOnline = [...digests].sort((a, b) => b.start.localeCompare(a.start))[0]?.start ?? '';
   const checks: Check[] = [];
   if (src.source === 'mock') checks.push({code: 'mock_source', status: 'warn', text: 'These are built-in sample digests, not real figures.'});
-  if (age >= DIGEST_STALE_DAYS) checks.push({code: 'partial_coverage', status: 'warn', text: `The newest stored digest ended ${newestTo}, ${age} days ago, so later weeks are not in it.`, values: {newest_ended: newestTo, days_ago: age}});
-  checks.push({
-    code: 'partial_coverage',
-    status: usable.length < 4 ? 'warn' : 'info',
-    text: `Online channels exist only for the ${usable.length} week${usable.length === 1 ? '' : 's'} that have a stored digest (${from} to ${to}); weeks between or before them are not in the data. Offline POS is added for the same dates from the live POS data.`,
-    values: {weeks: usable.length, from, to},
-  });
+  if (missing.length > 0) {
+    checks.push({
+      code: 'partial_coverage',
+      status: 'warn',
+      text: `Online channels (Shopee, Lazada, Website) are only available for the weeks that have a stored weekly digest: ${weeks.length - missing.length} of ${weeks.length} weeks in the range. No online figures for the week${missing.length === 1 ? '' : 's'} starting ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ' and others' : ''}${newestOnline ? `; the newest stored digest starts ${newestOnline}` : ''}. Offline POS is shown for every week from the live POS data.`,
+      values: {weeks: weeks.length, online_weeks: weeks.length - missing.length},
+    });
+  } else {
+    checks.push({code: 'partial_coverage', status: 'info', text: 'Every week in the range has a stored digest for the online channels; Offline POS comes from the live POS data for the same weeks.'});
+  }
+  checks.push({code: 'partial_coverage', status: 'info', text: 'Weeks run Monday to Sunday, so the first and last week may extend past the dates asked.'});
   const result: MetricResult = {
     id: '',
     metric: 'digest',
@@ -207,13 +232,13 @@ function weeklyRevenue(src: DigestSource, now: Date, offline: OfflineRevenueFor 
     rows: usable.map((x) => x.row),
     meta: {
       source: 'digest',
-      range: {from, to, label},
-      dataFrom: from,
-      dataTo: to,
+      range: {from: first, to: lastEnd, label},
+      dataFrom: first,
+      dataTo: lastEnd,
       rowCount: usable.length,
-      coverage: usable.length < 4 ? 'partial' : 'full',
-      coveredFrom: from,
-      coveredTo: to,
+      coverage: missing.length > 0 ? 'partial' : 'full',
+      coveredFrom: first,
+      coveredTo: lastEnd,
       caveats: checks.map((c) => c.text),
       share_basis: null,
       measure: 'offline_pos',
@@ -223,7 +248,8 @@ function weeklyRevenue(src: DigestSource, now: Date, offline: OfflineRevenueFor 
       reliable: !checks.some((c) => c.status === 'fail'),
     },
   };
-  return {result, headline: '', window: {label, from, to, which: 'latest'}};
+  void now;
+  return {result, headline: '', window: {label, from: first, to: lastEnd, which: 'latest'}};
 }
 
 export function shapeDigest(input: unknown, src: DigestSource | null, now: Date, offline: OfflineRevenueFor | null = null): DigestResult | MetricError {
@@ -234,7 +260,7 @@ export function shapeDigest(input: unknown, src: DigestSource | null, now: Date,
   if ((o.window === 'recent_weeks') !== (section === 'weekly_revenue')) return fail('window "recent_weeks" and section "weekly_revenue" go together: use both for a week-by-week series, or "latest"/"previous" with any other section.');
   if (o.window === 'recent_weeks') {
     if (!src || src.rows.length === 0) return fail('The weekly digest is not available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric.');
-    return weeklyRevenue(src, now, offline);
+    return weeklyRevenue(src, now, offline, o.from, o.to);
   }
   const which = o.window as 'latest' | 'previous';
 

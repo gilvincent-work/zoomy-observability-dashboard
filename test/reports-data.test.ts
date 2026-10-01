@@ -44,8 +44,13 @@ describe('unconfigured and not set up', () => {
   });
 
   it('any other database failure is a distinct error status, not an empty gallery', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     h.db.failNext('coop_reports', 'select');
-    expect(await listReports(A)).toMatchObject({status: 'error', message: 'boom'});
+    const failed = await listReports(A);
+    expect(failed).toEqual({status: 'error', message: 'The reports could not be read right now. Try again in a moment.'});
+    expect(JSON.stringify(failed)).not.toContain('boom'); // the database text is logged, never shown
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('reports_read_error'));
+    spy.mockRestore();
     const r = report();
     h.db.failNext('coop_report_versions', 'select');
     expect(await getReport(String(r.id), A)).toMatchObject({status: 'error'});
@@ -188,6 +193,13 @@ describe('getReport: one report, its versions, one version', () => {
     const res = await getReport(String(r.id), A);
     if (res.status !== 'ok') throw new Error(res.status);
     expect(res.detail).toMatchObject({latestVersion: 2, isLatest: true});
+  });
+
+  it('a lagging counter (a crash after the version insert) does not hide the newest version: latestVersion comes from the version rows', async () => {
+    const r = report({}, 3);
+    r.current_version = 2;
+    const res = await getReport(String(r.id), A);
+    expect(res).toMatchObject({status: 'ok', detail: {latestVersion: 3, isLatest: true}});
   });
 
   it('a report with no version at all is an error, not a blank page', async () => {

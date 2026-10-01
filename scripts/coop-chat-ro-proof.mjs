@@ -7,11 +7,11 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { assertLocalSupabase } from './local-only.mjs'
 
 const URL_ = process.env.SB_URL, SECRET = process.env.SB_JWT_SECRET, PSQL = process.env.SB_PSQL_CMD, ANON = process.env.SB_ANON
 if (!URL_ || !SECRET || !PSQL) throw new Error('set SB_URL, SB_JWT_SECRET, SB_PSQL_CMD')
-const host = new globalThis.URL(URL_).hostname
-if (!['127.0.0.1', 'localhost'].includes(host)) throw new Error('refusing non-local URL: ' + host)
+assertLocalSupabase(URL_)
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const file = (p) => readFileSync(join(root, p), 'utf8')

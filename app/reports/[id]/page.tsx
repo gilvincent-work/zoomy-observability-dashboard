@@ -53,7 +53,7 @@ export default async function ReportPage(props: {params: Promise<{id: string}>; 
         canEdit={detail.canEdit}
         visibility={report.visibility}
         pinned={report.pinned}
-        currentVersion={report.current_version}
+        currentVersion={detail.latestVersion}
         latestVersion={detail.latestVersion}
         viewingVersion={viewing.version}
         isLatest={detail.isLatest}

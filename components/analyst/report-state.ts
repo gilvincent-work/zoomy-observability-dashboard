@@ -64,23 +64,41 @@ export function describeFilters(filters: ReportFilters): string[] {
 }
 
 /**
- * Place a block the server just bound. An id already in the current message is replaced there; an id in an EARLIER message is
- * replaced in place (same message, same position, so a follow-up edits the earlier answer); a new id is appended to the
- * current message at `at`. `current` is the index of the assistant message being streamed. Returns a new array.
+ * Place a block the server just bound. An id already in the current message is replaced there. An id in an EARLIER message is
+ * replaced in place (same message, same position, so a follow-up edits the earlier answer) ONLY when `held` says that id belongs
+ * to the dashboard that is open right now (`held` = the ids of the open report's blocks). Otherwise it is a new block of the
+ * current message even when an older message has the same id: after "Clear dashboard" the server numbers from b1 again, and the new
+ * b1 must not overwrite the old b1 on screen. A new id is appended at `at`. `current` is the index of the assistant message being
+ * streamed. Returns a new array.
  */
-export function placeBlock<M extends {blocks?: PlacedBlock[]}>(messages: M[], current: number, block: ChatBlock, at: number): M[] {
+export function placeBlock<M extends {blocks?: PlacedBlock[]}>(messages: M[], current: number, block: ChatBlock, at: number, held: ReadonlySet<string>): M[] {
   const inCurrent = messages[current]?.blocks?.some((p) => p.block.id === block.id);
-  if (!inCurrent) {
-    const earlier = messages.findIndex((m, i) => i < current && m.blocks?.some((p) => p.block.id === block.id));
+  if (!inCurrent && held.has(block.id)) {
+    // the newest earlier message that draws this id is the one the open dashboard shows
+    let earlier = -1;
+    messages.forEach((m, i) => {
+      if (i < current && m.blocks?.some((p) => p.block.id === block.id)) earlier = i;
+    });
     if (earlier >= 0) return messages.map((m, i) => (i === earlier ? {...m, blocks: upsertBlock(m.blocks, at, block)} : m));
   }
   return messages.map((m, i) => (i === current ? {...m, blocks: upsertBlock(m.blocks, at, block)} : m));
 }
 
-/** Remove blocks the server dropped from the open report (`remove_block`), wherever they were drawn. Returns a new array. */
+/**
+ * Remove blocks the server dropped from the open report (`remove_block`). Each id leaves the NEWEST message that draws it: that is
+ * the one the open dashboard shows (an older message may hold a block of a cleared dashboard under the same id). Returns a new array.
+ */
 export function dropBlocks<M extends {blocks?: PlacedBlock[]}>(messages: M[], ids: ReadonlySet<string>): M[] {
   if (ids.size === 0) return messages;
-  return messages.map((m) => (m.blocks?.some((p) => ids.has(p.block.id)) ? {...m, blocks: m.blocks.filter((p) => !ids.has(p.block.id))} : m));
+  const at = new Map<string, number>();
+  messages.forEach((m, i) => {
+    for (const p of m.blocks ?? []) if (ids.has(p.block.id)) at.set(p.block.id, i);
+  });
+  if (at.size === 0) return messages;
+  return messages.map((m, i) => {
+    const gone = (m.blocks ?? []).filter((p) => at.get(p.block.id) === i);
+    return gone.length > 0 ? {...m, blocks: (m.blocks ?? []).filter((p) => at.get(p.block.id) !== i)} : m;
+  });
 }
 
 /**

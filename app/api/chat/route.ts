@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {getDigests} from '@/src/data';
-import {buildDigestBlock, buildStaticSystem} from '@/src/chat/context';
+import {buildDigestBlock, buildLiveContextBlock, buildStaticSystem} from '@/src/chat/context';
 import {CHAT_EFFORT, COOP_CHAT} from '@/src/chat/config';
-import {runChatLoop, SAFE_ERROR_TEXT} from '@/src/chat/loop';
+import {CHAT_DEADLINE_MS, runChatLoop, SAFE_ERROR_TEXT} from '@/src/chat/loop';
 import {encodeEvent} from '@/src/chat/stream-protocol';
 import {buildDegradedPreamble, buildPreamble} from '@/src/chat/preamble';
 import {openReportSession} from '@/src/chat/report-session';
@@ -31,6 +31,7 @@ function rateLimited(ip: string, now: number): boolean {
 type InMsg = {role: 'user' | 'assistant'; content: string};
 
 export async function POST(req: Request) {
+  const started = Date.now();
   const session = devAuthEnabled() ? DEV_SESSION : await auth();
   if (!session?.user) return new Response('Please sign in to use Coop.', {status: 401});
 
@@ -56,15 +57,15 @@ export async function POST(req: Request) {
     return new Response('No question provided.', {status: 400});
   }
 
-  const rows = await getDigests(); // PII-masked server-side
-
   // Live POS data is fail-closed: where the read path is not ready (production before the read-only database role is
   // applied, a missing secret, a failed load) the chat degrades to digest-only (no tools, no POS reads) instead of
   // going down. The reason is logged once as chat_degraded.
   const live = await getChatMetricDataOrDegrade();
+  // Live mode is not anchored to any digest week: the owner defines the dates. Only degraded mode loads (masked) digests.
+  const rows = live.ok ? [] : await getDigests(); // PII-masked server-side
   const system = [
     {type: 'text' as const, text: buildStaticSystem({tools: live.ok}), cache_control: {type: 'ephemeral' as const}},
-    {type: 'text' as const, text: buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
+    {type: 'text' as const, text: live.ok ? buildLiveContextBlock() : buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
   ];
 
   const now = new Date();
@@ -89,6 +90,8 @@ export async function POST(req: Request) {
           : {},
       emit,
       user,
+      // maxDuration is 60 s from the request, so the loop's 50 s budget loses what the digest and data loads already used.
+      deadlineMs: Math.max(0, CHAT_DEADLINE_MS - (Date.now() - started)),
       signal: req.signal,
     }).then(() => undefined),
   );

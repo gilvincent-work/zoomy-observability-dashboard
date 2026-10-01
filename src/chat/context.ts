@@ -103,6 +103,19 @@ export function buildDigestBlock(rows: DigestArchiveRow[], week?: string, opts?:
   return lines.join('\n');
 }
 
+/**
+ * Live mode (tools available): NO period is pre-selected and no digest is loaded. The owner defines the dates; weekly digests
+ * are reachable only through get_digest, and only for the weeks that exist. Static text, so it is cache-friendly.
+ */
+export function buildLiveContextBlock(): string {
+  return [
+    '## Period',
+    'No reporting period is selected for you: the owner chooses the dates. If a question has no period, ask which dates before using any tool.',
+    'Offline POS figures come from query_metric for any dates the data covers. Shopee, Lazada and Website figures come from get_digest and exist only for the weeks that have a stored weekly digest: say which weeks are missing instead of guessing.',
+    'On the home screen, if asked what you can do, list what you can answer (offline POS metrics for any dates, weekly channel digests, dashboards and charts) and ask what they want to see and for which dates.',
+  ].join('\n');
+}
+
 /** The whole prompt as one string (static part, then the digest block). Kept for callers and tests that want one string. */
 export function buildCoopSystemPrompt(rows: DigestArchiveRow[], week?: string, opts?: {home?: boolean}): string {
   return `${buildStaticSystem()}\n\n${buildDigestBlock(rows, week, opts)}`;
