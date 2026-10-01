@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-02 — Ask Coop: caching audit and a capped live eval harness
+- ai-expert caching audit (`knowledge/tasks/2026-10-02-ai-expert-caching-review.md`): the prompt-cache prefix is byte-stable (about 13,300 tokens) and read on every step. In-turn tool results were re-sent at full price: added top-level automatic caching (4th breakpoint) with a request-shape rule and a test. TTL stays 5 minutes (revisit after two weeks of data).
+- Data cache keyed by Supabase project; a miss logs the serialized size (2 MiB item limit); `chat_turn` logs a timestamp.
+- Live eval harness: dollar budget cap (default $3, stops before the next call), tiers (`smoke` default about 9 cases, `full`, `majority` re-runs only failures), a cheaper grader (thinking `between_tools`/effort low on Sonnet; truncated replies are UNGRADED), cases back to back, planned worst-case cost printed first and refused over the cap. Opus cache-read price corrected.
+- Open: the Anthropic account has no credit, so no live chat run yet; the owner should check Console usage by key and set a workspace spend limit.
+
 ## 2026-10-02 — Ask Coop: owner-defined dates, test plan, model-free E2E, hardening
 - Owner direction: the owner defines the dates and Ask Coop asks when they are missing (THINK-01); live chats carry no digest block or pre-selected week; `get_digest` `recent_weeks`/`weekly_revenue` follows the owner's `from`/`to` (Monday-Sunday weeks, Offline POS for every week, online only where a digest exists, missing weeks listed); several comparable measures over time draw as lines; the answer says which chart it chose and why (VIZ-13) and what it leaves out before any figure (THINK-07); chart first (VIZ-12); a requested pie is a real pie.
 - Test plan and audit written (`knowledge/tasks/2026-10-01-talk-to-data-test-plan.md`, `...-f9-f12-audit.md`): 124 requirements traced to tests. 29 golden cases incl. an `ask_first` category; route test (35); reference figures produced from a fixture; `dev.sh` and host-block tests.
