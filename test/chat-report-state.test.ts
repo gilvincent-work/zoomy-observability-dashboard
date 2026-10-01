@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import type {ChatBlock} from '../src/chat/block-types';
 import type {ReportBlockSpec, ReportFilters, ReportSpec} from '../src/chat/report-types';
-import {describeFilters, dropBlocks, placeBlock, reportBody, sanitizeReport} from '../components/analyst/report-state';
+import {applyReportEvent, describeFilters, dropBlocks, placeBlock, reportBody, sanitizeReport} from '../components/analyst/report-state';
 import type {PlacedBlock} from '../components/analyst/chat-blocks-format';
 import {plainBar, tableTotal, kpiRow} from '../components/analyst/chat-blocks.fixtures';
 
@@ -121,5 +121,24 @@ describe('dropBlocks', () => {
   it('returns the same array when nothing is removed', () => {
     const msgs = [{blocks: [blk('b1')]}];
     expect(dropBlocks(msgs, new Set())).toBe(msgs);
+  });
+});
+
+describe('applyReportEvent', () => {
+  const blk = (id: string) => ({at: 0, block: {id, kind: 'table'} as unknown as ChatBlock});
+  const spec = (ids: string[]) => ({spec_version: 1, title: '', filters: {range: 'all_available', from: '', to: '', pet: 'all', event: 'all', channel: 'offline', pinned: false}, blocks: ids.map((id) => ({id}))}) as unknown as ReportSpec;
+  it('keeps blocks drawn this turn that no report records (digest lookups): the "I drew a pie but nothing shows" regression', () => {
+    const msgs = [{blocks: [blk('b1'), blk('b2')]}];
+    const out = applyReportEvent(msgs, new Set(), spec([]));
+    expect(out.messages[0].blocks?.map((p) => p.block.id)).toEqual(['b1', 'b2']);
+  });
+  it('removes only blocks that were in the previous report and are gone from the new one', () => {
+    const msgs = [{blocks: [blk('b1'), blk('b2'), blk('b9')]}];
+    const out = applyReportEvent(msgs, new Set(['b1', 'b2']), spec(['b2']));
+    expect(out.messages[0].blocks?.map((p) => p.block.id)).toEqual(['b2', 'b9']);
+    expect([...out.held]).toEqual(['b2']);
+  });
+  it('a null spec empties the held set', () => {
+    expect(applyReportEvent([{}], new Set(['b1']), null).held.size).toBe(0);
   });
 });
