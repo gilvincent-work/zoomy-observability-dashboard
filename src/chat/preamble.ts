@@ -21,7 +21,8 @@ export function buildDegradedPreamble(now: Date): string {
   return `[context] Today is ${longToday(now)} (Philippine time; ${phtDate(now)}). Live offline POS data is not available right now. ${NOT_AVAILABLE}`;
 }
 
-export function buildPreamble(data: MetricData, now: Date): string {
+/** `outline` is the figure-free text of the open report (F8), or '' / absent when none is open. It rides in the per-turn preamble only, never in the cached system or tools. */
+export function buildPreamble(data: MetricData, now: Date, outline?: string): string {
   const c = buildCoverage(data);
   const head = `[context] Today is ${longToday(now)} (Philippine time; ${phtDate(now)}).`;
   let cover: string;
@@ -32,7 +33,8 @@ export function buildPreamble(data: MetricData, now: Date): string {
     const lead = c.source === 'mock' ? 'The data is sample data, not real sales, and covers' : 'Offline POS data is live and covers';
     cover = `${lead} ${shortDate(c.dataFrom)} to ${shortDate(c.dataTo)} (${c.orders} completed orders${share}).`;
   }
-  return `${head} ${cover} ${NOT_AVAILABLE} If a question is outside this range, say what the data covers.`;
+  const base = `${head} ${cover} ${NOT_AVAILABLE} If a question is outside this range, say what the data covers.`;
+  return outline ? `${base}\n${outline}` : base;
 }
 
 const TOOL_RULES =

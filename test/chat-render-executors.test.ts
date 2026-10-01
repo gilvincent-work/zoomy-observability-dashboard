@@ -223,28 +223,3 @@ describe('statusFor for the render tools', () => {
     expect(statusFor('render_table', null)).toBe('Building a table');
   });
 });
-
-describe('DASH-01 order gate', () => {
-  const kpi = {block: 'new', source: 'r1', value: 'bundle_revenue', label: 'Bundle revenue', format: 'peso'};
-  const setup = (seen: () => boolean) => {
-    const blocks: ChatBlock[] = [];
-    const ex = createExecutors({data: async () => data, now: EVAL_NOW, user: null, emitBlock: (b) => blocks.push(b), textSeen: seen});
-    return {ex, blocks};
-  };
-  it('refuses a render call before any text, emits nothing, and says what to do', async () => {
-    const {ex, blocks} = setup(() => false);
-    await ex.query_metric?.(BASE);
-    const out = (await ex.render_kpi?.(kpi)) as {error?: string};
-    expect(out.error).toMatch(/headline sentence as text now/);
-    expect(blocks).toEqual([]);
-  });
-  it('allows it once text has been written', async () => {
-    let seen = false;
-    const {ex, blocks} = setup(() => seen);
-    await ex.query_metric?.(BASE);
-    expect(((await ex.render_kpi?.(kpi)) as {error?: string}).error).toBeDefined();
-    seen = true;
-    expect(((await ex.render_kpi?.(kpi)) as {ok?: boolean}).ok).toBe(true);
-    expect(blocks).toHaveLength(1);
-  });
-});

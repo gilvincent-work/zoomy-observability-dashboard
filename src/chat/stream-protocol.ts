@@ -42,15 +42,3 @@ export function createLineDecoder(): (chunk: string, final?: boolean) => ChatStr
     return out;
   };
 }
-
-/** Wraps an emitter and remembers whether any non-blank text has streamed, for the render-order gate (DASH-01). */
-export function withTextGate(emit: (e: ChatStreamEvent) => void): {emit: (e: ChatStreamEvent) => void; textSeen: () => boolean} {
-  let seen = false;
-  return {
-    emit: (e) => {
-      if (e.t === 'text' && e.d.trim() !== '') seen = true;
-      emit(e);
-    },
-    textSeen: () => seen,
-  };
-}

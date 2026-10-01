@@ -1,6 +1,6 @@
 import {describe, expect, it, vi} from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
-import {runChatLoop, CUT_OFF_TEXT, MAX_STEPS_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
+import {runChatLoop, CUT_OFF_TEXT, MAX_STEPS_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
 import {assertRequestShape} from '../src/chat/request-shape';
 import {CHAT_TOOLS} from '../src/chat/tool-defs';
 import type {ChatStreamEvent} from '../src/chat/stream-types';
@@ -281,5 +281,36 @@ describe('runChatLoop', () => {
     expect(result.is_error).toBe(true);
     expect(result.content).not.toContain('secret');
     expect(events.at(-1)).toMatchObject({t: 'done', steps: 2});
+  });
+});
+
+describe('DASH-01 order gate (one nudge per turn)', () => {
+  const render = (id: string) => toolUse(id, 'render_table', {block: 'new', source: 'r1', columns: ['auto'], title: 'T'});
+  const resultsOf = (client: FakeClient, req: number) => (client.req(req).messages.at(-1)?.content as {tool_use_id: string; is_error?: boolean; content: string}[]);
+  const run = async (script: (n: number) => Scripted) => {
+    const client = new FakeClient(script);
+    const calls: string[] = [];
+    const {opts} = setup(client, {executors: {describe_data: async () => ({ok: true}), query_metric: async () => ({id: 'r1'}), render_table: async () => (calls.push('render'), {ok: true})}});
+    await runChatLoop(opts);
+    return {client, calls};
+  };
+
+  it('refuses every render call of the first render step that has no text before it, runs the other calls, and lets the retry through', async () => {
+    const {client, calls} = await run((n) =>
+      n === 1 ? toolTurn(toolUse('a', 'query_metric', QUERY), render('r'), render('r2'))
+        : n === 2 ? {text: ['Caveat. Headline.'], content: [{type: 'text', text: 'Caveat. Headline.'}, render('r3')], stop_reason: 'tool_use'}
+        : {text: ['Done.']});
+    const first = resultsOf(client, 1);
+    expect(first.find((r) => r.tool_use_id === 'a')?.is_error).toBeUndefined();
+    expect(first.filter((r) => r.is_error).map((r) => r.content)).toEqual([JSON.stringify({error: ORDER_NUDGE_TEXT}), JSON.stringify({error: ORDER_NUDGE_TEXT})]);
+    expect(calls).toEqual(['render']); // only the retry reached the executor
+  });
+  it('never nudges when text was already written this turn', async () => {
+    const {calls} = await run((n) => (n === 1 ? {text: ['Caveat.'], content: [{type: 'text', text: 'Caveat.'}, render('r')], stop_reason: 'tool_use'} : {text: ['Done.']}));
+    expect(calls).toEqual(['render']);
+  });
+  it('nudges only once: a second render step without text is let through (bounded cost)', async () => {
+    const {calls} = await run((n) => (n <= 2 ? toolTurn(render(`r${n}`)) : {text: ['Done.']}));
+    expect(calls).toEqual(['render']);
   });
 });

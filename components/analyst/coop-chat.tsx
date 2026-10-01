@@ -4,11 +4,13 @@ import {createContext, useCallback, useContext, useEffect, useRef, useState} fro
 import {useSearchParams, usePathname, useRouter} from 'next/navigation';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {Sparkles, X, ArrowUp, Plus, Copy, Check, Square, RotateCcw, ArrowRight, AlertCircle} from 'lucide-react';
+import {Sparkles, X, ArrowUp, Plus, Copy, Check, Square, RotateCcw, ArrowRight, AlertCircle, Maximize2, Minimize2} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {createLineDecoder} from '@/src/chat/stream-protocol';
 import {ChatBlocks} from './chat-blocks';
-import {interleave, sanitizeBlocks, upsertBlock, type PlacedBlock} from './chat-blocks-format';
+import {interleave, sanitizeBlocks, type PlacedBlock} from './chat-blocks-format';
+import {describeFilters, dropBlocks, placeBlock, reportBody, sanitizeReport} from './report-state';
+import type {ReportSpec} from '@/src/chat/report-types';
 
 // `blocks` (F7): stat tiles, charts and tables the server bound; `at` = length of the accumulated raw text when the block
 // arrived, so the answer reads caveat, headline, block, then whatever streamed after it. `content` stays plain text.
@@ -23,6 +25,7 @@ const CoopChatCtx = createContext<{ask: (q: string) => void; open: (side?: Side)
 export const useCoopChat = () => useContext(CoopChatCtx);
 
 const STORE_KEY = 'coop-chat-v1';
+const REPORT_KEY = 'coop-report-v1'; // F8: the open dashboard's spec
 const SUGGESTIONS = [
   'Which channel has the best ROAS?',
   'What should I prioritize this week?',
@@ -91,6 +94,24 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const abortRef = useRef<AbortController | null>(null);
+  // Latest messages for event handlers: a state updater must stay pure (Strict Mode runs it twice), so sending never happens inside one.
+  const messagesRef = useRef<Msg[]>([]);
+  messagesRef.current = messages;
+  // F8: the open dashboard (latest spec the server sent). The ref is what requests read; the state drives the chips.
+  const [report, setReportState] = useState<ReportSpec | null>(null);
+  const reportRef = useRef<ReportSpec | null>(null);
+  // Taken when a question is asked: Regenerate re-sends the same report and history so edits never stack.
+  const askedRef = useRef<{history: Msg[]; report: ReportSpec | null} | null>(null);
+  const setReport = useCallback((spec: ReportSpec | null) => {
+    reportRef.current = spec;
+    setReportState(spec);
+    try {
+      if (spec) localStorage.setItem(REPORT_KEY, JSON.stringify(spec));
+      else localStorage.removeItem(REPORT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const week = searchParams.get('week') ?? undefined;
@@ -105,6 +126,14 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
     } catch {
       /* ignore */
     }
+    try {
+      const raw = localStorage.getItem(REPORT_KEY);
+      const spec = raw ? sanitizeReport(JSON.parse(raw)) : null;
+      reportRef.current = spec;
+      setReportState(spec);
+    } catch {
+      /* ignore */
+    }
   }, []);
   useEffect(() => {
     try {
@@ -115,7 +144,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   }, [messages]);
 
   const send = useCallback(
-    async (history: Msg[]) => {
+    async (history: Msg[], reportAtSend: ReportSpec | null) => {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       setBusy(true);
@@ -124,7 +153,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {'content-type': 'application/json'},
-          body: JSON.stringify({messages: history.map(({blocks: _blocks, ...rest}) => rest), week, home}),
+          body: JSON.stringify({messages: history.map(({blocks: _blocks, ...rest}) => rest), week, home, report: reportBody(reportAtSend)}),
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {
@@ -145,15 +174,25 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         const dec = new TextDecoder();
         const decode = createLineDecoder();
         let acc = '';
-        let blocks: PlacedBlock[] = [];
+        // Blocks can land in an earlier message (a follow-up edits the open dashboard in place), so work on the whole list.
+        let working: Msg[] = [...history, {role: 'assistant', content: ''}];
+        const last = working.length - 1;
         let finished = false;
+        // Ids of the blocks the open report holds, so a block the server removes also leaves the screen.
+        let held = new Set((reportAtSend?.blocks ?? []).map((b) => b.id));
         const apply = (events: ReturnType<typeof decode>) => {
           for (const ev of events) {
             if (ev.t === 'text') {
               acc += ev.d;
               setStatus('');
             } else if (ev.t === 'block') {
-              blocks = upsertBlock(blocks, acc.length, ev.block);
+              working = placeBlock(working, last, ev.block, acc.length);
+              held.add(ev.block.id);
+            } else if (ev.t === 'report') {
+              const next = new Set((ev.spec?.blocks ?? []).map((b) => b.id));
+              working = dropBlocks(working, new Set([...held].filter((id) => !next.has(id))));
+              held = next;
+              setReport(ev.spec);
             } else if (ev.t === 'status') {
               setStatus(ev.text);
             } else if (ev.t === 'error') {
@@ -164,7 +203,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
               setStatus('');
             }
           }
-          setMessages([...history, {role: 'assistant', content: acc, ...(blocks.length ? {blocks} : {})}]);
+          setMessages(working.map((m, i) => (i === last ? {...m, content: acc} : m)));
         };
         while (!finished) {
           const {done, value} = await reader.read();
@@ -184,34 +223,38 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         abortRef.current = null;
       }
     },
-    [week, home],
+    [week, home, setReport],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
   const regenerate = useCallback(() => {
     if (busy) return;
-    setMessages((prev) => {
+    const prev = messagesRef.current;
+    {
       // Drop the trailing assistant reply and re-send from the last user turn.
       let end = prev.length;
       while (end > 0 && prev[end - 1].role === 'assistant') end--;
-      const history = prev.slice(0, end);
-      if (!history.length || history[history.length - 1].role !== 'user') return prev;
-      void send(history);
-      return history;
-    });
-  }, [busy, send]);
+      // The snapshot from ask() undoes in-place edits the dropped attempt made; after a reload there is none.
+      const snap = askedRef.current;
+      const history = snap && snap.history.length === end ? snap.history : prev.slice(0, end);
+      if (!history.length || history[history.length - 1].role !== 'user') return;
+      const before = snap && snap.history.length === end ? snap.report : reportRef.current;
+      setReport(before);
+      setMessages(history);
+      void send(history, before);
+    }
+  }, [busy, send, setReport]);
 
   const ask = useCallback(
     (q: string) => {
       const question = q.trim();
       if (!question || busy) return;
       setOpen(true);
-      setMessages((prev) => {
-        const next: Msg[] = [...prev, {role: 'user', content: question}];
-        void send(next);
-        return next;
-      });
+      const next: Msg[] = [...messagesRef.current, {role: 'user', content: question}];
+      askedRef.current = {history: next, report: reportRef.current};
+      setMessages(next);
+      void send(next, reportRef.current);
     },
     [busy, send],
   );
@@ -235,12 +278,14 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
 
   const newChat = useCallback(() => {
     setMessages([]);
+    setReport(null);
+    askedRef.current = null;
     try {
       localStorage.removeItem(STORE_KEY);
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [setReport]);
 
   return (
     <CoopChatCtx.Provider value={{ask, open, scopeLabel}}>
@@ -258,6 +303,8 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
           onNewChat={newChat}
           onStop={stop}
           onRegenerate={regenerate}
+          report={report}
+          onClearReport={() => setReport(null)}
         />
       )}
     </CoopChatCtx.Provider>
@@ -338,6 +385,8 @@ function CoopChatDrawer({
   onNewChat,
   onStop,
   onRegenerate,
+  report,
+  onClearReport,
 }: {
   messages: Msg[];
   busy: boolean;
@@ -349,19 +398,42 @@ function CoopChatDrawer({
   onNewChat: () => void;
   onStop: () => void;
   onRegenerate: () => void;
+  report: ReportSpec | null;
+  onClearReport: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
+  // Full-screen toggle (md and up; on a phone the drawer is already full width). Remembered per browser.
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    try {
+      setWide(localStorage.getItem('coop-chat-wide') === '1');
+    } catch {
+      /* storage unavailable: stay normal size */
+    }
+  }, []);
+  const toggleWide = () =>
+    setWide((w) => {
+      try {
+        localStorage.setItem('coop-chat-wide', w ? '0' : '1');
+      } catch {
+        /* not remembered */
+      }
+      return !w;
+    });
+  // In full screen the content keeps a readable column: side padding grows instead of wrapping every child.
+  const gutter = wide ? 'md:px-[max(1rem,calc((100%-56rem)/2))]' : '';
+
   useEffect(() => {
     scrollRef.current?.scrollTo({top: scrollRef.current.scrollHeight, behavior: 'smooth'});
   }, [messages]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && (wide ? setWide(false) : onClose());
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, wide]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -413,11 +485,12 @@ function CoopChatDrawer({
         role="dialog"
         aria-label="Chat with Coop"
         className={cn(
-          'absolute top-0 flex h-full w-full max-w-md flex-col bg-background shadow-2xl animate-in duration-300',
+          'absolute top-0 flex h-full w-full flex-col bg-background shadow-2xl animate-in duration-300',
+          wide ? 'max-w-none' : 'max-w-md',
           side === 'left' ? 'left-0 border-r border-border slide-in-from-left' : 'right-0 border-l border-border slide-in-from-right',
         )}
       >
-        <header className="flex items-center gap-2.5 border-b border-border p-4">
+        <header className={cn('flex items-center gap-2.5 border-b border-border p-4', gutter)}>
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Sparkles className="size-4" />
           </span>
@@ -434,6 +507,9 @@ function CoopChatDrawer({
               <Plus className="size-4" />
             </button>
           )}
+          <button onClick={toggleWide} aria-label={wide ? 'Exit full screen' : 'Full screen'} title={wide ? 'Exit full screen (Esc)' : 'Full screen'} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground max-md:hidden">
+            {wide ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+          </button>
           <button onClick={onClose} aria-label="Close" className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             <X className="size-4" />
           </button>
@@ -441,7 +517,7 @@ function CoopChatDrawer({
 
         {empty ? (
           // Session start: greeting + suggestions + composer, vertically centered.
-          <div className="flex flex-1 flex-col justify-center gap-5 overflow-y-auto p-5">
+          <div className={cn('flex flex-1 flex-col justify-center gap-5 overflow-y-auto p-5', gutter)}>
             <p className="text-center text-[13px] text-muted-foreground">
               {home ? 'New here? Ask coop what you can do, or where to start.' : 'Ask coop about your sales, ads, products, or what to do next.'}
             </p>
@@ -456,7 +532,7 @@ function CoopChatDrawer({
           </div>
         ) : (
           <>
-            <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+            <div ref={scrollRef} className={cn('flex-1 space-y-4 overflow-y-auto p-4', gutter)}>
               {messages.map((m, i) => {
                 if (m.role === 'user') {
                   return (
@@ -538,7 +614,22 @@ function CoopChatDrawer({
                 );
               })}
             </div>
-            <div className="border-t border-border p-3">{composer}</div>
+            <div className={cn('border-t border-border p-3', gutter)}>
+              {report && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]" aria-label="Open dashboard">
+                  {describeFilters(report.filters).map((c) => (
+                    <span key={c} className="rounded-full border border-border bg-card px-2 py-0.5 text-foreground">
+                      {c}
+                    </span>
+                  ))}
+                  <span className="text-muted-foreground">{report.blocks.length === 1 ? '1 block' : `${report.blocks.length} blocks`}</span>
+                  <button type="button" onClick={onClearReport} className="ml-auto text-muted-foreground/70 transition-colors hover:text-foreground">
+                    Clear dashboard
+                  </button>
+                </div>
+              )}
+              {composer}
+            </div>
           </>
         )}
       </aside>
