@@ -25,7 +25,7 @@ describe('guarded fetch', () => {
 
   const blockedUrls: Record<string, string> = {
     rpc: `${BASE}/rest/v1/rpc/void_pos_order`,
-    'not allowlisted': ok('pos_prices'),
+    'not allowlisted': ok('pos_inventory'),
     'base table in ro mode name': ok('coop_chat_orders'),
     storage: `${BASE}/storage/v1/object/list/x`,
     auth: `${BASE}/auth/v1/admin/users`,

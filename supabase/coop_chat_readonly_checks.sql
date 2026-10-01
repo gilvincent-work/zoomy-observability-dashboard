@@ -14,7 +14,8 @@ where n.nspname = 'public'
 order by p.prosecdef desc, 1::text;
 
 -- (b) Every table/view privilege held by coop_chat_ro on any non-system relation.
--- EXPECTED: exactly four rows, all SELECT: coop_chat_orders, coop_chat_order_items, coop_chat_products, coop_chat_bundles.
+-- EXPECTED: exactly seven rows, all SELECT: coop_chat_orders, coop_chat_order_items, coop_chat_products, coop_chat_bundles,
+-- coop_chat_prices, coop_chat_price_changes, coop_chat_events.
 -- BAD: any other relation, or any privilege other than SELECT.
 select table_schema, table_name, privilege_type
 from information_schema.role_table_grants
@@ -38,12 +39,16 @@ from pg_roles where rolname = 'coop_chat_ro';
 
 -- (e) Views and their column lists vs the contract (compare by eye; each row's "matches" must be true).
 -- BAD: a missing view, extra columns, any customer column (customer_handle, remarks, phone, email, instagram,
--- customer_name, client_uuid, device_id), or a view with security_invoker set (it would then show zero rows).
+-- customer_name, client_uuid, device_id, created_by, updated_by, changed_by, opening_cash, closing_cash, cash_note,
+-- organizer), or a view with security_invoker set (it would then show zero rows).
 with contract(view_name, cols) as (values
   ('coop_chat_orders',      'id,subtotal,discount,total,oversold,payment_method,status,created_at,edited_at,event_id,pet_type'),
   ('coop_chat_order_items', 'id,order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total'),
   ('coop_chat_products',    'product_id,name'),
-  ('coop_chat_bundles',     'bundle_id,name')
+  ('coop_chat_bundles',     'bundle_id,name'),
+  ('coop_chat_prices',        'product_id,price'),
+  ('coop_chat_price_changes', 'id,product_id,old_price,new_price,changed_at'),
+  ('coop_chat_events',        'event_id,name,venue,city,starts_on,ends_on,status,created_at')
 ), actual as (
   select c.relname as view_name,
          string_agg(a.attname, ',' order by a.attnum) as cols,

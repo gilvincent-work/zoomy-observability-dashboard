@@ -26,8 +26,11 @@ const CONTRACT = {
   coop_chat_order_items: 'id,order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total',
   coop_chat_products: 'product_id,name',
   coop_chat_bundles: 'bundle_id,name',
+  coop_chat_prices: 'product_id,price',
+  coop_chat_price_changes: 'id,product_id,old_price,new_price,changed_at',
+  coop_chat_events: 'event_id,name,venue,city,starts_on,ends_on,status,created_at',
 }
-const CUSTOMER = ['customer_handle', 'remarks', 'phone', 'email', 'instagram', 'customer_name', 'client_uuid', 'device_id']
+const CUSTOMER = ['customer_handle', 'remarks', 'phone', 'email', 'instagram', 'customer_name', 'client_uuid', 'device_id', 'created_by', 'updated_by', 'changed_by', 'opening_cash', 'closing_cash', 'cash_note', 'organizer']
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const now = Math.floor(Date.now() / 1000)
@@ -77,7 +80,7 @@ for (const [view, cols] of Object.entries(CONTRACT)) {
 }
 { const r = await api('GET', 'coop_chat_order_items?select=order_id,qty&order=id.asc&limit=3', { token: RO })
   rec('order=id works on coop_chat_order_items', r.status === 200 && r.body.length === 3, `${r.status}`) }
-for (const t of ['pos_orders', 'pos_order_items', 'pos_products', 'pos_bundles']) {
+for (const t of ['pos_orders', 'pos_order_items', 'pos_products', 'pos_bundles', 'pos_prices', 'pos_price_changes', 'pos_events']) {
   const r = await api('GET', `${t}?select=*&limit=1`, { token: RO })
   rec(`base table ${t} denied`, r.status >= 400 && !Array.isArray(r.body), `${r.status} ${r.text}`)
 }
@@ -131,16 +134,16 @@ const [qa, qb, qc, qd, qe] = stmts.map((s) => q(s + ';'))
 const rowsA = qa.split('\n').filter(Boolean)
 rec('(a) lists the definer fixture function and the hook', rowsA.some((l) => /fake_write_rpc\(\)\|t\|/.test(l)) && rowsA.some((l) => /coop_chat_pre_request\(\)\|f\|/.test(l)), qa)
 rec('(a) release check: definer functions callable only with hook installed', rowsA.every((l) => !/\|t\|/.test(l)) || /public\.coop_chat_pre_request/.test(qc))
-rec('(b) exactly SELECT on the four views', qb.split('\n').sort().join() === Object.keys(CONTRACT).sort().map((v) => `public|${v}|SELECT`).join(), qb)
+rec('(b) exactly SELECT on the seven views', qb.split('\n').sort().join() === Object.keys(CONTRACT).sort().map((v) => `public|${v}|SELECT`).join(), qb)
 rec('(c) hook set to coop_chat_pre_request', /pgrst\.db_pre_request=public\.coop_chat_pre_request/.test(qc), qc)
 rec('(d) role cannot login/inherit/bypass', qd === 'coop_chat_ro|f|f|f|f|f|f', qd)
-rec('(e) four views match the contract', qe.split('\n').length === 4 && qe.split('\n').every((l) => l.endsWith('|t')), qe)
+rec('(e) seven views match the contract', qe.split('\n').length === 7 && qe.split('\n').every((l) => l.endsWith('|t')), qe)
 
 // ---- proof.sql through psql
 const proofBefore = count()
 const proofOut = sh(PROOF)
 const passes = (proofOut.match(/NOTICE:\s+PASS/g) || []).length, fails = (proofOut.match(/NOTICE:\s+FAIL/g) || []).length
-rec('proof.sql: all PASS lines, no FAIL', passes >= 24 && fails === 0 && !/ERROR/.test(proofOut), `${passes} PASS, ${fails} FAIL`)
+rec('proof.sql: all PASS lines, no FAIL', passes >= 48 && fails === 0 && !/ERROR/.test(proofOut), `${passes} PASS, ${fails} FAIL`)
 rec('proof.sql rolled back (row count unchanged)', count() === proofBefore)
 
 // ---- optional sweep: dry run changes nothing, apply revokes PUBLIC only

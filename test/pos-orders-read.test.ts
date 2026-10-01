@@ -106,7 +106,7 @@ describe('readPosOrders', () => {
       };
       const {client, calls} = fakeClient(tables);
       const out = await readChatOrders(client, mode);
-      expect(calls.map((c) => c.relation).sort()).toEqual(Object.values(rel.tables).sort());
+      expect(calls.map((c) => c.relation).sort()).toEqual([rel.tables.orders, rel.tables.items, rel.tables.products, rel.tables.bundles].sort());
       for (const c of calls) {
         for (const col of FORBIDDEN_COLUMNS) expect(c.columns.split(',')).not.toContain(col);
       }
