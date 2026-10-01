@@ -1,0 +1,64 @@
+-- coop_chat_readonly_proof.sql
+-- Negative-proof script for the coop_chat_ro role. Paste into the archive project's SQL editor (staging, then PROD).
+-- SAFE ON PROD: it only reads, and everything runs in a transaction that is rolled back. Any write it tries must be
+-- refused, and if one were NOT refused the rollback undoes it. Read the NOTICE output: every line must start with PASS.
+-- Run supabase/coop_chat_readonly.sql first.
+begin;
+set local role coop_chat_ro;
+
+do $$ declare r text; n bigint; begin
+  foreach r in array array['coop_chat_orders','coop_chat_order_items','coop_chat_products','coop_chat_bundles'] loop
+    begin
+      execute format('select count(*) from public.%I', r) into n;
+      raise notice 'PASS read view % (% rows)', r, n;
+    exception when others then raise notice 'FAIL read view %: %', r, sqlerrm; end;
+  end loop;
+end $$;
+
+do $$ declare r text; n bigint; begin
+  foreach r in array array['pos_orders','pos_order_items','pos_products','pos_bundles'] loop
+    begin
+      execute format('select count(*) from public.%I', r) into n;
+      raise notice 'FAIL base table % was readable', r;
+    exception
+      when insufficient_privilege then raise notice 'PASS base table % denied (insufficient_privilege)', r;
+      when others then raise notice 'FAIL base table %: unexpected % %', r, sqlstate, sqlerrm;
+    end;
+  end loop;
+end $$;
+
+do $$ declare c text; begin
+  foreach c in array array['customer_handle','remarks','client_uuid','device_id'] loop
+    begin
+      execute format('select %I from public.coop_chat_orders limit 1', c);
+      raise notice 'FAIL column % selectable through coop_chat_orders', c;
+    exception
+      when undefined_column then raise notice 'PASS column % absent from coop_chat_orders', c;
+      when others then raise notice 'FAIL column %: unexpected % %', c, sqlstate, sqlerrm;
+    end;
+  end loop;
+end $$;
+
+do $$ declare v text; col text; stmt text; begin
+  foreach v in array array['coop_chat_orders','coop_chat_order_items','coop_chat_products','coop_chat_bundles'] loop
+    select attname into col from pg_attribute
+      where attrelid = ('public.' || v)::regclass and attnum > 0 and not attisdropped order by attnum limit 1;
+    foreach stmt in array array[
+      format('insert into public.%I default values', v),
+      format('update public.%I set %I = %I', v, col, col),
+      format('delete from public.%I', v)
+    ] loop
+      begin
+        execute stmt;
+        raise notice 'FAIL write allowed: %', stmt;
+      exception
+        when insufficient_privilege or feature_not_supported or generated_always or read_only_sql_transaction then
+          raise notice 'PASS write refused (%): %', sqlstate, stmt;
+        when others then raise notice 'FAIL unexpected % %: %', sqlstate, sqlerrm, stmt;
+      end;
+    end loop;
+  end loop;
+end $$;
+
+reset role;
+rollback;
