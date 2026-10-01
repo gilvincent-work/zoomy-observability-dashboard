@@ -114,7 +114,10 @@ export function buildClosure(
   return {files: seen, bare, legacyHits};
 }
 
-const FORBIDDEN_FILES = new Set(['src/pos-data.ts', 'src/data.ts', 'src/reports-actions.ts', 'src/reports-client.ts']);
+// The reports write seam (F9, layer 7): the actions, the guarded clients, and the modules that wrap them. The pure reports
+// modules (reports-run, -access, -suggest, -types) are NOT here: the chat may share them, they hold no I/O.
+export const REPORTS_IO_FILES: readonly string[] = ['src/reports-actions.ts', 'src/reports-client.ts', 'src/reports-data.ts', 'src/reports-session.ts'];
+const FORBIDDEN_FILES = new Set(['src/pos-data.ts', 'src/data.ts', ...REPORTS_IO_FILES]);
 
 export function forbiddenInClosure(closure: Closure, files: FileMap): string[] {
   const bad: string[] = [];
@@ -125,6 +128,29 @@ export function forbiddenInClosure(closure: Closure, files: FileMap): string[] {
     if (hasUseServer(files[f])) bad.push(`${f}: 'use server' directive`);
   }
   return bad;
+}
+
+/** Bare modules a PURE module (src/reports-run.ts) may never reach: server-only, a database or model client, Next, auth. */
+const IMPURE_BARE = [/^server-only$/, /^@supabase\//, /^@anthropic-ai\//, /^next(\/|$)/, /^next-auth(\/|$)/];
+
+/** Why a module that must stay pure (no I/O, no model, no server-only) is not: everything in its closure that breaks that. */
+export function impureInClosure(closure: Closure, files: FileMap): string[] {
+  const bad: string[] = [];
+  for (const [spec, importers] of closure.bare) {
+    if (IMPURE_BARE.some((re) => re.test(spec))) bad.push(`${spec}: imported by ${[...importers].sort().join(', ')}`);
+  }
+  for (const f of closure.files) {
+    if (/(^|\/)[^/]*-actions\.ts$/.test(f) || FORBIDDEN_FILES.has(f)) bad.push(`${f}: forbidden module`);
+    if (hasUseServer(files[f])) bad.push(`${f}: 'use server' directive`);
+  }
+  return bad.sort();
+}
+
+/** Files (anywhere in `files`) that import `target`, as repo-relative paths. Type-only imports are ignored. */
+export function importersOf(target: string, files: FileMap): string[] {
+  return Object.keys(files)
+    .filter((f) => f !== target && extractImports(files[f]).some((spec) => resolveImport(spec, f, files) === target))
+    .sort();
 }
 
 /** Files under src/chat/ that import @supabase/supabase-js (non-type). */
@@ -157,8 +183,26 @@ export function writeCallsIn(files: FileMap): string[] {
   return hits;
 }
 
-/** Load the real tree: src/chat/** plus the chat route, and (lazily) any file reachable from them. */
-export function loadRealTree(root: string): {files: FileMap; entries: string[]} {
+/** Every .ts/.tsx/.mjs file under `dirs` (repo-relative), skipping node_modules and .next. */
+export function loadDirs(root: string, dirs: string[]): FileMap {
+  const files: FileMap = {};
+  const walk = (dir: string) => {
+    for (const name of readdirSync(join(root, dir))) {
+      if (name === 'node_modules' || name === '.next') continue;
+      const rel = `${dir}/${name}`;
+      if (statSync(join(root, rel)).isDirectory()) walk(rel);
+      else if (/\.(ts|tsx|mjs)$/.test(name)) files[rel] = readFileSync(join(root, rel), 'utf8');
+    }
+  };
+  for (const d of dirs) walk(d);
+  return files;
+}
+
+/**
+ * Load the real tree: src/chat/** plus the chat route, and (lazily) any file reachable from them. `extra` files (and
+ * what they import) are loaded into the map too but are NOT chat entries: they let a test walk a closure of its own.
+ */
+export function loadRealTree(root: string, extra: string[] = []): {files: FileMap; entries: string[]} {
   const files: FileMap = {};
   const entries: string[] = [];
   const walk = (dir: string) => {
@@ -175,8 +219,9 @@ export function loadRealTree(root: string): {files: FileMap; entries: string[]} 
   walk('src/chat');
   files[LEGACY_ROUTE] = readFileSync(join(root, LEGACY_ROUTE), 'utf8');
   entries.push(LEGACY_ROUTE);
+  for (const e of extra) files[e] = readFileSync(join(root, e), 'utf8');
   // Pull in everything else reachable so resolution has the text.
-  const queue = [...entries];
+  const queue = [...entries, ...extra];
   while (queue.length) {
     const f = queue.pop() as string;
     for (const spec of extractImports(files[f])) {
