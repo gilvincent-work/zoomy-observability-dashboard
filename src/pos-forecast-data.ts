@@ -7,6 +7,7 @@ import {manilaDayKey} from './pos-sales-compute';
 import {POS_TAGS, POS_CACHE_REVALIDATE} from './pos-cache';
 import {MOCK_POS_PRODUCTS} from './pos-mock';
 import {getStockConfig, getNextEventPlan} from './pos-stock-settings';
+import {fetchAllRows} from './pos-fetch-paginate';
 import {
   FORECAST_WINDOW_DAYS,
   EVENT_WEEKDAYS,
@@ -35,14 +36,20 @@ export const getSaleMovements = cache((): Promise<SaleMovement[]> =>
 const saleMovementsCached = unstable_cache(async (): Promise<SaleMovement[]> => {
   const supabase = posClient();
   const since = new Date(Date.now() - FORECAST_WINDOW_DAYS * 86_400_000).toISOString();
-  const {data, error} = await supabase
-    .from('pos_stock_movements')
-    .select('product_id,delta,reason,created_at')
-    .eq('reason', 'sale')
-    .gte('created_at', since);
-  if (error) throw new Error(`pos_stock_movements read failed: ${error.message}`);
+  // The sale ledger passes 1000 rows in a single 60-day window (the exact
+  // failure class as the Units=0 bug), so page it: a bare .select() would
+  // silently truncate and under-count demand across the whole forecast.
+  const data = await fetchAllRows('pos_stock_movements', (from, to) =>
+    supabase
+      .from('pos_stock_movements')
+      .select('id,product_id,delta,reason,created_at')
+      .eq('reason', 'sale')
+      .gte('created_at', since)
+      .order('id', {ascending: true})
+      .range(from, to),
+  );
 
-  return (data ?? []).map((m) => ({
+  return data.map((m) => ({
     product_id: m.product_id as string,
     qty: Math.abs(Number(m.delta ?? 0)),
     day: manilaDayKey(m.created_at as string),

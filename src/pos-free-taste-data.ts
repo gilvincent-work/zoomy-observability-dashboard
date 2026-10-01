@@ -3,6 +3,7 @@ import {cache} from 'react';
 import {unstable_cache} from 'next/cache';
 import {posClient, usingPosMock, getPosProducts} from './pos-data';
 import {POS_TAGS, POS_CACHE_REVALIDATE} from './pos-cache';
+import {fetchAllRows} from './pos-fetch-paginate';
 
 // SERVER-ONLY. Sampling summary: how much stock went to free tastes (opened for
 // pets to sample), by product, over a trailing window. Reads the pos_free_tastes
@@ -44,16 +45,21 @@ export const getFreeTasteSummary = cache((now: Date = new Date()): Promise<FreeT
 );
 
 const freeTasteSummaryCached = unstable_cache(async (sinceIso: string): Promise<FreeTasteSummary> => {
-  const [{data, error}, products] = await Promise.all([
-    posClient()
-      .from('pos_free_tastes')
-      .select('client_uuid,product_id,qty,oversold,opened_at')
-      .is('voided_at', null)
-      .gte('opened_at', sinceIso)
-      .order('opened_at', {ascending: false}),
+  // The samples read is paged via fetchAllRows (ordered by the pos_free_tastes PK
+  // `id` under the opened_at display order) so a bare .select() can't be silently
+  // capped at db.max_rows (1000) and under-count sampling.
+  const [data, products] = await Promise.all([
+    fetchAllRows('pos_free_tastes', (from, to) =>
+      posClient()
+        .from('pos_free_tastes')
+        .select('client_uuid,product_id,qty,oversold,opened_at')
+        .is('voided_at', null)
+        .gte('opened_at', sinceIso)
+        .order('opened_at', {ascending: false})
+        .order('id', {ascending: true})
+        .range(from, to)),
     getPosProducts(),
   ]);
-  if (error) throw new Error(`pos_free_tastes read failed: ${error.message}`);
 
   const nameById = new Map(products.map((p) => [p.product_id, p.name]));
   // data is ordered newest-first, so the FIRST row seen for a product is its most
@@ -61,7 +67,7 @@ const freeTasteSummaryCached = unstable_cache(async (sinceIso: string): Promise<
   const agg = new Map<string, {units: number; count: number; lastClientUuid: string | null; lastQty: number}>();
   let totalUnits = 0;
   let oversoldCount = 0;
-  for (const r of data ?? []) {
+  for (const r of data) {
     const id = r.product_id as string;
     const qty = Number(r.qty ?? 0);
     const cur = agg.get(id) ?? {units: 0, count: 0, lastClientUuid: (r.client_uuid as string | null) ?? null, lastQty: qty};
@@ -76,7 +82,7 @@ const freeTasteSummaryCached = unstable_cache(async (sinceIso: string): Promise<
     .map(([product_id, v]) => ({product_id, name: nameById.get(product_id) ?? product_id, units: v.units, count: v.count, lastClientUuid: v.lastClientUuid, lastQty: v.lastQty}))
     .sort((a, b) => b.units - a.units);
 
-  const recent: RecentFreeTaste[] = (data ?? []).slice(0, 15).map((r) => ({
+  const recent: RecentFreeTaste[] = data.slice(0, 15).map((r) => ({
     client_uuid: (r.client_uuid as string | null) ?? null,
     product_id: r.product_id as string,
     product_name: nameById.get(r.product_id as string) ?? (r.product_id as string),
@@ -85,5 +91,5 @@ const freeTasteSummaryCached = unstable_cache(async (sinceIso: string): Promise<
     opened_at: r.opened_at as string,
   }));
 
-  return {windowDays: WINDOW_DAYS, totalUnits, totalCount: (data ?? []).length, oversoldCount, byProduct, recent};
+  return {windowDays: WINDOW_DAYS, totalUnits, totalCount: data.length, oversoldCount, byProduct, recent};
 }, ['pos-free-taste-summary'], {tags: [POS_TAGS.catalog], revalidate: POS_CACHE_REVALIDATE});

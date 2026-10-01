@@ -180,7 +180,7 @@ const posOrdersPageCached = unstable_cache(async (
 
   let rowQuery = supabase
     .from('pos_orders')
-    .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at,event_id,pet_type');
+    .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at,event_id,pet_type'); // pagination-ok: server-side paged — .range(info.from, info.to) is applied at execution below after the dynamic filter loop
   for (const op of ops) {
     rowQuery = op[0] === 'or' ? rowQuery.or(op[1])
       : op[0] === 'eq' ? rowQuery.eq(op[1], op[2])
@@ -193,19 +193,22 @@ const posOrdersPageCached = unstable_cache(async (
   if (ordersErr) throw new Error(`pos_orders read failed: ${ordersErr.message}`);
 
   const ids = (orderRows ?? []).map((o) => o.id as string);
-  const [itemsRes, productsRes, bundlesRes] = await Promise.all([
+  // itemsRes is bounded by `ids` (one clamped page of orders); the product/bundle
+  // name lookups are whole-table, so page them via fetchAllRows (ordered by their
+  // unique PK) — a bare .select() would silently cap at db.max_rows (1000).
+  const [itemsRes, products, bundles] = await Promise.all([
     supabase.from('pos_order_items').select('order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total').in('order_id', ids),
-    supabase.from('pos_products').select('product_id,name'),
-    supabase.from('pos_bundles').select('bundle_id,name'),
+    fetchAllRows('pos_products', (from, to) =>
+      supabase.from('pos_products').select('product_id,name').order('product_id', {ascending: true}).range(from, to)),
+    fetchAllRows('pos_bundles', (from, to) =>
+      supabase.from('pos_bundles').select('bundle_id,name').order('bundle_id', {ascending: true}).range(from, to)),
   ]);
   if (itemsRes.error) throw new Error(`pos_order_items read failed: ${itemsRes.error.message}`);
-  if (productsRes.error) throw new Error(`pos_products read failed: ${productsRes.error.message}`);
-  if (bundlesRes.error) throw new Error(`pos_bundles read failed: ${bundlesRes.error.message}`);
 
   const nameBySku = new Map<string, string>();
-  for (const p of productsRes.data ?? []) nameBySku.set(p.product_id as string, p.name as string);
+  for (const p of products) nameBySku.set(p.product_id as string, p.name as string);
   const nameByBundle = new Map<string, string>();
-  for (const b of bundlesRes.data ?? []) nameByBundle.set(b.bundle_id as string, b.name as string);
+  for (const b of bundles) nameByBundle.set(b.bundle_id as string, b.name as string);
 
   const itemsByOrder = new Map<string, PosOrderLine[]>();
   for (const it of itemsRes.data ?? []) {
@@ -278,13 +281,17 @@ export const getPosEvents = cache((): Promise<PosEvent[]> =>
 
 const posEventsCached = unstable_cache(async (): Promise<PosEvent[]> => {
   const supabase = posClient();
-  const {data, error} = await supabase
-    .from('pos_events')
-    .select('event_id,name,venue,city,organizer,starts_on,ends_on,opening_cash,cash_note,closing_cash,status,created_by,created_at,updated_at')
-    .order('starts_on', {ascending: false, nullsFirst: false});
-  if (error) throw new Error(`pos_events read failed: ${error.message}`);
+  // Paged via fetchAllRows (ordered by event_id as a unique tiebreaker under the
+  // starts_on display order) so a bare .select() can't be capped at db.max_rows.
+  const data = await fetchAllRows('pos_events', (from, to) =>
+    supabase
+      .from('pos_events')
+      .select('event_id,name,venue,city,organizer,starts_on,ends_on,opening_cash,cash_note,closing_cash,status,created_by,created_at,updated_at')
+      .order('starts_on', {ascending: false, nullsFirst: false})
+      .order('event_id', {ascending: true})
+      .range(from, to));
 
-  return (data ?? []).map((e): PosEvent => ({
+  return data.map((e): PosEvent => ({
     event_id: e.event_id as string,
     name: (e.name as string | null) ?? null,
     venue: (e.venue as string | null) ?? null,
