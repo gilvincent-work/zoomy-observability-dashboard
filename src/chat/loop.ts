@@ -62,6 +62,8 @@ export const MAX_STEPS_TEXT = 'That took more steps than I allow. Try asking a n
 // refused once with this message. After that the calls go through even if no text came (bounded cost: one extra step).
 export const ORDER_NUDGE_TEXT = 'Nothing was drawn and your call was fine. Write the caveat (only if there is one) and one headline sentence as text now, in this same message, then repeat the same render calls.';
 export const SAFE_ERROR_TEXT = 'Coop hit a problem answering that. Please try again.';
+/** The AI account itself is out of credit or blocked: nothing the owner can fix by retrying. No provider detail is shown. */
+export const ACCOUNT_ERROR_TEXT = 'Ask Coop\'s AI account needs attention, so it cannot answer right now. Please tell your admin.';
 // The system block that holds the selected week's digest (context.ts buildDigestBlock). Its figures are a legitimate source
 // for the number check (the answer may quote the digest without a tool call); the skill text and catalog are not.
 const DIGEST_HEADING = '## Selected period';
@@ -141,7 +143,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       if (signal?.aborted) return finish('aborted', false);
       const e = err as {name?: unknown; status?: unknown};
       (sink ?? console).error(JSON.stringify({event: 'chat_error', name: String(e?.name ?? 'Error'), status: typeof e?.status === 'number' ? e.status : null, user: opts.user}));
-      emit({t: 'error', message: SAFE_ERROR_TEXT});
+      emit({t: 'error', message: e.status === 400 && /credit balance/i.test(String((err as {message?: unknown})?.message ?? '')) ? ACCOUNT_ERROR_TEXT : SAFE_ERROR_TEXT});
       return finish('error', false);
     }
 

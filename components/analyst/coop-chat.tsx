@@ -139,7 +139,9 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
   // Home = the landing brief (no channel opened) → generic getting-started mode.
   const home = pathname === '/' && !searchParams.get('channel');
 
-  // Persist the conversation across reloads.
+  // Persist the conversation across reloads. Persisting waits for the load: otherwise the empty initial list is written first
+  // and (Strict Mode runs effects twice in dev) read back, wiping the saved chat.
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORE_KEY);
@@ -157,14 +159,16 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
     } catch {
       /* ignore */
     }
+    setHydrated(true);
   }, []);
   useEffect(() => {
+    if (!hydrated) return;
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(messages));
     } catch {
       /* ignore */
     }
-  }, [messages]);
+  }, [messages, hydrated]);
 
   const send = useCallback(
     async (history: Msg[], reportAtSend: ReportSpec | null) => {
