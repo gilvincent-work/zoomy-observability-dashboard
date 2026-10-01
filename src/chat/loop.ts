@@ -3,7 +3,8 @@
 // (thinking blocks included), all tool_result blocks go back in ONE user message with results first, and the
 // system + tools prefix is identical on every request so the prompt cache holds.
 import type Anthropic from '@anthropic-ai/sdk';
-import {logTurn, type AuditSink} from './audit';
+import {logNumberViolation, logTurn, type AuditSink} from './audit';
+import {checkNumbers} from './number-check';
 import {assertRequestShape} from './request-shape';
 import type {ChatStreamEvent, ChatUsage, ToolDefinition} from './stream-types';
 import {statusFor} from './tool-executors';
@@ -54,6 +55,9 @@ export const MAX_STEPS_TEXT = 'That took more steps than I allow. Try asking a n
 // refused once with this message. After that the calls go through even if no text came (bounded cost: one extra step).
 export const ORDER_NUDGE_TEXT = 'Nothing was drawn and your call was fine. Write the caveat (only if there is one) and one headline sentence as text now, in this same message, then repeat the same render calls.';
 export const SAFE_ERROR_TEXT = 'Coop hit a problem answering that. Please try again.';
+// The system block that holds the selected week's digest (context.ts buildDigestBlock). Its figures are a legitimate source
+// for the number check (the answer may quote the digest without a tool call); the skill text and catalog are not.
+const DIGEST_HEADING = '## Selected period';
 
 export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummary> {
   const {client, emit, signal, sink} = opts;
@@ -64,12 +68,27 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   let stopReason: string | null = null;
   let textSeen = false;
   let nudged = false;
+  // F11: the answer text and the (non-error) tool results of this turn, for the log-only number check.
+  let answer = '';
+  const seen: unknown[] = [];
 
   const convo: Anthropic.MessageParam[] = opts.messages.map((m, i) =>
     i === opts.messages.length - 1 && m.role === 'user'
       ? {role: 'user', content: [{type: 'text', text: opts.preamble}, {type: 'text', text: m.content}]}
       : {role: m.role, content: m.content},
   );
+
+  // Log-only (Slice 6 #1): figures the answer displays that no tool result, question, preamble or digest holds. It never
+  // changes, delays or blocks the answer, and a failure of the check itself is swallowed.
+  const auditNumbers = (): void => {
+    try {
+      const context = [...opts.messages.map((m) => m.content), opts.preamble, ...opts.system.filter((b) => b.text.startsWith(DIGEST_HEADING)).map((b) => b.text)].join('\n');
+      const {violations, checked} = checkNumbers(answer, seen, {context});
+      if (violations.length > 0) logNumberViolation({violations, checked, user: opts.user}, sink);
+    } catch {
+      // the check is a safety net, never a dependency
+    }
+  };
 
   const finish = (reason: string | null, done: boolean): ChatLoopSummary => {
     stopReason = reason;
@@ -99,6 +118,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       for await (const ev of stream) {
         if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
           if (ev.delta.text.trim() !== '') textSeen = true;
+          answer += ev.delta.text;
           emit({t: 'text', d: ev.delta.text});
         }
       }
@@ -125,7 +145,10 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       return finish('max_tokens', true);
     }
     const calls = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
-    if (res.stop_reason !== 'tool_use' || calls.length === 0) return finish(res.stop_reason, true);
+    if (res.stop_reason !== 'tool_use' || calls.length === 0) {
+      auditNumbers();
+      return finish(res.stop_reason, true);
+    }
 
     if (steps >= maxSteps) {
       emit({t: 'text', d: MAX_STEPS_TEXT});
@@ -140,6 +163,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     const results = await Promise.all(
       calls.map((c) => (nudge && isRender(c.name) ? {is_error: true, content: {error: ORDER_NUDGE_TEXT}} : dispatchToolCall({name: c.name, input: c.input, user: opts.user}, opts.executors, sink))),
     );
+    for (const r of results) if (!r.is_error) seen.push(r.content);
     convo.push({
       role: 'user',
       content: calls.map((c, i): Anthropic.ToolResultBlockParam => ({
