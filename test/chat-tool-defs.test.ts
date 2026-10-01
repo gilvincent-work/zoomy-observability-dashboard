@@ -4,15 +4,15 @@ import {METRIC_IDS, METRICS} from '../src/chat/metrics-registry';
 import {assertRequestShape} from '../src/chat/request-shape';
 
 type Prop = {type?: unknown; enum?: unknown[]; description?: string; [k: string]: unknown};
-const [describe_data, query_metric, render_kpi, render_chart, render_table] = CHAT_TOOLS;
+const [describe_data, query_metric, render_kpi, render_chart, render_table, set_report_filters, remove_block, set_report_title] = CHAT_TOOLS;
 const props = (t: (typeof CHAT_TOOLS)[number]) => t.input_schema.properties as Record<string, Prop>;
 const sortedUnion = (pick: (id: (typeof METRIC_IDS)[number]) => string[]) => [...new Set(METRIC_IDS.flatMap(pick))].sort();
 
 const SINK = {info: () => undefined, error: () => undefined};
 
 describe('CHAT_TOOLS', () => {
-  it('has exactly the five tools in order', () => {
-    expect(CHAT_TOOLS.map((t) => t.name)).toEqual(['describe_data', 'query_metric', 'render_kpi', 'render_chart', 'render_table']);
+  it('has exactly the eight tools in order', () => {
+    expect(CHAT_TOOLS.map((t) => t.name)).toEqual(['describe_data', 'query_metric', 'render_kpi', 'render_chart', 'render_table', 'set_report_filters', 'remove_block', 'set_report_title']);
   });
 
   it('meets the strict-mode limits', () => {
@@ -61,8 +61,8 @@ describe('CHAT_TOOLS', () => {
   });
 
   it('puts the cache breakpoint on the last tool only', () => {
-    for (const t of [describe_data, query_metric, render_kpi, render_chart]) expect(t.cache_control).toBeUndefined();
-    expect(render_table.cache_control).toEqual({type: 'ephemeral'});
+    for (const t of [describe_data, query_metric, render_kpi, render_chart, render_table, set_report_filters, remove_block]) expect(t.cache_control).toBeUndefined();
+    expect(set_report_title.cache_control).toEqual({type: 'ephemeral'});
   });
 
   it('render_kpi, render_chart and render_table: every field required, enums where possible, ids and names only', () => {
@@ -80,6 +80,25 @@ describe('CHAT_TOOLS', () => {
     }
     expect(render_chart.description).toMatch(/"auto"/);
     expect(render_kpi.description).toMatch(/one-row/);
+  });
+
+  it('F8 criterion 11: eight strict tools, 0 optionals, 0 unions, and the report tools take enums, a block id and a title only', () => {
+    expect(CHAT_TOOLS).toHaveLength(8);
+    expect(CHAT_TOOLS.every((t) => t.strict === true)).toBe(true);
+    for (const t of CHAT_TOOLS) {
+      expect(t.input_schema.required.length).toBe(Object.keys(t.input_schema.properties).length); // 0 optional
+      for (const p of Object.values(props(t))) {
+        expect(typeof p.type).toBe('string'); // 0 unions
+        for (const banned of ['anyOf', 'oneOf', 'allOf']) expect(p).not.toHaveProperty(banned);
+      }
+    }
+    expect(Object.keys(props(set_report_filters))).toEqual(['range', 'from', 'to', 'pet', 'event', 'channel']);
+    expect(props(set_report_filters).range.enum).toEqual(['keep', 'last_week', 'this_week', 'last_month', 'all_available', 'custom']);
+    expect(props(set_report_filters).pet.enum).toEqual(['keep', 'all', 'dog', 'cat', 'both', 'untagged']);
+    expect(props(set_report_filters).channel.enum).toEqual(['keep', 'offline', 'all']);
+    expect(Object.keys(props(remove_block))).toEqual(['block']);
+    expect(Object.keys(props(set_report_title))).toEqual(['title']);
+    for (const t of [set_report_filters, remove_block, set_report_title]) expect(t.description).toMatch(/Call it/);
   });
 
   it('has no axis, color or free-text data option in any chart schema', () => {

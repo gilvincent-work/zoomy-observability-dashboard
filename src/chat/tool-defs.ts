@@ -1,5 +1,5 @@
-// F5 + F7: the five strict tool definitions sent to the Messages API, built from the registry. Frozen.
-// Strict-mode limits honoured: 5 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
+// F5 + F7 + F8: the eight strict tool definitions sent to the Messages API, built from the registry. Frozen.
+// Strict-mode limits honoured: 8 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {ToolDefinition} from './stream-types';
 
@@ -58,8 +58,8 @@ const queryMetric: ToolDefinition = {
   },
 };
 
-const BLOCK_FIELD = {type: 'string', description: '"new" to add a block, or the id of a block drawn earlier in this answer (b1, b2...) to replace it.'};
-const SOURCE_FIELD = {type: 'string', description: 'The id of a query_metric result (r1, r2...). You give an id and field names, never values: the app reads the numbers from that result.'};
+const BLOCK_FIELD = {type: 'string', description: '"new" to add a block, or the id of a block already on the dashboard (b1, b2...) to change that block in place.'};
+const SOURCE_FIELD = {type: 'string', description: 'The id of a query_metric result (r1, r2...) or of a block on the dashboard (b1, b2...). You give an id and field names, never values: the app reads the numbers from that result.'};
 
 const renderKpi: ToolDefinition = {
   name: 'render_kpi',
@@ -86,7 +86,8 @@ const renderChart: ToolDefinition = {
   description:
     'Draw ONE chart from a stored result. The app picks the chart form, orientation, colors, sorting and any "Other" fold from the data, and tells you what it chose; the full table is always kept next to it. ' +
     'Pass a result id and field names, never values. Use kind "auto" and orientation "auto" unless the owner named a form or a direction (explicit style wins, truth never does: the app may substitute a form and says why). ' +
-    'Use x "auto" and y ["auto"] unless the owner named fields. There is no axis, color or free-text option.',
+    'Use x "auto" and y ["auto"] unless the owner named fields. There is no axis, color or free-text option. ' +
+    'To change a block already on the dashboard ("make it a pie"), call this with that block\'s id and the same source, never a second copy.',
   strict: true,
   input_schema: {
     type: 'object',
@@ -121,7 +122,53 @@ const renderTable: ToolDefinition = {
     required: ['block', 'source', 'columns', 'title'],
     additionalProperties: false,
   },
+};
+
+const setReportFilters: ToolDefinition = {
+  name: 'set_report_filters',
+  description:
+    'Change the scope of the OPEN dashboard: its period, pet, event or channel. Call it once for a request like "only cats", "last month instead" or "for the Mall Pop-up event"; every block on the dashboard re-runs with the new filters and updates in place. ' +
+    'Never run separate queries with different filters for this. Use "keep" for a field that does not change, and "" for from and to unless range is custom.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      range: {type: 'string', enum: ['keep', 'last_week', 'this_week', 'last_month', 'all_available', 'custom'], description: 'The new period, or "keep".'},
+      from: {type: 'string', description: 'YYYY-MM-DD or "" unless range is custom'},
+      to: {type: 'string', description: 'YYYY-MM-DD or "" unless range is custom'},
+      pet: {type: 'string', enum: ['keep', 'all', 'dog', 'cat', 'both', 'untagged'], description: 'The pet the sales were tagged for, or "keep".'},
+      event: {type: 'string', description: '"keep", "all" or an event name.'},
+      channel: {type: 'string', enum: ['keep', 'offline', 'all'], description: 'Only offline POS is connected. "keep" leaves it as it is.'},
+    },
+    required: ['range', 'from', 'to', 'pet', 'event', 'channel'],
+    additionalProperties: false,
+  },
+};
+
+const removeBlock: ToolDefinition = {
+  name: 'remove_block',
+  description:
+    'Remove ONE block from the open dashboard. Call it for "drop the KPIs" or "remove the table": once per block, using the block ids listed in the dashboard outline. Never invent an id.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {block: {type: 'string', description: 'The id of a block on the dashboard, from the outline (b1, b2...).'}},
+    required: ['block'],
+    additionalProperties: false,
+  },
+};
+
+const setReportTitle: ToolDefinition = {
+  name: 'set_report_title',
+  description: 'Give the open dashboard a short plain title. Call it when the owner asks to name or rename the dashboard, or once after you build one for a clear topic.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {title: {type: 'string', description: 'A short plain title, e.g. "Bundle sales by pet".'}},
+    required: ['title'],
+    additionalProperties: false,
+  },
   cache_control: {type: 'ephemeral'},
 };
 
-export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, renderKpi, renderChart, renderTable]);
+export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);

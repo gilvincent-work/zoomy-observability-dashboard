@@ -84,9 +84,12 @@ describe('size and caching', () => {
   });
 });
 
-describe('scope: F8/F9 content does not leak in early', () => {
-  it.each(['Save report', 'set_report_filters', 'remove_block', 'DASH-03', 'DASH-06', 'DASH-07'])('no "%s" in the rendered skill', (word) => {
+describe('scope: F9 content does not leak in early', () => {
+  it.each(['Save report', 'DASH-03', 'DASH-06', 'DASH-07'])('no "%s" in the rendered skill', (word) => {
     expect(text).not.toContain(word);
+  });
+  it('F8 content is present: editing the open dashboard', () => {
+    for (const word of ['DASH-09', 'DASH-10', 'DASH-11', 'set_report_filters', 'remove_block']) expect(text).toContain(word);
   });
   it('F7 content is present: tiles, the chart tool, orientation and the topics', () => {
     for (const word of ['KPI', 'render_chart', 'orientation', 'render_table', 'render_kpi']) expect(text).toContain(word);

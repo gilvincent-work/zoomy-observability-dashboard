@@ -10,9 +10,9 @@ export type ResultStore = Map<string, MetricResult>;
 export type BindOutcome = {error: string} | {blocks: ChatBlock[]; chosen: ChosenView[]};
 
 export const MAX_TITLE = 120;
-const KINDS: readonly string[] = ['auto', 'line', 'area', 'bar', 'grouped_bar', 'stacked_bar', 'stacked_bar_100', 'pie', 'diverging_bar'];
-const ORIENTATIONS: readonly string[] = ['auto', 'vertical', 'horizontal'];
-const FORMATS: readonly string[] = ['peso', 'count', 'percent'];
+export const KINDS: readonly string[] = ['auto', 'line', 'area', 'bar', 'grouped_bar', 'stacked_bar', 'stacked_bar_100', 'pie', 'diverging_bar'];
+export const ORIENTATIONS: readonly string[] = ['auto', 'vertical', 'horizontal'];
+export const FORMATS: readonly string[] = ['peso', 'count', 'percent'];
 
 /** Plain text, never HTML: control characters out, whitespace collapsed, at most MAX_TITLE characters. */
 export function plainText(value: unknown): string {

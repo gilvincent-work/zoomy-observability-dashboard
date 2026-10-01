@@ -3,8 +3,9 @@ import {getDigests} from '@/src/data';
 import {buildDigestBlock, buildStaticSystem} from '@/src/chat/context';
 import {CHAT_EFFORT, COOP_CHAT} from '@/src/chat/config';
 import {runChatLoop, SAFE_ERROR_TEXT} from '@/src/chat/loop';
-import {encodeEvent, withTextGate} from '@/src/chat/stream-protocol';
+import {encodeEvent} from '@/src/chat/stream-protocol';
 import {buildDegradedPreamble, buildPreamble} from '@/src/chat/preamble';
+import {openReportSession} from '@/src/chat/report-session';
 import {CHAT_TOOLS} from '@/src/chat/tool-defs';
 import {createExecutors} from '@/src/chat/tool-executors';
 import {getChatMetricDataOrDegrade} from '@/src/chat/server';
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
   if (rateLimited(ip, Date.now())) return new Response('Too many requests — give Coop a moment.', {status: 429});
 
-  let body: {messages?: InMsg[]; week?: string; home?: boolean};
+  let body: {messages?: InMsg[]; week?: string; home?: boolean; report?: unknown};
   try {
     body = await req.json();
   } catch {
@@ -69,9 +70,11 @@ export async function POST(req: Request) {
   const now = new Date();
   const user = session.user.email ?? null;
   const anthropic = new Anthropic({apiKey: key});
-  return ndjson((rawEmit) => {
-    const {emit, textSeen} = withTextGate(rawEmit);
-    return runChatLoop({
+  // F8: the open dashboard the drawer sends back. Untrusted: validated and re-run here; invalid or oversized is ignored
+  // (one log line, no content). Digest-only mode has no tools, so a report is ignored there.
+  const report = live.ok ? openReportSession(body.report, live.data, now, () => console.warn(JSON.stringify({event: 'chat_report_rejected'}))) : null;
+  return ndjson((emit) =>
+    runChatLoop({
       client: anthropic,
       model: COOP_CHAT.model,
       maxTokens: COOP_CHAT.maxTokens,
@@ -79,13 +82,16 @@ export async function POST(req: Request) {
       system,
       tools: live.ok ? CHAT_TOOLS : [],
       messages,
-      preamble: live.ok ? buildPreamble(live.data, now) : buildDegradedPreamble(now),
-      executors: live.ok ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), textSeen}) : {},
+      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline()) : buildDegradedPreamble(now),
+      executors:
+        live.ok && report
+          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec})})
+          : {},
       emit,
       user,
       signal: req.signal,
-    }).then(() => undefined);
-  });
+    }).then(() => undefined),
+  );
 }
 
 /** One NDJSON response: run `work` with an emitter, always close the stream. */

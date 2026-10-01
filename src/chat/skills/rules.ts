@@ -65,6 +65,9 @@ export const RULES: readonly {id: string; enforcedBy: RuleEnforcement; where: st
   {id: 'DASH-04', enforcedBy: 'guide', where: 'guide'},
   {id: 'DASH-05', enforcedBy: 'guide', where: 'guide'},
   {id: 'DASH-08', enforcedBy: 'guide', where: 'guide'},
+  {id: 'DASH-09', enforcedBy: 'guide', where: 'guide'},
+  {id: 'DASH-10', enforcedBy: 'guide', where: 'guide'},
+  {id: 'DASH-11', enforcedBy: 'guide', where: 'guide'},
 ];
 
 /** Numbers the skill text uses as `{{NAME}}` placeholders, taken from code so the text cannot drift. */

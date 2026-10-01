@@ -50,6 +50,9 @@ export interface ChatLoopSummary {
 export const REFUSAL_TEXT = "I can't help with that one.";
 export const CUT_OFF_TEXT = '\n\nThe answer was cut off.';
 export const MAX_STEPS_TEXT = 'That took more steps than I allow. Try asking a narrower question.';
+// DASH-01 as a gate: the first time a step asks to render before any text was written, every render call in that step is
+// refused once with this message. After that the calls go through even if no text came (bounded cost: one extra step).
+export const ORDER_NUDGE_TEXT = 'Nothing was drawn and your call was fine. Write the caveat (only if there is one) and one headline sentence as text now, in this same message, then repeat the same render calls.';
 export const SAFE_ERROR_TEXT = 'Coop hit a problem answering that. Please try again.';
 
 export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummary> {
@@ -59,6 +62,8 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const usage: ChatUsage = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0};
   let steps = 0;
   let stopReason: string | null = null;
+  let textSeen = false;
+  let nudged = false;
 
   const convo: Anthropic.MessageParam[] = opts.messages.map((m, i) =>
     i === opts.messages.length - 1 && m.role === 'user'
@@ -92,7 +97,10 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       assertRequestShape(params, sink);
       const stream = client.messages.stream(params, {signal});
       for await (const ev of stream) {
-        if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') emit({t: 'text', d: ev.delta.text});
+        if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
+          if (ev.delta.text.trim() !== '') textSeen = true;
+          emit({t: 'text', d: ev.delta.text});
+        }
       }
       res = await stream.finalMessage();
     } catch (err) {
@@ -126,7 +134,12 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     // The assistant turn goes back exactly as returned (thinking blocks included), then ONE user message of results.
     convo.push({role: 'assistant', content: res.content as Anthropic.ContentBlockParam[]});
     for (const c of calls) emit({t: 'status', text: statusFor(c.name, c.input)});
-    const results = await Promise.all(calls.map((c) => dispatchToolCall({name: c.name, input: c.input, user: opts.user}, opts.executors, sink)));
+    const isRender = (name: string) => name.startsWith('render_');
+    const nudge = !textSeen && !nudged && calls.some((c) => isRender(c.name));
+    if (nudge) nudged = true;
+    const results = await Promise.all(
+      calls.map((c) => (nudge && isRender(c.name) ? {is_error: true, content: {error: ORDER_NUDGE_TEXT}} : dispatchToolCall({name: c.name, input: c.input, user: opts.user}, opts.executors, sink))),
+    );
     convo.push({
       role: 'user',
       content: calls.map((c, i): Anthropic.ToolResultBlockParam => ({

@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-01 — Ask Coop: follow-ups edit the open dashboard, full-screen drawer (Talk to Data F8)
+- The drawer keeps the open dashboard (`ReportSpec`, `coop-report-v1`) and sends it with each request. The server re-validates it (`report-spec.ts`: allowlist, registry enums, 12 blocks, 32 KB, data keys dropped), re-runs it, and edits it through render tools (a block id re-binds that block), `set_report_filters` (one call re-runs every block, atomic), `remove_block`, `set_report_title`. The model never types data or a report id. Chips line shows the filters and block count; "Clear dashboard" clears only the report.
+- Live script on the real model: dashboard (4 tiles, chart, table) -> "make the chart a pie" (b5 re-bound in place, mode user) -> "only cats" (one filter call) -> "last month instead" -> "add the top SKUs" (appended b7 to b9) -> "remove the KPI tiles" (gone from spec and screen). Known nit: "add top SKUs" drew two tables.
+- DASH-01 gate moved into the loop and made one-shot: the first step that renders before any text gets every render call refused once; after that calls pass. Bounded cost (about one extra step) instead of the earlier repeated refusals (5 to 7 steps, 58 s).
+- Fixed: `send` was called inside a `setMessages` updater, so Strict Mode sent each question twice in dev (lesson: no-side-effects-in-state-updaters). A removed block now also leaves the earlier message it was drawn in.
+- New: full-screen toggle in the drawer header (md and up; Esc or the button returns; remembered in `coop-chat-wide`). Above about 900 px wide the content keeps a 56rem reading column.
+
 ## 2026-10-01 — Ask Coop: stat tiles, charts and tables in answers (Talk to Data F7)
 - Chat gains 3 render tools (`render_kpi`, `render_chart`, `render_table`). They take a result id and field names, never values; code builds each block from the stored result and picks the form by data shape (`recommend-view.ts`). Explicit preferences are honored in tiers (as asked / adjusted with a note / substituted with a reason). No dual axis, no axis or color options.
 - Colors follow the entity (`entity-colors.ts`); "No tag"/"Other" are neutral. Every chart has a table twin with all rows. New skill topics `viz-forms`, `dashboard-composition` (VIZ/PREF/DASH rules, gear rules tested).
