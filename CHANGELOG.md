@@ -12,6 +12,38 @@ Dates are local working dates (GMT+8). Newest first.
 
 ---
 
+## 2026-10-01 — Talk to Data: the Ask Coop Data Analyst skill — `feat(chat)`
+
+How Ask Coop thinks, now as runtime product content in its cached prompt
+(`src/chat/skills/ask-coop-data-analyst/`): a core "How you think" procedure (understand, check the
+data first, get every number from a tool, sanity-check, state the method, present like an analyst,
+close the loop), a voice, and four topics (parts and totals, comparing periods, allocated figures
+and prices, coverage and data quality). Every rule has a stable id; a gear marks the 18 rules the
+app also enforces in code.
+
+- **The guide and the code cannot drift:** tests fail if an id exists on only one side, if a
+  placeholder is unfilled, if a number in the text differs from the code constant, if a gear rule has
+  no test titled with its id (the gate is shown to fail), or if the skill passes its size budget
+  (about 2,400 tokens today, cap 4,500, estimate).
+- **Scope decision:** the chart-form and dashboard-layout topics describe things that do not exist
+  until the chart tools (F7), so they ship with F7. Today's skill says only what the app can do.
+- Replaces the two stopgap guardrail lines from the previous step with rules BI-08 (rank claims
+  only about the rows shown) and ANL-04 (no number words).
+- **Kept out of the prompt on purpose** (tests guard it): production-derived figures (a prompt gets
+  parroted and the data changes), and any promise to "log" or "save" something Coop cannot do.
+- Vercel: a real `next build` shows the skill files are traced into the chat route, so no config was
+  needed.
+- **Live skill evals** (12 cases, real model, synthetic data, mechanical scoring): 11 of 12 pass.
+  Reading the failures led to three changes: a narrow question must not get an unrequested comparison
+  (THINK-06 and a scorer check), the small-sample rule now says "say small sample before any figure
+  and lead with counts" instead of banning a share the owner asked for, and a scorer false negative
+  was fixed. The remaining failure was a 4th sentence, so the cap became 4 (a method line and a next
+  question already make 3).
+- **No regression** on the 14 base questions with the skill loaded (real data, read-only): median
+  5.4 s, p95 11.3 s, median cost $0.015 and max $0.033 (estimates); cached prefix 12k to 15k tokens.
+
+---
+
 ## 2026-10-01 — Talk to Data: Ask Coop answers from live POS data — `feat(chat)`
 
 The first real answer. A question in the Ask Coop drawer is answered from live offline POS
