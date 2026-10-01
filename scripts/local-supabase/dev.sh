@@ -32,6 +32,7 @@ host="$(node -e 'console.log(new URL(process.argv[1]).hostname)' "$SUPABASE_URL_
 case "$host" in 127.0.0.1|localhost) ;; *) echo "dev.sh: refusing: host is not loopback" >&2; exit 1 ;; esac
 
 export DEV_AUTH_BYPASS=true
+export COOP_REQUIRE_LOCAL_DB=1   # the reports clients also refuse any non-local URL
 export NODE_OPTIONS="--require $HERE/block-remote.cjs ${NODE_OPTIONS:-}"
 echo "dev.sh: local Supabase at $SUPABASE_URL_ARCHIVE; hosted Supabase hosts are blocked; starting next dev"
 cd "$ROOT"

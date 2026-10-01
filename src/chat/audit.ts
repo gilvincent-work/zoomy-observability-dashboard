@@ -52,6 +52,27 @@ export function logGuardTrip(
   );
 }
 
+const MAX_FIGURES = 10;
+
+/**
+ * F11: one line when an answer displayed figures that appear in none of the tool results (log-only, see number-check.ts).
+ * Carries the counts and the offending figures ONLY: never the answer text and never the context around a figure.
+ */
+export function logNumberViolation(
+  e: {violations: readonly {value: string}[]; checked: number; user?: string | null},
+  sink: AuditSink = console,
+): void {
+  sink.info(
+    JSON.stringify({
+      event: 'chat_number_violation',
+      count: e.violations.length,
+      checked: e.checked,
+      figures: e.violations.slice(0, MAX_FIGURES).map((v) => scrubParams(v.value)),
+      user: e.user ?? null,
+    }),
+  );
+}
+
 export function logTurn(
   e: {
     steps: number;
