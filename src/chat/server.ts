@@ -72,6 +72,23 @@ export type ChatDataResult = {ok: true; data: MetricData} | {ok: false; reason: 
 const degradedSeen = new Set<string>();
 
 /**
+ * A loader error as a log-safe reason: the message (our own text plus what Supabase answered, such as "Invalid API key" or "JWT
+ * expired") with anything token-like removed and the length capped, so the log says WHY the live path failed without secrets.
+ */
+export function safeReason(err: unknown): string {
+  const name = (err as Error)?.name ?? 'Error';
+  const raw = String((err as Error)?.message ?? '');
+  const clean = raw
+    .replace(/eyJ[A-Za-z0-9_-]{10,}(\.[A-Za-z0-9_-]+){0,2}/g, '[token]') // JWTs
+    .replace(/(sb_(secret|publishable)_|sk-ant-)[A-Za-z0-9_-]+/g, '[key]')
+    .replace(/https?:\/\/[^\s"')]+/g, '[url]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+  return clean ? `data load failed (${name}): ${clean}` : `data load failed (${name})`;
+}
+
+/**
  * The data for this request, or a reason the live-data path is unavailable (production before the read-only role is
  * applied, a missing secret, a failed load). The caller then runs digest-only: no tools, no POS reads. Fail closed on
  * data, never on the whole chat. Each distinct reason is logged once per process.
@@ -80,7 +97,7 @@ export async function getChatMetricDataOrDegrade(): Promise<ChatDataResult> {
   try {
     return {ok: true, data: await getChatMetricData()};
   } catch (err) {
-    const reason = err instanceof ChatUnavailableError ? err.message : `data load failed (${(err as Error)?.name ?? 'Error'})`;
+    const reason = err instanceof ChatUnavailableError ? err.message : safeReason(err);
     if (!degradedSeen.has(reason)) {
       degradedSeen.add(reason);
       console.warn(JSON.stringify({event: 'chat_degraded', reason}));
