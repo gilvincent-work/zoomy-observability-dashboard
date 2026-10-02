@@ -3,7 +3,7 @@
 // order (matching the Line/Type filter pills). Kept free of server/client
 // concerns so it's unit-testable, mirroring pos-forecast-compute.ts.
 
-import {POS_CATEGORIES, POS_SUBCATEGORIES} from './pos-format';
+import {POS_CATEGORIES, POS_SUBCATEGORIES, SUBCATEGORY_CATEGORY} from './pos-format';
 import type {PosOrder} from './pos-sales-types';
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -161,4 +161,56 @@ export function compareByCategory(
   const s = subcategoryRank(a.subcategory) - subcategoryRank(b.subcategory);
   if (s !== 0) return s;
   return a.name.localeCompare(b.name);
+}
+
+// ── Inventory table filtering ─────────────────────────────────────────────────
+
+export interface InventoryFilter {
+  line: string; // '' = all lines
+  sub: string; // '' = all; only applied when line === SUBCATEGORY_CATEGORY
+  status: '' | 'out' | 'low' | 'healthy' | 'unlisted';
+  loc: '' | 'office' | 'event';
+  showOut: boolean; // false hides products tagged Out
+  search: string;
+}
+
+export interface FilterableInventoryRow {
+  product_id: string;
+  name: string;
+  category: string | null;
+  subcategory: string | null;
+  active: boolean;
+  status: 'out' | 'low' | 'healthy';
+  office: number;
+  event: number;
+}
+
+/** In-memory filter for the merged Inventory table (the whole catalog is loaded). */
+export function filterInventoryRows<T extends FilterableInventoryRow>(rows: T[], f: InventoryFilter): T[] {
+  const q = f.search.trim().toLowerCase();
+  return rows.filter((r) => {
+    if (f.line && (r.category ?? '') !== f.line) return false;
+    if (f.line === SUBCATEGORY_CATEGORY && f.sub && (r.subcategory ?? '') !== f.sub) return false;
+    if (!f.showOut && r.status === 'out') return false;
+    if (f.status === 'unlisted' && r.active) return false;
+    if (f.status && f.status !== 'unlisted' && r.status !== f.status) return false;
+    if (f.loc === 'office' && r.office <= 0) return false;
+    if (f.loc === 'event' && r.event <= 0) return false;
+    if (q && !(r.name.toLowerCase().includes(q) || r.product_id.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+/**
+ * RPC args for set_product_stock. `p_location` is only sent for Office so the
+ * Event path keeps working against the original 3-argument function until
+ * phase4_set_stock_location is applied.
+ */
+export function setStockRpcArgs(productId: string, newQty: number, by: string, location: 'office' | 'event') {
+  return {
+    p_product_id: productId,
+    p_new_qty: newQty,
+    p_by: by,
+    ...(location === 'office' ? {p_location: 'office'} : {}),
+  };
 }

@@ -4,6 +4,7 @@ import {unstable_cache} from 'next/cache';
 import {posClient, usingPosMock} from './pos-data';
 import {LAZADA_CACHE_REVALIDATE, LAZADA_TAG} from './lazada-cache';
 import {classifySupabaseError} from './lazada-export';
+import {fetchAllRows} from './pos-fetch-paginate';
 import type {LazadaOrderItem, LazadaUpload} from './lazada-types';
 
 /**
@@ -35,13 +36,21 @@ export const getLazadaItems = cache((): Promise<LazadaRead> =>
 const lazadaItemsCached = unstable_cache(
   async (): Promise<LazadaRead> => {
     const supabase = posClient();
-    const {data, error} = await supabase
-      .from('lazada_orders')
-      .select('*')
-      .order('ordered_at', {ascending: false})
-      .limit(50000);
-
-    if (error) {
+    // `.limit(50000)` did NOT bound this read: PostgREST returns min(limit,
+    // db-max-rows), so it silently capped at 1000 rows once the table grew.
+    // Page through by order_item_id (unique) instead, keeping ordered_at-desc
+    // for display order.
+    try {
+      const rows = await fetchAllRows('lazada_orders', (from, to) =>
+        supabase
+          .from('lazada_orders')
+          .select('*')
+          .order('ordered_at', {ascending: false})
+          .order('order_item_id', {ascending: true})
+          .range(from, to),
+      );
+      return {items: rows as unknown as LazadaOrderItem[], missingTable: false, configured: true};
+    } catch (error) {
       const {kind, message} = classifySupabaseError(error);
       if (kind === 'missing-table') {
         return {items: [], missingTable: true, configured: true};
@@ -51,7 +60,6 @@ const lazadaItemsCached = unstable_cache(
       console.warn(`lazada_orders read failed: ${message}`);
       return {items: [], missingTable: false, configured: true};
     }
-    return {items: (data ?? []) as LazadaOrderItem[], missingTable: false, configured: true};
   },
   ['lazada-orders'],
   {revalidate: LAZADA_CACHE_REVALIDATE, tags: [LAZADA_TAG]},

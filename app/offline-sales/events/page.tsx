@@ -1,6 +1,6 @@
 import {getPosEvents, getPosOrders} from '@/src/pos-sales';
 import {usingPosMock} from '@/src/pos-data';
-import {eventRollups, featuredEvent, manilaDayKey, resolveOrderEvents} from '@/src/pos-sales-compute';
+import {currentEventIds, eventRollups, manilaDayKey, resolveOrderEvents} from '@/src/pos-sales-compute';
 import {OfflineEventsView} from '@/components/analyst/offline-events';
 import {getSpinLeads} from '@/src/spin-leads';
 
@@ -12,17 +12,18 @@ export default async function Page() {
   // (automatic, read-time — see resolveOrderEvents). Everything below groups by the
   // resolved event_id, so extending an event's dates folds those sales in.
   const orders = resolveOrderEvents(rawOrders, events);
-  // The event running today (if any) gets spotlighted, expanded, at the top.
+  // Every event running today (same-day events are allowed) is spotlighted,
+  // expanded, at the top. Correcting a sale's event (reassign) now lives on the
+  // Transactions tab, per-transaction, not here.
   const todayKey = manilaDayKey(new Date().toISOString());
-  const featured = featuredEvent(events, todayKey);
-  const currentEventId = featured?.state === 'current' ? featured.event.event_id : null;
+  const currentIds = currentEventIds(events, todayKey);
 
   return (
     <OfflineEventsView
       rollups={eventRollups(events, orders)}
       orders={orders}
       leads={leads}
-      currentEventId={currentEventId}
+      currentEventIds={currentIds}
       todayKey={todayKey}
       usingMock={usingPosMock()}
       fetchedAt={new Date().toISOString()}

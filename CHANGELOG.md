@@ -241,6 +241,156 @@ users yet: `/api/chat` is not rewired, and the existing digest chat behaves as b
 
 ---
 
+## 2026-10-01 — Transactions: Event filter + per-sale event badge/reassign; events-page reassign removed — `feat(events)`
+
+Follow-up to the multi-event feature. Reassigning a sale's event now lives only on
+the Transactions tab (not the events page), and transactions can be filtered and
+distinguished by event.
+
+- **Event filter** (`transaction-filters.tsx`, `pos-sales-compute.ts`,
+  `offline-orders`, orders `page.tsx`): a new `event` URL param (an event_id,
+  'untagged', or 'all') applied server-side in `getPosOrdersPage`. The control
+  shows only when the current scope has 2+ events, today's live events by default
+  or the selected date range's events (`eventFilterScope`); default All.
+- **Per-tile event badge** (`order-event-badge.tsx`): each transaction shows which
+  event it's in; on a day with 2+ overlapping events the badge doubles as the
+  reassign control (move to any overlapping event or Untagged, via
+  `reassignOrderEventAction`). `eventsCoveringOrder` enforces the "proper
+  conditions" (only interactive when the day is ambiguous).
+- **Removed** the per-event "Reassign sales" block and the Untagged bucket from the
+  events page (`offline-events.tsx`); correcting a sale's event is Transactions-only now.
+- **Note:** a sale's event can now be changed from two surfaces (this badge, and the
+  POS edit-sale sheet). It is last-write-wins with no version check, so a POS save
+  that lands after a dashboard reassign can revert it, the same pattern as
+  `pet_type` / `remarks` edits.
+
+Staging-only. Tests: event filter / scope / covering-order units; full suite green
+(362); `tsc` clean.
+
+## 2026-10-01 — Inventory: filters inline, Filters button removed — `refactor(inventory)`
+
+The Filters button and its modal hid Status and Location behind a click. Type
+(Freeze-Dried only), Status and Location are now pill rows directly under Line, above
+search, so every filter is visible and one tap. Dropped the modal, the "Applied"
+chip row and the count badge, since the pills already show what is selected.
+Added a "Show out of stock" switch beside search (default on, so nothing changes
+until it is turned off). Off hides every product with status Out; turning it off
+clears a selected Status: Out pill, and picking that pill turns the switch back on,
+so the two can never contradict each other.
+
+## 2026-10-01 — Inventory: Edit stock can set Office as well as Event — `feat(inventory)`
+
+`set_product_stock` was hard-wired to the Event (sellable) pool, so Edit stock could
+never correct Office back-stock. The dialog now has an Event / Office toggle (Event
+by default), shows each location's count, and `setStockAction` takes a location.
+It only sends `p_location` for Office, so the Event path still works against the
+old 3-argument function. Office edits need `zoomy-pos/supabase/phase4_set_stock_location_2026-10-01.sql`,
+which is written but **not applied** (it drops the 3-argument function, because a
+defaulted 4th parameter would make 3-argument calls ambiguous).
+
+## 2026-10-01 — Multi-event: same-day events, ambiguity-safe attribution, reassign control — `feat(events)`
+
+Companion to the POS multi-event feature (`../zoomy-pos/CHANGELOG.md`). Coop can
+now schedule overlapping / same-day events, and a sale tagged to the wrong event
+can be moved from the dashboard.
+
+- **DB (Staging RPCs)**: `upsert_pos_event` no longer raises on overlapping dates
+  (the no-overlap guard is removed); `attribute_untagged_orders_to_event` only
+  back-tags a sale on a day covered by exactly one event (ambiguous days are left
+  untagged); new `set_pos_order_event(p_order_id, p_event_id)` powers reassign and
+  is granted to `service_role` only (off the POS anon key).
+- **Attribution** (`pos-sales-compute.ts`): `effectiveEventId` only date-attributes
+  an untagged sale on an unambiguous (single-event) day; two or more covering
+  events leave it untagged rather than guessing the later-starting one. Added
+  `currentEventIds` (pin every live event) and `untaggedOnEventDays` (the Untagged
+  bucket source).
+- **Events page** (`offline-events`): pins all live events, not just one; a new
+  "Untagged sales on event days" bucket and a per-event "Reassign sales" control
+  (`event-reassign.tsx`) move an order to another event or untag it, through
+  `reassignOrderEventAction`.
+- **Form** (`event-form`): the overlap error is now a neutral "runs alongside"
+  note and no longer blocks Save.
+
+Staging-only. Tests: new multi-event attribution / pinning / untagged-bucket
+units; full suite green (346); `tsc` clean.
+
+## 2026-10-01 — Pagination audit: forecast + Lazada reads no longer truncate at 1000 — `fix(data)`
+
+Workspace-wide audit of every Supabase read across the three repos for the
+PostgREST `db-max-rows` (1000) silent-truncation class (the Units=0 bug,
+2026-09-27). Ground-truthed against live prod row counts: `pos_stock_movements`
+is at 1,596 (1,175 in the 60-day sale window) and `pos_order_items` at 1,352,
+so the forecast reads were **already** silently truncating and under-counting
+demand. Fixed the high-risk sites by reusing the existing `fetchAllRows`
+paginator (`src/pos-fetch-paginate.ts`):
+
+- **`src/pos-forecast-data.ts`** (`saleMovementsCached`) — the sale-ledger read
+  that drives every forecast band now pages by `id` instead of a bare
+  `.select()`. This was live-broken at 1,175 rows in the window.
+- **`src/lazada-data.ts`** (`lazadaItemsCached`) — replaced a deceptive
+  `.limit(50000)` that did **not** bound the read (PostgREST returns
+  `min(limit, db-max-rows)` = 1000) with real pagination by `order_item_id`,
+  keeping `ordered_at`-desc display order and the missing-table fail-soft.
+- Sibling fix in the Coop backend (`zoomy-observability/src/observability/stock-check.js`)
+  and the POS `stock-digest` edge function: the same sale-ledger read there now
+  paginates too, so the low-stock email and morning digest stop forecasting on
+  a truncated set.
+
+**Hardening (same pass):** paginated every remaining unbounded list read in
+`src/` so none can silently truncate as the data grows — `pos-data.ts`
+(products/inventory/bundles/bundle_items), `pos-sales.ts` (name lookups +
+`posEventsCached`), `pos-prize-data.ts` (`getOrdersWithPrizes`),
+`pos-free-taste-data.ts`, `pos-location-data.ts`, `pos-product-detail.ts`
+(per-SKU movements), all three `reprice-data.ts` reads, `data.ts` (digests),
+`spin-leads.ts`, and `pos-stock-intake.ts` (name lookup) — each wrapped in
+`fetchAllRows` with `.range()` + a stable unique `.order()` by the table PK.
+
+**Regression guard:** added `scripts/check-pagination.mjs` (+ `check:pagination`
+npm script and a `src/check-pagination.test.ts` so `vitest run` enforces it). It
+fails CI on (A) any literal row limit > 1000 (which does NOT bypass the cap) and
+(B) any `.from().select()` with no bound marker (`.range`/`.limit`/`.maybeSingle`/
+`.single`/`count`/`head`). Genuinely-bounded reads carry a `// pagination-ok:`
+note. Backend (`stock-check.js`) and the POS app got the same treatment + their
+own guards. Durable long-term remedy for the ledger reads is still server-side
+aggregation (an RPC/view returning per-product sums). Staging only; not promoted
+to prod.
+
+## 2026-09-30 — Inventory: right-click a row for the actions menu — `feat(inventory)`
+
+The row actions (Move stock, Edit stock, Rename, Change price, List/Unlist…) sat
+behind the ⋯ button in the last column, so editing stock meant scrolling the wide
+table sideways first. Right-clicking anywhere on a desktop row now opens the same
+`RowMenu` at the cursor (same items, same flip-above/clamp logic; the ⋯ still
+works). Decision: reuse the one menu with a point anchor instead of adding a
+second menu component, and leave the native browser menu alone on the mobile
+cards (no ⋯ scroll problem there).
+
+## 2026-09-30 — Offline Sales: "View all" product & bundle rankings — `feat(offline-sales)`
+
+The overview's **Top products** and **Top bundles** cards stay capped at 5 but
+now each carry a **View all** footer link to a new **Product rankings** page
+(`/offline-sales/rankings`) — one page, two tabs (Products · Bundles), so both
+links deep-link their tab via `?tab=`.
+
+- **Decision — full-page rankings over a taller card.** More room than the card,
+  so the list becomes a **sortable-column table** (Products: Product · Units ·
+  Bundled · Revenue; Bundles: Bundle · Orders · Revenue). Any column header sorts
+  (`aria-sort`, arrow); the **Revenue/Units** + **Top/Bottom** segmented toggles
+  from the card carry over and share one sort state with the headers.
+- **Controls:** name **search** (case-insensitive, per tab) and a **10 / 25 / 50
+  per-page** selector (default 10) on top of numbered pagination.
+- **Independent per-tab state** — each tab keeps its own sort, search, and page
+  across tab switches (state lifted in `rankings-view.tsx`); only `?tab=` is in
+  the URL, for the two deep-links.
+- **Product rows link to `/inventory/[sku]`** (keyed by `product_id`); a delisted
+  SKU still in historical orders renders as plain text (gated on catalog
+  membership) so it never 404s. Bundles have no detail page → static rows.
+- Additive and read-only: new `app/offline-sales/rankings/page.tsx` re-derives the
+  **full** lists via `topProducts(orders, Infinity)` / `topBundles(orders,
+  Infinity)`; the overview cards and `pos_*` schema are untouched. Pure helpers in
+  `src/pos-rankings.ts` (`filterByName`, `sortRows`) with unit tests; `leafActive`
+  already highlights *Offline Sales* for the new subpath (no nav change needed).
+
 ## 2026-09-28 — Event leads: what they bought + follow-up messages — `feat(leads)`
 
 The spin-the-wheel and the POS share no id, so `src/lead-order-match.ts` links
