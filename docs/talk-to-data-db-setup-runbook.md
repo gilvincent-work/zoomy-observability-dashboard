@@ -53,7 +53,7 @@ Files (in `supabase/`, on branch `feat/talk-to-data-spikes`): `coop_chat_readonl
    - `CHAT_READ_MODE` = `ro_role`
    - `CHAT_RO_JWT_SECRET` = the **legacy JWT secret** from Settings → JWT Keys. Treat it like the service-role key: anyone holding it can mint any role. Do not paste it in chat, tickets or shell history.
    - `ALLOWED_EMAILS` = the comma-separated list of Google accounts allowed in. **Do this before anyone uses saved reports**: when empty, any Google account can sign in.
-   - Optional: `CHAT_RO_APIKEY` = the project's anon/publishable key, only if the gateway rejects the minted token without an apikey.
+   - **Required on hosted Supabase:** `CHAT_RO_APIKEY` = the project's **Publishable key** (`sb_publishable_...`, or the legacy `anon` key) from Project Settings → API Keys. Verified on staging 2026-10-02: without it the gateway answers `401 Invalid API key` to the app's own signed token and the chat silently falls back to digest-only. Never the service-role or secret key.
 8. **Smoke check after the deploy:** open Ask Coop, ask "how many orders last week?" (the chat should answer from live data, not say live data is unavailable), build a dashboard, click **Save report**, open **Reports** (the list should show it, not "Reports not set up").
 
 If the chat says live data is not available after the deploy, the env vars are missing or the SQL is not applied: it falls back to digest-only on purpose (it never fails open to the service role).
@@ -66,7 +66,7 @@ If the chat says live data is not available after the deploy, the env vars are m
 | `permission denied to create role` | The SQL editor user cannot create roles | Use the project's `postgres` role in the SQL editor (the default) |
 | Proof row `FAIL read view coop_chat_digest` | `coop_chat_digest.sql` not applied (or `digest_archive` missing) | Re-run step 4.2 |
 | `Reports not set up` in the app | `coop_reports.sql` not applied on that project | Re-run step 4.3, check step 5 |
-| Chat answers digest-only | `CHAT_READ_MODE`/`CHAT_RO_JWT_SECRET` missing or the redeploy was skipped | Step 7 |
+| Chat answers digest-only ("I have no chart tools in this chat") | `CHAT_READ_MODE`/`CHAT_RO_JWT_SECRET`/`CHAT_RO_APIKEY` missing, a wrong value, or the redeploy was skipped | Step 7. Diagnose with `scripts/check-ro-token.mjs` (run by a person: `CHECK_URL`, `CHAT_RO_JWT_SECRET`, `CHECK_APIKEY` = the publishable key): variant A `401 Invalid API key` = set `CHAT_RO_APIKEY`; variant B `200` = it works |
 | Hook notice says skipped | The project already has a pre-request hook | Add the two lines by hand (before-you-start step 3) |
 
 ## Rollback (only if something goes wrong, PROD owner decides)
