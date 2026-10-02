@@ -10,6 +10,231 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-02 — Ask Coop: caching audit and a capped live eval harness
+- ai-expert caching audit (`knowledge/tasks/2026-10-02-ai-expert-caching-review.md`): the prompt-cache prefix is byte-stable (about 13,300 tokens) and read on every step. In-turn tool results were re-sent at full price: added top-level automatic caching (4th breakpoint) with a request-shape rule and a test. TTL stays 5 minutes (revisit after two weeks of data).
+- Data cache keyed by Supabase project; a miss logs the serialized size (2 MiB item limit); `chat_turn` logs a timestamp.
+- Live eval harness: dollar budget cap (default $3, stops before the next call), tiers (`smoke` default about 9 cases, `full`, `majority` re-runs only failures), a cheaper grader (thinking `between_tools`/effort low on Sonnet; truncated replies are UNGRADED), cases back to back, planned worst-case cost printed first and refused over the cap. Opus cache-read price corrected.
+- Open: the Anthropic account has no credit, so no live chat run yet; the owner should check Console usage by key and set a workspace spend limit.
+
+## 2026-10-02 — Ask Coop: owner-defined dates, test plan, model-free E2E, hardening
+- Owner direction: the owner defines the dates and Ask Coop asks when they are missing (THINK-01); live chats carry no digest block or pre-selected week; `get_digest` `recent_weeks`/`weekly_revenue` follows the owner's `from`/`to` (Monday-Sunday weeks, Offline POS for every week, online only where a digest exists, missing weeks listed); several comparable measures over time draw as lines; the answer says which chart it chose and why (VIZ-13) and what it leaves out before any figure (THINK-07); chart first (VIZ-12); a requested pie is a real pie.
+- Test plan and audit written (`knowledge/tasks/2026-10-01-talk-to-data-test-plan.md`, `...-f9-f12-audit.md`): 124 requirements traced to tests. 29 golden cases incl. an `ask_first` category; route test (35); reference figures produced from a fixture; `dev.sh` and host-block tests.
+- Model-free browser E2E on the local database passed (reports pages, gallery, versions, restore, two-tab race writes one version, owner-only controls, "Reports not set up", real pies). Chat E2E is blocked: the Anthropic account has no credit.
+- Fixed: a malformed `/api/chat` body (messages not an array) answered 500, now 400, and a null entry is dropped; the starter chip no longer names a period; stored report specs are validated before they reach the browser; the Reports menu moves focus in, supports arrow keys and returns focus on Escape; reload no longer wipes the chat in dev; a billing failure shows a clear account message.
+- Known and open: the skill is at about 4,477 of 4,500 tokens; number check is log-only and can pass a wrong figure that matches an unrelated number (3 `it.fails` document it); design criterion 12 expects a `concentration` insight where the code emits `top_contributor`; the "unanswerable log" is not built.
+
+## 2026-10-01 — Talk to Data: independent-review fixes (blocker, 4 majors, quick wins)
+Fixes from the consolidated independent review of `feat/talk-to-data-spikes`. Each fix has a test that fails without it.
+- **Owner rule, B1:** `test/chat-live.integration.test.ts` read whatever `SUPABASE_*` env was set (it could have been PROD) and built a second, unguarded service-role client. Deleted: the golden live test supersedes it (all 14 questions are in `golden-cases.ts` with the same ids and wording). One shared guard now: `scripts/local-only.mjs` (`assertLocalSupabase`, `isLocalSupabaseUrl`: only `http(s)://127.0.0.1` or `localhost`, no userinfo; refuses `*.supabase.co`, `127.0.0.1.evil.com`, `[::1]`, backslash and `@` tricks; the error never echoes the URL), re-exported for tests as `test/support/local-only.ts`. Called by `chat-live-golden`, `chat-ro-local`, `chat-digest-local` (a set but non-local `SB_LOCAL_URL` now fails the file instead of skipping), `scripts/chat-eval.mjs`, `scripts/coop-chat-ro-proof.mjs` and `scripts/spikes/readonly-role.mjs`. `test/local-only.test.ts` scans every `test/*.integration.test.ts` and fails when one builds a Supabase client without calling it. `chat-live-skill` and `spikes/strict-tools-thinking.mjs` touch no Supabase (synthetic data, fake executor). `import-spin-leads.mjs` and `export-lead-match-data.mjs` are unchanged: they read `SUPABASE_URL_ARCHIVE` from the environment by design (their docs say `node --env-file=.env.local`), so whichever project that points at is what they read.
+- **M1, markdown images (exfiltration):** assistant markdown no longer renders images (`components/analyst/chat-markdown.tsx`: `disallowedElements: ['img']`, links absolute http(s) only, `target=_blank`, `rel=noopener noreferrer nofollow`). Copy still copies the raw text. New small CSP in `security-headers.mjs` (via `next.config.mjs` `headers()`): `img-src 'self' data: blob:`, `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'` and nothing else, so scripts, styles and Google sign-in are untouched. Decision: no remote image host is allowed because the app draws none (no `<img>`, no `next/image`; `session.user.image` is passed to the shell but never rendered; a tripwire test fails if that changes). `script-src`/`default-src` would need nonces and are left for a separate piece of work.
+- **M2, report version writes are no longer two non-atomic steps:** the version row is the arbiter. Update/Restore now read the real highest version row, insert version N+1 (the `(report_id, version)` primary key lets exactly one racing writer win; a duplicate key maps to the stale-version error, no retry), then advance `current_version` (and a rename) with `current_version < N+1 and deleted_at is null`. The counter is only a cache: a crash between the steps or a lost response cannot wedge the report, because `getReport`, the actions and the page (`currentVersion` now comes from `latestVersion`) all derive the version from the version rows, and the next write repairs the counter. A failed or lost version insert changes nothing else (no rollback needed). Save: if version 1 cannot be written (or its response is lost) the half-made report is soft-deleted and an error returned. The fake database gained `lt` filters, lost-response injection and a crash case; tests cover 3 concurrent writers, crash after the insert, lost response then retry then reload, restore on a lagging counter and a delete racing an update. Header of `supabase/coop_reports.sql` updated (comment only, no schema change).
+- **M3, deadline and cut stream:** `runChatLoop` takes `deadlineMs` (default 50 s, injectable clock): before each model step past the budget it emits "That took longer than I allow. Try a narrower question." and `done`; the route passes what is left of 50 s after its own data loads (`maxDuration` is 60). The drawer appends "The answer was cut off." when a stream closes with neither `done` nor `error`. The stream logic moved out of `coop-chat.tsx` into pure `components/analyst/chat-stream-state.ts` so it is testable.
+- **M4, block overwrites:** `placeBlock` replaces a block in an earlier message only when its id belongs to the open dashboard (`held`); after "Clear dashboard" a new `b1` is a new block and the old one stays (end-to-end test over the stream reducer). `dropBlocks` removes an id from the newest message that holds it. New chat now aborts the running stream (`StreamSlot`), and a stale stream winding down can no longer clear the busy flag of its successor.
+- **Quick ones:** `runReport` wraps each block in try/catch (a block whose maths throws, e.g. `allocateByWeights` on a negative header total, becomes a "This block could not be calculated." card, never a 500); database error text no longer reaches the UI (`reports-actions.ts`, `reports-data.ts` return short generic lines and log code plus message server-side, never report content); `chatReadClient` and `chatDigestClient` now require `mode` and throw without it (fail closed, no default to the service-role mode).
+- **Not done (review minors, deliberately):** guard select allow-list (m1), architecture scanner syntax gaps (m2), injected `remove_block` policy (m3), number-check precision (m4), order-paging duplicates, cache size log, owner re-check on PATCH, `body.messages` 400, localStorage scoping, menu a11y, the duplicated-guard refactor (m5 to m7, simplifications).
+- Checked: `npx tsc --noEmit` clean; `npx vitest run` 81 files and 1,553 tests pass, 4 live/local integration files skipped (they need a local stack and an opt-in). Nothing was run against any Supabase project; no browser.
+
+## 2026-10-01 — Ask Coop: block ids, chart-first, real pie (fixes after F8)
+- `f08c187`: blocks drawn from digest or product lookups have no re-runnable recipe, so no report records them. The report event used to remove them as "gone"; digest pies vanished. `applyReportEvent` now removes only ids that were in the previous report (`held`).
+- `273fdfa`: two unrecorded blocks in one turn both got `b1` (the counter only advanced on `record`), and `placeBlock` replaced one with the other. Unrecorded blocks now get unique `u<time>-<n>` ids (regression test in `chat-render-executors.test.ts`). Chart-first default (VIZ-12): the first `render_table` of a request gets a one-time nudge to draw a chart first (bounded cost: one extra model step). The pie draws as a real pie.
+- Known gap found by the review and fixed in the entry above: the same id could still collide across messages after "Clear dashboard".
+
+## 2026-10-01 — Ask Coop: number check, 25-case golden set, evals, seed script, local harness (Talk to Data F11)
+- **Number-in-result check** (`src/chat/number-check.ts`, called from the loop): every figure the answer shows is looked for in this turn's tool results, the question, the preamble and the digest block; a figure with no source is logged as a violation. Log-only by design until the false-positive rate is measured: it never changes, delays or blocks an answer, and a failure of the check is swallowed. Known weakness (review m4): it matches any number anywhere in the results, so it can miss a made-up small figure.
+- **Golden set:** 25 cases (`test/support/golden-cases.ts`: the 14 F5 questions, lookup, dashboard, multi-turn and negative cases) run offline against a scripted model (`test/chat-golden-offline.test.ts`, `chat-golden-fake`, `chat-multiturn-spec`, `chat-viz-cases`, `chat-injection`), which proves the harness, the allowlist and the mechanical checks, not the model. The multi-turn bundle script must end in the exact expected spec.
+- **Live evals** (by hand, never CI, real model calls cost money): `test/chat-live-golden.integration.test.ts` and `scripts/chat-eval.mjs` (3-run majority, pass/fail table by model and by skill step, optional LLM grader). They refuse to run unless the Supabase URL is the local stack. `scripts/local-supabase/seed-bundles.mjs` seeds the bundle fixture into the local database. No live result is claimed in this entry; read the answers before calling a run green (lesson `read-the-live-answers`).
+- Decision: injection fixtures obey only tool names outside the allowlist, so that test is true by construction; the allowed in-memory mutators are the open review item m3.
+
+## 2026-10-01 — Ask Coop: get_digest, lookup_product, local Supabase harness (Talk to Data F10)
+- `get_digest` (stored weekly digests through a digest-only guarded client: one relation, four columns, never `bundle`; the dashboard's `digest` JSON, masked at the seam) and `lookup_product` (in-memory match over the already loaded data, so no PostgREST filter is ever built from user text). Tool count is now 10 strict tools, still no optionals or unions. A digest-sourced result carries `meta.source = digest`. SQL: `supabase/coop_chat_digest.sql` (definer view for the `ro_role` mode; apply by hand). Later in the same branch (`07789f5`): `get_digest` week-by-week series (`recent_weeks`) for online vs offline charts.
+- Local harness `scripts/local-supabase/` (`up.sh`, `dev.sh`, `down.sh`, proxy, seed, README): a throwaway Postgres + PostgREST in Docker on loopback behind a `/rest/v1` proxy that refuses non-loopback hosts. `dev.sh` blanks every Supabase-named env variable and sets `COOP_REQUIRE_LOCAL_DB=1`; `block-remote.cjs` patches fetch, http(s) and socket connects so a hosted host cannot be reached. Rule: lesson `e2e-only-on-local-supabase`.
+- Verified offline (tests per tool, guard, relation lists, harness block-list). Browser E2E on the local stack was still pending when this entry was written.
+
+## 2026-10-01 — Coop Reports: saved, versioned dashboards (Talk to Data F9)
+- **Server (`5811238`):** `supabase/coop_reports.sql` (`coop_reports`, `coop_report_versions`; RLS on, no policies; applied by hand, not applied to any hosted project) and `src/reports-{types,client,data,actions,run,access,session,suggest}.ts`. Only the recipe is stored (filters plus up to 12 blocks), never data or model prose. Two service-role clients behind a guarded fetch that allows only the two tables and GET/POST/PATCH (no DELETE, no PUT, no rpc, no upsert, no bulk PATCH); access rules live in code (private report of another person is a 404, delete and visibility are owner-only, soft delete). Opening a report re-runs it with zero model calls (`reports-run.ts`); a block whose metric was removed becomes an error card. "Pin dates" resolves the range once into a custom range (at most 400 days). The chat tree cannot import any of it (architecture test), so the model cannot save, restore or delete.
+- **UI (`492e946`):** `/reports` gallery, `/reports/[id]` (`?v=N`, read-only banner for old versions, Restore makes a new version), pin, rename, visibility, delete, "Ask Coop about this report", Save / Update bar in the drawer, nav entry, "Reports not set up" state.
+- Decision: no RPC or transaction (the write client forbids rpc), so version writes use the primary key as the arbiter (hardened in the review-fixes entry above). Team visibility means everyone who can sign in (set `ALLOWED_EMAILS` for PROD). No `spec_version` migrations exist: a spec with another `spec_version` is refused as a whole.
+- Verified offline only (fake in-memory database, one test file per module); browser E2E on the local stack was still pending.
+
+## 2026-10-01 — Ask Coop: follow-ups edit the open dashboard, full-screen drawer (Talk to Data F8)
+- The drawer keeps the open dashboard (`ReportSpec`, `coop-report-v1`) and sends it with each request. The server re-validates it (`report-spec.ts`: allowlist, registry enums, 12 blocks, 32 KB, data keys dropped), re-runs it, and edits it through render tools (a block id re-binds that block), `set_report_filters` (one call re-runs every block, atomic), `remove_block`, `set_report_title`. The model never types data or a report id. Chips line shows the filters and block count; "Clear dashboard" clears only the report.
+- Live script on the real model: dashboard (4 tiles, chart, table) -> "make the chart a pie" (b5 re-bound in place, mode user) -> "only cats" (one filter call) -> "last month instead" -> "add the top SKUs" (appended b7 to b9) -> "remove the KPI tiles" (gone from spec and screen). Known nit: "add top SKUs" drew two tables.
+- DASH-01 gate moved into the loop and made one-shot: the first step that renders before any text gets every render call refused once; after that calls pass. Bounded cost (about one extra step) instead of the earlier repeated refusals (5 to 7 steps, 58 s).
+- Fixed: `send` was called inside a `setMessages` updater, so Strict Mode sent each question twice in dev (lesson: no-side-effects-in-state-updaters). A removed block now also leaves the earlier message it was drawn in.
+- New: full-screen toggle in the drawer header (md and up; Esc or the button returns; remembered in `coop-chat-wide`). Above about 900 px wide the content keeps a 56rem reading column.
+
+## 2026-10-01 — Ask Coop: stat tiles, charts and tables in answers (Talk to Data F7)
+- Chat gains 3 render tools (`render_kpi`, `render_chart`, `render_table`). They take a result id and field names, never values; code builds each block from the stored result and picks the form by data shape (`recommend-view.ts`). Explicit preferences are honored in tiers (as asked / adjusted with a note / substituted with a reason). No dual axis, no axis or color options.
+- Colors follow the entity (`entity-colors.ts`); "No tag"/"Other" are neutral. Every chart has a table twin with all rows. New skill topics `viz-forms`, `dashboard-composition` (VIZ/PREF/DASH rules, gear rules tested).
+- UI: `chat-blocks.tsx`, `chat-charts.tsx`, blocks interleaved in the assistant message, persisted tolerantly in `coop-chat-v1`. Dev-only preview at `/dev/chat-blocks`.
+- Decision: `cat-1..4` palette not yet validated for colorblind safety (design-owner decision open); ships with relief channels (legend, table twin). Per-bar entity colors on single-series bars deferred (needs an optional contract field).
+- Checked: full suite pass, tsc clean, preview page in light and dark at 440/360px, and a live run in the drawer with the real model on PROD data (bundle dashboard: 4 tiles, stacked bar with a separate gray untagged bar, table with a total; then "as a pie").
+- Live run found and fixed a bug the tests missed: the UI read a pie as rows-as-slices while the server emits categories-as-series, so the pie drew one slice. `pieSlices` now reads the server shape, with a test over real `recommendView` output (lesson: parallel-agents-need-a-shared-fixture-from-real-output).
+- Added VIZ-11: a form catalog (job to form, marking what is not drawn yet) from the UX Magazine handbook; THINK-01 now looks the form up before rendering.
+- DASH-01 is now a code gate: a render call made before any text this turn is refused once ("write the caveat and headline as text now, then repeat the same render calls"). A prompt rule and a worked example alone never changed the order. Live: caveat and headline now come first. Cost: 5 to 6 model steps (about 28 s) instead of 3 (about 14 s) on a dashboard ask. The first wording of the refusal made the model give up and print a text table, so the message says the call was fine.
+
+---
+
+## 2026-10-01 — Talk to Data: the Ask Coop Data Analyst skill — `feat(chat)`
+
+How Ask Coop thinks, now as runtime product content in its cached prompt
+(`src/chat/skills/ask-coop-data-analyst/`): a core "How you think" procedure (understand, check the
+data first, get every number from a tool, sanity-check, state the method, present like an analyst,
+close the loop), a voice, and four topics (parts and totals, comparing periods, allocated figures
+and prices, coverage and data quality). Every rule has a stable id; a gear marks the 18 rules the
+app also enforces in code.
+
+- **The guide and the code cannot drift:** tests fail if an id exists on only one side, if a
+  placeholder is unfilled, if a number in the text differs from the code constant, if a gear rule has
+  no test titled with its id (the gate is shown to fail), or if the skill passes its size budget
+  (about 2,400 tokens today, cap 4,500, estimate).
+- **Scope decision:** the chart-form and dashboard-layout topics describe things that do not exist
+  until the chart tools (F7), so they ship with F7. Today's skill says only what the app can do.
+- Replaces the two stopgap guardrail lines from the previous step with rules BI-08 (rank claims
+  only about the rows shown) and ANL-04 (no number words).
+- **Kept out of the prompt on purpose** (tests guard it): production-derived figures (a prompt gets
+  parroted and the data changes), and any promise to "log" or "save" something Coop cannot do.
+- Vercel: a real `next build` shows the skill files are traced into the chat route, so no config was
+  needed.
+- **Live skill evals** (12 cases, real model, synthetic data, mechanical scoring): 11 of 12 pass.
+  Reading the failures led to three changes: a narrow question must not get an unrequested comparison
+  (THINK-06 and a scorer check), the small-sample rule now says "say small sample before any figure
+  and lead with counts" instead of banning a share the owner asked for, and a scorer false negative
+  was fixed. The remaining failure was a 4th sentence, so the cap became 4 (a method line and a next
+  question already make 3).
+- **No regression** on the 14 base questions with the skill loaded (real data, read-only): median
+  5.4 s, p95 11.3 s, median cost $0.015 and max $0.033 (estimates); cached prefix 12k to 15k tokens.
+
+---
+
+## 2026-10-01 — Talk to Data: Ask Coop answers from live POS data — `feat(chat)`
+
+The first real answer. A question in the Ask Coop drawer is answered from live offline POS
+data through the metrics registry, streamed, with the data check first. Verified in a real
+browser against the real (read-only) data: the dog/cat bundle split reproduces the plan's
+figures with the caveats first.
+
+- **Data check:** `describe_data` and a short coverage note on every question (today's date
+  in Philippine time, the date range, how much is untagged, what is not available), so the
+  model learns the limits before it queries. This fixes the wrong-year date seen in the spike.
+- **Tool loop** (`src/chat/loop.ts`): a manual, streamed Messages-API loop on Sonnet 5.5 with
+  two strict tools, up to 8 steps, the model's thinking blocks passed back unchanged, every
+  request through the layer-1 shape check. NDJSON stream; the drawer shows a status line
+  ("Looking at bundle sales") while it works.
+- **Decision:** where the live-data path is not ready (production before the read-only
+  database role is applied, a missing secret, a failed load) the chat **degrades to
+  digest-only** (no tools, no POS reads, one `chat_degraded` log line) instead of returning
+  503, so today's working digest chat does not go down on staging or PROD. The plan had a hard
+  503. Safety is unchanged: no POS data is read without the guarded path.
+- A tool that refuses a request (unknown dimension, undeclared measure) now reaches the
+  model flagged as an error with the allowed values.
+- **Live measurements** (14 questions, real model, effort medium, estimates): median 6.3 s,
+  data questions 8.4 s, p95 12.8 s, cost median $0.014 and max $0.044, prompt cache hits on
+  every call after the first, 0 guard trips, 0 errors.
+- Reading the live answers found three defects, fixed before shipping: a rank claim from a cut
+  list ("sold the most units" when only the top 5 by revenue were shown), home-made number
+  words ("about half"), and a misleading "34% untagged" caveat on the SKU split (the share now
+  counts only orders that have pick detail). Two guardrail lines cover the first two until the
+  analyst skill lands.
+- The digest stays in the prompt for Shopee, Lazada and Website questions (the pinned legacy
+  import remains until `get_digest` exists).
+- Known, pre-existing and dev-only: `ask()` calls `send()` inside a React state updater, so
+  React Strict Mode sends the first question twice in development. Production runs it once.
+
+---
+
+## 2026-10-01 — Talk to Data: metrics registry, exact bundle allocation and checks — `feat(chat)`
+
+The semantic layer behind Ask Coop: every figure comes from one registry definition computed
+by code, never by the model. Nothing user-visible changes yet (`/api/chat` is not rewired;
+`describe_data`, the tool schemas and the model loop are the next features).
+
+- **Nine metrics** with declared measures and one-line methods: `offline_revenue`,
+  `offline_orders`, `offline_aov`, `top_products`, `payment_mix`, `event_rollup`, `pet_mix`,
+  `bundle_sales`, `bundle_picks`. A pure `runMetric(request, data, now)` rejects anything off
+  the closed shape (free-form keys, undeclared measures, bad dates) with the allowed values.
+- **Decision:** a bundle's pick lines carry ₱0, but peso values per SKU are derivable. Each
+  bundle's paid price is split across its picks by list-price weight **on the sale date**
+  (`src/pos-price-history.ts`, `src/pos-bundle-compute.ts`), in whole centavos with the
+  largest-remainder rule, so SKU totals add back to the paid total exactly (₱0 tolerance).
+- Checks and insights are code (`src/chat/checks.ts`, `insights.ts`): reconciles, round
+  row count, ₱0 lines, price changes, small sample, untagged share, partial coverage, sudden
+  change, mock source. A failed check marks the result unreliable.
+- Checked against the real PROD data (read-only, nothing committed): bundle revenue ₱147,300
+  (equals the existing `bundleSalesSummary`), named ₱106,950, dog 66.4% of tagged, Buy Any 4
+  92.8% of named, 582 picks allocating exactly ₱106,950 against ₱139,360 list value.
+- Found in that run: the SKU breakdown covers only ₱106,950 of the ₱147,300, because 68 older
+  bundle orders have no pick detail. The result now says so. Also fixed before shipping:
+  SKU rows were grouped by name, which would merge two products that share a name.
+- Dates are Philippine time, weeks run Monday to Sunday; a range outside the data is valid
+  and reports coverage partial or none (a wrong-year range returns "no data in that range").
+- SQL: three more dashboard-owned views for the role (`coop_chat_prices`,
+  `_price_changes`, `_events`; no cash or staff columns). Still not applied to any hosted
+  project. Local proof: 69 checks pass, and all nine metrics return identical results in
+  `ro_role` and `guarded_service` mode.
+
+---
+
+## 2026-10-01 — Talk to Data: database read-only role for Ask Coop — `feat(chat)`
+
+Layer 5 of the read-only enforcement: even if every code layer failed, the database
+refuses a write. **Nothing is applied to any hosted project yet**: the SQL is applied by
+hand (staging first, PROD by the co-worker) and gates the PROD release.
+
+- `supabase/coop_chat_readonly.sql` creates role `coop_chat_ro` (no login) and four
+  dashboard-owned definer views (`coop_chat_orders`, `_order_items`, `_products`,
+  `_bundles`) with no customer columns, SELECT only. It does not touch any `pos_*` DDL.
+- **Decision:** the earlier plan to revoke EXECUTE-from-PUBLIC on every `public` function
+  is NOT applied blindly: zoomy-pos owns those functions and may rely on that grant.
+  Instead a `db_pre_request` hook makes every request as `coop_chat_ro` run in a read-only
+  transaction (a callable write function then fails), and a read-only audit query lists
+  what the role can execute. The revoke/grant sweep is a separate optional file that needs
+  zoomy-pos sign-off.
+- Known limit: the hook stops writes, not reads through a callable read function. Layer 4
+  (the HTTP guard) blocks `/rpc` in the app; the sweep closes it in the database.
+- `src/chat/read/mint-jwt.ts` mints a 5-minute HS256 token (`node:crypto`, no new
+  dependency) from `CHAT_RO_JWT_SECRET`; `ro_role` mode fails closed (503) without it and
+  never reads the service-role key. Optional `CHAT_RO_APIKEY` is sent as the `apikey`
+  header (untested against the hosted gateway).
+- Proved on a throwaway local Supabase in Docker (`scripts/coop-chat-ro-proof.mjs`, 53
+  checks, idempotent, refuses non-local URLs), including: a SECURITY DEFINER write
+  function was callable by the role until the hook, and fails with "read-only
+  transaction" after it; service_role, anon and authenticated are unaffected.
+  `test/chat-ro-local.integration.test.ts` (skipped unless pointed at a local stack)
+  shows `ro_role` answers equal `guarded_service` answers and no customer value returns.
+- Architecture scanner: the `.update(` ban gets one pinned exception for `createHmac().update()`
+  in `mint-jwt.ts` only; the same call anywhere else still fails the build.
+
+---
+
+## 2026-10-01 — Talk to Data: read-only foundation for Ask Coop — `feat(chat)`
+
+Ask Coop is being upgraded to answer from live POS data (design:
+`../knowledge/architecture/2026-10-01-talk-to-data-design.md`). Before any data tool
+exists, this lands the layers that make sure it can only **read**. Nothing changes for
+users yet: `/api/chat` is not rewired, and the existing digest chat behaves as before.
+
+- **Decision:** "no write tool exists" is one layer of nine, not the guarantee. The model
+  reads text other people wrote (product names, notes), so each layer fails closed with
+  its own test. This is a release gate for every Talk to Data deploy.
+- `src/chat/tools.ts` frozen tool allowlist, `request-shape.ts` (no web, code or MCP
+  tools, no forced tool choice), `audit.ts` (`chat_tool` / `chat_guard_trip` log lines).
+- `src/chat/read/`: a typed read client (`select` only), an HTTP guard (GET/HEAD only,
+  allowlisted relations, no `select=*`, no customer columns) and a fail-closed read mode
+  (production returns 503 unless `CHAT_READ_MODE=ro_role`).
+- `src/pos-orders-read.ts`: `readPosOrders(client)` extracted from `src/pos-sales.ts` so
+  chat and the pages share one paged read with an **injected** client. Page behaviour is
+  unchanged (fixture regression test, 1,352 items across two pages).
+- `test/chat-architecture.test.ts` fails the build if chat code imports a write path or
+  a full-power client. One documented legacy exception: the route's `getDigests` import,
+  removed when the route is rewritten.
+- Found while testing: the guard judged the raw path but took the host from the parsed
+  URL, so `https://host\@evil/...` slipped past. Fixed by requiring both to agree; tests
+  cover it.
+- Spike findings behind this: `scripts/spikes/` (strict tools + thinking on Sonnet 5.5,
+  and a SELECT-only database role through PostgREST). Layer 5, the database role, is the
+  next feature and gates production.
+
 ---
 
 ## 2026-10-01 — Transactions: Event filter + per-sale event badge/reassign; events-page reassign removed — `feat(events)`
@@ -177,8 +402,10 @@ confident matches were right, while unsure ones were about a coin flip. Result:
 166 confident, 60 unsure, 31 with no order nearby. Of the 141 Instagram leads,
 89 are confident.
 
-- `/customers/leads` → **Contacts**: a **Bought** column (items; order time,
-  total and gap in the tooltip), with an *unsure* badge where it's a near-tie.
+- `/customers/leads` → **Contacts**: a **Bought** column listing every item
+  (order time, total and gap on hover), with an *unsure* badge where it's a
+  near-tie. An ⓘ beside the header explains the listed, *unsure* and blank
+  entries and how a lead is matched.
 - `/customers/leads` → **Follow-ups**: for a chosen day (default today, Manila),
   lists who is due the day-1 thank-you and the day-5 website-promo message.
   Messages are filled in from the pet's name and what was bought, with a Copy

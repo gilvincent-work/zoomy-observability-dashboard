@@ -20,3 +20,8 @@ public/swe-worker-*.js
 spin-the-wheel-leads*.csv
 spin-wheel-leads*.csv
 data/
+
+# Local Supabase harness: generated secrets, proxy pid and log
+scripts/local-supabase/.local-env
+scripts/local-supabase/.proxy.pid
+scripts/local-supabase/.proxy.log

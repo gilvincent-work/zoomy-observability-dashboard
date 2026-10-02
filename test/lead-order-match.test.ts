@@ -70,7 +70,8 @@ describe('follow-up copy', () => {
   it('phrases names and dates', () => {
     expect(petName(lead({pet: 'mimi / Puspin'}))).toBe('Mimi');
     expect(petName(lead({pet: null}))).toBe('your furbaby');
-    expect(treatPhrase(['A', 'B', 'C'])).toBe('A, B and more');
+    expect(treatPhrase(['A', 'B'])).toBe('A and B');
+    expect(treatPhrase(['A', 'B', 'C', 'D'])).toBe('A, B, C and D');
     expect(addDays('2026-09-27', 5)).toBe('2026-10-02');
   });
 });

@@ -109,11 +109,10 @@ export function petName(l: SpinLead): string {
   return name ? name[0].toUpperCase() + name.slice(1) : 'your furbaby';
 }
 
-/** ["Yoghurt Cubes"] → "Yoghurt Cubes"; two → "A and B"; more → "A, B and more". */
+/** Every item, read as a list: "A", "A and B", "A, B and C". */
 export function treatPhrase(products: string[]): string {
   if (products.length <= 1) return products[0] ?? 'treats';
-  if (products.length === 2) return `${products[0]} and ${products[1]}`;
-  return `${products[0]}, ${products[1]} and more`;
+  return `${products.slice(0, -1).join(', ')} and ${products[products.length - 1]}`;
 }
 
 /** Day after the spin: a thank-you. Day 5: they've likely run out — the website promo. */
