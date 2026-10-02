@@ -14,6 +14,7 @@ import {
 } from './pos-sales-compute';
 import {MOCK_POS_EVENTS, MOCK_POS_ORDERS, MOCK_POS_SYNC_LOG} from './pos-sales-mock';
 import {fetchAllRows} from './pos-fetch-paginate';
+import {readPosOrders} from './pos-orders-read';
 
 /** Normalize a raw pet_type cell to the union, unknown/absent -> null. */
 function normalizePetType(raw: unknown): PetType | null {
@@ -74,69 +75,7 @@ export const getPosOrders = cache((): Promise<PosOrder[]> =>
 // TODO(Option A): replace this ship-everything-and-aggregate-in-JS approach with
 // server-side aggregation. See src/pos-fetch-paginate.ts + CHANGELOG 2026-09-27.
 const posOrdersCached = unstable_cache(async (): Promise<PosOrder[]> => {
-  const supabase = posClient();
-  const [orders, items, products, bundles] = await Promise.all([
-    fetchAllRows('pos_orders', (from, to) =>
-      supabase
-        .from('pos_orders')
-        .select('id,client_uuid,subtotal,discount,total,oversold,device_id,payment_method,customer_handle,status,remarks,created_at,edited_at,event_id,pet_type')
-        .order('created_at', {ascending: false})
-        .order('id', {ascending: true})
-        .range(from, to)),
-    fetchAllRows('pos_order_items', (from, to) =>
-      supabase
-        .from('pos_order_items')
-        .select('order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total')
-        .order('id', {ascending: true})
-        .range(from, to)),
-    fetchAllRows('pos_products', (from, to) =>
-      supabase.from('pos_products').select('product_id,name').order('product_id', {ascending: true}).range(from, to)),
-    fetchAllRows('pos_bundles', (from, to) =>
-      supabase.from('pos_bundles').select('bundle_id,name').order('bundle_id', {ascending: true}).range(from, to)),
-  ]);
-
-  const nameBySku = new Map<string, string>();
-  for (const p of products) nameBySku.set(p.product_id as string, p.name as string);
-  const nameByBundle = new Map<string, string>();
-  for (const b of bundles) nameByBundle.set(b.bundle_id as string, b.name as string);
-
-  const itemsByOrder = new Map<string, PosOrderLine[]>();
-  for (const it of items) {
-    const orderId = it.order_id as string;
-    const productId = (it.product_id as string | null) ?? null;
-    const bundleId = (it.bundle_id as string | null) ?? null;
-    const line: PosOrderLine = {
-      product_id: productId,
-      bundle_id: bundleId,
-      bundle_group: (it.bundle_group as string | null) ?? null,
-      name: (productId && nameBySku.get(productId)) || (bundleId && nameByBundle.get(bundleId)) || productId || bundleId || 'Unknown',
-      qty: (it.qty as number) ?? 0,
-      unit_price: Number(it.unit_price ?? 0),
-      line_total: Number(it.line_total ?? 0),
-    };
-    const arr = itemsByOrder.get(orderId) ?? [];
-    arr.push(line);
-    itemsByOrder.set(orderId, arr);
-  }
-
-  return orders.map((o): PosOrder => ({
-    id: o.id as string,
-    client_uuid: o.client_uuid as string,
-    subtotal: Number(o.subtotal ?? 0),
-    discount: o.discount != null ? Number(o.discount) : null,
-    total: Number(o.total ?? 0),
-    oversold: Boolean(o.oversold),
-    device_id: (o.device_id as string | null) ?? null,
-    payment_method: (o.payment_method as string | null) ?? null,
-    customer_handle: (o.customer_handle as string | null) ?? null,
-    status: (o.status as string | null) === 'voided' ? 'voided' : 'completed',
-    remarks: (o.remarks as string | null) ?? null,
-    created_at: o.created_at as string,
-    edited_at: (o.edited_at as string | null) ?? null,
-    event_id: (o.event_id as string | null) ?? null,
-    pet_type: normalizePetType(o.pet_type),
-    items: itemsByOrder.get(o.id as string) ?? [],
-  }));
+  return readPosOrders(posClient());
 }, ['pos-orders'], {tags: [POS_TAGS.orders], revalidate: POS_CACHE_REVALIDATE});
 
 /**

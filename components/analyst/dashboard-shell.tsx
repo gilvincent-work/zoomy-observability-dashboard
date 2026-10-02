@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, FileBarChart, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Tag, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
@@ -40,6 +40,8 @@ const FLAT_TABS: NavItem[] = [
   // the Lazada marketplace buyers. The source switcher in the top bar moves
   // between them (CUSTOMER_SOURCES below).
   {href: '/customers', label: 'Customers', icon: Users},
+  // F9 Coop Reports: dashboards saved from the chat drawer.
+  {href: '/reports', label: 'Reports', icon: FileBarChart},
   {href: '/traffic', label: 'Traffic', icon: Activity},
   {href: '/repricer', label: 'Repricer', icon: Tag},
   {href: '/settings', label: 'Settings', icon: Settings},
@@ -123,6 +125,8 @@ export function DashboardShell({
     !pathname.startsWith('/settings') &&
     !pathname.startsWith('/health') &&
     !pathname.startsWith('/repricer') &&
+    // Saved reports carry their own dates (live range or pinned), not a digest week.
+    !pathname.startsWith('/reports') &&
     !pathname.startsWith('/products') &&
     // Inventory is now the merged live catalog (Products folded in), not a
     // period-scoped report, so it has no week picker (guardrail 2).
@@ -188,6 +192,7 @@ export function DashboardShell({
     {href: '/offline-sales/orders', label: 'Transactions', icon: ReceiptText},
     {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
     {href: '/customers', label: 'Customers', icon: Users},
+    {href: '/reports', label: 'Reports', icon: FileBarChart},
     {href: '/traffic', label: 'Traffic', icon: Activity},
     {href: '/repricer', label: 'Repricer', icon: Tag},
     {href: '/settings', label: 'Settings', icon: Settings},
