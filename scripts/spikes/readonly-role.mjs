@@ -38,7 +38,7 @@ const H = { auth: JWT, apikey: ANON }
 const sb = createClient(URL_, ANON, { global: { headers: { Authorization: `Bearer ${JWT}` } }, auth: { persistSession: false, autoRefreshToken: false } })
 
 // a
-{ const { data, error, status } = await sb.from('coop_chat_orders').select('*')
+{ const { data, error, status } = await sb.from('coop_chat_orders').select('*') // pagination-ok: local one-off proof against the throwaway fixture, a handful of rows
   rec('a-js', 'supabase-js select view', !error && data?.length > 0, `status=${status} rows=${data?.length} cols=${data?.[0] && Object.keys(data[0])} err=${error?.message}`)
   const r = await raw('GET', 'coop_chat_orders?select=*', H)
   rec('a-raw', 'raw GET view', r.status === 200 && r.body.length > 0 && !('customer_handle' in r.body[0]), short(r)) }

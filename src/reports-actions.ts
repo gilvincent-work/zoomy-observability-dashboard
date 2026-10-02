@@ -157,13 +157,13 @@ async function latestVersionOf(ctx: Ctx, id: string): Promise<{ok: true; latest:
 /** Best effort, never fails the action: the version row is already the committed fact. Zero rows back = another writer already moved the counter past `next`. */
 async function advanceCounter(ctx: Ctx, id: string, next: number, patch: DbRow): Promise<{deleted: boolean}> {
   const now = new Date().toISOString();
-  const moved = await ctx.client.from('coop_reports').update({...patch, current_version: next, updated_at: now}).eq('id', id).lt('current_version', next).is('deleted_at', null).select('id');
+  const moved = await ctx.client.from('coop_reports').update({...patch, current_version: next, updated_at: now}).eq('id', id).lt('current_version', next).is('deleted_at', null).select('id'); // pagination-ok: single-row write filtered by primary key, reads back only the row it wrote
   if (moved.error) console.error(JSON.stringify({event: 'reports_counter_not_advanced', code: moved.error.code ?? null, message: moved.error.message}));
   if (!moved.error && moved.data && moved.data.length > 0) return {deleted: false};
   // The counter did not move: the report may have been deleted in between, or a faster writer got there first. A title changed in
   // this step must still land, so it goes in a plain PATCH (the deleted check stays in the filter).
   if (Object.keys(patch).length > 0) {
-    const plain = await ctx.client.from('coop_reports').update({...patch, updated_at: now}).eq('id', id).is('deleted_at', null).select('id');
+    const plain = await ctx.client.from('coop_reports').update({...patch, updated_at: now}).eq('id', id).is('deleted_at', null).select('id'); // pagination-ok: single-row write filtered by primary key, reads back only the row it wrote
     if (!plain.error && (!plain.data || plain.data.length === 0)) return {deleted: true};
     if (plain.error) console.error(JSON.stringify({event: 'reports_title_not_saved', code: plain.error.code ?? null, message: plain.error.message}));
     return {deleted: false};
@@ -185,7 +185,7 @@ async function appendVersion(
   patch: DbRow,
 ): Promise<ReportsActionResult<{id: string; version: number}>> {
   const inserted = await ctx.client
-    .from('coop_report_versions')
+    .from('coop_report_versions') // pagination-ok: inserts one version row and reads back its own version
     .insert({report_id: row.id, version: next, spec_version: version.specVersion, spec: version.spec as DbRow, source_prompt: version.prompt, created_by: ctx.email})
     .select('version');
   if (inserted.error) return inserted.error.code === '23505' ? fail(staleMessage(null, version.nothing)) : dbFail(inserted.error);
@@ -198,7 +198,7 @@ async function appendVersion(
 
 /** Patch `coop_reports` only (no version). Zero rows back means the report is gone or was deleted in between. */
 async function patchReport(ctx: Ctx, id: string, patch: DbRow): Promise<ReportsActionResult<{id: string}>> {
-  const res = await ctx.client.from('coop_reports').update({...patch, updated_at: new Date().toISOString()}).eq('id', id).is('deleted_at', null).select('id');
+  const res = await ctx.client.from('coop_reports').update({...patch, updated_at: new Date().toISOString()}).eq('id', id).is('deleted_at', null).select('id'); // pagination-ok: single-row write filtered by primary key, reads back only the row it wrote
   if (res.error) return dbFail(res.error);
   if (!res.data || res.data.length === 0) return fail(`${NOT_FOUND} It may have been deleted.`);
   refresh(id);
@@ -217,18 +217,18 @@ export async function saveReport(input: SaveReportInput): Promise<ReportsActionR
     const prepared = await prepareSpec(input.spec, input.pinDates === true, title);
     if (!prepared.ok) return prepared;
 
-    const created = await ctx.client.from('coop_reports').insert({owner_email: ctx.email, title, visibility}).select('id');
+    const created = await ctx.client.from('coop_reports').insert({owner_email: ctx.email, title, visibility}).select('id'); // pagination-ok: inserts one row and reads back its own id
     if (created.error) return dbFail(created.error);
     const id = created.data?.[0]?.id;
     if (!isReportId(id)) return fail('The report could not be created.');
     const version = await ctx.client
-      .from('coop_report_versions')
+      .from('coop_report_versions') // pagination-ok: inserts one version row and reads back its own version
       .insert({report_id: id, version: 1, spec_version: prepared.spec.spec_version, spec: prepared.spec as unknown as DbRow, source_prompt: cleanPrompt(input.prompt), created_by: ctx.email})
       .select('version');
     if (version.error || !version.data || version.data.length === 0) {
       // No DELETE exists on this client: retire the half-made row softly so it never shows in a gallery. Also right when the insert
       // really landed but its response was lost: the report is then deleted with its version, which is consistent.
-      const retired = await ctx.client.from('coop_reports').update({deleted_at: new Date().toISOString()}).eq('id', id).select('id');
+      const retired = await ctx.client.from('coop_reports').update({deleted_at: new Date().toISOString()}).eq('id', id).select('id'); // pagination-ok: single-row write filtered by primary key, reads back only the row it wrote
       if (retired.error) console.error(JSON.stringify({event: 'reports_orphan_not_retired', code: retired.error.code ?? null, message: retired.error.message}));
       return version.error ? dbFail(version.error) : fail('The report could not be saved.');
     }
