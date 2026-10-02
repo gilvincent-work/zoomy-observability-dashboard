@@ -10,6 +10,10 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-02 — Talk to Data: database setup runbook, grid proof; staging applied
+- `docs/talk-to-data-db-setup-runbook.md`: step-by-step for the three SQL files, the verify query, the proof, the Vercel env vars, rollback and a symptom table. Staging was applied and verified today (proof ALL PASS, 49 of 49); PROD is next.
+- `supabase/coop_chat_readonly_proof_grid.sql`: the read-only proof as a PASS/FAIL result grid, because the Supabase SQL editor hides RAISE NOTICE output. Tested locally (49 of 49, data unchanged).
+
 ## 2026-10-02 — Ask Coop: caching audit and a capped live eval harness
 - ai-expert caching audit (`knowledge/tasks/2026-10-02-ai-expert-caching-review.md`): the prompt-cache prefix is byte-stable (about 13,300 tokens) and read on every step. In-turn tool results were re-sent at full price: added top-level automatic caching (4th breakpoint) with a request-shape rule and a test. TTL stays 5 minutes (revisit after two weeks of data).
 - Data cache keyed by Supabase project; a miss logs the serialized size (2 MiB item limit); `chat_turn` logs a timestamp.
