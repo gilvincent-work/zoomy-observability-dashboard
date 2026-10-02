@@ -5,6 +5,7 @@ import {createClient} from '@supabase/supabase-js';
 import type {RepricedVariant, RepriceHistoryEvent, RepriceRow, RepriceRun} from './reprice-types';
 import {discountPct, isDrifted} from './reprice-labels';
 import {MOCK_REPRICE_RUN, MOCK_REPRICED_VARIANTS, MOCK_VARIANT_HISTORY} from './reprice-mock';
+import {fetchAllRows} from './pos-fetch-paginate';
 
 // SERVER-ONLY, READ-ONLY. Reads the newest run of marketplace_price_changes
 // from the archive project with the same service-role posture as
@@ -81,17 +82,21 @@ export const getLatestRepriceRun = cache(async (): Promise<RepriceRun> => {
   const head = latest?.[0];
   if (!head) return MOCK_REPRICE_RUN;
 
-  const {data: rows, error: rowsError} = await supabase
-    .from('marketplace_price_changes')
-    .select('*')
-    .eq('run_id', head.run_id);
-  if (rowsError) throw new Error(`marketplace_price_changes row read failed: ${rowsError.message}`);
+  // Paged via fetchAllRows (ordered by the PK `id`) so a single run's rows can't
+  // be silently capped at db.max_rows (1000).
+  const rows = await fetchAllRows('marketplace_price_changes', (from, to) =>
+    supabase
+      .from('marketplace_price_changes')
+      .select('*')
+      .eq('run_id', head.run_id)
+      .order('id', {ascending: true})
+      .range(from, to));
 
   return {
     runId: head.run_id as string,
     ranAt: head.ran_at as string,
     dryRun: head.dry_run as boolean,
-    rows: ((rows ?? []) as RawRow[]).map(toCamel),
+    rows: (rows as unknown as RawRow[]).map(toCamel),
   };
 });
 
@@ -104,13 +109,17 @@ export const getRepricedVariants = cache(async (): Promise<RepricedVariant[]> =>
   if (!url || !serviceKey) return MOCK_REPRICED_VARIANTS;
   const supabase = createClient(url, serviceKey, {auth: {persistSession: false}});
 
-  const {data, error} = await supabase
-    .from('marketplace_price_changes')
-    .select('*')
-    .eq('applied', true)
-    .not('shopify_variant_id', 'is', null)
-    .order('ran_at', {ascending: false});
-  if (error) throw new Error(`marketplace_price_changes applied read failed: ${error.message}`);
+  // Paged via fetchAllRows (ran_at desc for display, PK `id` as the unique
+  // tiebreaker) so the whole-history scan can't be capped at db.max_rows (1000).
+  const data = await fetchAllRows('marketplace_price_changes', (from, to) =>
+    supabase
+      .from('marketplace_price_changes')
+      .select('*')
+      .eq('applied', true)
+      .not('shopify_variant_id', 'is', null)
+      .order('ran_at', {ascending: false})
+      .order('id', {ascending: true})
+      .range(from, to));
 
   // The latest run's rows carry old_price = what Shopify held when THAT run
   // read it, i.e. the freshest known truth about the store. Joined in-memory
@@ -124,7 +133,7 @@ export const getRepricedVariants = cache(async (): Promise<RepricedVariant[]> =>
 
   const seen = new Set<string>();
   const result: RepricedVariant[] = [];
-  for (const raw of (data ?? []) as RawRow[]) {
+  for (const raw of data as unknown as RawRow[]) {
     const variantId = raw.shopify_variant_id;
     if (!variantId || seen.has(variantId)) continue;
     seen.add(variantId);
@@ -157,15 +166,19 @@ export const getVariantHistory = cache(async (variantIds: string[]): Promise<Rec
   if (!url || !serviceKey) return MOCK_VARIANT_HISTORY;
   const supabase = createClient(url, serviceKey, {auth: {persistSession: false}});
 
-  const {data, error} = await supabase
-    .from('marketplace_price_changes')
-    .select('*')
-    .in('shopify_variant_id', variantIds)
-    .order('ran_at', {ascending: false});
-  if (error) throw new Error(`marketplace_price_changes history read failed: ${error.message}`);
+  // Paged via fetchAllRows (ran_at desc for display, PK `id` as the unique
+  // tiebreaker) so the per-variant history can't be capped at db.max_rows (1000).
+  const data = await fetchAllRows('marketplace_price_changes', (from, to) =>
+    supabase
+      .from('marketplace_price_changes')
+      .select('*')
+      .in('shopify_variant_id', variantIds)
+      .order('ran_at', {ascending: false})
+      .order('id', {ascending: true})
+      .range(from, to));
 
   const result: Record<string, RepriceHistoryEvent[]> = {};
-  for (const raw of (data ?? []) as RawRow[]) {
+  for (const raw of data as unknown as RawRow[]) {
     const variantId = raw.shopify_variant_id;
     if (!variantId) continue;
     const list = result[variantId] ?? (result[variantId] = []);

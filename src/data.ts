@@ -5,6 +5,7 @@ import {createClient} from '@supabase/supabase-js';
 import type {DigestArchiveRow} from './types';
 import {MOCK_DIGESTS} from './mock';
 import {maskRows} from './pii';
+import {fetchAllRows} from './pos-fetch-paginate';
 
 // SERVER-ONLY. digest_archive is NOT anon-readable — its `bundle` column holds
 // verbatim customer quotes — so the dashboard reads it server-side with the
@@ -43,12 +44,17 @@ export function usingMock(): boolean {
 const readDigests = unstable_cache(
   async (): Promise<DigestArchiveRow[]> => {
     const supabase = createClient(url as string, serviceKey as string, {auth: {persistSession: false}});
-    const {data, error} = await supabase
-      .from('digest_archive')
-      .select('window_from,window_to,digest,created_at')
-      .order('window_to', {ascending: false});
-    if (error) throw new Error(`digest_archive read failed: ${error.message}`);
-    return maskRows((data ?? []) as unknown as DigestArchiveRow[]);
+    // Paged via fetchAllRows (window_to desc for display, PK `id` as the unique
+    // tiebreaker) so a bare .select() can't be silently capped at db.max_rows (1000)
+    // and drop older digests from the archive view.
+    const data = await fetchAllRows('digest_archive', (from, to) =>
+      supabase
+        .from('digest_archive')
+        .select('window_from,window_to,digest,created_at')
+        .order('window_to', {ascending: false})
+        .order('id', {ascending: true})
+        .range(from, to));
+    return maskRows(data as unknown as DigestArchiveRow[]);
   },
   ['digest-archive'],
   {revalidate: 300, tags: ['digest-archive']},

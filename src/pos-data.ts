@@ -5,6 +5,7 @@ import {createClient, type SupabaseClient} from '@supabase/supabase-js';
 import type {PosProductRow, PosBundleRow} from './pos-types';
 import {MOCK_POS_PRODUCTS, MOCK_POS_BUNDLES} from './pos-mock';
 import {POS_TAGS, POS_CACHE_REVALIDATE} from './pos-cache';
+import {fetchAllRows} from './pos-fetch-paginate';
 
 // SERVER-ONLY. pos_* lives in the SAME Supabase project as the digest archive
 // (see COOP_INTEGRATION_PLAN.md, "shared project"), so we reuse the archive
@@ -40,27 +41,31 @@ export const getPosProducts = cache((): Promise<PosProductRow[]> =>
 const posProductsCached = unstable_cache(async (): Promise<PosProductRow[]> => {
   const supabase = posClient();
 
-  const [productsRes, inventoryRes] = await Promise.all([
-    supabase
-      .from('pos_products')
-      .select('product_id,name,product_line,category,subcategory,emoji,active,pos_prices(price)')
-      .order('product_line', {ascending: true})
-      .order('name', {ascending: true}),
-    supabase.from('pos_inventory').select('product_id,stock,next_expiry'),
+  // Both reads are paged via fetchAllRows: a bare .select() is silently capped at
+  // PostgREST's db.max_rows (1000), so page by a unique key — product_id for both
+  // (pos_inventory is a VIEW grouped by product_id, so product_id is unique there).
+  const [products, inventory] = await Promise.all([
+    fetchAllRows('pos_products', (from, to) =>
+      supabase
+        .from('pos_products')
+        .select('product_id,name,product_line,category,subcategory,emoji,active,pos_prices(price)')
+        .order('product_line', {ascending: true})
+        .order('name', {ascending: true})
+        .order('product_id', {ascending: true})
+        .range(from, to)),
+    fetchAllRows('pos_inventory', (from, to) =>
+      supabase.from('pos_inventory').select('product_id,stock,next_expiry').order('product_id', {ascending: true}).range(from, to)),
   ]);
 
-  if (productsRes.error) throw new Error(`pos_products read failed: ${productsRes.error.message}`);
-  if (inventoryRes.error) throw new Error(`pos_inventory read failed: ${inventoryRes.error.message}`);
-
   const invByProduct = new Map<string, {stock: number; next_expiry: string | null}>();
-  for (const inv of inventoryRes.data ?? []) {
+  for (const inv of inventory) {
     invByProduct.set(inv.product_id as string, {
       stock: (inv.stock as number) ?? 0,
       next_expiry: (inv.next_expiry as string | null) ?? null,
     });
   }
 
-  return (productsRes.data ?? []).map((r): PosProductRow => {
+  return products.map((r): PosProductRow => {
     // pos_prices embeds as an array or object depending on how PostgREST sees the
     // 1:1 FK — normalize both.
     const price = pickOne(r.pos_prices) as {price: number} | null;
@@ -90,20 +95,23 @@ export const getPosBundles = cache((): Promise<PosBundleRow[]> =>
 
 const posBundlesCached = unstable_cache(async (): Promise<PosBundleRow[]> => {
   const supabase = posClient();
-  const [bundlesRes, itemsRes, productsRes] = await Promise.all([
-    supabase.from('pos_bundles').select('bundle_id,name,price,active,bundle_type,pick_count,line_categories,emoji').order('name', {ascending: true}),
-    supabase.from('pos_bundle_items').select('bundle_id,product_id,qty'),
-    supabase.from('pos_products').select('product_id,name'),
+  // Each read is paged via fetchAllRows so none is silently capped at
+  // db.max_rows (1000); ordered by a unique key (bundle_id / pos_bundle_items.id
+  // / product_id) so pages neither overlap nor skip.
+  const [bundles, items, products] = await Promise.all([
+    fetchAllRows('pos_bundles', (from, to) =>
+      supabase.from('pos_bundles').select('bundle_id,name,price,active,bundle_type,pick_count,line_categories,emoji').order('name', {ascending: true}).order('bundle_id', {ascending: true}).range(from, to)),
+    fetchAllRows('pos_bundle_items', (from, to) =>
+      supabase.from('pos_bundle_items').select('bundle_id,product_id,qty').order('id', {ascending: true}).range(from, to)),
+    fetchAllRows('pos_products', (from, to) =>
+      supabase.from('pos_products').select('product_id,name').order('product_id', {ascending: true}).range(from, to)),
   ]);
-  if (bundlesRes.error) throw new Error(`pos_bundles read failed: ${bundlesRes.error.message}`);
-  if (itemsRes.error) throw new Error(`pos_bundle_items read failed: ${itemsRes.error.message}`);
-  if (productsRes.error) throw new Error(`pos_products read failed: ${productsRes.error.message}`);
 
   const nameBySku = new Map<string, string>();
-  for (const p of productsRes.data ?? []) nameBySku.set(p.product_id as string, p.name as string);
+  for (const p of products) nameBySku.set(p.product_id as string, p.name as string);
 
   const itemsByBundle = new Map<string, {product_id: string; name: string; qty: number}[]>();
-  for (const it of itemsRes.data ?? []) {
+  for (const it of items) {
     const bid = it.bundle_id as string;
     const sku = it.product_id as string;
     const arr = itemsByBundle.get(bid) ?? [];
@@ -111,7 +119,7 @@ const posBundlesCached = unstable_cache(async (): Promise<PosBundleRow[]> => {
     itemsByBundle.set(bid, arr);
   }
 
-  return (bundlesRes.data ?? []).map((b): PosBundleRow => ({
+  return bundles.map((b): PosBundleRow => ({
     bundle_id: b.bundle_id as string,
     name: b.name as string,
     price: Number(b.price ?? 0),

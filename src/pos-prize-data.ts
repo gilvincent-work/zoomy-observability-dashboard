@@ -2,6 +2,7 @@ import 'server-only';
 import {cache} from 'react';
 import {posClient, usingPosMock, getPosProducts} from './pos-data';
 import {getLocationStock} from './pos-location-data';
+import {fetchAllRows} from './pos-fetch-paginate';
 
 // SERVER-ONLY. Data for the Prizes panel: the won free items (joined to their
 // order + customer), a list of recent orders to attach a backfilled prize to, and
@@ -65,7 +66,7 @@ export const getOrderPrizeContext = cache(async (orderClientUuid: string): Promi
       .select('client_uuid,product_id,qty,won_at,pos_orders!inner(client_uuid)')
       .eq('pos_orders.client_uuid', orderClientUuid)
       .is('voided_at', null)
-      .order('won_at', {ascending: false}),
+      .order('won_at', {ascending: false}), // pagination-ok: bounded to ONE order's non-voided prizes (.eq on a single client_uuid)
     getPosProducts(),
     getLocationStock().catch(() => []),
   ]);
@@ -98,14 +99,18 @@ export const getOrdersWithPrizes = cache(async (): Promise<string[]> => {
   if (usingPosMock()) return [];
   const supabase = posClient();
 
-  const {data, error} = await supabase
-    .from('pos_order_prizes')
-    .select('pos_orders!inner(client_uuid)')
-    .is('voided_at', null);
-  if (error) throw new Error(`pos_order_prizes read failed: ${error.message}`);
+  // Paged via fetchAllRows (ordered by the pos_order_prizes PK `id`) so this
+  // whole-table scan can't be silently capped at db.max_rows (1000).
+  const data = await fetchAllRows('pos_order_prizes', (from, to) =>
+    supabase
+      .from('pos_order_prizes')
+      .select('pos_orders!inner(client_uuid)')
+      .is('voided_at', null)
+      .order('id', {ascending: true})
+      .range(from, to));
 
   const uuids = new Set<string>();
-  for (const row of data ?? []) {
+  for (const row of data) {
     const ord = pickOne((row as {pos_orders: unknown}).pos_orders) as {client_uuid: string | null} | null;
     if (ord?.client_uuid) uuids.add(ord.client_uuid);
   }

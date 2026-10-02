@@ -39,7 +39,7 @@ const orders = await all('pos_orders', () =>
   db.from('pos_orders')
     .select('id,client_uuid,total,discount,payment_method,customer_handle,status,remarks,created_at,event_id,pet_type')
     .gte('created_at', start).lte('created_at', end)
-    .order('created_at').order('id'));
+    .order('created_at').order('id')); // pagination-ok: paged past the 1000-row cap by the all() helper (.range per page)
 const ids = orders.map((o) => o.id);
 
 const items = [];
@@ -47,10 +47,10 @@ for (let i = 0; i < ids.length; i += 200) {
   items.push(...await all('pos_order_items', () =>
     db.from('pos_order_items')
       .select('id,order_id,product_id,bundle_id,bundle_group,qty,unit_price,line_total')
-      .in('order_id', ids.slice(i, i + 200)).order('id')));
+      .in('order_id', ids.slice(i, i + 200)).order('id'))); // pagination-ok: paged past the 1000-row cap by the all() helper (.range per page)
 }
 
-const [leads, products, bundles, prizes] = await Promise.all([
+const [leads, products, bundles, prizes] = await Promise.all([ // pagination-ok: every all() call pages past the 1000-row cap via .range
   all('spin_wheel_leads', () => db.from('spin_wheel_leads').select('*').order('collected_at').order('lead_id')),
   all('pos_products', () => db.from('pos_products').select('product_id,name').order('product_id')),
   all('pos_bundles', () => db.from('pos_bundles').select('bundle_id,name').order('bundle_id')),

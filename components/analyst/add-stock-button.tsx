@@ -3,7 +3,7 @@
 // Add stock: a dynamic multi-product form (Q18). Click "Add product" to spawn a
 // line with its own product picker; each picked product drops out of the other
 // lines' menus (no duplicates). The qty field takes numbers-only keyboard input
-// plus -20/-10/-5/-1 / +1/+5/+10/+20 quick-steps. "Update" commits the whole
+// (a 'Set to N units' field like Edit stock; N is the amount received). "Update" commits the whole
 // batch all-or-nothing via addStockAction (→ add_pos_stock RPC). Reused on the
 // Inventory forecast and the Products page.
 
@@ -11,6 +11,7 @@ import {useEffect, useId, useState, useTransition} from 'react';
 import {createPortal} from 'react-dom';
 import {Package, Plus, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {SearchableSelect} from './searchable-select';
 import {addStockAction, type StockLocation} from '@/src/pos-stock-intake-actions';
 
 export interface IntakeProduct {
@@ -24,8 +25,6 @@ interface Line {
   sku: string; // '' until picked
   qty: number;
 }
-
-const DELTAS = [-20, -10, -5, -1, 1, 5, 10, 20];
 
 export function AddStockButton({products, className}: {products: IntakeProduct[]; className?: string}) {
   const [open, setOpen] = useState(false);
@@ -125,7 +124,7 @@ function AddStockModal({products, onClose}: {products: IntakeProduct[]; onClose:
                   onClick={() => setLocation(loc)}
                   className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    location === loc ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                    location === loc ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
                   {loc === 'office' ? 'Office' : 'Event'}
@@ -209,34 +208,24 @@ function LineCard({
   return (
     <div className="rounded-xl border bg-card p-3">
       <div className="flex items-center gap-2">
-        <select
+        <SearchableSelect
           value={line.sku}
-          onChange={(e) => onSku(e.target.value)}
-          aria-label="Select product"
-          className={cn(
-            'flex-1 rounded-md border bg-background px-2.5 py-2 text-sm outline-none focus-visible:border-ring',
-            !line.sku && 'text-muted-foreground',
-          )}
-        >
-          <option value="">Select product…</option>
-          {products
+          onChange={onSku}
+          options={products
             .filter((p) => p.product_id === line.sku || !unavailable.has(p.product_id))
-            .map((p) => (
-              <option key={p.product_id} value={p.product_id}>
-                {p.name}
-              </option>
-            ))}
-        </select>
+            .map((p) => ({value: p.product_id, label: p.name, hint: `${p.stock}`}))}
+          placeholder="Select product…"
+          ariaLabel="Select product"
+          className="min-w-0 flex-1"
+        />
         <button type="button" onClick={onRemove} aria-label="Remove line" className="p-1 text-muted-foreground hover:text-foreground">
           <X className="size-4" />
         </button>
       </div>
       {meta && <div className="mt-2 px-0.5 font-mono text-[10px] text-muted-foreground">{meta.product_id} · {meta.stock} on hand</div>}
 
-      <div className={cn('mt-3 flex flex-wrap items-center gap-1.5', !line.sku && 'pointer-events-none opacity-30')}>
-        {DELTAS.slice(0, 4).map((d) => (
-          <QtyStep key={d} d={d} onClick={() => onQty(Math.max(0, line.qty + d))} />
-        ))}
+      <div className={cn('mt-3 flex items-center gap-2', !line.sku && 'pointer-events-none opacity-30')}>
+        <span className="text-xs text-muted-foreground">Set to</span>
         <input
           type="text"
           inputMode="numeric"
@@ -247,28 +236,11 @@ function LineCard({
             setDraft(v);
             onQty(v === '' ? 0 : parseInt(v, 10));
           }}
-          onBlur={() => {
-            if (draft === '') onQty(0);
-            setDraft(null);
-          }}
-          className="mx-1 w-16 rounded-lg border-2 border-primary bg-background px-2 py-1.5 text-center font-mono text-[15px] font-bold tabular-nums text-primary outline-none"
+          onBlur={() => setDraft(null)}
+          className="w-32 rounded-md border bg-background px-2 py-1.5 text-sm tabular-nums outline-none focus-visible:border-ring"
         />
-        {DELTAS.slice(4).map((d) => (
-          <QtyStep key={d} d={d} onClick={() => onQty(Math.max(0, line.qty + d))} />
-        ))}
+        <span className="text-xs text-muted-foreground">units</span>
       </div>
     </div>
-  );
-}
-
-function QtyStep({d, onClick}: {d: number; onClick: () => void}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="min-w-[34px] rounded-md border px-2 py-1.5 font-mono text-[11.5px] font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-    >
-      {d > 0 ? `+${d}` : d}
-    </button>
   );
 }

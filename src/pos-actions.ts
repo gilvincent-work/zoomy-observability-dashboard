@@ -4,6 +4,7 @@ import {revalidatePath, revalidateTag} from 'next/cache';
 import {auth} from '@/auth';
 import {posClient, usingPosMock} from './pos-data';
 import {POS_TAGS} from './pos-cache';
+import {setStockRpcArgs} from './pos-inventory-compute';
 import {parseEmoji, parsePrice, parseQty, POS_CATEGORIES, POS_SUBCATEGORIES, PRODUCT_LINES} from './pos-format';
 
 // Server actions for Product Controls. Coop co-owns name / price / listing with
@@ -122,17 +123,16 @@ export async function createProductAction(input: {
   return {ok: true};
 }
 
-/** Set a product's total on-hand stock to an absolute quantity (set_product_stock RPC). */
-export async function setStockAction(product_id: string, qty: string): Promise<ActionResult> {
+/** Set a product's on-hand stock in one location to an absolute quantity
+ *  (set_product_stock RPC). Defaults to Event, the sellable pool. `p_location` is
+ *  only sent for Office so the Event path keeps working against the original
+ *  3-argument function until phase4_set_stock_location is applied. */
+export async function setStockAction(product_id: string, qty: string, location: 'office' | 'event' = 'event'): Promise<ActionResult> {
   if (usingPosMock()) return mockBlocked();
   const parsed = parseQty(qty);
   if ('error' in parsed) return {ok: false, error: parsed.error};
 
-  const {error} = await posClient().rpc('set_product_stock', {
-    p_product_id: product_id,
-    p_new_qty: parsed.value,
-    p_by: await actor(),
-  });
+  const {error} = await posClient().rpc('set_product_stock', setStockRpcArgs(product_id, parsed.value, await actor(), location));
   if (error) return {ok: false, error: error.message};
   revalidatePath('/inventory');
   revalidatePath(`/inventory/${product_id}`);
