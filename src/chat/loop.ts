@@ -8,7 +8,7 @@ import {checkNumbers} from './number-check';
 import {assertRequestShape} from './request-shape';
 import type {ChatStreamEvent, ChatUsage, ToolDefinition} from './stream-types';
 import {statusFor} from './tool-executors';
-import {dispatchToolCall, type ToolExecutors, type ToolResult} from './tools';
+import {dispatchToolCall, RUN_QUERY_TOOL, type ToolExecutors, type ToolResult} from './tools';
 
 /** The only part of the Anthropic SDK the loop touches. The real `new Anthropic()` satisfies it. */
 export interface MessageStreamLike extends AsyncIterable<Anthropic.MessageStreamEvent> {
@@ -34,7 +34,10 @@ export interface ChatLoopOptions {
   messages: {role: 'user' | 'assistant'; content: string}[];
   /** Per-turn context (today's date, coverage). Goes ONLY into the latest user turn, never into the cached prefix. */
   preamble: string;
-  executors: ToolExecutors;
+  executors: ToolExecutors & {
+    /** Explore backstop (render-executors.ts): draws the last final result no block was bound from. Called by the loop, never by the model. */
+    autoRender?: () => Promise<string[]>;
+  };
   emit: (e: ChatStreamEvent) => void;
   user: string | null;
   maxSteps?: number;
@@ -94,6 +97,9 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const seen: unknown[] = [];
   // EXP-04 (spec 7): after a run_query FINAL succeeded, the text of this turn is held until the number check has passed.
   let exploreUsed = false;
+  // An Explore-capable turn (the run_query tool was sent) holds ALL text until its step ends: narration in a step that only calls tools
+  // ("Fix the grouping.") is dropped, and only text before a render call or from the final no-tool step is the answer.
+  const exploreTurn = opts.tools.some((t) => t.name === RUN_QUERY_TOOL);
   let held = '';
   let numberRetried = false;
   const metricsTried: string[] = [];
@@ -128,6 +134,12 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const releaseHeld = (retry: boolean): string[] | null => {
     const text = held;
     if (text === '') return null;
+    if (!exploreUsed) {
+      // no run_query final succeeded: the text was only held for narration handling, and the number check stays log-only (auditNumbers)
+      held = '';
+      emit({t: 'text', d: text});
+      return null;
+    }
     let list: string[] = [];
     try {
       const {violations, checked} = checkNumbers(text, seen, {context: numberContext()});
@@ -149,6 +161,16 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     held = '';
   };
 
+  // Explore backstop: if the model finishes without drawing the last final result, the app draws it (no model call, no model-typed numbers).
+  const backstop = async (): Promise<void> => {
+    if (!exploreUsed || !opts.executors.autoRender) return;
+    try {
+      await opts.executors.autoRender();
+    } catch {
+      // drawing is a convenience on top of the answer, never a dependency
+    }
+  };
+
   const finish = (reason: string | null, done: boolean): ChatLoopSummary => {
     stopReason = reason;
     if (exploreUsed && opts.exploreGap) {
@@ -168,6 +190,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     if (signal?.aborted) return finish('aborted', false);
     // Wall-clock budget: stop gracefully BEFORE starting another model step, so Vercel never has to kill the stream mid-answer.
     if (clock() - t0 > deadlineMs) {
+      await backstop();
       releaseHeld(false);
       emit({t: 'text', d: `${answer.trim() ? '\n\n' : ''}${DEADLINE_TEXT}`});
       return finish('deadline', true);
@@ -202,7 +225,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
         if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
           if (ev.delta.text.trim() !== '') textSeen = true;
           answer += ev.delta.text;
-          if (exploreUsed) held += ev.delta.text; // held until the number check passes (EXP-04)
+          if (exploreUsed || exploreTurn) held += ev.delta.text; // held until the number check passes (EXP-04) and until the step is known to be the answer
           else emit({t: 'text', d: ev.delta.text});
         }
       }
@@ -227,6 +250,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       return finish('refusal', true);
     }
     if (res.stop_reason === 'max_tokens') {
+      await backstop();
       releaseHeld(false);
       emit({t: 'text', d: CUT_OFF_TEXT});
       return finish('max_tokens', true);
@@ -234,7 +258,9 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     const calls = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (res.stop_reason !== 'tool_use' || calls.length === 0) {
       const endReason = wrapping && res.stop_reason === 'end_turn' ? 'wrapped_up' : res.stop_reason;
+      await backstop(); // drawn before the explanation text
       if (!exploreUsed) {
+        releaseHeld(false);
         auditNumbers();
         return finish(endReason, true);
       }
@@ -249,7 +275,14 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       continue;
     }
 
+    const isRender = (name: string) => name.startsWith('render_');
+    // A Explore step that calls tools and no render tool is working, not answering: its text is narration and never reaches the answer.
+    if (exploreTurn && held !== '' && !calls.some((c) => isRender(c.name))) {
+      dropHeld();
+      textSeen = false;
+    }
     if (steps >= maxSteps) {
+      await backstop();
       releaseHeld(false);
       emit({t: 'text', d: MAX_STEPS_TEXT});
       return finish('max_steps', true);
@@ -257,7 +290,6 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     // The assistant turn goes back exactly as returned (thinking blocks included), then ONE user message of results.
     convo.push({role: 'assistant', content: res.content as Anthropic.ContentBlockParam[]});
     for (const c of calls) emit({t: 'status', text: statusFor(c.name, c.input)});
-    const isRender = (name: string) => name.startsWith('render_');
     const nudge = !textSeen && !nudged && calls.some((c) => isRender(c.name));
     if (nudge) nudged = true;
     // EXP-04: held Explore text is checked the moment the model asks to draw (the owner would otherwise see blocks before the words).

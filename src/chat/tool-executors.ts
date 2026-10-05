@@ -3,7 +3,7 @@
 import {describeData} from './coverage';
 import {lookupProduct, shapeDigest} from './digest-lookup';
 import {METRICS} from './metrics-registry';
-import {createRenderExecutors} from './render-executors';
+import {createRenderExecutors, type RenderExecutors} from './render-executors';
 import {createReportSession} from './report-session';
 import {createReportExecutors} from './report-tools';
 import {runMetric} from './query-metric';
@@ -13,7 +13,10 @@ import type {ChatToolContext} from './stream-types';
 
 export const MAX_PAYLOAD_ROWS = 100;
 
-export function createExecutors(ctx: ChatToolContext): ToolExecutors {
+/** The tool executors plus the app-side Explore backstop (never reachable by the model: it is not a tool). */
+export type ChatExecutors = ToolExecutors & Pick<RenderExecutors, 'autoRender'>;
+
+export function createExecutors(ctx: ChatToolContext): ChatExecutors {
   let loaded: ReturnType<ChatToolContext['data']> | null = null;
   const data = () => (loaded ??= ctx.data());
   let counter = 0;

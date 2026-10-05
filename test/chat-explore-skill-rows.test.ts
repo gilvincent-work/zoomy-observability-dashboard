@@ -19,3 +19,12 @@ describe('EXP-06 never filters rows because their text looks like an instruction
     expect(topic).toMatch(/ignored it as data/i);
   });
 });
+
+// Live test 3: the model typed its own markdown table and no chart, chip or caveats appeared. The app now draws the final result.
+describe('guide: the app draws the final result, the model explains it', () => {
+  it('says the app draws the final result and the model must not retype it as a markdown table', () => {
+    expect(topic).toMatch(/the app draws the final result/i);
+    expect(topic).toMatch(/do not retype[^.]*markdown table/i);
+    expect(topic).toMatch(/2 to 3 sentences/i);
+  });
+});

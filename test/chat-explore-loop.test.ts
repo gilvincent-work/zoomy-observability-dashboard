@@ -84,11 +84,11 @@ describe('EXP-04 number check enforce for Explore turns', () => {
     expect(lines(t.s.info).filter((l) => l.event === 'chat_number_violation')).toHaveLength(1);
   });
 
-  it('EXP-04 a probe alone does not start holding text', async () => {
+  it('EXP-04 a probe alone does not start number enforcement, and its narration is dropped', async () => {
     const m = new FakeModel((n) => (n === 1 ? toolTurn('Let me look.', toolUse('q', 'run_query', {purpose: 'p', sql: 's', step: 'probe'})) : {text: ['₱5,555 it is.'], stop_reason: 'end_turn'}));
     const t = run(m, {executors: {run_query: async () => ({id: null, rows: [{n: 1}]})}});
     await t.go();
-    expect(text(t.events)).toBe('Let me look.₱5,555 it is.');
+    expect(text(t.events)).toBe('₱5,555 it is.'); // "Let me look." was narration in a tool step; the figure is shown unchecked (no final succeeded)
   });
 
   it('EXP-04 the DASH-01 render nudge still fires when text is missing', async () => {

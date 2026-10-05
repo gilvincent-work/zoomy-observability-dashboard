@@ -35,7 +35,15 @@ function specOf(tool: RenderTool, input: Record<string, unknown>, block: ChatBlo
   return {id: block.id, kind: 'chart', query, view: {kind, orientation, mode: kind === 'auto' ? 'auto' : 'user', x, y: y.length ? y : ['auto'], title: block.title}};
 }
 
-export function createRenderExecutors(ctx: ChatToolContext, session: ReportSession): Pick<ToolExecutors, RenderTool> {
+export type RenderExecutors = Pick<ToolExecutors, RenderTool> & {
+  /**
+   * Explore backstop: draw the LAST successful `run_query` final result that no block was bound from yet, exactly as render_chart with auto selection
+   * would (chart with its table twin, chip, SQL, code-written caveats). No model call and no model-typed value. Returns the block ids it drew ([] when nothing was due).
+   */
+  autoRender: () => Promise<string[]>;
+};
+
+export function createRenderExecutors(ctx: ChatToolContext, session: ReportSession): RenderExecutors {
   // Blocks with no re-runnable recipe (digest and product lookups) are drawn but never recorded in the report, so the report's
   // counter cannot number them. They get ids of their own, unique within this request (counter) and across requests (the
   // request time), so they never overwrite each other or an older block on screen, and can be re-bound within the turn.
@@ -43,6 +51,7 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
   const drawn: string[] = [];
   let charted = false; // a chart or tile was bound in this request
   let chartNudged = false;
+  const bound = new Set<string>(); // result ids a block was drawn from in this request
   const run = (tool: RenderTool) => async (input: unknown): Promise<unknown> => {
     const rec = isRecord(input) ? input : {};
     const target = rec.block;
@@ -101,7 +110,10 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
       }
     }
     if (tool !== 'render_table') charted = true;
-    for (const block of out.blocks) ctx.emitBlock?.(block);
+    for (const block of out.blocks) {
+      bound.add(block.source);
+      ctx.emitBlock?.(block);
+    }
     ctx.emitReport?.(session.snapshot());
     const blockIds = out.blocks.map((b) => b.id);
     const [first, ...rest] = out.chosen;
@@ -114,5 +126,13 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
     };
   };
 
-  return Object.fromEntries(TOOLS.map((t) => [t, run(t)])) as Pick<ToolExecutors, RenderTool>;
+  const autoRender = async (): Promise<string[]> => {
+    const due = [...session.store.entries()].filter(([id, r]) => /^x[1-9][0-9]*$/.test(id) && r.metric === 'explore' && r.rows.length > 0 && !bound.has(id));
+    const last = due[due.length - 1];
+    if (!last) return [];
+    const out = (await run('render_chart')({block: 'new', source: last[0], kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: ''})) as {ok?: true; block?: string; blocks?: string[]};
+    return out.ok ? (out.blocks ?? (out.block ? [out.block] : [])) : [];
+  };
+
+  return {...(Object.fromEntries(TOOLS.map((t) => [t, run(t)])) as Pick<ToolExecutors, RenderTool>), autoRender};
 }
