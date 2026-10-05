@@ -84,7 +84,8 @@ export async function POST(req: Request): Promise<Response> {
       uploadedBy,
     });
   } catch (e) {
-    return json({error: `Could not store the file: ${msg(e)}`}, 500);
+    console.error('goldline upload: store failed', e);
+    return json({error: 'Could not store the file — please try again.'}, 500);
   }
 
   // --- POS sales CSV -------------------------------------------------------
@@ -113,8 +114,9 @@ export async function POST(req: Request): Promise<Response> {
       await setUploadStatus(uploadId, 'committed');
       return json({uploadId, status: 'committed', rowsCommitted: committed, warnings: errors});
     } catch (e) {
-      await setUploadStatus(uploadId, 'failed', {rejectReason: msg(e)});
-      return json({uploadId, status: 'failed', error: msg(e)}, 500);
+      console.error('goldline upload: gl_sales commit failed', e);
+      await setUploadStatus(uploadId, 'failed', {rejectReason: 'Could not save sales rows.'});
+      return json({uploadId, status: 'failed', error: 'Could not save sales rows — please try again.'}, 500);
     }
   }
 
