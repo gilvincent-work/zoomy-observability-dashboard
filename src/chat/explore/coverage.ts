@@ -1,6 +1,7 @@
 // The per-turn Explore coverage line (spec 6.7). One FIXED statement, validated like any other, run once a minute per instance. Real figures live
 // in the per-turn preamble (never the cached prefix), so they cannot go stale. If it fails the line is omitted and one log line is written.
 import {logExploreEvent, type AuditSink} from '../audit';
+import {dayLabel, type LeadFacts} from './basis';
 import type {RunQuery} from './executor';
 import type {ExploreLimits, ValidateErr, ValidateOk} from './types';
 
@@ -23,17 +24,15 @@ export const EXPLORE_COVERAGE_SQL = `with oc as (
 ), lc as (
   select min((l.collected_at at time zone 'Asia/Manila')::date) as leads_from,
          max((l.collected_at at time zone 'Asia/Manila')::date) as leads_to,
-         count(*) as leads_count
+         count(*) as leads_count,
+         count(*) filter (where l.pet is not null and l.pet <> '') as leads_with_pet,
+         min((l.collected_at at time zone 'Asia/Manila')::date) filter (where l.pet is not null and l.pet <> '') as pet_from
   from coop_explore_event_leads l
 )
-select oc.orders_from, oc.orders_to, oc.completed_count, oc.voided_count, pf.first_tagged_day, pt.since_count, pt.since_tagged, lc.leads_from, lc.leads_to, lc.leads_count
+select oc.orders_from, oc.orders_to, oc.completed_count, oc.voided_count, pf.first_tagged_day, pt.since_count, pt.since_tagged, lc.leads_from, lc.leads_to, lc.leads_count, lc.leads_with_pet, lc.pet_from
 from oc join pf on oc.completed_count >= 0 join pt on oc.completed_count >= 0 join lc on oc.completed_count >= 0`;
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const day = (v: unknown): string | null => {
-  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(v)) return null;
-  return `${Number(v.slice(8, 10))} ${MONTHS[Number(v.slice(5, 7)) - 1]} ${v.slice(0, 4)}`;
-};
+const day = dayLabel;
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /** Pure: the one-row result of EXPLORE_COVERAGE_SQL (in column order) -> the preamble line, or null when there is nothing to say. */
@@ -53,6 +52,14 @@ export function coverageLine(row: unknown[]): string | null {
   return parts.length ? `[explore coverage] ${parts.join('; ')}.` : null;
 }
 
+/** Pure: the same row -> the lead facts (all leads in the view), or null when there are no leads or the columns are missing. */
+export function leadFactsOf(row: unknown[]): LeadFacts | null {
+  const count = num(row[9]);
+  const withPet = num(row[10]);
+  if (!count || withPet === null) return null;
+  return {count, withPet, petFrom: typeof row[11] === 'string' && day(row[11]) ? row[11].slice(0, 10) : null};
+}
+
 export interface CoverageDeps {
   runQuery: RunQuery;
   validate: (sql: unknown, limits?: Partial<ExploreLimits>) => Promise<ValidateOk | ValidateErr>;
@@ -62,24 +69,29 @@ export interface CoverageDeps {
 }
 
 const TTL_MS = 60_000;
-let memo: {at: number; line: string | null} | null = null;
+let memo: {at: number; line: string | null; leads: LeadFacts | null} | null = null;
 export const resetCoverageCache = (): void => {
   memo = null;
 };
 
-/** The line for the preamble, cached for one minute per instance. Never throws; a failure logs chat_explore_coverage_failed and returns null. */
-export async function loadCoverageLine(deps: CoverageDeps): Promise<string | null> {
+/** One fixed coverage statement per minute per instance feeds both the preamble line and the lead facts. Never throws; a failure logs chat_explore_coverage_failed. */
+async function loadCoverage(deps: CoverageDeps): Promise<{line: string | null; leads: LeadFacts | null}> {
   const now = (deps.clock ?? Date.now)();
-  if (memo && now - memo.at < TTL_MS) return memo.line;
+  if (memo && now - memo.at < TTL_MS) return memo;
   try {
     const v = await deps.validate(EXPLORE_COVERAGE_SQL, deps.limits);
     if (!v.ok) throw new Error(v.code);
     const raw = await deps.runQuery(v.sent, {timeoutMs: deps.limits.timeoutMs, maxRows: 1});
-    const line = raw.rows[0] ? coverageLine(raw.rows[0]) : null;
-    memo = {at: now, line};
-    return line;
+    const row = raw.rows[0];
+    memo = {at: now, line: row ? coverageLine(row) : null, leads: row ? leadFactsOf(row) : null};
+    return memo;
   } catch (e) {
     logExploreEvent('chat_explore_coverage_failed', {code: e instanceof Error && /^E_[A-Z_]+$/.test(e.message) ? e.message : 'failed'}, deps.sink);
-    return null;
+    return {line: null, leads: null};
   }
 }
+
+/** The line for the preamble, cached for one minute per instance. */
+export const loadCoverageLine = async (deps: CoverageDeps): Promise<string | null> => (await loadCoverage(deps)).line;
+/** The lead counts and the date pet was first collected, for the leads caveat (same cache). */
+export const loadLeadFacts = async (deps: CoverageDeps): Promise<LeadFacts | null> => (await loadCoverage(deps)).leads;

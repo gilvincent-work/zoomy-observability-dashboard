@@ -4,6 +4,7 @@ import {logExploreQuery, logGuardTrip, type AuditSink} from '../audit';
 import type {MetricResult} from '../result-types';
 import {GuardTripError} from '../tools';
 import {ExploreDbError, mapDbError} from './errors';
+import type {LeadFacts} from './basis';
 import {shapeResult, type RawQueryResult} from './result';
 import {EXPLORE_ERROR_CLASS, EXPLORE_ERROR_MESSAGES, type ExploreErrorCode, type ExploreLimits, type ValidateErr, type ValidateOk} from './types';
 
@@ -18,6 +19,8 @@ export interface ExploreDeps {
   user: string | null;
   store: {set(id: string, r: MetricResult): void};
   sink?: AuditSink;
+  /** Fixed lead coverage figures (cached by the Integrator); only awaited when a result reads the leads view. Must not throw. */
+  leadFacts?: () => Promise<LeadFacts | null>;
   /** The per-user daily gate (route level). Returns false when today's allowance is used up; called once per call that reaches the database. */
   dayGate?: () => boolean;
 }
@@ -75,7 +78,8 @@ export function createExploreExecutor(deps: ExploreDeps): ExploreExecutor {
     }
 
     const id = step === 'final' ? `x${finals + 1}` : null;
-    const shaped = shapeResult({raw, validated: v, limits, id});
+    const leadFacts = id && v.relations.includes('coop_explore_event_leads') && deps.leadFacts ? await deps.leadFacts().catch(() => null) : null;
+    const shaped = shapeResult({raw, validated: v, limits, id, leadFacts});
     if (!shaped.ok) {
       logExploreQuery({step, ok: false, code: shaped.code, fingerprint: v.fingerprint, literalsHash: v.literalsHash, views: v.relations, user: deps.user}, sink);
       return refuse(shaped.code);

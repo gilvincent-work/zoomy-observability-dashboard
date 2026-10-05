@@ -3,7 +3,7 @@
 import 'server-only';
 import {logExploreEvent, type AuditSink} from './audit';
 import {createRunQuery} from './explore/client';
-import {loadCoverageLine} from './explore/coverage';
+import {loadCoverageLine, loadLeadFacts} from './explore/coverage';
 import {createExploreExecutor, type ExploreExecutor, type RunQuery} from './explore/executor';
 import {resolveExploreAccess} from './explore/config';
 import {validateExploreSql} from './explore/parse';
@@ -33,6 +33,7 @@ export function setupExplore(args: {env: ExploreEnv; email: string | null; now: 
     const {limits} = access;
     const executor = createExploreExecutor({
       runQuery, validate: validateExploreSql, limits, now: args.now, user: args.user, store: args.store, sink: args.sink,
+      leadFacts: () => loadLeadFacts({runQuery, validate: validateExploreSql, limits, sink: args.sink}),
       dayGate: () => exploreDayCounter(args.user, limits.maxPerUserDay, args.now),
     });
     return {executor, coverageLine: () => loadCoverageLine({runQuery, validate: validateExploreSql, limits, sink: args.sink})};

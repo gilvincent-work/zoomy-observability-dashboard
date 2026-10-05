@@ -131,6 +131,9 @@ interface State {
   limits: ExploreLimits;
   violations: Set<ExploreErrorCode>;
   relations: ExploreViewName[];
+  /** alias (or view name) -> view, for resolving column refs; `refs` = every column reference as written (qualifier or null, column). */
+  aliases: Map<string, ExploreViewName>;
+  refs: {qualifier: string | null; column: string}[];
   viewRefs: number;
   ctes: string[];
   functions: string[];
@@ -213,6 +216,9 @@ function checkRangeVar(b: Obj, scope: ReadonlySet<string>, st: State): void {
   if ((schema === '' || schema === 'public') && st.v.viewNames.includes(name)) {
     st.viewRefs += 1;
     addUnique(st.relations, name as ExploreViewName);
+    st.aliases.set(name, name as ExploreViewName);
+    const alias = b.alias && typeof b.alias === 'object' ? ((b.alias as Obj).aliasname ?? (wrapped(b.alias)?.body.aliasname)) : undefined;
+    if (typeof alias === 'string') st.aliases.set(alias, name as ExploreViewName);
     return;
   }
   st.violations.add('E_RELATION');
@@ -287,7 +293,10 @@ function walkNode(type: string, b: Obj, scope: ReadonlySet<string>, depth: numbe
     case 'RangeVar':
       checkRangeVar(b, scope, st);
       break;
-    case 'ColumnRef':
+    case 'ColumnRef': {
+      const names = ((b.fields ?? []) as unknown[]).map(strOf);
+      const last = names[names.length - 1];
+      if (typeof last === 'string') st.refs.push({qualifier: names.length >= 2 && typeof names[names.length - 2] === 'string' ? (names[names.length - 2] as string) : null, column: last.toLowerCase()});
       for (const f of (b.fields ?? []) as unknown[]) {
         const s = strOf(f);
         if (s !== null) {
@@ -297,6 +306,7 @@ function walkNode(type: string, b: Obj, scope: ReadonlySet<string>, depth: numbe
         }
       }
       break;
+    }
     case 'FuncCall':
       checkFuncCall(b, st);
       break;
@@ -477,7 +487,7 @@ export function createExploreValidator(opts: ValidatorOptions = {}): ExploreVali
       }
 
       // 4-10. one generic, default-deny walk
-      const st: State = {v, limits, violations: new Set(), relations: [], viewRefs: 0, ctes: [], functions: [], statusSeen: false, seriesInFrom: new WeakSet(), escapeCalls: new WeakSet()};
+      const st: State = {v, limits, violations: new Set(), relations: [], aliases: new Map(), refs: [], viewRefs: 0, ctes: [], functions: [], statusSeen: false, seriesInFrom: new WeakSet(), escapeCalls: new WeakSet()};
       walkSelect(top.body, new Set(), 1, st, false);
       if (st.viewRefs > limits.maxRelations) st.violations.add('E_TOO_MANY_RELATIONS');
       const outputColumns = outputNames(top.body);
@@ -491,7 +501,12 @@ export function createExploreValidator(opts: ValidatorOptions = {}): ExploreVali
         lints.push({code: 'W_NO_STATUS_FILTER', message: 'This query counts voided orders unless you filter status.'});
       }
       const fp = fingerprintStatement(top.body);
-      return {ok: true, sql, sent, relations: st.relations, ctes: st.ctes, functions: st.functions, outputColumns, fingerprint: fp.fingerprint, literalsHash: fp.literalsHash, lints};
+      const columnRefs: ValidateOk['columnRefs'] = [];
+      for (const r of st.refs) {
+        const relation = r.qualifier !== null ? (st.aliases.get(r.qualifier) ?? null) : null;
+        if (!columnRefs.some((c) => c.relation === relation && c.column === r.column)) columnRefs.push({relation, column: r.column});
+      }
+      return {ok: true, sql, sent, relations: st.relations, columnRefs, ctes: st.ctes, functions: st.functions, outputColumns, fingerprint: fp.fingerprint, literalsHash: fp.literalsHash, lints};
     } catch {
       return err('E_WRAPPER_MISMATCH'); // fail closed; the caller logs it as a trip
     }

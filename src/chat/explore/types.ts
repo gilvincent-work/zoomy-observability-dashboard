@@ -128,6 +128,8 @@ export type ValidateOk = {
   sql: string; // the exact input, unchanged
   sent: string; // wrapCursor(sql): what the driver will send
   relations: import('./views').ExploreViewName[];
+  /** Every column reference in the statement, resolved to its view when it is qualified by a view alias (null: unqualified or a CTE). */
+  columnRefs: {relation: import('./views').ExploreViewName | null; column: string}[];
   ctes: string[];
   functions: string[];
   outputColumns: string[]; // output names of the outermost SELECT

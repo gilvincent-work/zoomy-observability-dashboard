@@ -1,5 +1,6 @@
 // Shape one Explore query result into a MetricResult (spec 3.3). Pure: the driver rows come in, the stored result and the
 // model-visible payload come out. The model declares no column types: code derives them from the driver types and the alias suffix.
+import {leadsCoverageNote, ordersBasisNotes, type LeadFacts} from './basis';
 import type {ColumnUnit, MetricResult, MetricRow, ResultColumn} from '../result-types';
 import type {ExploreErrorCode, ExploreLimits, ExploreLint, ValidateOk} from './types';
 
@@ -76,13 +77,15 @@ export type ShapeOutcome = {ok: true; result: MetricResult; payload: Record<stri
 
 export interface ShapeInput {
   raw: RawQueryResult;
-  validated: Pick<ValidateOk, 'sql' | 'relations' | 'lints'>;
+  validated: Pick<ValidateOk, 'sql' | 'relations' | 'lints'> & Partial<Pick<ValidateOk, 'columnRefs'>>;
+  /** Fixed coverage figures for the leads view; null/absent when unknown (then no lead counts are claimed). */
+  leadFacts?: LeadFacts | null;
   limits: ExploreLimits;
   /** 'x1'... for a final, null for a probe. */
   id: string | null;
 }
 
-export function shapeResult({raw, validated, limits, id}: ShapeInput): ShapeOutcome {
+export function shapeResult({raw, validated, limits, id, leadFacts}: ShapeInput): ShapeOutcome {
   const keys = keysOf(raw.columns.map((c) => c.name));
   const typed = raw.columns.map((c, i) => typeColumn(keys[i], c.type, raw.rows.map((r) => r[i])));
   const columns = typed.map((t) => t.col);
@@ -132,6 +135,15 @@ export function shapeResult({raw, validated, limits, id}: ShapeInput): ShapeOutc
   if (validated.relations.includes('coop_explore_event_leads')) {
     notes.push(LEADS_NOTE);
     caveats.push(LEADS_NOTE);
+    if (leadFacts) {
+      const n = leadsCoverageNote(leadFacts);
+      notes.push(n);
+      caveats.push(n);
+    }
+  }
+  for (const n of ordersBasisNotes({relations: validated.relations, columnRefs: validated.columnRefs ?? []})) {
+    notes.push(n);
+    caveats.push(n);
   }
   const coverage_note = notes.join(' ');
 

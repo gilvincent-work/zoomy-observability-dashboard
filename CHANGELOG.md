@@ -10,6 +10,10 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Ask Coop Explore: fixes from the second live run (G01)
+- Fix (D1): an Explore result with two category columns (event, pet) and several measures now draws ONE measure (the one the block title names, else the first peso measure) with the second dimension as series, and folds nothing until past the existing limits (`recommend-view.ts` `decideTwoDim`; the title is passed in from `bind.ts`). Before, it plotted orders under a revenue title and folded 8 rows into "Other".
+- Fix (D2): the evidence note is written by code. `parse.ts` now returns `columnRefs`; orders joined to events get a basis caveat (tagged to the event in the POS, by the event date window, or both) and a leads query gets the lead count, the count with a pet value and the date pet was first collected (the fixed coverage statement gained two columns; counts are for the whole leads view, not the query's scope). Decision: code, not the model, owns the "how was this counted" sentence.
+
 ## 2026-10-05 — PR template, `pr-description` skill and hook
 - Chore: `.github/pull_request_template.md` (tables for summary, changes, tests, checklist, rollout). The shared `pr-description` skill fills it from the real diff; a PreToolUse hook (`.claude/hooks/pr-description-check.mjs`) blocks `gh pr create` unless the body has the template sections and the title is a Conventional Commit. Bypass: `PR_CHECK=off`. Decision: block `--fill` because a commit-log body skips the checklist.
 
