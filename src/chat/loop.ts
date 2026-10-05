@@ -98,6 +98,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const seen: unknown[] = [];
   // EXP-04 (spec 7): after a run_query FINAL succeeded, the text of this turn is held until the number check has passed.
   let exploreUsed = false;
+  let registryUsed = false; // a query_metric result succeeded: the app may draw it when the model forgot (backstop)
   // An Explore-capable turn (the run_query tool was sent) holds ALL text until its step ends: narration in a step that only calls tools
   // ("Fix the grouping.") is dropped, and only text before a render call or from the final no-tool step is the answer.
   const exploreTurn = opts.tools.some((t) => t.name === RUN_QUERY_TOOL);
@@ -141,9 +142,10 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     let text = held;
     if (text === '') return null;
     if (!exploreUsed) {
-      // no run_query final succeeded: the text was only held for narration handling, and the number check stays log-only (auditNumbers)
+      // no run_query final succeeded: the text was only held for narration handling, and the number check stays log-only (auditNumbers).
+      // A block drawn for a registry result (the model's or the backstop's) already shows the rows, so typed tables are removed here too.
       held = '';
-      emit({t: 'text', d: text});
+      emit({t: 'text', d: drawn || drawnNow ? stripMarkdownTables(text) : text});
       return null;
     }
     if (drawn || drawnNow) text = stripMarkdownTables(text);
@@ -170,7 +172,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
 
   // Explore backstop: if the model finishes without drawing the last final result, the app draws it (no model call, no model-typed numbers).
   const backstop = async (): Promise<void> => {
-    if (!exploreUsed || !opts.executors.autoRender) return;
+    if (!(exploreUsed || (registryUsed && exploreTurn)) || !opts.executors.autoRender) return;
     try {
       if ((await opts.executors.autoRender()).length > 0) drawn = true;
     } catch {
@@ -333,6 +335,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     calls.forEach((c, i) => {
       const content = results[i].content as {id?: unknown} | null;
       if (c.name === 'run_query' && !results[i].is_error && typeof content?.id === 'string') exploreUsed = true;
+      if (c.name === 'query_metric' && !results[i].is_error && typeof content?.id === 'string') registryUsed = true;
       if (isRender(c.name) && !results[i].is_error && (content as {ok?: unknown} | null)?.ok === true) drawn = true;
     });
     convo.push({

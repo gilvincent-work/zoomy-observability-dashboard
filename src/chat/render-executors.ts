@@ -15,6 +15,7 @@ const TOOLS: readonly RenderTool[] = ['render_kpi', 'render_chart', 'render_tabl
 const BLOCK_ID = /^b[1-9][0-9]{0,2}$/;
 const MAX_Y = 8;
 const AUTO_RENDER_MAX = 3; // Explore backstop: unrendered final results drawn per turn
+const AUTO_REGISTRY_MAX = 2; // backstop: unrendered query_metric results drawn per turn
 // The default of every analytical answer is a visualization; a table is its companion. One nudge per request.
 export const CHART_FIRST_TEXT = 'Nothing was drawn and your call was fine. A chart is the default for this data: call render_chart (kind auto, or the form the owner named) first, then render_table again as its companion. If the owner explicitly asked for only a table, call render_table again unchanged.';
 
@@ -38,6 +39,8 @@ function specOf(tool: RenderTool, input: Record<string, unknown>, block: ChatBlo
 
 export type RenderExecutors = Pick<ToolExecutors, RenderTool> & {
   /**
+   * Backstop for a registry (`query_metric`) result too: a successful result of at least two rows that no block was bound from is drawn with the registry's own recommended view (at most AUTO_REGISTRY_MAX per turn);
+   * a one-row result is a figure for the text and stays undrawn (THINK-06).
    * Explore backstop: draw EVERY successful, non-empty `run_query` final result no block was bound from yet (query order, at most AUTO_RENDER_MAX, the rest named in a note), each exactly as render_chart with auto selection
    * would (chart with its table twin, chip, SQL, code-written caveats). No model call and no model-typed value. Returns the block ids it drew ([] when nothing was due).
    */
@@ -130,9 +133,10 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
   };
 
   const autoRender = async (): Promise<string[]> => {
-    const due = [...session.store.entries()].filter(([id, r]) => /^x[1-9][0-9]*$/.test(id) && r.metric === 'explore' && r.rows.length > 0 && !bound.has(id));
-    const draw = due.slice(0, AUTO_RENDER_MAX);
-    const dropped = due.length - draw.length;
+    const explore = [...session.store.entries()].filter(([id, r]) => /^x[1-9][0-9]*$/.test(id) && r.metric === 'explore' && r.rows.length > 0 && !bound.has(id));
+    const registry = [...session.store.entries()].filter(([id, r]) => /^r[1-9][0-9]*$/.test(id) && session.requestOf(id) !== undefined && r.rows.length >= 2 && !bound.has(id));
+    const draw = [...explore.slice(0, AUTO_RENDER_MAX), ...registry.slice(0, AUTO_REGISTRY_MAX)];
+    const dropped = explore.length - Math.min(explore.length, AUTO_RENDER_MAX);
     const ids: string[] = [];
     for (const [i, [id]] of draw.entries()) {
       pendingNote = i === draw.length - 1 && dropped > 0 ? `${dropped} more ${dropped === 1 ? 'result was' : 'results were'} not drawn (at most ${AUTO_RENDER_MAX} blocks per answer). Ask for ${dropped === 1 ? 'it' : 'them'} on its own to see ${dropped === 1 ? 'it' : 'them'}.` : null;
