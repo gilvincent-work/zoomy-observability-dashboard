@@ -10,6 +10,9 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — PR template, `pr-description` skill and hook
+- Chore: `.github/pull_request_template.md` (tables for summary, changes, tests, checklist, rollout). The shared `pr-description` skill fills it from the real diff; a PreToolUse hook (`.claude/hooks/pr-description-check.mjs`) blocks `gh pr create` unless the body has the template sections and the title is a Conventional Commit. Bypass: `PR_CHECK=off`. Decision: block `--fill` because a commit-log body skips the checklist.
+
 ## 2026-10-02 — v1.4.1: Save report no longer fails on a blank title
 - Fix: saving a dashboard whose title the model never set answered "Give the report a title." Now the title falls back to the first block's title or tile label, then the question that produced it, then "Untitled report" (`src/reports-title.ts`). An explicit title still wins; rename from the report page.
 
