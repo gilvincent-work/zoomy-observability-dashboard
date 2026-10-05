@@ -50,7 +50,9 @@ export const EXPLORE_NEGATIVE_CORPUS = [
   row('N16', 'lock', `select o.id from ${O} o for update`, 'E_LOCKING', 'MUST'),
   row('N17', 'cte-dml', 'with d as (delete from pos_orders returning id) select d.id from d', 'E_DML_IN_CTE', 'MUST'),
   row('N18', 'cte-dml', 'with i as (insert into pos_orders (total) values (1) returning id) select i.id from i', 'E_DML_IN_CTE', 'MUST'),
-  row('N19', 'multi', `select o.id from ${O} o; select o.id from ${O} o`, 'E_MULTI_STATEMENT', 'MUST'),
+  // db PARSER, not MUST (spec 4.7 said MUST): two harmless SELECTs are legal for the engine in the simple protocol (proof: M1 and M2 execute both);
+  // only the extended protocol of M3 refuses a second statement. The parser's one-statement rule is the layer that stops it.
+  row('N19', 'multi', `select o.id from ${O} o; select o.id from ${O} o`, 'E_MULTI_STATEMENT', 'PARSER'),
   row('N20', 'multi', `select o.id from ${O} o; drop table pos_orders`, 'E_MULTI_STATEMENT', 'MUST'),
   row('N21', 'multi', `select o.id from ${O} o; commit; delete from pos_orders`, 'E_MULTI_STATEMENT', 'MUST'),
   row('N22', 'multi-lexical', `select o.id from ${O} o； drop table pos_orders`, 'E_SYNTAX', 'MUST'),
@@ -76,7 +78,9 @@ export const EXPLORE_NEGATIVE_CORPUS = [
   row('N42', 'function', `select pg_read_file('/etc/passwd') from ${O} o`, 'E_FUNCTION_DENIED', 'MUST'),
   row('N43', 'function', `select lo_import('/etc/passwd') from ${O} o`, 'E_FUNCTION_DENIED', 'MUST'),
   row('N44', 'function', `select current_setting('server_version') from ${O} o`, 'E_FUNCTION_DENIED', 'PARSER'),
-  row('N45', 'function', `select repeat('a', 1000000000) from ${O} o`, 'E_FUNCTION_DENIED', 'BOUNDED'),
+  // db PARSER, not BOUNDED (spec 4.7 said BOUNDED): the proof measured the 5 s statement_timeout arriving after 6.6 to 10.7 s, because the
+  // 1 GB allocation inside repeat() is not interruptible. The clock does not reliably bound it; the function denylist is the only layer.
+  row('N45', 'function', `select repeat('a', 1000000000) from ${O} o`, 'E_FUNCTION_DENIED', 'PARSER'),
   row('N46', 'function', `select version() from ${O} o`, 'E_FUNCTION_DENIED', 'PARSER'),
   row('N47', 'function', `select current_user from ${O} o`, 'E_FUNCTION_DENIED', 'PARSER'),
   row('N48', 'function-rpc', `select fake_write_rpc() from ${O} o`, 'E_FUNCTION', 'MUST'),

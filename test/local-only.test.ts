@@ -104,7 +104,7 @@ describe('the integration-test scan', () => {
   });
 
   it('every script that connects to a local stack calls the shared guard', () => {
-    for (const f of ['scripts/coop-chat-ro-proof.mjs', 'scripts/spikes/readonly-role.mjs']) {
+    for (const f of ['scripts/coop-chat-ro-proof.mjs', 'scripts/spikes/readonly-role.mjs', 'scripts/coop-explore-ro-proof.mjs']) {
       expect(callsLocalGuard(readFileSync(f, 'utf8')), f).toBe(true);
     }
     expect(readFileSync('scripts/chat-eval.mjs', 'utf8')).toMatch(/isLocalSupabaseUrl\(raw\)/);
@@ -190,5 +190,18 @@ describe('the integration-test scan knows about Postgres clients (spec 5.3)', ()
     expect(callsLocalGuard('assertLocalPostgres(url)')).toBe(true);
     expect(callsLocalGuard('// assertLocalPostgres(url)')).toBe(false);
     expect(buildsClient("import postgres from 'postgres';")).toBe(true);
+  });
+});
+
+describe('the Explore role proof', () => {
+  const src = readFileSync('scripts/coop-explore-ro-proof.mjs', 'utf8');
+  it('calls assertLocalPostgres before opening any connection', () => {
+    expect(src.indexOf('assertLocalPostgres(URL_)')).toBeGreaterThan(-1);
+    expect(src.indexOf('assertLocalPostgres(URL_)')).toBeLessThan(src.indexOf('postgres(URL_'));
+  });
+  it('its DECLARE wrapper is the one parse.ts validates (a drift would prove the wrong string)', async () => {
+    const {wrapCursor} = await import('../src/chat/explore/parse');
+    const m = /const wrap = \(sql\) => `([^`]*)\$\{sql\}`/.exec(src);
+    expect(m?.[1].replace('${CURSOR}', 'coop_explore_c')).toBe(wrapCursor('').trimEnd() + ' ');
   });
 });
