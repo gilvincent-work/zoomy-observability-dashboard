@@ -73,6 +73,8 @@ function totalColumn(cols: ResultColumn[], rows: MetricRow[]): ResultColumn | nu
 
 /** A share column whose values add to about 100 means the rows are the parts of one whole. */
 function rowsAreWhole(result: MetricResult): boolean {
+  // An Explore result with several measures (weekday + orders + revenue + share): the share belongs to one of them, so the rows are not "the parts of the plotted measure".
+  if (result.meta.exploratory && result.columns.filter((c) => c.role === 'measure').length >= 2) return false;
   const share = result.columns.find((c) => c.role === 'share' && c.unit === 'percent');
   if (!share) return false;
   const values = result.rows.map((r) => num(r[share.key])).filter((v): v is number => v !== null);
@@ -315,7 +317,9 @@ function decideChart(f: Facts, mixed: boolean): BlockDecision[] {
   const keys = [x.key, ...parts.map((p) => p.key)];
   const slim = (r: MetricRow): MetricRow => Object.fromEntries(keys.map((k) => [k, r[k] ?? null]));
   const primary = parts[0];
-  const ordered = isTime ? sortAsc(rows, x.key) : form === 'diverging_bar' || parts.length === 1 ? sortDesc(rows, primary.key) : [...rows].sort((a, b) => parts.reduce((s, p) => s + (num(b[p.key]) ?? 0), 0) - parts.reduce((s, p) => s + (num(a[p.key]) ?? 0), 0));
+  // One category column, several measures, a short list (an Explore weekday + orders + revenue result): the SQL chose the order (a calendar order), so it is kept.
+  const keepOrder = result.meta.exploratory !== undefined && !isTime && parts.length === 1 && rows.length <= TABLE_MIN_CLASSES && result.columns.filter((c) => c.role === 'measure').length >= 2 && result.columns.filter((c) => c.role === 'category').length === 1;
+  const ordered = isTime ? sortAsc(rows, x.key) : keepOrder ? rows : form === 'diverging_bar' || parts.length === 1 ? sortDesc(rows, primary.key) : [...rows].sort((a, b) => parts.reduce((s, p) => s + (num(b[p.key]) ?? 0), 0) - parts.reduce((s, p) => s + (num(a[p.key]) ?? 0), 0));
 
   const out: BlockDecision[] = [];
   let drawn = ordered;
@@ -433,13 +437,14 @@ function byUnit(cols: ResultColumn[]): ResultColumn[][] {
   return [...groups.values()];
 }
 
-function autoY(result: MetricResult): ResultColumn[] {
+function autoY(result: MetricResult, title = ''): ResultColumn[] {
   const numeric = result.columns.filter(isNumericColumn);
   const delta = numeric.find((c) => c.role === 'delta');
   if (delta) return [delta];
   const measures = numeric.filter((c) => c.role === 'measure');
   if (measures.length === 0) return numeric.slice(0, 1);
-  const primary = measures.find((c) => c.key === result.meta.measure) ?? measures[0];
+  // An Explore result has no registered primary measure: the title's measure, else the first peso measure, else the first count.
+  const primary = result.meta.exploratory ? pickMeasure(measures, title) : (measures.find((c) => c.key === result.meta.measure) ?? measures[0]);
   const sameUnit = measures.filter((c) => c.unit === primary.unit);
   // Over time, several measures of one unit that are not derived ratios are comparable series (online channels and offline
   // sales week by week): draw them all together as lines, never only the primary one.
@@ -489,7 +494,7 @@ export function recommendView(result: MetricResult, request: ViewRequest, pick: 
     if (two) return {decisions: [two]};
   }
   const x = (pick.x ? col(pick.x) : undefined) ?? columns.find((c) => c.role === 'time') ?? columns.find((c) => c.role === 'category');
-  const ys = pick.y?.length ? pick.y.map(col).filter((c): c is ResultColumn => c !== undefined && isNumericColumn(c)) : autoY(result);
+  const ys = pick.y?.length ? pick.y.map(col).filter((c): c is ResultColumn => c !== undefined && isNumericColumn(c)) : autoY(result, pick.title ?? '');
   if (!x || ys.length === 0) return {decisions: [tableDecision(result, request, 'This is a detail listing, which reads best as a table.')]};
 
   const groups = byUnit(ys);
