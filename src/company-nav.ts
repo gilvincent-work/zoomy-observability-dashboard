@@ -10,3 +10,14 @@
 export function showUploadsFor(companyId: string | null | undefined): boolean {
   return (companyId ?? 'zoomy') !== 'zoomy';
 }
+
+/**
+ * Whether a resolved context should be bounced OFF a Zoomy-only page (the legacy
+ * Overview/Health/Inventory/… pages read Zoomy data with no company dimension, so a
+ * non-Zoomy viewer would see Zoomy's data). Signed-out / no-membership (null ctx) is
+ * left to the normal auth flow; Zoomy passes; everyone else — a Goldline user, or the
+ * data-blind Coop Admin whose companyId is null — is redirected to their own home.
+ */
+export function shouldRedirectFromZoomy(ctx: {companyId: string | null} | null): boolean {
+  return ctx !== null && ctx.companyId !== 'zoomy';
+}

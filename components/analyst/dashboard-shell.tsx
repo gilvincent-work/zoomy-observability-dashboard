@@ -375,7 +375,8 @@ export function DashboardShell({
 
         {/* Right cluster: Ask Coop · theme · avatar */}
         <div className="ml-auto flex items-center gap-2">
-          <AskCoopPill />
+          {/* Ask Coop reads Zoomy data; hidden for non-Zoomy companies (the API 403s them). */}
+          {!showUploads && <AskCoopPill />}
           <ThemeToggle />
           <div className="relative">
             <button

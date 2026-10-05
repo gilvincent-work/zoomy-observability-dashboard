@@ -1,6 +1,8 @@
 import 'server-only';
 import {cookies} from 'next/headers';
+import {redirect} from 'next/navigation';
 import {auth} from '@/auth';
+import {shouldRedirectFromZoomy} from '@/src/company-nav';
 import {
   fetchCompanies,
   resolveActive,
@@ -53,6 +55,18 @@ export async function getDataContext(requested?: string | null): Promise<ActiveC
   const ctx = await getActiveContext(requested);
   if (!ctx || !ctx.canSeeData || !ctx.companyId) return null;
   return ctx;
+}
+
+/**
+ * Guard for Zoomy-only routes (the legacy pages that read Zoomy data with no company
+ * dimension). Call it from a section layout / page server component: a Goldline user
+ * or the data-blind Coop Admin is redirected to /uploads instead of seeing Zoomy data.
+ * Signed-out / no-membership (and local dev-auth bypass, where auth() is null) are a
+ * no-op, so the normal auth flow and local dev are unaffected.
+ */
+export async function requireZoomyData(): Promise<void> {
+  const ctx = await getActiveContext();
+  if (shouldRedirectFromZoomy(ctx)) redirect('/uploads');
 }
 
 /** Chrome for the app shell: the active company, the user's role, and the

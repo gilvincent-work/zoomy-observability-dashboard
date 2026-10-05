@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline P0: tenant guard on Zoomy-only routes (data-isolation fence)
+- **Security fence before Goldline go-live.** The legacy Overview/Health/Inventory/Sales/… pages read Zoomy data with no company dimension, so a non-Zoomy viewer would have seen Zoomy data by URL. Added `requireZoomyData()` (`src/active-context.ts`) + a pure, unit-tested `shouldRedirectFromZoomy` (`src/company-nav.ts`, +3 tests): a Goldline user or the data-blind Coop Admin is redirected to `/uploads`; signed-out and local dev-auth bypass are a no-op.
+- Applied as a transparent **section guard layout** per Zoomy-only section (`app/{health,inventory,offline-sales,customers,reports,traffic,repricer,settings,lazada,crm}/layout.tsx`) plus the root overview (`app/page.tsx`) — one choke point per section, so future sub-pages are auto-guarded. `/uploads`, `/signin`, `/dev` are intentionally unguarded.
+- Ask Coop fenced to Zoomy too: `/api/chat` returns 403 for a non-Zoomy context, and the shell hides the “Ask coop” pill for non-Zoomy companies.
+- Zoomy is unaffected (guard no-ops for `companyId === 'zoomy'`). typecheck + tests + pagination guard pass; runtime pending the Staging deploy.
+
 ## 2026-10-05 — Goldline P0: company switcher + cookie-based active company + Uploads nav
 - `src/active-context.ts`: `getActiveContext` now falls back to an `active_company` cookie when no explicit company is requested (still re-validated against real memberships by `resolveActive`, so a cookie can never grant access). Adds `getNavContext()` — the active company, role, and switchable companies (names fetched only when a switcher would actually render) for the app shell.
 - `src/company.ts`: `fetchCompanies(ids)` — edge-safe PostgREST name lookup for the switcher, fail-soft `[]`.
