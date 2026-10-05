@@ -44,7 +44,14 @@ export default async function RootLayout({children}: {children: ReactNode}) {
   // The shell (header + week sidebar + tab nav) is shared across all tab routes,
   // so it fetches the week list once here; getDigests() is React-cached so the
   // page doesn't re-fetch. useSearchParams inside the shell needs a Suspense boundary.
-  const [digests, nav] = authed ? await Promise.all([getDigests(), getNavContext()]) : [[], null];
+  const nav = authed ? await getNavContext() : null;
+  // Zoomy's digests must load ONLY for a Zoomy viewer — otherwise the RSC payload
+  // would ship Zoomy data to a Goldline user / data-blind Coop Admin on every route
+  // (even /uploads), above the per-section guards. Local dev-auth bypass (null nav)
+  // and legacy authed staff with no membership stay on Zoomy; a resolved non-Zoomy
+  // company gets none.
+  const isZoomyViewer = authed && (devAuthEnabled() || !nav || nav.companyId === 'zoomy');
+  const digests = isZoomyViewer ? await getDigests() : [];
   return (
     <html lang="en" suppressHydrationWarning>
       <head>

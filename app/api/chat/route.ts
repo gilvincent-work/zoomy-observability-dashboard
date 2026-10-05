@@ -37,11 +37,13 @@ export async function POST(req: Request) {
   if (!session?.user) return new Response('Please sign in to use Coop.', {status: 401});
 
   // Ask Coop reads Zoomy digests (no company dimension), so fence it to Zoomy:
-  // a non-Zoomy viewer (Goldline / data-blind Coop Admin) must not query it.
-  // No-op under local dev-auth bypass (getActiveContext's auth() is null there).
-  const chatCtx = await getActiveContext();
-  if (chatCtx && chatCtx.companyId !== 'zoomy') {
-    return new Response('Ask Coop is only available for Zoomy.', {status: 403});
+  // a non-Zoomy viewer (Goldline / data-blind Coop Admin) must not query it. Skipped
+  // under dev-auth bypass so the bypass never consults auth() (keeps that invariant).
+  if (!devAuthEnabled()) {
+    const chatCtx = await getActiveContext();
+    if (chatCtx && chatCtx.companyId !== 'zoomy') {
+      return new Response('Ask Coop is only available for Zoomy.', {status: 403});
+    }
   }
 
   const key = process.env.ANTHROPIC_API_KEY;
