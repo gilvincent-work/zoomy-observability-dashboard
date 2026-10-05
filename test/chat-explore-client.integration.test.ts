@@ -139,6 +139,17 @@ describe.skipIf(!local)('EXP-05 the real driver and the real role (local Postgre
     expect(r.st).toBe('5s');
   });
 
+  it('EXP-05 a refused connection and a wrong password both surface as E_UNAVAILABLE (never raw text)', async () => {
+    const dead = new URL(URL_!);
+    dead.port = '1';
+    const down = createRunQuery({enabled: true, limits: DEFAULT_EXPLORE_LIMITS, databaseUrl: dead.toString()});
+    expect(await codeOf(down(wrapCursor('select 1 as a'), OPTS))).toBe('E_UNAVAILABLE');
+    const bad = new URL(URL_!);
+    bad.password = 'not-the-password';
+    const wrong = createRunQuery({enabled: true, limits: DEFAULT_EXPLORE_LIMITS, databaseUrl: bad.toString()});
+    expect(await codeOf(wrong(wrapCursor('select 1 as a'), OPTS))).toBe('E_UNAVAILABLE');
+  });
+
   it('U5 postgres.js returns column type OIDs for unsafe() results, and the client maps them to roles', async () => {
     const r = await run(
       wrapCursor("select 1::int as a_count, 2::bigint as b_count, 1.5::numeric as c_php, now() as d_ts, current_date as e_day, 'x'::text as f, true as g, '{\"k\":1}'::jsonb as h"),

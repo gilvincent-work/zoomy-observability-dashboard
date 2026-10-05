@@ -38,6 +38,11 @@ async function exec(sql: string): Promise<{payload: Record<string, unknown>; sto
   return {payload, stored: stored!};
 }
 
+async function scalar(sql: string): Promise<number> {
+  const r = await run(`DECLARE coop_explore_c NO SCROLL CURSOR FOR ${sql}`, {timeoutMs: 5000, maxRows: 5});
+  return r.rows[0][0] as number;
+}
+
 describe.skipIf(!local)('EXP-02 every worked example runs through the real executor on the local fixture', () => {
   it.each(EXPLORE_EXAMPLES.map((e) => [e.id, e.sql]))('EXP-02 %s runs as written without an error', async (_id, sql) => {
     const {stored} = await exec(sql);
@@ -55,5 +60,14 @@ describe.skipIf(!local)('EXP-02 every worked example runs through the real execu
     }
     // a column that is a date is typed as time, never as a measure
     for (const k of ['day']) if (stored.columns.some((c) => c.key === k)) expect(stored.columns.find((c) => c.key === k)?.role).toBe('time');
+  });
+
+  // Grain check (a wrong example teaches wrong figures): E15 splits the order total by pet, so its pieces must add up to every completed order,
+  // including orders that have no item lines (an inner join to the items CTE used to drop them silently).
+  it('EXP-02 E15 revenue per pet adds up to the revenue of all completed orders', async () => {
+    const e15 = EXPLORE_EXAMPLES.find((e) => e.id === 'E15')!;
+    const {stored} = await exec(e15.sql);
+    const total = await scalar("select sum(o.total) from coop_explore_orders o where o.status = 'completed'");
+    expect(stored.rows.reduce((a, r) => a + (r.revenue_php as number), 0)).toBeCloseTo(total, 2);
   });
 });

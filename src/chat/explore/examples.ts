@@ -102,8 +102,8 @@ export const EXPLORE_EXAMPLES: ExploreExample[] = [
   {
     id: 'E15',
     question: 'Revenue and units per pet, without doubling the total.',
-    sql: "with items as (select i.order_id, sum(i.qty) as units_count from coop_explore_order_items i where i.bundle_group is null or i.product_id is null group by 1) select coalesce(o.pet_type, 'untagged') as pet, round(sum(o.total), 2) as revenue_php, sum(items.units_count) as units_count from coop_explore_orders o join items on items.order_id = o.id where o.status = 'completed' group by 1",
-    teaches: ['aggregate items to order grain in a CTE before the join', 'leave out bundle pick lines'],
+    sql: "with items as (select i.order_id, sum(i.qty) as units_count from coop_explore_order_items i where i.bundle_group is null or i.product_id is null group by 1) select coalesce(o.pet_type, 'untagged') as pet, round(sum(o.total), 2) as revenue_php, coalesce(sum(items.units_count), 0) as units_count from coop_explore_orders o left join items on items.order_id = o.id where o.status = 'completed' group by 1",
+    teaches: ['aggregate items to order grain in a CTE before the join', 'left join, so orders with no item lines keep their revenue', 'leave out bundle pick lines'],
   },
   {
     id: 'E16',
