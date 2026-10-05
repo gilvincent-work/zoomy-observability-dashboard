@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline P1/P2: POS CSV parser + live Vision extraction wrapper
+- `src/goldline-csv.ts`: dependency-free RFC-4180 CSV parser + `parseGoldlinePos` mapping the real Nichido POS columns to `gl_sales`-ready rows — case/space-insensitive headers, thousands separators stripped, blank cells → null (not 0), rows missing store/SKU skipped with a note. 7 tests.
+- `src/goldline-extract-run.ts`: server-only live Claude Vision call (`extractInventoryPage`) over the P2 prompt/manifest/schema; reads `ANTHROPIC_API_KEY` from env, returns one parsed page or throws on `{error}` / invalid JSON. `extractionConfigured()` lets the PDF path disable cleanly without a key.
+- `src/goldline-extract.ts`: extraction model aligned to the chat's `claude-sonnet-5-5`.
+- typecheck + 24 tests + pagination guard pass. The live call is pending a Staging smoke test with the key in env.
+
 ## 2026-10-05 — Goldline onboarding P2 (core): template-aware extraction prompt + schema
 - `src/goldline-extract.ts`: the pure, template-aware extraction core for the Nichido inventory forms — a per-page item manifest (page 1 enumerated from the verified scan; pages 2–6 pending generation from the blank templates, guarded so a page can't run blind), the fixed system prompt carrying the form-specific guardrails (slot-fill against the manifest, blank ≠ zero, column discipline, no total math, page-match, fail-loud `{error}`), and the JSON output schema (header + one row per item with per-field confidence + `alt`). No network/SDK here, so it unit-tests; the live Claude call + upload route is the next slice, smoke-tested on Staging with `ANTHROPIC_API_KEY` in env.
 - `src/goldline-extract.test.ts`: 6 cases over the prompt, manifest, and schema. typecheck + all tests + pagination guard pass.

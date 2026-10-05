@@ -8,7 +8,10 @@
 // + `buildManifestPrompt(page)` + the schema with the PDF lives in the server
 // route and is smoke-tested on Staging with ANTHROPIC_API_KEY in the env.
 
-export const EXTRACT_MODEL = 'claude-sonnet-5';
+// Matches the model the Coop chat uses (src/chat/config.ts), so one tier serves
+// both. Sonnet is the plan's default for extraction (accuracy on messy handwriting
+// at a fraction of Opus cost).
+export const EXTRACT_MODEL = 'claude-sonnet-5-5';
 
 /** The five handwritten count columns on the form, left→right (col6 is derived). */
 export const COLUMN_KEYS = ['stockroom', 'drawer', 'selling_area', 'delivery', 'ending_on_hand'] as const;
