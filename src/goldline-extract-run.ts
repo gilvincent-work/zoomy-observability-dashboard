@@ -71,8 +71,11 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
 
   // Cast through unknown: output_config/thinking are newer params and the exact SDK
   // type surface varies by version; the wire shape above follows the current docs.
+  // Per-request timeout sits UNDER the route's maxDuration (120s) so a hung call
+  // throws here and the route's catch marks the upload failed — never left 'processing'.
   const res = (await client.messages.create(
     params as unknown as Parameters<typeof client.messages.create>[0],
+    {timeout: 100_000},
   )) as {content?: Array<{type: string; text?: string}>};
 
   const text = res.content?.find((b) => b.type === 'text' && typeof b.text === 'string')?.text;
@@ -87,5 +90,21 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
   if (parsed && typeof parsed === 'object' && 'error' in parsed) {
     throw new Error(`Extraction declined: ${String((parsed as {error: unknown}).error)}`);
   }
-  return parsed as ExtractedPage;
+  // Don't trust output_config to have been honored: validate the shape before it
+  // reaches the review queue, so malformed JSON fails loud instead of persisting.
+  if (!isExtractedPage(parsed)) {
+    throw new Error('Extraction JSON did not match the expected page shape');
+  }
+  return parsed;
+}
+
+/** Minimal runtime guard: header store_code + a rows array of {item_code} objects. */
+function isExtractedPage(v: unknown): v is ExtractedPage {
+  if (!v || typeof v !== 'object') return false;
+  const p = v as {store_code?: unknown; rows?: unknown};
+  if (typeof p.store_code !== 'string') return false;
+  if (!Array.isArray(p.rows)) return false;
+  return p.rows.every(
+    (r) => r && typeof r === 'object' && typeof (r as {item_code?: unknown}).item_code === 'string',
+  );
 }

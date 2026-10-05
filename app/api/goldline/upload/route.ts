@@ -1,6 +1,6 @@
 import {auth} from '@/auth';
 import {getDataContext} from '@/src/active-context';
-import {canEditData} from '@/src/company';
+import {canEditData, outOfScopeStores} from '@/src/company';
 import {classifyUpload} from '@/src/goldline-upload';
 import {parseGoldlinePos} from '@/src/goldline-csv';
 import {
@@ -100,6 +100,14 @@ export async function POST(req: Request): Promise<Response> {
       await setUploadStatus(uploadId, 'failed', {rejectReason: errors[0] ?? 'No rows parsed.'});
       return json({uploadId, status: 'failed', errors}, 422);
     }
+    // Intra-tenant fence: a store_manager may only upload rows for their stores.
+    // company_id already matches; the DB can't see store scope, so enforce it here.
+    const outCsv = outOfScopeStores(ctx.storeScope, rows.map((r) => r.storeCode));
+    if (outCsv.length) {
+      const reason = `Upload includes stores outside your access: ${outCsv.slice(0, 10).join(', ')}.`;
+      await setUploadStatus(uploadId, 'rejected', {rejectReason: reason});
+      return json({uploadId, status: 'rejected', error: reason}, 403);
+    }
     try {
       const committed = await upsertSales(companyId, rows, {start, end}, uploadId);
       await setUploadStatus(uploadId, 'committed');
@@ -125,6 +133,13 @@ export async function POST(req: Request): Promise<Response> {
   const page = 1; // v1 extracts page 1 (only page 1 has an enumerated manifest yet).
   try {
     const extracted = await extractInventoryPage(pdfBase64, page);
+    // Same store-scope fence for the scanned form's store.
+    const outPdf = outOfScopeStores(ctx.storeScope, [extracted.store_code]);
+    if (outPdf.length) {
+      const reason = `Scanned form is for store ${extracted.store_code}, outside your access.`;
+      await setUploadStatus(uploadId, 'rejected', {rejectReason: reason});
+      return json({uploadId, status: 'rejected', error: reason}, 403);
+    }
     await saveExtraction({companyId, uploadId, page, extracted, docConfidence: avgConfidence(extracted)});
     await setUploadStatus(uploadId, 'needs_review', {pageCount: 1});
     return json({uploadId, status: 'needs_review', page, rows: extracted.rows.length, docConfidence: avgConfidence(extracted)});

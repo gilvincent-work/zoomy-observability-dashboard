@@ -23,6 +23,22 @@ function db(): SupabaseClient {
   return createClient(url as string, key as string, {auth: {persistSession: false}});
 }
 
+/**
+ * Reduce an uploaded file name to a single safe Storage path segment: basename
+ * only (drop any directory parts), `..` collapsed, and anything outside
+ * [A-Za-z0-9._-] (including control chars and separators) replaced with `_`.
+ * Defense-in-depth so a crafted `file.name` can never climb out of the
+ * `${companyId}/` prefix or break the `company_id/rest` split of storage_path.
+ */
+export function safeObjectName(filename: string): string {
+  const base = (filename || '').split(/[/\\]/).pop() ?? '';
+  const cleaned = base
+    .replace(/\.{2,}/g, '.') // collapse .. so no path traversal survives
+    .replace(/[^A-Za-z0-9._-]/g, '_') // control chars, spaces, separators → _
+    .replace(/^\.+/, ''); // no leading dots (hidden / relative)
+  return cleaned.slice(0, 180) || 'upload';
+}
+
 export type UploadKind = 'pos_csv' | 'inventory_pdf';
 export type UploadStatus = 'processing' | 'needs_review' | 'committed' | 'failed' | 'rejected';
 export type Period = {start: string; end: string}; // ISO dates
@@ -49,7 +65,9 @@ export async function createUpload(input: {
   uploadedBy: string | null;
 }): Promise<string> {
   const supa = db();
-  const path = `${input.companyId}/${Date.now()}-${input.filename}`;
+  // Original name kept for display in the row; the storage KEY uses the sanitized
+  // basename so a crafted filename can't escape the company prefix.
+  const path = `${input.companyId}/${Date.now()}-${safeObjectName(input.filename)}`;
   const up = await supa.storage
     .from(GOLDLINE_BUCKET)
     .upload(path, input.bytes, {contentType: input.contentType, upsert: false});

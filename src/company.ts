@@ -87,6 +87,19 @@ export function resolveActive(
   };
 }
 
+/**
+ * Store codes in `codes` that fall OUTSIDE a store_manager's scope. Empty array =
+ * everything is allowed. A null/undefined `storeScope` (company_admin/analyst, or
+ * an all-stores store_manager) means no restriction, so it always returns []. The
+ * write path uses this to refuse an upload that reaches beyond the caller's stores
+ * — the intra-tenant fence the type system advertises but DB `company_id` can't see.
+ */
+export function outOfScopeStores(storeScope: string[] | null | undefined, codes: string[]): string[] {
+  if (!storeScope || storeScope.length === 0) return [];
+  const allowed = new Set(storeScope);
+  return [...new Set(codes.filter((c) => !allowed.has(c)))];
+}
+
 /** The companies a user may switch between (empty for a pure coop_admin). */
 export function switchableCompanies(memberships: Membership[]): string[] {
   return memberships

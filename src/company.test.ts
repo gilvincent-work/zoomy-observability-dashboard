@@ -5,6 +5,7 @@ import {
   isCoopAdmin,
   canEditData,
   canManageTeam,
+  outOfScopeStores,
   type Membership,
 } from './company';
 
@@ -77,5 +78,19 @@ describe('role capabilities', () => {
     expect(canManageTeam('analyst')).toBe(false);
     expect(canManageTeam('store_manager')).toBe(false);
     expect(canManageTeam('coop_admin')).toBe(false);
+  });
+});
+
+describe('outOfScopeStores', () => {
+  it('returns [] when scope is null/empty (no restriction)', () => {
+    expect(outOfScopeStores(null, ['A', 'B'])).toEqual([]);
+    expect(outOfScopeStores(undefined, ['A'])).toEqual([]);
+    expect(outOfScopeStores([], ['A', 'B'])).toEqual([]);
+  });
+  it('returns the codes outside the allowed set, de-duplicated', () => {
+    expect(outOfScopeStores(['A'], ['A', 'B', 'B', 'C'])).toEqual(['B', 'C']);
+  });
+  it('returns [] when every code is in scope', () => {
+    expect(outOfScopeStores(['A', 'B'], ['A', 'B', 'A'])).toEqual([]);
   });
 });
