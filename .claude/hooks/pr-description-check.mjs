@@ -6,7 +6,7 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 
-const REQUIRED = ['## Summary', '## Changes', '## How I tested', '## Checklist', '## Rollout'];
+const REQUIRED = ['## Type of Change', '## Description', '## Scope', '## Implementation', '## Changes', '## How to Test', '## Checklist', '## Rollout'];
 const CONVENTIONAL = /^(feat|fix|docs|style|refactor|perf|test|tests|build|ci|chore|revert)(\([^)]+\))?(!)?: \S/;
 const HINT = 'Use the pr-description skill: read the diff, fill every section of .github/pull_request_template.md (tables, real rows), then pass it with --body-file.';
 

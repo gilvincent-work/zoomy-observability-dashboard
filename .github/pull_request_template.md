@@ -1,15 +1,38 @@
-## Summary
-<!-- What and why, 1-3 lines. Link brief / registry row / issue. -->
+<!-- Thanks for contributing! Put the summary in the title (Conventional Commit). Replace the example rows. -->
+
+## Type of Change
+
+<!-- Put an x in all that apply -->
+
+- [ ] ✨ New feature (non-breaking change which adds functionality)
+- [ ] ✨ Change Request (non-breaking change to UI or app behaviour)
+- [ ] 🛠️ Bug fix (non-breaking change which fixes an issue)
+- [ ] ❌ Breaking change (would change existing functionality)
+- [ ] 🧹 Code refactor
+- [ ] ✅ Build / CI configuration change
+- [ ] 📝 Documentation
+- [ ] 🗑️ Chore
+
+## Description
+
+<!-- Describe your changes in detail. -->
+
+## Scope
+
+<!-- WHAT you are doing and WHY. -->
 
 | Field | Value |
 |---|---|
-| Type | feat / fix / refactor / docs / chore / ci / test |
+| Ticket / brief | [closes TICKET-###](https://link-to-your-ticket) or `knowledge/product_docs/domain-features/...` |
 | Domain | e.g. offline-sales, inventory, customers, ask-coop |
-| Linked | e.g. `knowledge/product_docs/domain-features/...`, #123 |
 | Target branch | `develop` (feature) · `staging` (promotion) · `main` (sign-off only) |
+| Pair | With @pair (delete if solo) |
+
+## Implementation
+
+<!-- HOW: high-level flow, refactors, trade-offs, and where reviewers should look closely. -->
 
 ## Changes
-<!-- Replace the example rows. -->
 
 | Area | File | What changed |
 |---|---|---|
@@ -17,24 +40,31 @@
 | Compute | `src/custom-range.ts` | Clamp range to 366 days |
 | Tests | `test/custom-range.test.ts` | Cover clamp |
 
-## How I tested
-<!-- Paste real output or screenshots. Mock mode is fine when archive env is unset. -->
+## Screenshots
+
+<!-- UI changes only; delete this section otherwise. -->
+
+|         | before | after |
+| ------- | ------ | ----- |
+| desktop |        |       |
+| mobile  |        |       |
+
+## How to Test
+
+<!-- Steps for a reviewer who does not know this code, e.g.
+1. `npm run dev` (mock mode) and open `/sales`
+2. Pick a custom range over 1 year
+3. Expect the range clamps to 366 days -->
+
+Checks I ran (paste real output; mock mode is fine when archive env is unset):
 
 | Check | Command / where | Result |
 |---|---|---|
 | Types | `npm run typecheck` | e.g. 0 errors |
 | Unit tests | `npm test` | e.g. 88 passed |
-| Browser | `npm run dev` → `/sales` (mock data) | e.g. chart + table render, no console errors |
-
-## Screenshots
-<!-- Before / after for UI changes. -->
-
-| Before | After |
-|---|---|
-| | |
+| Browser | `npm run dev` → `/sales` | e.g. chart + table render, no console errors |
 
 ## Checklist
-<!-- Mark Done or N/A. -->
 
 | Item | Done | N/A |
 |---|:-:|:-:|

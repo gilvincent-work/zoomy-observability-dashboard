@@ -2,7 +2,7 @@ import {describe, expect, it} from 'vitest';
 // @ts-expect-error plain .mjs hook with no type declarations
 import {decide} from '../.claude/hooks/pr-description-check.mjs';
 
-const body = '## Summary\n## Changes\n## How I tested\n## Checklist\n## Rollout / risk';
+const body = '## Type of Change\n## Description\n## Scope\n## Implementation\n## Changes\n## How to Test\n## Checklist\n## Rollout / risk';
 const files: Record<string, string> = {'ok.md': body, 'bad.md': '## Summary only'};
 const readFile = (f: string) => files[f] ?? null;
 

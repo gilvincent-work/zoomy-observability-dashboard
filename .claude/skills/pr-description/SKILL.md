@@ -13,12 +13,14 @@ A hook (`.claude/hooks/pr-description-check.mjs`) blocks `gh pr create` if the b
 1. **Base branch.** Feature work targets `develop`; promotions go `develop → staging → main`. Never target `main` from a feature branch, and never without sign-off.
 2. **Read the change.** `git log --oneline <base>..HEAD`, `git diff --stat <base>..HEAD`, then skim the diff for what commits missed (schema/SQL, env vars, contract shapes, deleted code).
 3. **Copy the template** to a scratch file and fill every section. Keep the tables; replace the example rows with real ones.
-   - Summary table: type, domain, linked brief/issue, target branch.
+   - Type of Change: tick every box that applies.
+   - Description / Scope / Implementation: what, why (link the ticket or brief), and how, with the trade-offs and where reviewers should look closely.
    - Changes: one row per area/file touched.
-   - How I tested: only checks you actually ran, with real results. Never invent output. If you could not run something, say so in the Result cell.
+   - Screenshots (UI repo): before/after for desktop and mobile on UI changes, otherwise delete the section.
+   - How to Test: numbered steps a reviewer can follow, then a table of the checks you actually ran with real results. Never invent output; if you could not run something, say so in the Result cell.
    - Checklist: tick Done or N/A per row. Do not tick what you did not verify.
    - Rollout / risk: env vars, manual SQL, redeploy, rollback. "None" is a valid answer.
-   - Delete unused example rows and the HTML comments.
+   - Delete unused example rows, the pair line if solo, and the HTML comments.
 4. **Title:** Conventional Commit, under 70 chars, e.g. `feat(chat): add health endpoint`.
 5. **Open it:** `gh pr create --base develop --title "<title>" --body-file <scratch-file>`. Show the user the title and body first if they asked to review.
 
