@@ -224,8 +224,8 @@ describe('scanner rules fire on planted violations', () => {
     expect(writeCallsIn(files)).toEqual([]);
   });
 
-  it('the crypto update exception covers exactly one file and one method', () => {
-    expect(WRITE_CALL_EXCEPTIONS.map((e) => `${e.file}:${e.method}`)).toEqual(['src/chat/read/mint-jwt.ts:update']);
+  it('the crypto update exceptions cover exactly two files and one method', () => {
+    expect(WRITE_CALL_EXCEPTIONS.map((e) => `${e.file}:${e.method}`)).toEqual(['src/chat/read/mint-jwt.ts:update', 'src/chat/explore/fingerprint.ts:update']);
     // same call, allowed file: ignored
     expect(writeCallsIn({'src/chat/read/mint-jwt.ts': "const sig = createHmac('sha256', k).update(data).digest();"})).toEqual([]);
     // same call, any other file: still flagged

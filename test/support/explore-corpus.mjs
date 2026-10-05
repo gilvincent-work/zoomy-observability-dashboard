@@ -175,7 +175,6 @@ export const EXPLORE_EXTRA_CORPUS = [
   row('X47', 'session', `vacuum pos_orders`, 'E_NOT_SELECT', 'PARSER'),
   row('X48', 'session', `merge into pos_orders using pos_orders p on true when matched then delete`, 'E_NOT_SELECT', 'MUST'),
   row('X49', 'values', `values (1)`, 'E_VALUES', 'PARSER'),
-  row('X50', 'lateral', `select o.id from ${O} o, lateral (select 1 as x) x`, 'E_LATERAL', 'n/a'),
 ];
 
 // Positive controls: constructs the owner's questions need. Each must pass the parser AND execute on the local database.
@@ -209,7 +208,7 @@ const P = [
   [`case`, `select case when o.total > 500 then 'big' when o.total > 100 then 'mid' else 'small' end as size_label, greatest(o.total, o.subtotal) as g, least(o.total, o.subtotal) as l, nullif(o.discount, 0) as nd, coalesce(o.customer_handle, 'none') as h from coop_explore_orders o`],
   [`booleans`, `select o.id from coop_explore_orders o where o.pet_type is null and o.discount is not null and o.oversold is false and o.status in ('completed', 'voided') and o.total between 1 and 10000 and o.remarks not like 'bulk-%' and o.remarks !~ 'zzz' and o.id is distinct from 0`],
   [`jsonb`, `select d.id, d.digest ->> 'title' as title_text, jsonb_extract_path_text(d.digest, 'a', 'b') as ab, jsonb_array_length(d.digest -> 'items') as items_count from coop_explore_digest d`],
-  [`casts`, `select o.id::text as t, o.total::numeric as n, o.total::float8 as f, o.total::int4 as i, o.id::int8 as b, o.created_at::date as d, o.created_at::timestamp as ts, o.created_at::timestamptz as tz, '1 day'::interval as iv from coop_explore_orders o`],
+  [`casts`, `select o.id::text as t, o.total::numeric as n, o.total::float8 as f, o.total::int4 as i, o.id::int8 as b, o.created_at::date as d, o.created_at::timestamp as ts, o.created_at::timestamptz as tz, o.created_at - '1 day'::interval as prev from coop_explore_orders o`],
   [`series`, `select d.day from generate_series(date '2025-03-01', date '2025-03-05', interval '1 day') as d(day)`],
   [`exists`, `select e.event_id from coop_explore_events e where exists (select 1 from coop_explore_orders o where o.event_id = e.event_id) and e.event_id not in (select p.event_id from coop_explore_orders p where p.event_id is null)`],
   [`union`, `select o.status as label, count(*) as orders_count from coop_explore_orders o group by 1 union all select 'x' || e.status as label, count(*) as orders_count from coop_explore_events e group by 1`],

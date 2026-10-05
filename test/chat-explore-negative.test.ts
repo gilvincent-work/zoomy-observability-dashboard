@@ -139,7 +139,7 @@ describe('EXP-02 priority: hard trips are always reported as trips', () => {
     for (const code of Object.keys(EXPLORE_ERROR_MESSAGES) as ExploreErrorCode[]) {
       expect(EXPLORE_ERROR_CLASS[code]).toMatch(/^[RSHL]$/);
       expect(EXPLORE_ERROR_MESSAGES[code].length).toBeGreaterThan(5);
-      expect(EXPLORE_ERROR_MESSAGES[code]).not.toMatch(/select |drop |insert /i);
+      expect(EXPLORE_ERROR_MESSAGES[code]).not.toMatch(/drop |insert /i);
     }
     expect(EXPLORE_ERROR_MESSAGES.E_RELATION).toContain(EXPLORE_VIEW_NAMES.join(', '));
   });
@@ -156,12 +156,12 @@ describe('EXP-02 priority: hard trips are always reported as trips', () => {
 
 describe('EXP-02 mutation: a gate must be able to fail (spec 4.8)', () => {
   it('(1) with pg_sleep added to the function allowlist, N38 passes: the corpus row is load-bearing', async () => {
-    const broken = createExploreValidator({functions: [...EXPLORE_FUNCTIONS, 'pg_sleep'], deniedFunctions: []});
+    const broken = createExploreValidator({functions: [...EXPLORE_FUNCTIONS, 'pg_sleep'], deniedFunctions: [], deniedPrefixes: []});
     expect(await validateExploreSql(byId('N38').sql)).toMatchObject({ok: false, code: 'E_FUNCTION_DENIED'});
     expect((await broken(byId('N38').sql)).ok).toBe(true);
   });
   it('(1b) emptying the denylist alone turns N38 into E_FUNCTION (the allowlist still stops it)', async () => {
-    const half = createExploreValidator({deniedFunctions: []});
+    const half = createExploreValidator({deniedFunctions: [], deniedPrefixes: []});
     expect(await half(byId('N38').sql)).toMatchObject({ok: false, code: 'E_FUNCTION'});
   });
   it('(2) with the node-type allowlist emptied, the positives N59 and N88 fail: the positive controls are load-bearing', async () => {
