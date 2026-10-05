@@ -26,6 +26,43 @@ function run(model: FakeModel, over: Partial<ChatLoopOptions> = {}) {
 }
 const text = (events: ChatStreamEvent[]) => events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('');
 
+describe('EXP-04 single-digit counts before a count noun are enforced on Explore turns (live test 4, G01)', () => {
+  const TWO_SPELLINGS = {id: 'x1', metric: 'explore', rows: [{event: 'Circuit Makati Weekend', orders_count: 5}, {event: 'circuit makati weekend', orders_count: 2}], data_notice: 'data'};
+  const withRows = (model: FakeModel) => run(model, {executors: {run_query: async () => TWO_SPELLINGS, render_chart: async () => ({ok: true, block: 'b1'})}});
+
+  it('"6 orders" (5 + 2 added in the head) is held, one rewrite is requested with the violation list, and the rewrite is shown', async () => {
+    const m = new FakeModel((n) => {
+      if (n === 1) return toolTurn('', RUN());
+      if (n === 2) return {text: ['6 orders at Circuit Makati Weekend.'], stop_reason: 'end_turn'};
+      return {text: ['5 orders under one spelling and 2 orders under the other.'], stop_reason: 'end_turn'};
+    });
+    const t = withRows(m);
+    const sum = await t.go();
+    expect(sum.steps).toBe(3); // exactly one rewrite request
+    expect(text(t.events)).toBe('5 orders under one spelling and 2 orders under the other.');
+    expect(text(t.events)).not.toContain('6 orders');
+    const retry = JSON.stringify(m.requests[2]);
+    expect(retry).toContain(NUMBER_NUDGE_TEXT);
+    expect(retry).toContain('Figures not found in the query rows: 6.');
+  });
+
+  it('still wrong after the one rewrite: shown with the note, never a second rewrite', async () => {
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : {text: ['6 orders at Circuit Makati Weekend.'], stop_reason: 'end_turn'}));
+    const t = withRows(m);
+    const sum = await t.go();
+    expect(sum.steps).toBe(3);
+    expect(text(t.events)).toMatch(/Note: some figures here could not be matched to the query rows: 6\./);
+  });
+
+  it('"2 spellings" and "3 notes" are not flagged: the first answer is shown as is', async () => {
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : {text: ['The event has 2 spellings and 3 notes, and 5 orders in one of them.'], stop_reason: 'end_turn'}));
+    const t = withRows(m);
+    const sum = await t.go();
+    expect(sum.steps).toBe(2); // no rewrite request
+    expect(text(t.events)).toBe('The event has 2 spellings and 3 notes, and 5 orders in one of them.');
+  });
+});
+
 describe('EXP-04 number check enforce for Explore turns', () => {
   it('EXP-04 a figure not in the rows is retried once and the invented figure never reaches emit; the second attempt is shown', async () => {
     const m = new FakeModel((n) => {

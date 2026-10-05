@@ -21,9 +21,9 @@ export const EXPLORE_EXAMPLES: ExploreExample[] = [
   },
   {
     id: 'E02',
-    question: 'Compare Demo Pet Fair and Sample Mall, by pet.',
-    sql: "select e.name as event, coalesce(o.pet_type, 'untagged') as pet, count(*) as orders_count, round(sum(o.total), 2) as revenue_php from coop_explore_orders o join coop_explore_events e on e.event_id = o.event_id where (e.name ilike '%demo pet fair%' or e.name ilike '%sample mall%') and o.status = 'completed' group by e.name, coalesce(o.pet_type, 'untagged') order by e.name, revenue_php desc",
-    teaches: ['two events side by side', 'group by both the event and the pet'],
+    question: 'Compare Demo Pet Fair and Sample Mall, by pet, with a total per event.',
+    sql: "select min(btrim(e.name)) as event, coalesce(o.pet_type, 'untagged') as pet, count(*) as orders_count, sum(count(*)) over (partition by lower(btrim(e.name))) as event_total_count, round(sum(o.total), 2) as revenue_php from coop_explore_orders o join coop_explore_events e on e.event_id = o.event_id where (e.name ilike '%demo pet fair%' or e.name ilike '%sample mall%') and o.status = 'completed' group by lower(btrim(e.name)), coalesce(o.pet_type, 'untagged') order by lower(btrim(e.name)), revenue_php desc",
+    teaches: ['two events side by side, grouped by the event name in lower(btrim(...)) so two spellings of one event are ONE row', 'sum(...) in the SQL, never in prose', 'the per-event total is a column (window sum), so every figure you quote is a cell'],
   },
   {
     id: 'E03',

@@ -142,7 +142,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     }
     let list: string[] = [];
     try {
-      const {violations, checked} = checkNumbers(text, seen, {context: numberContext()});
+      const {violations, checked} = checkNumbers(text, seen, {context: numberContext(), countNouns: true});
       list = violations.map((v) => v.value);
       if (list.length > 0) {
         if (retry) return list;

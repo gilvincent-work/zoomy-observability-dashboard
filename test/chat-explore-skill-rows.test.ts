@@ -43,3 +43,19 @@ describe('guide: the app draws the final result, the model explains it', () => {
     expect(topic).toMatch(/2 to 3 sentences/i);
   });
 });
+
+// Live test 4 (G01): the model summed two spellings of one event in its head ("6 orders", true 7) and typed per-event totals that were no cell.
+describe('EXP-04/06 no mental arithmetic: merge and total in the SQL, quote cells', () => {
+  it('forbids adding, merging, rounding or totalling figures in prose', () => {
+    expect(topic).toMatch(/never add, merge, round or total figures in prose/i);
+    expect(topic).toMatch(/every figure you write must be a cell/i);
+  });
+  it('merges spellings of one event in the SQL with lower(btrim()) and sum(), and returns totals as cells', () => {
+    expect(topic).toMatch(/group by lower\(btrim\(name\)\)[^.]*sum\(/i);
+    expect(topic).toMatch(/per-group and grand totals as columns or rows/i);
+    expect(topic).toMatch(/if the owner asks for a total, query the total/i);
+  });
+  it('no longer says to show two spellings as two rows', () => {
+    expect(topic).not.toMatch(/two spellings of one event are two rows/i);
+  });
+});

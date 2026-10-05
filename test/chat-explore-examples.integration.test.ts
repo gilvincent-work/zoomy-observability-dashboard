@@ -62,6 +62,22 @@ describe.skipIf(!local)('EXP-02 every worked example runs through the real execu
     for (const k of ['day']) if (stored.columns.some((c) => c.key === k)) expect(stored.columns.find((c) => c.key === k)?.role).toBe('time');
   });
 
+  // G3: E02 groups the event name case- and whitespace-insensitively and returns the per-event total as a cell, equal to the pet rows' sum.
+  it('EXP-02 E02 per-event total is a cell that equals the sum of its pet rows', async () => {
+    const e02 = EXPLORE_EXAMPLES.find((e) => e.id === 'E02')!;
+    const {stored} = await exec(toFixture('E02', e02.sql));
+    const per = new Map<string, {sum: number; totals: Set<number>}>();
+    for (const r of stored.rows) {
+      const k = String(r.event).toLowerCase().trim();
+      const cur = per.get(k) ?? {sum: 0, totals: new Set<number>()};
+      cur.sum += r.orders_count as number;
+      cur.totals.add(r.event_total_count as number);
+      per.set(k, cur);
+    }
+    expect(per.size).toBeGreaterThan(0);
+    for (const [k, v] of per) expect([...v.totals], k).toEqual([v.sum]);
+  });
+
   // Grain check (a wrong example teaches wrong figures): E15 splits the order total by pet, so its pieces must add up to every completed order,
   // including orders that have no item lines (an inner join to the items CTE used to drop them silently).
   it('EXP-02 E15 revenue per pet adds up to the revenue of all completed orders', async () => {
