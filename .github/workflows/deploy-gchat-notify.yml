@@ -1,0 +1,34 @@
+name: Deploy notify (Google Chat)
+
+on:
+  deployment_status
+
+jobs:
+  notify:
+    # Vercel reports each deploy to GitHub as a deployment status. Production = main; Staging = the staging branch
+    # (a Preview deploy of that branch, or a Vercel custom environment named Staging).
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      (github.event.deployment.environment == 'Production' ||
+       github.event.deployment.environment == 'Staging' ||
+       github.event.deployment.ref == 'staging')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Post to Google Chat
+        env:
+          WEBHOOK: ${{ secrets.GCHAT_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ENVIRONMENT: ${{ github.event.deployment.environment == 'Production' && 'Production' || 'Staging' }}
+          SHA: ${{ github.event.deployment.sha }}
+          LIVE_URL: ${{ github.event.deployment_status.environment_url }}
+          LOG_URL: ${{ github.event.deployment_status.target_url }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "GCHAT_WEBHOOK_URL not set; skipping"; exit 0; fi
+          SUBJECT=$(gh api "repos/$REPO/commits/$SHA" --jq '.commit.message | split("\n")[0]')
+          jq -n --arg t "🚀 *Deployed to $ENVIRONMENT* $REPO
+          $SUBJECT (\`${SHA:0:7}\`)
+          <${LIVE_URL:-$LOG_URL}|Open the site> · <$LOG_URL|Deployment>" '{text: $t}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json; charset=UTF-8" -d @- "$WEBHOOK"
