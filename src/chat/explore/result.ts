@@ -73,6 +73,34 @@ const cellOf = (v: unknown): string | number | null => {
 // eslint-disable-next-line no-control-regex
 const clip = (s: string): string => s.replace(/[\u0000-\u001f\u007f​-‏‪-‮⁠-⁤⁦-⁩﻿]/g, ' ').slice(0, CELL_CLIP);
 
+const MAX_SPLIT_CAVEATS = 3;
+const labelOfCell = (s: string): string => clip(s).trim().slice(0, 60);
+
+/**
+ * Code backstop for a label column that splits one category by spelling (live test 5, G01: `min(btrim(name))` per pet group). Labels equal after
+ * lower(btrim()) but spelled differently get one caveat each; rows are never merged here (that would change numbers).
+ */
+export function spellingSplitCaveats(columns: ResultColumn[], rows: MetricRow[]): string[] {
+  const out: string[] = [];
+  for (const c of columns.filter((x) => x.role === 'category')) {
+    const groups = new Map<string, Set<string>>();
+    for (const r of rows) {
+      const v = r[c.key];
+      if (typeof v !== 'string') continue;
+      const k = v.trim().toLowerCase();
+      if (k === '') continue;
+      (groups.get(k) ?? groups.set(k, new Set()).get(k)!).add(v);
+    }
+    for (const spellings of groups.values()) {
+      if (spellings.size < 2) continue;
+      const q = [...spellings].map((v) => `"${labelOfCell(v)}"`);
+      const list = q.length === 2 ? `${q[0]} and ${q[1]}` : `${q.slice(0, -1).join(', ')} and ${q[q.length - 1]}`;
+      out.push(`Labels ${list} differ only in capitalisation or spacing; they were not merged: group by lower(btrim(...)) in the SQL to merge them.`);
+    }
+  }
+  return out.slice(0, MAX_SPLIT_CAVEATS);
+}
+
 export type ShapeOutcome = {ok: true; result: MetricResult; payload: Record<string, unknown>} | {ok: false; code: ExploreErrorCode};
 
 export interface ShapeInput {
@@ -112,6 +140,8 @@ export function shapeResult({raw, validated, limits, id, leadFacts}: ShapeInput)
     rows = rows.slice(0, keep);
     caveats.push(`Showing the first ${keep} rows; the result was cut to fit the size limit.`);
   }
+
+  caveats.push(...spellingSplitCaveats(columns, rows));
 
   // coverage_note: written by code, never by the model.
   const notes: string[] = [`${rows.length} row${rows.length === 1 ? '' : 's'} returned${rows.length < returned || raw.fetched > rows.length ? ' (more existed and were cut)' : ''}.`];

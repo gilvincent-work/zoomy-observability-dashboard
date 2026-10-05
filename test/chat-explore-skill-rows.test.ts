@@ -59,3 +59,13 @@ describe('EXP-04/06 no mental arithmetic: merge and total in the SQL, quote cell
     expect(topic).not.toMatch(/two spellings of one event are two rows/i);
   });
 });
+
+// Live test 5 (G01): the SQL grouped by lower(btrim(name)) but labelled each group with min(btrim(name)), which differs per pet sub-group, so one event
+// showed as two categories. The label must be the group key (or the same for every row of the group).
+describe('EXP-04/06 the display label is the group key', () => {
+  it('says to select the group key itself and never min()/max() of the raw name per sub-group', () => {
+    expect(topic).toMatch(/selecting the group key itself/i);
+    expect(topic).toMatch(/lower\(btrim\(e\.name\)\) as event/i);
+    expect(topic).toMatch(/never (a )?`?min\(\)`?\/`?max\(\)`? of the raw name/i);
+  });
+});

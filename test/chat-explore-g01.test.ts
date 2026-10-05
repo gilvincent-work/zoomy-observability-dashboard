@@ -34,3 +34,31 @@ describe('G01 two finals, one answer', () => {
     for (const b of h.blocks) expect(b.title).not.toMatch(/dog|cat|puspin|persian|aspin|golden/i); // never made from row or series values
   });
 });
+
+// Live test 5 (G01): the label column was min(btrim(name)) per pet group, so "circuit makati weekend" (dog, cat) and "Circuit Makati Weekend" (both, untagged)
+// were drawn as two categories. Code never merges rows (that would change numbers); it flags the split on the block.
+describe('G01 labels that differ only in spelling are flagged, never merged', () => {
+  const COLS = [{name: 'event', type: 'text' as const}, {name: 'pet', type: 'text' as const}, {name: 'orders_count', type: 'number' as const}];
+  const ROWS = [['SM Aura Weekend', 'dog', 4], ['SM Aura Weekend', 'cat', 3], ['SM Aura Weekend', 'both', 1], ['SM Aura Weekend', 'untagged', 2], ['circuit makati weekend', 'dog', 3], ['circuit makati weekend', 'cat', 1], ['Circuit Makati Weekend', 'both', 2], ['Circuit Makati Weekend', 'untagged', 1]];
+  const SQL = "select min(btrim(e.name)) as event, coalesce(o.pet_type, 'untagged') as pet, count(*) as orders_count from coop_explore_orders o join coop_explore_events e on e.id = o.event_id where o.status = 'completed' group by lower(btrim(e.name)), 2";
+  const CAVEAT = 'Labels "circuit makati weekend" and "Circuit Makati Weekend" differ only in capitalisation or spacing; they were not merged: group by lower(btrim(...)) in the SQL to merge them.';
+  const go = async (rows: unknown[][]) => {
+    const h = harness(async () => ({columns: COLS, rows, fetched: rows.length, ms: 1}), (n) => (n === 1 ? toolTurn('', toolUse('a', 'run_query', {purpose: 'p', sql: SQL, step: 'final'})) : {text: ['Done.'], stop_reason: 'end_turn'}));
+    await h.go();
+    return h;
+  };
+
+  it('adds the code-written caveat to every drawn block, once, and leaves the 8 rows as they are', async () => {
+    const h = await go(ROWS);
+    expect(h.blocks.length).toBeGreaterThan(0);
+    for (const b of h.blocks) expect(b.caveats.filter((c) => c === CAVEAT)).toHaveLength(1);
+    const stored = h.session.store.get('x1')!;
+    expect(stored.rows).toHaveLength(8);
+    expect(stored.meta.caveats).toContain(CAVEAT);
+  });
+
+  it('adds nothing when every spelling of a label is the same', async () => {
+    const h = await go(ROWS.map((r) => [String(r[0]).toLowerCase(), r[1], r[2]]));
+    for (const b of h.blocks) expect(b.caveats.some((c) => /differ only in capitalisation/.test(c))).toBe(false);
+  });
+});

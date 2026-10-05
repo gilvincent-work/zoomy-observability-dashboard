@@ -101,3 +101,12 @@ describe('the examples', () => {
     for (const e of EXPLORE_EXAMPLES) expect(t).toContain(e.id);
   });
 });
+
+describe('E02 labels each event by its group key (live test 5)', () => {
+  it('selects lower(btrim(e.name)) as event and never min()/max() of the raw name', async () => {
+    const {EXPLORE_EXAMPLES: ex} = await import('../src/chat/explore/examples');
+    const e02 = ex.find((e) => e.id === 'E02')!;
+    expect(e02.sql).toMatch(/select lower\(btrim\(e\.name\)\) as event/);
+    expect(ex.map((e) => e.sql).join('\n')).not.toMatch(/\b(min|max)\(\s*btrim\(e\.name\)/);
+  });
+});
