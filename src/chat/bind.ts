@@ -136,7 +136,7 @@ export function bindBlock(tool: RenderTool, input: unknown, store: ResultStore, 
     if (err) return {error: err};
   }
   const request: ViewRequest = {kind: kind as 'auto' | ChartForm, orientation: orientation as ViewRequest['orientation']};
-  const view = recommendView(result, request, {x, y: yList.length ? yList : undefined});
+  const view = recommendView(result, request, {x, y: yList.length ? yList : undefined, title});
   const label = (d: BlockDecision): string => {
     if (title) return title;
     if (d.block === 'chart') return `${d.chart.series.map((s) => s.label).join(' and ')} by ${d.chart.x.label}`.slice(0, MAX_TITLE);

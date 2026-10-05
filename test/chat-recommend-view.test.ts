@@ -24,7 +24,7 @@ const names = (n: number, prefix = 'Item') => Array.from({length: n}, (_, i) => 
 const cat = (n: number, values?: number[], label = 'Item') =>
   mk([col('name', 'text', 'category'), col('revenue', 'PHP', 'measure', 'Revenue')], names(n, label).map((name, i) => ({name, revenue: values?.[i] ?? 1000 - i * 50})));
 
-const first = (r: MetricResult, req: ViewRequest = AUTO, pick?: {x?: string; y?: string[]}): BlockDecision => recommendView(r, req, pick).decisions[0];
+const first = (r: MetricResult, req: ViewRequest = AUTO, pick?: {x?: string; y?: string[]; title?: string}): BlockDecision => recommendView(r, req, pick).decisions[0];
 const chartOf = (d: BlockDecision) => {
   if (d.block !== 'chart') throw new Error(`expected a chart, got ${d.block}`);
   return d;
@@ -330,5 +330,62 @@ describe('an explicit pie on a result with several measures (owner report: pie +
     const bar = chartOf(first(channels, ask('bar'), {y: ['aov']}));
     expect(bar.chart.form).toBe('bar');
     expect(bar.chart.series.map((s) => s.key)).toEqual(['aov']);
+  });
+});
+
+// Live finding (Ask Coop G01, second live run): an Explore result with TWO dimensions (event, pet) and two measures drew ORDERS under a revenue title,
+// every bar labelled with the repeated event name, and folded 8 rows into "Other". Shape below is exactly that result.
+describe('two dimensions and two measures (Explore event by pet)', () => {
+  const live = mk(
+    [col('event', 'text', 'category', 'Event'), col('pet', 'text', 'category', 'Pet'), col('orders_count', 'count', 'measure', 'Orders'), col('revenue_php', 'PHP', 'measure', 'Revenue')],
+    [
+      {event: 'SM Aura Pet Fair', pet: 'dog', orders_count: 3, revenue_php: 2100},
+      {event: 'SM Aura Pet Fair', pet: 'cat', orders_count: 2, revenue_php: 1300},
+      {event: 'Circuit Makati Pet Day', pet: 'dog', orders_count: 2, revenue_php: 900},
+      {event: 'Circuit Makati Pet Day', pet: 'cat', orders_count: 1, revenue_php: 450},
+      {event: 'Modern Pet Expo', pet: 'dog', orders_count: 1, revenue_php: 600},
+      {event: 'Modern Pet Expo', pet: 'cat', orders_count: 1, revenue_php: 500},
+      {event: 'Greenhills Bazaar', pet: 'dog', orders_count: 1, revenue_php: 250},
+      {event: 'Greenhills Bazaar', pet: null, orders_count: 1, revenue_php: 180},
+    ],
+    {measure: 'sql'},
+  );
+
+  it('plots the measure the title names, event on x, the second dimension as series, nothing folded', () => {
+    const d = chartOf(first(live, AUTO, {title: 'Event revenue by pet tag'}));
+    expect(['grouped_bar', 'stacked_bar']).toContain(d.chart.form);
+    expect(d.chart.x.key).toBe('event');
+    expect(d.chart.series.map((s) => s.label).sort()).toEqual(['No tag', 'cat', 'dog']);
+    expect(d.chart.series.every((s) => s.unit === 'PHP')).toBe(true);
+    expect(d.chart.folded).toBeNull();
+    expect(d.chart.rows).toHaveLength(4);
+    expect(JSON.stringify(d.chart.rows)).not.toContain('Other');
+    const aura = d.chart.rows.find((r) => r.event === 'SM Aura Pet Fair')!;
+    expect(aura.dog).toBe(2100);
+    expect(aura.cat).toBe(1300);
+    expect(recommendView(live, AUTO, {title: 'Event revenue by pet tag'}).decisions).toHaveLength(1);
+  });
+
+  it('without a title hint it prefers the first peso measure, never silently orders', () => {
+    const d = chartOf(first(live));
+    expect(d.chart.series.every((s) => s.unit === 'PHP')).toBe(true);
+  });
+
+  it('a title naming orders picks the orders measure', () => {
+    const d = chartOf(first(live, AUTO, {title: 'Orders by event and pet'}));
+    expect(d.chart.series.every((s) => s.unit === 'count')).toBe(true);
+  });
+
+  it('keeps every row of a long list in the table twin and folds only past the limit', () => {
+    const many = mk(live.columns, Array.from({length: 9}, (_, i) => ({event: `Event ${i}`, pet: 'dog', orders_count: 1, revenue_php: 100 + i})).concat(Array.from({length: 9}, (_, i) => ({event: `Event ${i}`, pet: 'cat', orders_count: 1, revenue_php: 50 + i}))), {measure: 'sql'});
+    const d = chartOf(first(many));
+    expect(d.chart.rows.length).toBe(TABLE_MIN_CLASSES + 1);
+    expect(d.chart.folded?.count).toBe(2);
+    expect(d.twin.rows).toHaveLength(18);
+  });
+
+  it('an explicit x or a pie keeps the old single-dimension behaviour', () => {
+    const d = chartOf(first(live, AUTO, {x: 'event', y: ['revenue_php']}));
+    expect(d.chart.series).toHaveLength(1);
   });
 });
