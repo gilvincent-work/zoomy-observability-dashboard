@@ -23,6 +23,7 @@ export function createExecutors(ctx: ChatToolContext): ToolExecutors {
   return {
     ...createRenderExecutors(ctx, session),
     ...createReportExecutors(ctx, session, data),
+    ...(ctx.explore ? {run_query: ctx.explore} : {}),
     describe_data: async (input) => describeData(input as {metric: string}, await data(), ctx.now),
     query_metric: async (input) => {
       const result = runMetric(input, await data(), ctx.now);
@@ -95,6 +96,7 @@ export function statusFor(name: string, input: unknown): string {
       return `Looking at ${def.label.toLowerCase()}${dim ? ` by ${dim.label.toLowerCase().replace(/^by /, '').replace(/\s*\(.*\)/, '')}` : ''}`;
     }
   }
+  if (name === 'run_query') return 'Running an exploratory query'; // constant: never echoes the SQL
   if (name === 'get_digest') return 'Reading the weekly digest';
   if (name === 'lookup_product') return 'Looking up a product';
   if (name === 'render_kpi') return 'Adding a tile';

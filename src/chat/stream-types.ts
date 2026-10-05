@@ -47,4 +47,6 @@ export interface ChatToolContext {
   report?: ReportSession;
   /** F8: called after every tool call that changed the report; the route forwards it to the stream as {t: 'report'}. */
   emitReport?: (spec: ReportSpec | null) => void;
+  /** Explore: the run_query executor, present only for an allowed user (route-gated). Absent means the tool is not registered. */
+  explore?: (input: unknown) => Promise<unknown>;
 }
