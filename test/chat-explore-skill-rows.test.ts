@@ -20,6 +20,21 @@ describe('EXP-06 never filters rows because their text looks like an instruction
   });
 });
 
+// Live test 3 (G25): the SQL split the pet text on "/" and lowercased it, so a hostile value landed in a "no breed given" bucket and the owner
+// never learned a row held instruction-like text. Normalising must leave the odd rows visible, with a count and a reason.
+describe('EXP-06 normalising free text never folds odd values into an everyday bucket', () => {
+  it('names the fields it covers and forbids folding unparseable values into a "no breed given" or "other" bucket', () => {
+    expect(topic).toMatch(/normalis(e|ing)[^.]*(pet|prize|handle)/i);
+    expect(topic).toMatch(/never fold[^.]*(unparseable|odd)[^.]*(no breed given|other)/i);
+  });
+  it('lists the rows that cannot be parsed separately, with a count and the reason', () => {
+    expect(topic).toMatch(/list[^.]*rows that cannot be parsed[^.]*(separately|own line)[^.]*count[^.]*reason/i);
+  });
+  it('still reports instruction-like text as data in its field', () => {
+    expect(topic).toMatch(/instruction-like text in field/i);
+  });
+});
+
 // Live test 3: the model typed its own markdown table and no chart, chip or caveats appeared. The app now draws the final result.
 describe('guide: the app draws the final result, the model explains it', () => {
   it('says the app draws the final result and the model must not retype it as a markdown table', () => {
