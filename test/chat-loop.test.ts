@@ -147,6 +147,17 @@ describe('runChatLoop', () => {
     expect(turnLines(s)[0]).toMatchObject({steps: 8, stopReason: 'max_steps'});
   });
 
+
+  it('chat_turn logs the duration of each model step and each tool batch', async () => {
+    let t = 0;
+    const client = new FakeClient((n) => (n === 1 ? toolTurn(toolUse('t1', 'query_metric', QUERY)) : {text: ['Done.']}));
+    client.onCall = () => void (t += 7_000);
+    const {opts, s} = setup(client, {clock: () => t, executors: {query_metric: async () => ((t += 300), {rows: []})}});
+    await runChatLoop(opts);
+    expect(turnLines(s)[0].step_ms).toEqual([7_000, 7_000]);
+    expect(turnLines(s)[0].tool_ms).toEqual([300]);
+  });
+
   describe('wall-clock deadline', () => {
     const slowClient = (stepMs: number) => {
       let t = 0;

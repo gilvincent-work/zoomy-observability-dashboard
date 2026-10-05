@@ -81,6 +81,9 @@ export function logTurn(
     usage: {input: number; output: number; cacheRead: number; cacheWrite: number};
     ms: number;
     stopReason: string | null;
+    /** Duration in ms of each model step and of each tool batch, in order. Numbers only. */
+    stepMs?: readonly number[];
+    toolMs?: readonly number[];
     user?: string | null;
   },
   sink: AuditSink = console,
@@ -92,6 +95,8 @@ export function logTurn(
       usage: e.usage,
       ms: e.ms,
       stopReason: e.stopReason,
+      step_ms: e.stepMs ?? [],
+      tool_ms: e.toolMs ?? [],
       user: e.user ?? null,
       ts: new Date().toISOString(), // bursts vs gaps decide whether the 5-minute prompt cache is warm
     }),

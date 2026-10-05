@@ -91,6 +91,9 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   let held = '';
   let numberRetried = false;
   const metricsTried: string[] = [];
+  // F1: how long each model step and each tool batch took (numbers only; the chat_turn line carries them).
+  const stepMs: number[] = [];
+  const toolMs: number[] = [];
 
   const convo: Anthropic.MessageParam[] = opts.messages.map((m, i) =>
     i === opts.messages.length - 1 && m.role === 'user'
@@ -149,7 +152,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       }
     }
     if (done) emit({t: 'done', steps, usage});
-    logTurn({steps, usage, ms: clock() - t0, stopReason, user: opts.user}, sink);
+    logTurn({steps, usage, ms: clock() - t0, stopReason, stepMs, toolMs, user: opts.user}, sink);
     return {steps, usage, stopReason};
   };
 
@@ -162,6 +165,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       return finish('deadline', true);
     }
     steps += 1;
+    const stepStart = clock();
 
     let res: Anthropic.Message;
     try {
@@ -189,6 +193,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
         }
       }
       res = await stream.finalMessage();
+      stepMs.push(clock() - stepStart);
     } catch (err) {
       if (signal?.aborted) return finish('aborted', false);
       const e = err as {name?: unknown; status?: unknown};
@@ -252,6 +257,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     for (const c of calls) {
       if (c.name === 'query_metric' && c.input !== null && typeof c.input === 'object' && typeof (c.input as {metric?: unknown}).metric === 'string') metricsTried.push((c.input as {metric: string}).metric);
     }
+    const toolStart = clock();
     const results: ToolResult[] = await Promise.all(
       calls.map((c) =>
         numberNudge !== null && isRender(c.name)
@@ -261,6 +267,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
             : dispatchToolCall({name: c.name, input: c.input, user: opts.user}, opts.executors, sink),
       ),
     );
+    toolMs.push(clock() - toolStart);
     // A hard guard trip fails the request (spec 3.5): no further model step, nothing held is shown.
     if (results.some((r) => r.trip)) {
       held = '';
