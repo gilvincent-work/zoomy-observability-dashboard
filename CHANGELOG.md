@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline P2: Uploads UI (list + review workbench) + commit path
+- `app/uploads/page.tsx` + `components/analyst/uploads-view.tsx`: the per-company ingestion inbox — drop a `.csv`/`.pdf` (posts to the upload route scoped by active company), then a searchable / status- & type-filterable / paginated file list with status pills; a sales CSV commits and refreshes, a scanned PDF auto-routes to its review page. Scoped by `getDataContext`; a data-blind Coop Admin / non-member sees a gate, not data.
+- `app/uploads/[id]/page.tsx` + `components/analyst/upload-review.tsx`: the review workbench for a scanned page — editable store/period header, a document-confidence bar, and an exception-first rows table (flagged-only ↔ all toggle) with low-confidence rows highlighted and every count editable before commit. A CSV shows a status summary instead.
+- `app/uploads/actions.ts` (`commitReview`) + `src/goldline-data.ts` (`getUpload`, `getExtraction`, `commitInventory`): the commit server action re-derives the tenant context, re-checks `canEditData` + store scope, coerces/caps the submitted rows, then upserts `gl_inventory` (idempotent on the natural key) and closes the upload — all three writes company-scoped. `saveExtraction` now stages the full extracted page (header + rows) so review/commit have the store + period.
+- Additive, new routes only — no existing page touched; nav wiring + company switcher come with the rescope slice. typecheck + full suite (1837) + pagination guard pass; runtime pending the Staging deploy.
+
 ## 2026-10-05 — Goldline P2: archive data layer + upload/extraction route; Staging DB applied
 - `src/goldline-data.ts`: server-only writes/reads for the `gl_*` tables (same service-role seam as `src/data.ts`). `createUpload` stores the raw file in the private `goldline-uploads` Storage bucket then opens a `gl_uploads` row; `upsertSales` idempotently upserts parsed POS rows on the natural key; `saveExtraction` stages a Vision page in `gl_extractions`; `listUploads` reads newest-first through the paginator. Every row stamped with the active `company_id`.
 - `src/goldline-upload.ts` (+ 7 tests): pure upload gate — only `.csv`/`.pdf`, 25 MB cap, extension authoritative with a MIME-contradiction reject; returns the `gl_uploads` kind.

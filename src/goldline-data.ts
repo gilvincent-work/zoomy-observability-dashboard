@@ -129,7 +129,9 @@ export async function upsertSales(
   return payload.length;
 }
 
-/** Stage one extracted page for review (gl_extractions). Idempotent on (upload, page). */
+/** Stage one extracted page for review (gl_extractions). Idempotent on (upload, page).
+ *  The full page (header + rows) is stored in the `rows` jsonb so the review screen
+ *  and commit have the store code + period, not just the counts. */
 export async function saveExtraction(input: {
   companyId: string;
   uploadId: string;
@@ -143,13 +145,113 @@ export async function saveExtraction(input: {
       company_id: input.companyId,
       upload_id: input.uploadId,
       page: input.page,
-      rows: input.extracted.rows,
+      rows: input.extracted,
       doc_confidence: input.docConfidence,
       status: 'pending_review',
     },
     {onConflict: 'upload_id,page'},
   );
   if (res.error) throw new Error(`gl_extractions upsert failed: ${res.error.message}`);
+}
+
+/** One upload, scoped to a company (null if not found / not this company's). */
+export async function getUpload(companyId: string, id: string): Promise<UploadRow | null> {
+  if (!goldlineConfigured()) return null;
+  const supa = db();
+  const res = await supa
+    .from('gl_uploads')
+    .select('id,company_id,kind,filename,status,page_count,reject_reason,uploaded_by,created_at')
+    .eq('company_id', companyId)
+    .eq('id', id)
+    .maybeSingle();
+  if (res.error) throw new Error(`gl_uploads read failed: ${res.error.message}`);
+  return (res.data as UploadRow | null) ?? null;
+}
+
+export type ExtractionRecord = {
+  page: number;
+  status: string;
+  docConfidence: number | null;
+  /** The full extracted page (header + rows) as staged. */
+  data: ExtractedPage;
+};
+
+/** The staged extraction for an upload (lowest page first; v1 extracts page 1). */
+export async function getExtraction(companyId: string, uploadId: string): Promise<ExtractionRecord | null> {
+  if (!goldlineConfigured()) return null;
+  const supa = db();
+  const res = await supa
+    .from('gl_extractions')
+    .select('page,status,doc_confidence,rows')
+    .eq('company_id', companyId)
+    .eq('upload_id', uploadId)
+    .order('page', {ascending: true})
+    .limit(1)
+    .maybeSingle();
+  if (res.error) throw new Error(`gl_extractions read failed: ${res.error.message}`);
+  if (!res.data) return null;
+  const row = res.data as {page: number; status: string; doc_confidence: number | null; rows: ExtractedPage};
+  return {page: row.page, status: row.status, docConfidence: row.doc_confidence, data: row.rows};
+}
+
+/** One reviewed inventory line (the five counts), confirmed by a human. */
+export type ReviewedInventoryRow = {
+  item_code: string;
+  stockroom: number | null;
+  drawer: number | null;
+  selling_area: number | null;
+  delivery: number | null;
+  ending_on_hand: number | null;
+};
+
+/**
+ * Commit a reviewed extraction into gl_inventory and close out the upload.
+ * Idempotent on the inventory natural key (re-committing a period overwrites it).
+ * All three writes are company-scoped so a reviewer can only ever touch their own
+ * tenant's rows. total_value is left null (derived downstream as ending × price).
+ */
+export async function commitInventory(input: {
+  companyId: string;
+  uploadId: string;
+  storeCode: string;
+  period: Period;
+  consultant?: string | null;
+  rows: ReviewedInventoryRow[];
+}): Promise<number> {
+  const supa = db();
+  const payload = input.rows.map((r) => ({
+    company_id: input.companyId,
+    store_code: input.storeCode,
+    item_code: r.item_code,
+    period_start: input.period.start,
+    period_end: input.period.end,
+    consultant: input.consultant ?? null,
+    stockroom: r.stockroom,
+    drawer: r.drawer,
+    selling_area: r.selling_area,
+    delivery: r.delivery,
+    ending_on_hand: r.ending_on_hand,
+    source_upload_id: input.uploadId,
+  }));
+  if (payload.length) {
+    const ins = await supa
+      .from('gl_inventory')
+      .upsert(payload, {onConflict: 'company_id,store_code,item_code,period_start,period_end'});
+    if (ins.error) throw new Error(`gl_inventory upsert failed: ${ins.error.message}`);
+  }
+  const ext = await supa
+    .from('gl_extractions')
+    .update({status: 'confirmed'})
+    .eq('company_id', input.companyId)
+    .eq('upload_id', input.uploadId);
+  if (ext.error) throw new Error(`gl_extractions update failed: ${ext.error.message}`);
+  const up = await supa
+    .from('gl_uploads')
+    .update({status: 'committed'})
+    .eq('company_id', input.companyId)
+    .eq('id', input.uploadId);
+  if (up.error) throw new Error(`gl_uploads update failed: ${up.error.message}`);
+  return payload.length;
 }
 
 /** List a company's uploads, newest first (paginated — never silently capped). */
