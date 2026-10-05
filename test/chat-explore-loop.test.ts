@@ -214,3 +214,38 @@ describe('compose reserve with the Explore number check', () => {
     expect(text(r.events)).toBe('Dogs made ₱1,200.50.');
   });
 });
+
+// Live test 5 (H3): "Correction: my earlier reply said 6 orders" laundered a stale model-typed number through the earlier assistant turn.
+describe('EXP-04 Explore number context holds only user and app figures, not earlier assistant turns (live test 5, H3)', () => {
+  const HISTORY = [
+    {role: 'user' as const, content: 'How did Circuit Makati do?'},
+    {role: 'assistant' as const, content: 'Circuit Makati had 6 orders.'},
+    {role: 'user' as const, content: 'And by pet?'},
+  ];
+  it('"6 orders" repeated from an earlier assistant turn, with no such cell, is flagged: one rewrite request', async () => {
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : n === 2 ? {text: ['Correction: my earlier reply said 6 orders; dogs have 14 orders.'], stop_reason: 'end_turn'} : {text: ['Dogs have 14 orders.'], stop_reason: 'end_turn'}));
+    const t = run(m, {messages: HISTORY});
+    const sum = await t.go();
+    expect(sum.steps).toBe(3);
+    expect(JSON.stringify(m.requests[2])).toContain('Figures not found in the query rows: 6.');
+    expect(text(t.events)).toBe('Dogs have 14 orders.');
+  });
+  it('a figure in the USER\'s own earlier message still passes', async () => {
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : {text: ['You said 7 orders; dogs have 14 orders.'], stop_reason: 'end_turn'}));
+    const t = run(m, {messages: [{role: 'user', content: 'Is it 7 orders at Circuit Makati?'}, {role: 'assistant', content: 'Let me check.'}, {role: 'user', content: 'Go on.'}]});
+    const sum = await t.go();
+    expect(sum.steps).toBe(2);
+    expect(text(t.events)).toContain('7 orders');
+  });
+  it('a figure in this turn\'s result cells still passes', async () => {
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : {text: ['Dogs have 14 orders.'], stop_reason: 'end_turn'}));
+    const t = run(m, {messages: HISTORY});
+    expect((await t.go()).steps).toBe(2);
+  });
+  it('a non-Explore turn keeps counting earlier assistant turns as context (no violation logged)', async () => {
+    const m = new FakeModel(() => ({text: ['Circuit Makati had 6 orders.'], stop_reason: 'end_turn'}));
+    const t = run(m, {tools: CHAT_TOOLS, messages: HISTORY});
+    await t.go();
+    expect(lines(t.s.info).filter((l) => l.event === 'chat_number_violation')).toHaveLength(0);
+  });
+});

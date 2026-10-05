@@ -115,8 +115,10 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       : {role: m.role, content: m.content},
   );
 
-  const numberContext = (): string =>
-    [...opts.messages.map((m) => m.content), opts.preamble, ...opts.system.filter((b) => b.text.startsWith(DIGEST_HEADING)).map((b) => b.text)].join('\n');
+  // Explore enforce mode counts only figures the USER or the app provided: an earlier ASSISTANT turn holds model-typed numbers, which
+  // must not launder a new one (live test 5, H3). The log-only check of other turns keeps every earlier turn as context.
+  const numberContext = (userOnly = false): string =>
+    [...opts.messages.filter((m) => !userOnly || m.role === 'user').map((m) => m.content), opts.preamble, ...opts.system.filter((b) => b.text.startsWith(DIGEST_HEADING)).map((b) => b.text)].join('\n');
 
   // Log-only (Slice 6 #1) for every non-Explore turn: figures the answer displays that no tool result, question, preamble or digest holds.
   // It never changes, delays or blocks the answer, and a failure of the check itself is swallowed.
@@ -142,7 +144,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     }
     let list: string[] = [];
     try {
-      const {violations, checked} = checkNumbers(text, seen, {context: numberContext(), countNouns: true});
+      const {violations, checked} = checkNumbers(text, seen, {context: numberContext(true), countNouns: true});
       list = violations.map((v) => v.value);
       if (list.length > 0) {
         if (retry) return list;
