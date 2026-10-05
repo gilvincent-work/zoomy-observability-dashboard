@@ -168,6 +168,7 @@ const WRITE_CALL = /\.\s*(insert|update|upsert|delete|rpc)\s*\(/g;
  */
 export const WRITE_CALL_EXCEPTIONS: readonly {file: string; method: string; why: string}[] = [
   {file: 'src/chat/read/mint-jwt.ts', method: 'update', why: 'node:crypto Hmac.update when signing the read-only token; not a database call'},
+  {file: 'src/chat/explore/fingerprint.ts', method: 'update', why: 'node:crypto Hash.update when fingerprinting a validated Explore statement for the audit log; not a database call'},
 ];
 
 /** Method-call writes in non-test files under src/chat/ (comments and strings ignored). */

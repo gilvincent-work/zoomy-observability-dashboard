@@ -235,3 +235,51 @@ describe('dev.sh: the script itself', () => {
     expect(at('exec npm run dev')).toBeGreaterThan(at('export NODE_OPTIONS='));
   });
 });
+
+// Explore mode opens a real Postgres connection. dev.sh refuses unless EXPLORE_DATABASE_URL is loopback (same rule as
+// resolveExploreAccess and assertLocalPostgres: host read from the text after the FIRST '@', no host lists, no hosted names).
+describe('dev.sh: EXPLORE_DATABASE_URL must be loopback too', () => {
+  const LOCAL_EXPLORE = 'postgres://coop_explore_ro:pw@127.0.0.1:54421/postgres';
+  const withExplore = (url: string) => tree({dotEnv: HOSTED_ENV, localEnv: `SUPABASE_URL_ARCHIVE=${LOCAL}\nSUPABASE_SERVICE_ROLE_KEY_ARCHIVE=k\nEXPLORE_DATABASE_URL=${url}\n`});
+
+  it('passes a loopback postgres URL through to the child, and prints nothing of it', () => {
+    for (const url of [LOCAL_EXPLORE, 'postgresql://coop_explore_ro:pw@localhost:54421/postgres', 'postgres://coop_explore_ro:pw@127.0.0.1/postgres?sslmode=disable']) {
+      const r = run(withExplore(url));
+      expect(r.status, `${url}: ${r.stderr}`).toBe(0);
+      expect(r.env.EXPLORE_DATABASE_URL).toBe(url);
+      expect(r.stdout + r.stderr).not.toContain('pw@');
+    }
+  });
+
+  it('a hosted EXPLORE_DATABASE_URL in .env is blanked and replaced by the local one', () => {
+    const t = tree({dotEnv: `${HOSTED_ENV}EXPLORE_DATABASE_URL=postgres://coop_explore_ro.fakeprojectref:hosted-fake@aws-0-fake.pooler.supabase.com:6543/postgres\n`,
+      localEnv: `SUPABASE_URL_ARCHIVE=${LOCAL}\nSUPABASE_SERVICE_ROLE_KEY_ARCHIVE=k\nEXPLORE_DATABASE_URL=${LOCAL_EXPLORE}\n`});
+    const r = run(t);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.env.EXPLORE_DATABASE_URL).toBe(LOCAL_EXPLORE);
+    expect(JSON.stringify(r.env)).not.toMatch(/supabase\.com|hosted-fake/);
+  });
+
+  it('a hosted EXPLORE_DATABASE_URL in .env with no local replacement is blanked, so Explore has no database at all', () => {
+    const t = tree({dotEnv: 'EXPLORE_DATABASE_URL=postgres://coop_explore_ro.fakeprojectref:hosted-fake@aws-0-fake.pooler.supabase.com:6543/postgres\n'});
+    const r = run(t);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.env.EXPLORE_DATABASE_URL).toBe('');
+  });
+
+  it.each([
+    ['the Supabase pooler', 'postgres://coop_explore_ro.fakeprojectref:pw@aws-0-fake.pooler.supabase.com:6543/postgres'],
+    ['a hosted database', 'postgres://coop_explore_ro:pw@db.fakeprojectref.supabase.co:5432/postgres'],
+    ['a private address', 'postgres://coop_explore_ro:pw@10.0.0.5:5432/postgres'],
+    ['a look-alike host', 'postgres://coop_explore_ro:pw@127.0.0.1.evil.example/postgres'],
+    ['an @-trick whose last host is loopback', 'postgres://coop_explore_ro:pw@evil.example@127.0.0.1/postgres'],
+    ['a host list', 'postgres://coop_explore_ro:pw@127.0.0.1,evil.example/postgres'],
+    ['an http URL', 'http://127.0.0.1:54421/postgres'],
+  ])('%s: exit 1, "refusing", npm never runs, the URL is never echoed', (_name, url) => {
+    const r = run(withExplore(url));
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/refusing: EXPLORE_DATABASE_URL/);
+    expect(r.ranNpm).toBe(false);
+    expect(r.stderr + r.stdout).not.toMatch(/pw@|supabase\.com|evil\.example/);
+  });
+});
