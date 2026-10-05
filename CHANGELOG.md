@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline P3/P4: Stores leaderboard + sales overview (gl_sales analytics)
+- `src/goldline-analytics.ts` (server-only): `getGoldlineAnalytics(companyId)` derives store + SKU rollups and a headline summary from `gl_sales`, joined to `gl_stores` for names. Company-scoped on every read (service-role bypasses RLS, so `company_id` is the fence) and paginated via `fetchAllRows`; JS aggregation at v1 scale (RPC/view is the later optimization).
+- `app/stores/page.tsx` + `components/analyst/goldline-stores-view.tsx` (P4): per-store leaderboard — units / gross / net / SKU count — searchable, sortable, paginated, with summary stat cards. Empty-state prompts a CSV upload.
+- `app/overview/page.tsx` (P3): server-rendered sales summary (gross / units / net / stores-selling) + Top stores and Top SKUs bar lists. Empty-state when there are no sales yet.
+- Both pages scoped by `getDataContext` and surfaced in the non-Zoomy nav (Overview · Uploads · Stores); they're new routes, not under the Zoomy guard. Zoomy has no `gl_*` data so they render empty there (and its nav doesn't link them).
+- Staging seeded with a **catalog only** (5 `gl_stores`, 6 `gl_products` with the item_code↔sku_code crosswalk); `gl_sales`/`gl_inventory` intentionally left empty for manual CSV/PDF upload testing. typecheck + full suite (1840) + pagination guard pass.
+
 ## 2026-10-05 — Goldline P0: tenant guard on Zoomy-only routes (data-isolation fence)
 - **Security fence before Goldline go-live.** The legacy Overview/Health/Inventory/Sales/… pages read Zoomy data with no company dimension, so a non-Zoomy viewer would have seen Zoomy data by URL. Added `requireZoomyData()` (`src/active-context.ts`) + a pure, unit-tested `shouldRedirectFromZoomy` (`src/company-nav.ts`, +3 tests): a Goldline user or the data-blind Coop Admin is redirected to `/uploads`; signed-out and local dev-auth bypass are a no-op.
 - Applied as a transparent **section guard layout** per Zoomy-only section (`app/{health,inventory,offline-sales,customers,reports,traffic,repricer,settings,lazada,crm}/layout.tsx`) plus the root overview (`app/page.tsx`) — one choke point per section, so future sub-pages are auto-guarded. `/uploads`, `/signin`, `/dev` are intentionally unguarded.

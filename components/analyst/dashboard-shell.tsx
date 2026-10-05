@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, FileBarChart, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Tag, Upload, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, FileBarChart, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Store, Tag, Upload, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
@@ -194,8 +194,10 @@ export function DashboardShell({
     ? 'Coop Admin'
     : (nav?.companies.find((c) => c.id === nav?.companyId)?.name ?? 'Zoomy');
   const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
+  const overviewTab: NavItem = {href: '/overview', label: 'Overview', icon: BarChart3};
+  const storesTab: NavItem = {href: '/stores', label: 'Stores', icon: Store};
   const overviewChildren = isZoomy ? OVERVIEW_CHILDREN : [];
-  const flatTabs = isZoomy ? FLAT_TABS : [uploadsTab];
+  const flatTabs = isZoomy ? FLAT_TABS : [overviewTab, uploadsTab, storesTab];
 
   // ── Mobile nav model (below md only) ──────────────────────────────────────
   // The left rail is hidden under md; these drive a bottom tab bar (5 primary
@@ -208,7 +210,11 @@ export function DashboardShell({
         {href: '/inventory', label: 'Inventory', icon: Package, active: leafActive('/inventory', pathname, channel)},
         {href: '/offline-sales', label: 'Offline', icon: Receipt, active: leafActive('/offline-sales', pathname, channel)},
       ]
-    : [{href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)}];
+    : [
+        {href: '/overview', label: 'Overview', icon: BarChart3, active: leafActive('/overview', pathname, channel)},
+        {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
+        {href: '/stores', label: 'Stores', icon: Store, active: leafActive('/stores', pathname, channel)},
+      ];
   const moreItems: NavItem[] = isZoomy
     ? [
         {href: '/health', label: 'Business Health', icon: Gauge},
