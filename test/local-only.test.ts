@@ -2,7 +2,7 @@ import {readdirSync, readFileSync} from 'node:fs';
 import path from 'node:path';
 import {describe, expect, it} from 'vitest';
 import {assertLocalRun} from '../scripts/chat-eval.mjs';
-import {LOCAL_HOSTS, assertLocalSupabase, isLocalSupabaseUrl} from './support/local-only';
+import {LOCAL_HOSTS, assertLocalPostgres, assertLocalSupabase, isLocalPostgresUrl, isLocalSupabaseUrl} from './support/local-only';
 import {buildsClient, callsLocalGuard, unguardedClient} from './support/local-only-scan';
 
 // Owner rule: the Supabase project in .env is PRODUCTION. Every test and script that can connect must refuse anything that is not
@@ -108,5 +108,87 @@ describe('the integration-test scan', () => {
       expect(callsLocalGuard(readFileSync(f, 'utf8')), f).toBe(true);
     }
     expect(readFileSync('scripts/chat-eval.mjs', 'utf8')).toMatch(/isLocalSupabaseUrl\(raw\)/);
+  });
+});
+
+// Spec 5.3: the same contract for a Postgres connection string (the Explore role proof and tests open real Postgres connections).
+describe('assertLocalPostgres', () => {
+  it('accepts a local postgres URL with userinfo, with or without a port or a query', () => {
+    for (const url of [
+      'postgres://coop_explore_ro:secret@127.0.0.1:54421/postgres',
+      'postgresql://coop_explore_ro:secret@localhost:54421/postgres',
+      'postgres://u:p@127.0.0.1/db?sslmode=disable',
+      'POSTGRES://u:p@LOCALHOST:5432/db',
+      'postgres://u@127.0.0.1',
+      'postgres://127.0.0.1:54421/postgres',
+    ]) {
+      expect(isLocalPostgresUrl(url), url).toBe(true);
+      expect(() => assertLocalPostgres(url), url).not.toThrow();
+    }
+  });
+
+  it('refuses hosted databases and the Supabase pooler', () => {
+    for (const url of [
+      'postgres://coop_explore_ro.abcdefgh:pw@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres',
+      'postgres://postgres:pw@db.abcdefgh.supabase.co:5432/postgres',
+      'postgresql://u:p@db.example.com/db',
+      'postgres://u:p@10.0.0.5:5432/db',
+      'postgres://u:p@[::1]:5432/db',
+      'postgres://u:p@0.0.0.0/db',
+    ]) {
+      expect(isLocalPostgresUrl(url), url).toBe(false);
+      expect(() => assertLocalPostgres(url), url).toThrow(/refusing to run/);
+    }
+  });
+
+  it('refuses the wrong protocol, missing and unparseable input', () => {
+    for (const url of ['http://127.0.0.1:54421', 'https://localhost', 'mysql://u:p@127.0.0.1/db', 'ws://127.0.0.1', undefined, null, '', '   ', 'not a url', '127.0.0.1:54421', '//127.0.0.1']) {
+      expect(isLocalPostgresUrl(url as string | undefined), String(url)).toBe(false);
+      expect(() => assertLocalPostgres(url as string | undefined)).toThrow(/refusing to run/);
+    }
+  });
+
+  it('refuses @-tricks, host lists, backslashes, lookalikes and a query that sets the host', () => {
+    for (const url of [
+      'postgres://u:p@evil.com@127.0.0.1/db', // WHATWG says 127.0.0.1, the driver reads the text after the FIRST @
+      'postgres://127.0.0.1@evil.com/db',
+      'postgres://u:p@127.0.0.1,evil.example/db', // the driver tries every host of a list
+      'postgres://u:p@evil.com,127.0.0.1/db',
+      'postgres://u:p@evil.com\\@127.0.0.1/db',
+      'postgres://u:p@127.0.0.1.evil.com/db',
+      'postgres://u:p@localhost.evil.com/db',
+      'postgres://u:p@localhost./db',
+      'postgres://u:p@127.0.0.1/db?host=evil.example',
+      'postgres://u:p@127.0.0.1/db?hostaddr=8.8.8.8',
+      'postgres://u:p@evil.com/db#@127.0.0.1',
+      'postgres://u:p@evil.com?@127.0.0.1',
+      'postgres://u:p@127.0.0.1\t.evil.com/db',
+    ]) {
+      expect(isLocalPostgresUrl(url), url).toBe(false);
+    }
+  });
+
+  it('never echoes the URL (it carries a password)', () => {
+    for (const url of ['postgres://u:SECRETPASS@db.abcdefgh.supabase.co/postgres', 'postgres://u:SECRETPASS@evil.example/db']) {
+      let message = '';
+      try {
+        assertLocalPostgres(url);
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message).not.toBe('');
+      expect(message).not.toMatch(/SECRETPASS|abcdefgh|supabase|evil/);
+    }
+  });
+});
+
+describe('the integration-test scan knows about Postgres clients (spec 5.3)', () => {
+  it('flags the postgres driver and EXPLORE_DATABASE_URL without a guard; assertLocalPostgres is an accepted guard', () => {
+    expect(unguardedClient("import postgres from 'postgres';\nconst sql = postgres(url);")).toBe(true);
+    expect(unguardedClient('const url = process.env.EXPLORE_DATABASE_URL;')).toBe(true);
+    expect(unguardedClient("import postgres from 'postgres';\nassertLocalPostgres(url);\nconst sql = postgres(url);")).toBe(false);
+    expect(callsLocalGuard('assertLocalPostgres(url)')).toBe(true);
+    expect(callsLocalGuard('// assertLocalPostgres(url)')).toBe(false);
+    expect(buildsClient("import postgres from 'postgres';")).toBe(true);
   });
 });
