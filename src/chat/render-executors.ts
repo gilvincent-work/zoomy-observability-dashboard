@@ -14,6 +14,7 @@ import type {ChatToolContext} from './stream-types';
 const TOOLS: readonly RenderTool[] = ['render_kpi', 'render_chart', 'render_table'];
 const BLOCK_ID = /^b[1-9][0-9]{0,2}$/;
 const MAX_Y = 8;
+const AUTO_RENDER_MAX = 3; // Explore backstop: unrendered final results drawn per turn
 // The default of every analytical answer is a visualization; a table is its companion. One nudge per request.
 export const CHART_FIRST_TEXT = 'Nothing was drawn and your call was fine. A chart is the default for this data: call render_chart (kind auto, or the form the owner named) first, then render_table again as its companion. If the owner explicitly asked for only a table, call render_table again unchanged.';
 
@@ -37,7 +38,7 @@ function specOf(tool: RenderTool, input: Record<string, unknown>, block: ChatBlo
 
 export type RenderExecutors = Pick<ToolExecutors, RenderTool> & {
   /**
-   * Explore backstop: draw the LAST successful `run_query` final result that no block was bound from yet, exactly as render_chart with auto selection
+   * Explore backstop: draw EVERY successful, non-empty `run_query` final result no block was bound from yet (query order, at most AUTO_RENDER_MAX, the rest named in a note), each exactly as render_chart with auto selection
    * would (chart with its table twin, chip, SQL, code-written caveats). No model call and no model-typed value. Returns the block ids it drew ([] when nothing was due).
    */
   autoRender: () => Promise<string[]>;
@@ -51,6 +52,7 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
   const drawn: string[] = [];
   let charted = false; // a chart or tile was bound in this request
   let chartNudged = false;
+  let pendingNote: string | null = null; // autoRender only: a caveat for the blocks of the call being drawn
   const bound = new Set<string>(); // result ids a block was drawn from in this request
   const run = (tool: RenderTool) => async (input: unknown): Promise<unknown> => {
     const rec = isRecord(input) ? input : {};
@@ -111,6 +113,7 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
     }
     if (tool !== 'render_table') charted = true;
     for (const block of out.blocks) {
+      if (pendingNote) block.caveats.push(pendingNote);
       bound.add(block.source);
       ctx.emitBlock?.(block);
     }
@@ -128,10 +131,16 @@ export function createRenderExecutors(ctx: ChatToolContext, session: ReportSessi
 
   const autoRender = async (): Promise<string[]> => {
     const due = [...session.store.entries()].filter(([id, r]) => /^x[1-9][0-9]*$/.test(id) && r.metric === 'explore' && r.rows.length > 0 && !bound.has(id));
-    const last = due[due.length - 1];
-    if (!last) return [];
-    const out = (await run('render_chart')({block: 'new', source: last[0], kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: ''})) as {ok?: true; block?: string; blocks?: string[]};
-    return out.ok ? (out.blocks ?? (out.block ? [out.block] : [])) : [];
+    const draw = due.slice(0, AUTO_RENDER_MAX);
+    const dropped = due.length - draw.length;
+    const ids: string[] = [];
+    for (const [i, [id]] of draw.entries()) {
+      pendingNote = i === draw.length - 1 && dropped > 0 ? `${dropped} more ${dropped === 1 ? 'result was' : 'results were'} not drawn (at most ${AUTO_RENDER_MAX} blocks per answer). Ask for ${dropped === 1 ? 'it' : 'them'} on its own to see ${dropped === 1 ? 'it' : 'them'}.` : null;
+      const out = (await run('render_chart')({block: 'new', source: id, kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: ''})) as {ok?: true; block?: string; blocks?: string[]};
+      if (out.ok) ids.push(...(out.blocks ?? (out.block ? [out.block] : [])));
+    }
+    pendingNote = null;
+    return ids;
   };
 
   return {...(Object.fromEntries(TOOLS.map((t) => [t, run(t)])) as Pick<ToolExecutors, RenderTool>), autoRender};

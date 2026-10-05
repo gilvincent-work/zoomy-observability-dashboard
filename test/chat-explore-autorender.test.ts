@@ -79,7 +79,7 @@ describe('F1 the app draws the last unrendered final result when the model ends 
     expect(h.blocks).toEqual([]);
   });
 
-  it('EXP-03 two finals, the model drew the first: only the last unrendered one (x2) is drawn', async () => {
+  it('EXP-03 two finals, the model drew the first: the unrendered one (x2) is drawn after it', async () => {
     const h = harness(ok, (n) => {
       if (n === 1) return toolTurn('', final('a'));
       if (n === 2) return toolTurn('One.', render('b', 'x1'), final('c'));
@@ -89,10 +89,18 @@ describe('F1 the app draws the last unrendered final result when the model ends 
     expect(h.blocks.map((b) => b.source)).toEqual(['x1', 'x2']);
   });
 
-  it('EXP-03 two finals, neither drawn: only the LAST one is drawn', async () => {
+  it('EXP-03 two finals, neither drawn: BOTH are drawn, in query order (live test 4: the primary question was never drawn)', async () => {
     const h = harness(ok, (n) => (n === 1 ? toolTurn('', final('a'), final('b')) : {text: ['Done.'], stop_reason: 'end_turn'}));
     await h.go();
-    expect(h.blocks.map((b) => b.source)).toEqual(['x2']);
+    expect(h.blocks.map((b) => b.source)).toEqual(['x1', 'x2']);
+  });
+
+  it('EXP-03 at most 3 unrendered finals are drawn; the extra one is named in a note on the last drawn block', async () => {
+    const h = harness(ok, (n) => (n === 1 ? toolTurn('', final('a'), final('b'), final('c'), final('d')) : {text: ['Done.'], stop_reason: 'end_turn'}));
+    await h.go();
+    expect(h.blocks.map((b) => b.source)).toEqual(['x1', 'x2', 'x3']);
+    expect(h.blocks[2].caveats.some((c) => /1 more result was not drawn/.test(c))).toBe(true);
+    expect(h.blocks[0].caveats.some((c) => /not drawn/.test(c))).toBe(false);
   });
 
   it('EXP-03 an empty final result draws nothing', async () => {

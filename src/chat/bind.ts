@@ -1,9 +1,9 @@
 // F7: bind a render request to a stored result and build the blocks. The model names a RESULT ID and FIELD NAMES; every
 // number in a block is read from the stored result here, never from the request. Any key in the request that is not in
 // the tool schema (notably `data`, `values`, `rows`) is never read. Pure, no server-only.
-import type {BlockBase, BlockFormat, ChatBlock, ChartForm, ChosenView, KpiBlock, TableBlock, ViewRequest} from './block-types';
+import type {BlockBase, BlockFormat, ChartBlock, ChatBlock, ChartForm, ChosenView, KpiBlock, TableBlock, ViewRequest} from './block-types';
 import {formatOf, isNumericColumn, recommendView, sumOf, type BlockDecision} from './recommend-view';
-import type {MetricResult, MetricRow, ResultColumn} from './result-types';
+import type {ColumnUnit, MetricResult, MetricRow, ResultColumn} from './result-types';
 
 export type RenderTool = 'render_kpi' | 'render_chart' | 'render_table';
 export type ResultStore = Map<string, MetricResult>;
@@ -37,6 +37,36 @@ function checkFields(result: MetricResult, keys: string[], what: string, allowed
   if (bad.length === 0) return null;
   const exists = result.columns.some((c) => c.key === bad[0]);
   return `${exists ? `Field '${bad[0]}' cannot be used as ${what}` : `Unknown field '${bad[0]}'`} in result '${result.id}'. Valid ${what} fields: ${list(allowed.map((c) => c.key))}`;
+}
+
+const MAX_NAMED_SERIES = 3;
+const UNIT_WORD: Partial<Record<ColumnUnit, string>> = {count: 'Counts', PHP: 'Amounts (PHP)', units: 'Units', percent: 'Shares', ratio: 'Ratios'};
+const joinAnd = (items: string[]): string => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+
+/** An Explore peso column reads "Revenue (PHP)": the unit is in the alias suffix the label drops. */
+const measureName = (result: MetricResult, c: ResultColumn): string => (result.meta.exploratory && c.unit === 'PHP' && !/php|₱/i.test(c.label) ? `${c.label} (PHP)` : c.label);
+
+/**
+ * The title of an auto chart, built ONLY from column labels, never from row or series values (a value is customer text and can
+ * be anything). Series that are result columns: their labels, or past MAX_NAMED_SERIES a unit word ("Counts by Event"). Series that
+ * are row values (a result with two category columns): "<measure> by <both dimension labels>".
+ */
+export function chartTitle(result: MetricResult, chart: ChartBlock['chart']): string {
+  const byCols = chart.series.every((s) => result.columns.some((c) => c.key === s.key));
+  let text: string;
+  if (byCols) {
+    const cols = chart.series.map((s) => result.columns.find((c) => c.key === s.key) as ResultColumn);
+    text = chart.series.length > MAX_NAMED_SERIES
+      ? `${UNIT_WORD[chart.series[0].unit] ?? 'Values'} by ${chart.x.label}`
+      : `${cols.map((c) => measureName(result, c)).join(' and ')} by ${chart.x.label}`;
+  } else {
+    const unit = chart.series[0]?.unit;
+    const measures = result.columns.filter((c) => c.role === 'measure' && c.unit === unit);
+    const m = measures.find((c) => c.key === result.meta.measure) ?? measures[0];
+    const dims = result.columns.filter((c) => c.role === 'category').map((c) => c.label);
+    text = `${m ? measureName(result, m) : (UNIT_WORD[unit ?? 'count'] ?? 'Values')} by ${joinAnd(dims.length ? dims : [chart.x.label])}`;
+  }
+  return text.slice(0, MAX_TITLE);
 }
 
 function baseOf(result: MetricResult, id: string, title: string, usesShare: boolean): BlockBase {
@@ -139,7 +169,7 @@ export function bindBlock(tool: RenderTool, input: unknown, store: ResultStore, 
   const view = recommendView(result, request, {x, y: yList.length ? yList : undefined, title});
   const label = (d: BlockDecision): string => {
     if (title) return title;
-    if (d.block === 'chart') return `${d.chart.series.map((s) => s.label).join(' and ')} by ${d.chart.x.label}`.slice(0, MAX_TITLE);
+    if (d.block === 'chart') return chartTitle(result, d.chart);
     return result.metric.replace(/_/g, ' ');
   };
   const blocks = view.decisions.flatMap((d) => fromDecision(result, d, label(d), nextId));
