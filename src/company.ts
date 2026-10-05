@@ -100,11 +100,11 @@ export function outOfScopeStores(storeScope: string[] | null | undefined, codes:
   return [...new Set(codes.filter((c) => !allowed.has(c)))];
 }
 
-/** The companies a user may switch between (empty for a pure coop_admin). */
+/** The companies a user may switch between (empty for a pure coop_admin).
+ *  De-duplicated, so a stray duplicate membership row can't double an entry. */
 export function switchableCompanies(memberships: Membership[]): string[] {
-  return memberships
-    .filter((m) => m.companyId)
-    .map((m) => m.companyId as string);
+  const ids = memberships.filter((m) => m.companyId).map((m) => m.companyId as string);
+  return [...new Set(ids)];
 }
 
 // --- membership read (server/edge; PostgREST + service role) ----------------

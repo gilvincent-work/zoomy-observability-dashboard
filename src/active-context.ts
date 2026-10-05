@@ -72,8 +72,9 @@ export async function getNavContext(): Promise<NavContext | null> {
   const active = resolveActive(memberships, await cookieCompany());
   if (!active) return null;
   const ids = switchableCompanies(memberships);
-  // Only pay for a names lookup when the switcher would render (>1 company).
-  const named = ids.length > 1 ? await fetchCompanies(ids) : [];
+  // Always resolve names — the header pill shows the active company's name even
+  // when there's only one (no switcher). Fail-soft falls back to the slug.
+  const named = ids.length ? await fetchCompanies(ids) : [];
   const companies = ids.map((id) => named.find((c) => c.id === id) ?? {id, name: id});
   return {companyId: active.companyId, role: active.role, isCoopAdmin: active.isCoopAdmin, companies};
 }

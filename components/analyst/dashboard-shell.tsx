@@ -10,6 +10,7 @@ import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {CompanySwitcher} from './company-switcher';
+import {showUploadsFor} from '@/src/company-nav';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
 import {CustomRangePicker} from './custom-range-picker';
@@ -186,7 +187,8 @@ export function DashboardShell({
   // legacy tabs; a non-Zoomy company (Goldline) also gets the Uploads inbox. The
   // deeper per-company nav reduction waits on the existing pages being company-scoped.
   const activeCompany = nav?.companyId ?? 'zoomy';
-  const showUploads = activeCompany !== 'zoomy';
+  const activeName = nav?.companies.find((c) => c.id === activeCompany)?.name ?? 'Zoomy';
+  const showUploads = showUploadsFor(activeCompany);
   const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
   const flatTabs = showUploads ? [uploadsTab, ...FLAT_TABS] : FLAT_TABS;
 
@@ -229,17 +231,23 @@ export function DashboardShell({
           </span>
         </Link>
 
-        {/* Brand switcher (Zoomy) — visual for now. Hidden on the narrowest
-            screens so the mobile header (period + Ask + theme + avatar) doesn't
-            overflow; visible from sm up, so desktop is unchanged. */}
-        <button
-          type="button"
-          className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted max-sm:hidden"
-        >
-          <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
-          Zoomy
-          <ChevronDown className="size-3.5 text-muted-foreground" />
-        </button>
+        {/* Company switcher. A real switcher when the user has >1 company; otherwise
+            a static pill showing the active company (Zoomy by default). Hidden on the
+            narrowest screens so the mobile header doesn't overflow. */}
+        {nav && nav.companies.length > 1 ? (
+          <div className="ml-1 max-sm:hidden">
+            <CompanySwitcher companies={nav.companies} activeId={nav.companyId} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted max-sm:hidden"
+          >
+            <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
+            {activeName}
+            <ChevronDown className="size-3.5 text-muted-foreground" />
+          </button>
+        )}
 
         {/* Source switcher — the Customers hub's three contact lists */}
         {showSource && (
@@ -365,11 +373,8 @@ export function DashboardShell({
           />
         )}
 
-        {/* Right cluster: company switcher · Ask Coop · theme · avatar */}
+        {/* Right cluster: Ask Coop · theme · avatar */}
         <div className="ml-auto flex items-center gap-2">
-          {nav && nav.companies.length > 1 && (
-            <CompanySwitcher companies={nav.companies} activeId={nav.companyId} />
-          )}
           <AskCoopPill />
           <ThemeToggle />
           <div className="relative">

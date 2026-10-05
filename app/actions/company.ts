@@ -12,7 +12,12 @@ export async function setActiveCompany(slug: string): Promise<void> {
   const clean = /^[a-z0-9_-]{1,64}$/.test(slug) ? slug : '';
   const store = await cookies();
   if (clean) {
-    store.set(COMPANY_COOKIE, clean, {httpOnly: true, sameSite: 'lax', path: '/'});
+    store.set(COMPANY_COOKIE, clean, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      secure: process.env.NODE_ENV === 'production', // https in prod; allow http locally
+    });
   }
   revalidatePath('/', 'layout');
 }
