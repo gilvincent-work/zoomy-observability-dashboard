@@ -31,6 +31,18 @@ esac
 host="$(node -e 'console.log(new URL(process.argv[1]).hostname)' "$SUPABASE_URL_ARCHIVE")"
 case "$host" in 127.0.0.1|localhost) ;; *) echo "dev.sh: refusing: host is not loopback" >&2; exit 1 ;; esac
 
+# Explore mode opens a real Postgres connection: it must be loopback too (same rule as resolveExploreAccess and assertLocalPostgres).
+# Checked on the text after the FIRST '@' (that is where the driver reads the host from) so an @-trick or a host list cannot pass.
+if [ -n "${EXPLORE_DATABASE_URL:-}" ]; then
+  explore_auth="${EXPLORE_DATABASE_URL#*://}"; explore_auth="${explore_auth%%[/?#]*}"; explore_host="${explore_auth#*@}"
+  case "${EXPLORE_DATABASE_URL%%://*}" in postgres|postgresql) ;; *) echo "dev.sh: refusing: EXPLORE_DATABASE_URL is not a postgres:// URL" >&2; exit 1 ;; esac
+  case "$explore_host" in
+    127.0.0.1|127.0.0.1:[0-9]*|localhost|localhost:[0-9]*) ;;
+    *) echo "dev.sh: refusing: EXPLORE_DATABASE_URL host is not loopback" >&2; exit 1 ;;
+  esac
+  case "$explore_host" in *[!0-9a-z.:]*) echo "dev.sh: refusing: EXPLORE_DATABASE_URL host has unexpected characters" >&2; exit 1 ;; esac
+fi
+
 export DEV_AUTH_BYPASS=true
 export COOP_REQUIRE_LOCAL_DB=1   # the reports clients also refuse any non-local URL
 export NODE_OPTIONS="--require $HERE/block-remote.cjs ${NODE_OPTIONS:-}"
