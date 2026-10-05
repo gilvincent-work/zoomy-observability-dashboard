@@ -636,3 +636,26 @@ describe('purity', () => {
     expect(a).toEqual(b);
   });
 });
+
+describe('event attribution basis', () => {
+  it('event filter counts tagged plus date-window orders and the caveat states the split', () => {
+    const A = ev('A', 'Fair A', '2026-09-12', '2026-09-14');
+    const B = ev('B', 'Fair B', '2026-09-19', '2026-09-21');
+    const mk = (p: string, ev: string | null, at: string, status = 'completed') =>
+      ord(p, at, 100, [line('P1', 'Chicken Jerky', 1, 100)], {ev, pet: 'dog', status});
+    const orders = [
+      mk('a1', 'A', '2026-09-12T10:00:00+08:00'), mk('a2', 'A', '2026-09-13T10:00:00+08:00'),
+      mk('a3', null, '2026-09-14T10:00:00+08:00'), mk('a4', null, '2026-09-16T10:00:00+08:00'),
+      mk('a5', 'A', '2026-09-13T12:00:00+08:00', 'voided'),
+      mk('b1', 'B', '2026-09-19T10:00:00+08:00'), mk('b2', 'B', '2026-09-20T10:00:00+08:00'),
+      mk('b3', null, '2026-09-21T10:00:00+08:00'), mk('b4', null, '2026-09-23T10:00:00+08:00'),
+      mk('b5', 'B', '2026-09-20T12:00:00+08:00', 'voided'),
+    ];
+    const r = res(req({metric: 'pet_mix', measure: 'orders', event: 'A'}), data({orders, events: [A, B]}));
+    expect(sum(r.rows, 'value')).toBe(3);
+    const caveats = r.meta.caveats.join(' ');
+    expect(caveats).toContain('2 tagged');
+    expect(caveats).toMatch(/1 untagged sale[^.]*by date/);
+    expect(caveats).toContain('3 total');
+  });
+});
