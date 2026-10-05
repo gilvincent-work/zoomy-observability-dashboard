@@ -159,16 +159,16 @@ insert into public.pos_order_items (order_id, product_id, bundle_id, bundle_grou
 
 -- 6. Booth leads (spin-the-wheel). email is nullable since v2; a lead needs an email or an instagram handle. ------------------
 insert into public.spin_wheel_leads (email, instagram, mobile, prize, campaign, collected_at, consent_at, pet) values
-  -- SM Aura, v1 export: email only, no pet column filled
-  ('ana.reyes@example.test',  null, '0917-000-0001', 'Free Treat',   'sm-aura-sept2026', '2026-09-12 12:10:00+08', '2026-09-12 12:10:00+08', null),
-  ('ben.cruz@example.test',   null, null,            'Sticker Pack', 'sm-aura-sept2026', '2026-09-12 15:00:00+08', '2026-09-12 15:00:00+08', null),
+  -- SM Aura, v1 export: email only; some leads have a free-text "<pet name> / <breed>", some none
+  ('ana.reyes@example.test',  null, '0917-000-0001', 'Free Treat',   'sm-aura-sept2026', '2026-09-12 12:10:00+08', '2026-09-12 12:10:00+08', 'Mimi / Puspin'),
+  ('ben.cruz@example.test',   null, null,            'Sticker Pack', 'sm-aura-sept2026', '2026-09-12 15:00:00+08', '2026-09-12 15:00:00+08', 'Bruno / Shih Tzu'),
   ('carla.go@example.test',   null, '0917-000-0003', '10% Off',      'sm-aura-sept2026', '2026-09-13 11:30:00+08', null,                      null),
-  ('dan.lim@example.test',    null, null,            'Free Treat',   'sm-aura-sept2026', '2026-09-14 14:00:00+08', '2026-09-14 14:00:00+08', null),
+  ('dan.lim@example.test',    null, null,            'Free Treat',   'sm-aura-sept2026', '2026-09-14 14:00:00+08', '2026-09-14 14:00:00+08', 'Coco / Aspin'),
   -- Circuit Makati, v1 export
-  ('eva.tan@example.test',    null, '0917-000-0005', 'Bandana',      'circuit-makati-sept2026', '2026-09-19 13:00:00+08', '2026-09-19 13:00:00+08', null),
+  ('eva.tan@example.test',    null, '0917-000-0005', 'Bandana',      'circuit-makati-sept2026', '2026-09-19 13:00:00+08', '2026-09-19 13:00:00+08', 'Luna / Persian'),
   ('fred.sy@example.test',    null, null,            'Free Treat',   'circuit-makati-sept2026', '2026-09-20 12:00:00+08', '2026-09-20 12:00:00+08', null),
-  ('gina.uy@example.test',    null, '0917-000-0007', 'Sticker Pack', 'circuit-makati-sept2026', '2026-09-20 17:30:00+08', null,                      null),
-  ('hugo.ng@example.test',    null, null,            '10% Off',      'circuit-makati-sept2026', '2026-09-21 11:00:00+08', '2026-09-21 11:00:00+08', null),
+  ('gina.uy@example.test',    null, '0917-000-0007', 'Sticker Pack', 'circuit-makati-sept2026', '2026-09-20 17:30:00+08', null,                      'Kiko / Golden Retriever'),
+  ('hugo.ng@example.test',    null, null,            '10% Off',      'circuit-makati-sept2026', '2026-09-21 11:00:00+08', '2026-09-21 11:00:00+08', 'Pepper / Puspin'),
   -- Modern Market, v2 export: email or instagram, plus "<pet name> / <breed>"
   (null, 'mimi_pup',   null,            'Free Treat',   'modern-market-sept2026', '2026-09-27 11:20:00+08', '2026-09-27 11:20:00+08', 'Mimi / Puspin'),
   (null, 'luna_cat',   null,            'Bandana',      'modern-market-sept2026', '2026-09-27 13:40:00+08', '2026-09-27 13:40:00+08', 'Luna / Persian'),
