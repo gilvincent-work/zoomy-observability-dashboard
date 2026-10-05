@@ -4,6 +4,7 @@ import {Suspense} from 'react';
 import {Inter, Newsreader} from 'next/font/google';
 import {cn} from '@/lib/utils';
 import {getDigests, usingMock} from '@/src/data';
+import {getNavContext} from '@/src/active-context';
 import {DashboardShell} from '@/components/analyst/dashboard-shell';
 import {IntroSplash} from '@/components/analyst/intro-splash';
 import {auth} from '@/auth';
@@ -43,7 +44,7 @@ export default async function RootLayout({children}: {children: ReactNode}) {
   // The shell (header + week sidebar + tab nav) is shared across all tab routes,
   // so it fetches the week list once here; getDigests() is React-cached so the
   // page doesn't re-fetch. useSearchParams inside the shell needs a Suspense boundary.
-  const digests = authed ? await getDigests() : [];
+  const [digests, nav] = authed ? await Promise.all([getDigests(), getNavContext()]) : [[], null];
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -61,7 +62,7 @@ export default async function RootLayout({children}: {children: ReactNode}) {
           <>
             <IntroSplash />
             <Suspense>
-              <DashboardShell digests={digests} usingMock={usingMock()} user={{name: session!.user?.name, email: session!.user?.email, image: session!.user?.image}}>
+              <DashboardShell digests={digests} usingMock={usingMock()} nav={nav ?? undefined} user={{name: session!.user?.name, email: session!.user?.email, image: session!.user?.image}}>
                 {children}
               </DashboardShell>
             </Suspense>

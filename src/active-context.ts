@@ -1,6 +1,26 @@
 import 'server-only';
+import {cookies} from 'next/headers';
 import {auth} from '@/auth';
-import {resolveActive, type ActiveContext, type Membership} from '@/src/company';
+import {
+  fetchCompanies,
+  resolveActive,
+  switchableCompanies,
+  type ActiveContext,
+  type CompanyRole,
+  type Membership,
+} from '@/src/company';
+
+/** Cookie the switcher writes to pick the active company (a hint — always
+ *  re-validated against real memberships by resolveActive). */
+export const COMPANY_COOKIE = 'active_company';
+
+async function cookieCompany(): Promise<string | null> {
+  try {
+    return (await cookies()).get(COMPANY_COOKIE)?.value ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // Server-side seam for tenant scoping. A Server Component or route calls
 // getActiveContext() to learn which company's data is in scope (and whether the
@@ -18,7 +38,10 @@ export async function getActiveContext(requested?: string | null): Promise<Activ
   const session = await auth();
   if (!session) return null;
   const memberships = (session as {memberships?: Membership[]}).memberships ?? [];
-  return resolveActive(memberships, requested);
+  // An explicit `requested` (a route/query hint) wins; otherwise fall back to the
+  // switcher's cookie. resolveActive ignores a company the user isn't a member of.
+  const pick = requested ?? (await cookieCompany());
+  return resolveActive(memberships, pick);
 }
 
 /**
@@ -30,4 +53,27 @@ export async function getDataContext(requested?: string | null): Promise<ActiveC
   const ctx = await getActiveContext(requested);
   if (!ctx || !ctx.canSeeData || !ctx.companyId) return null;
   return ctx;
+}
+
+/** Chrome for the app shell: the active company, the user's role, and the
+ *  companies they can switch between (names resolved only when a switcher will
+ *  actually show). Null when not signed in / no membership. */
+export type NavContext = {
+  companyId: string | null;
+  role: CompanyRole;
+  isCoopAdmin: boolean;
+  companies: {id: string; name: string}[];
+};
+
+export async function getNavContext(): Promise<NavContext | null> {
+  const session = await auth();
+  if (!session) return null;
+  const memberships = (session as {memberships?: Membership[]}).memberships ?? [];
+  const active = resolveActive(memberships, await cookieCompany());
+  if (!active) return null;
+  const ids = switchableCompanies(memberships);
+  // Only pay for a names lookup when the switcher would render (>1 company).
+  const named = ids.length > 1 ? await fetchCompanies(ids) : [];
+  const companies = ids.map((id) => named.find((c) => c.id === id) ?? {id, name: id});
+  return {companyId: active.companyId, role: active.role, isCoopAdmin: active.isCoopAdmin, companies};
 }

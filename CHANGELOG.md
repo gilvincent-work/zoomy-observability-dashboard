@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline P0: company switcher + cookie-based active company + Uploads nav
+- `src/active-context.ts`: `getActiveContext` now falls back to an `active_company` cookie when no explicit company is requested (still re-validated against real memberships by `resolveActive`, so a cookie can never grant access). Adds `getNavContext()` — the active company, role, and switchable companies (names fetched only when a switcher would actually render) for the app shell.
+- `src/company.ts`: `fetchCompanies(ids)` — edge-safe PostgREST name lookup for the switcher, fail-soft `[]`.
+- `app/actions/company.ts` (`setActiveCompany`) + `components/analyst/company-switcher.tsx`: the top-bar tenant switcher writes the cookie via a server action then refreshes; only rendered when the user belongs to >1 company.
+- `components/analyst/dashboard-shell.tsx` + `app/layout.tsx`: the shell takes a `nav` prop and shows the switcher (>1 company) plus an **Uploads** tab for non-Zoomy companies. **Zoomy's single-tenant path is unchanged** — no `nav`/one company means no switcher and the exact legacy tabs. Deeper per-company nav reduction waits on the existing pages being company-scoped (next slice).
+- typecheck + full suite (1837) + pagination guard pass; runtime pending the Staging deploy (and a 2nd seeded company to exercise the switcher).
+
 ## 2026-10-05 — Goldline P2: Uploads UI (list + review workbench) + commit path
 - `app/uploads/page.tsx` + `components/analyst/uploads-view.tsx`: the per-company ingestion inbox — drop a `.csv`/`.pdf` (posts to the upload route scoped by active company), then a searchable / status- & type-filterable / paginated file list with status pills; a sales CSV commits and refreshes, a scanned PDF auto-routes to its review page. Scoped by `getDataContext`; a data-blind Coop Admin / non-member sees a gate, not data.
 - `app/uploads/[id]/page.tsx` + `components/analyst/upload-review.tsx`: the review workbench for a scanned page — editable store/period header, a document-confidence bar, and an exception-first rows table (flagged-only ↔ all toggle) with low-confidence rows highlighted and every count editable before commit. A CSV shows a status summary instead.

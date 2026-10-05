@@ -4,11 +4,12 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, FileBarChart, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, FileBarChart, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Tag, Upload, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
+import {CompanySwitcher} from './company-switcher';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
 import {CustomRangePicker} from './custom-range-picker';
@@ -80,11 +81,15 @@ function CoopMark() {
 export function DashboardShell({
   digests,
   user,
+  nav,
   children,
 }: {
   digests: DigestArchiveRow[];
   usingMock?: boolean;
   user?: {name?: string | null; email?: string | null; image?: string | null};
+  /** Tenant chrome: active company + companies to switch between. Absent = the
+   *  single-tenant (Zoomy) path, which renders exactly as before. */
+  nav?: {companyId: string | null; isCoopAdmin: boolean; companies: {id: string; name: string}[]};
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || '/';
@@ -177,6 +182,14 @@ export function DashboardShell({
     if (overviewGroupActive) setOverviewOpen(true);
   }, [overviewGroupActive]);
 
+  // Per-company nav. Zoomy (and any single-tenant / unknown case) keeps the exact
+  // legacy tabs; a non-Zoomy company (Goldline) also gets the Uploads inbox. The
+  // deeper per-company nav reduction waits on the existing pages being company-scoped.
+  const activeCompany = nav?.companyId ?? 'zoomy';
+  const showUploads = activeCompany !== 'zoomy';
+  const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
+  const flatTabs = showUploads ? [uploadsTab, ...FLAT_TABS] : FLAT_TABS;
+
   // ── Mobile nav model (below md only) ──────────────────────────────────────
   // The left rail is hidden under md; these drive a bottom tab bar (5 primary
   // destinations) + a "More" sheet for the rest. Reuses leafActive so highlight
@@ -188,6 +201,7 @@ export function DashboardShell({
     {href: '/offline-sales', label: 'Offline', icon: Receipt, active: leafActive('/offline-sales', pathname, channel)},
   ];
   const moreItems: NavItem[] = [
+    ...(showUploads ? [uploadsTab] : []),
     {href: '/health', label: 'Business Health', icon: Gauge},
     {href: '/offline-sales/orders', label: 'Transactions', icon: ReceiptText},
     {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
@@ -351,8 +365,11 @@ export function DashboardShell({
           />
         )}
 
-        {/* Right cluster: Ask Coop · theme · avatar */}
+        {/* Right cluster: company switcher · Ask Coop · theme · avatar */}
         <div className="ml-auto flex items-center gap-2">
+          {nav && nav.companies.length > 1 && (
+            <CompanySwitcher companies={nav.companies} activeId={nav.companyId} />
+          )}
           <AskCoopPill />
           <ThemeToggle />
           <div className="relative">
@@ -513,7 +530,7 @@ export function DashboardShell({
             </div>
           )}
 
-          {FLAT_TABS.map((t) => {
+          {flatTabs.map((t) => {
             const active = leafActive(t.href, pathname, channel);
             return (
               <Link

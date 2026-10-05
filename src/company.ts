@@ -109,6 +109,25 @@ export function switchableCompanies(memberships: Membership[]): string[] {
 
 // --- membership read (server/edge; PostgREST + service role) ----------------
 
+/** Company display names by id (edge-safe PostgREST; fail-soft []). Used by the
+ *  switcher — a missing name falls back to the slug at the call site. */
+export async function fetchCompanies(ids: string[]): Promise<{id: string; name: string}[]> {
+  const url = process.env.SUPABASE_URL_ARCHIVE;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE;
+  if (!ids.length || !url || !key) return [];
+  const inList = ids.map((i) => `"${i}"`).join(',');
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/companies?select=id,name&id=in.(${encodeURIComponent(inList)})`,
+      {headers: {apikey: key, authorization: `Bearer ${key}`}},
+    );
+    if (!res.ok) return [];
+    return (await res.json()) as {id: string; name: string}[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Fetch a user's memberships by email. Fail-soft: on any error returns [] so the
  * caller treats the user as unauthorized rather than crashing the auth flow.
