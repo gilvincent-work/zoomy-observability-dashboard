@@ -1,6 +1,6 @@
 // Layer 9: one JSON line per tool call, one per turn, and one error line per guard trip.
 // Never log secrets; keep params small.
-export type AuditSink = Pick<Console, 'info' | 'error'>;
+export type AuditSink = Pick<Console, 'info' | 'error'> & Partial<Pick<Console, 'warn'>>;
 
 const SECRET_KEY = /key|token|secret|authorization|password/i;
 const MAX_STRING = 300;
@@ -39,10 +39,12 @@ export function logToolCall(
 }
 
 export function logGuardTrip(
-  e: {layer: string; detail: unknown; user?: string | null},
+  e: {layer: string; detail: unknown; user?: string | null; level?: 'error' | 'warn'},
   sink: AuditSink = console,
 ): void {
-  sink.error(
+  // Hard trips log at error; a soft trip (spec 3.4 class S) at warn. A sink without warn falls back to info, never to silence.
+  const write = e.level === 'warn' ? (sink.warn ?? sink.info).bind(sink) : sink.error.bind(sink);
+  write(
     JSON.stringify({
       event: 'chat_guard_trip',
       layer: e.layer,
@@ -94,4 +96,45 @@ export function logTurn(
       ts: new Date().toISOString(), // bursts vs gaps decide whether the 5-minute prompt cache is warm
     }),
   );
+}
+
+/** Spec 8: one line per run_query call. Shape and counts only: never the SQL, a literal, a row, a cell or the purpose text. */
+export function logExploreQuery(
+  e: {step: 'probe' | 'final' | null; ok: boolean; code: string | null; fingerprint: string | null; literalsHash: string | null; literalCount?: number | null; views?: readonly string[]; functions?: readonly string[]; outCols?: number | null; rows?: number | null; truncated?: boolean; bytes?: number | null; ms?: number | null; user?: string | null},
+  sink: AuditSink = console,
+): void {
+  sink.info(
+    JSON.stringify({
+      event: 'chat_explore_query',
+      step: e.step,
+      ok: e.ok,
+      code: e.code,
+      fingerprint: e.fingerprint,
+      literals_hash: e.literalsHash,
+      literal_count: e.literalCount ?? null,
+      views: e.views ?? [],
+      functions: e.functions ?? [],
+      out_cols: e.outCols ?? null,
+      rows: e.rows ?? null,
+      truncated: e.truncated ?? false,
+      bytes: e.bytes ?? null,
+      ms: e.ms ?? null,
+      user: e.user ?? null,
+    }),
+  );
+}
+
+/** Spec 8: once per question when at least one final succeeded. The log the "promote repeated shapes to metrics" decision reads. */
+export function logRegistryGap(e: {fingerprints: readonly string[]; views: readonly string[]; metricsTried: readonly string[]; user?: string | null}, sink: AuditSink = console): void {
+  sink.info(JSON.stringify({event: 'chat_registry_gap', fingerprints: e.fingerprints, views: e.views, metrics_tried: e.metricsTried, user: e.user ?? null}));
+}
+
+/** Spec 8: the number check itself failed (never a dependency); the held text was shown unchecked. */
+export function logNumberCheckFailed(e: {user?: string | null}, sink: AuditSink = console): void {
+  sink.info(JSON.stringify({event: 'chat_number_check_failed', user: e.user ?? null}));
+}
+
+/** Spec 8: a fixed statement could not run (coverage line); reason code only. */
+export function logExploreEvent(event: 'chat_explore_off' | 'chat_explore_coverage_failed', detail: {reason?: string; code?: string}, sink: AuditSink = console): void {
+  sink.info(JSON.stringify({event, ...detail}));
 }

@@ -635,7 +635,7 @@ function CoopChatDrawer({
                           </div>
                         ) : p.text.trim() ? (
                           <div key={pi} className={ASSISTANT_BUBBLE}>
-                            <ChatMarkdown text={p.text} />
+                            <ChatMarkdown text={p.text} knownHostsOnly={(m.blocks ?? []).some((b) => b.block.exploratory === true)} />
                           </div>
                         ) : null,
                       )
