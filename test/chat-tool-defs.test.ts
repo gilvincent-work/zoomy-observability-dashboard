@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {CHAT_TOOLS} from '../src/chat/tool-defs';
+import {CHAT_TOOLS, exploreTools} from '../src/chat/tool-defs';
 import {METRIC_IDS, METRICS} from '../src/chat/metrics-registry';
 import {assertRequestShape} from '../src/chat/request-shape';
 
@@ -143,5 +143,28 @@ describe('CHAT_TOOLS', () => {
     expect(() => assertRequestShape(base, SINK)).not.toThrow();
     const extra = {...CHAT_TOOLS[0], name: 'run_sql'};
     expect(() => assertRequestShape({...base, tools: [...CHAT_TOOLS, extra]}, SINK)).toThrow(/allowlist/);
+  });
+});
+
+describe('exploreTools (spec 3.1)', () => {
+  it('is CHAT_TOOLS with run_query after query_metric: 11 tools, set_report_title still last with the cache breakpoint', () => {
+    const t = exploreTools();
+    expect(t).toHaveLength(11);
+    expect(t.map((x) => x.name).filter((n) => n !== 'run_query')).toEqual(CHAT_TOOLS.map((x) => x.name));
+    expect(t.map((x) => x.name).indexOf('run_query')).toBe(t.map((x) => x.name).indexOf('query_metric') + 1);
+    expect(t[t.length - 1].name).toBe('set_report_title');
+    expect(t[t.length - 1].cache_control).toEqual({type: 'ephemeral'});
+    expect(CHAT_TOOLS).toHaveLength(10);
+  });
+  it('run_query is strict with three required params, step enum and no banned keywords; the strict limits hold', () => {
+    const q = exploreTools().find((x) => x.name === 'run_query')!;
+    expect(q.strict).toBe(true);
+    expect(q.input_schema.required).toEqual(['purpose', 'sql', 'step']);
+    expect(q.input_schema.additionalProperties).toBe(false);
+    const p = q.input_schema.properties as Record<string, Record<string, unknown>>;
+    expect(p.step.enum).toEqual(['probe', 'final']);
+    for (const v of Object.values(p)) for (const b of ['maxLength', 'pattern', 'minLength']) expect(v).not.toHaveProperty(b);
+    expect(exploreTools().length).toBeLessThanOrEqual(20);
+    assertRequestShape({tools: exploreTools(), system: [], messages: []} as never, SINK);
   });
 });

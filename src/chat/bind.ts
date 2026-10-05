@@ -42,7 +42,8 @@ function checkFields(result: MetricResult, keys: string[], what: string, allowed
 function baseOf(result: MetricResult, id: string, title: string, usesShare: boolean): BlockBase {
   const {meta} = result;
   const basis = [usesShare ? meta.share_basis : null, meta.range.label].filter((p): p is string => Boolean(p)).join(', ');
-  return {id, source: result.id, title, reliable: meta.reliable, caveats: [...meta.caveats], basis: basis || null};
+  const base: BlockBase = {id, source: result.id, title, reliable: meta.reliable, caveats: [...meta.caveats], basis: basis || null};
+  return meta.exploratory ? {...base, exploratory: true, sql: meta.exploratory.sql} : base;
 }
 
 const isShareLike = (cols: ResultColumn[]): boolean => cols.some((c) => c.role === 'share' || c.unit === 'percent');

@@ -49,6 +49,10 @@ export interface BlockBase {
   caveats: string[];
   /** Short basis line, e.g. "share of tagged bundle revenue, Sep 11 to Sep 27". */
   basis: string | null;
+  /** Explore only: true when the block was drawn from a run_query result. The UI shows an "Exploratory" chip. */
+  exploratory?: true;
+  /** Explore only: the exact SQL that produced the rows, for a collapsed "Show SQL" disclosure. Never sent to the model. */
+  sql?: string | null;
 }
 
 export interface KpiBlock extends BlockBase {

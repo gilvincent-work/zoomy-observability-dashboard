@@ -3,12 +3,12 @@
 // (thinking blocks included), all tool_result blocks go back in ONE user message with results first, and the
 // system + tools prefix is identical on every request so the prompt cache holds.
 import type Anthropic from '@anthropic-ai/sdk';
-import {logNumberViolation, logTurn, type AuditSink} from './audit';
+import {logNumberCheckFailed, logNumberViolation, logRegistryGap, logTurn, type AuditSink} from './audit';
 import {checkNumbers} from './number-check';
 import {assertRequestShape} from './request-shape';
 import type {ChatStreamEvent, ChatUsage, ToolDefinition} from './stream-types';
 import {statusFor} from './tool-executors';
-import {dispatchToolCall, type ToolExecutors} from './tools';
+import {dispatchToolCall, type ToolExecutors, type ToolResult} from './tools';
 
 /** The only part of the Anthropic SDK the loop touches. The real `new Anthropic()` satisfies it. */
 export interface MessageStreamLike extends AsyncIterable<Anthropic.MessageStreamEvent> {
@@ -44,6 +44,8 @@ export interface ChatLoopOptions {
   clock?: () => number;
   signal?: AbortSignal;
   sink?: AuditSink;
+  /** Explore: the shape facts of the finals that succeeded (fingerprints, views), for the once-per-question chat_registry_gap line. */
+  exploreGap?: () => {fingerprints: string[]; views: string[]};
 }
 
 export interface ChatLoopSummary {
@@ -61,6 +63,8 @@ export const MAX_STEPS_TEXT = 'That took more steps than I allow. Try asking a n
 // DASH-01 as a gate: the first time a step asks to render before any text was written, every render call in that step is
 // refused once with this message. After that the calls go through even if no text came (bounded cost: one extra step).
 export const ORDER_NUDGE_TEXT = 'Nothing was drawn and your call was fine. Write the caveat (only if there is one) and one headline sentence as text now, in this same message, then repeat the same render calls.';
+// EXP-04: an Explore answer is held until its figures are checked against the query rows. One rewrite is requested, then the answer is shown with a note.
+export const NUMBER_NUDGE_TEXT = 'Some figures in your text do not appear in the query rows.';
 export const SAFE_ERROR_TEXT = 'Coop hit a problem answering that. Please try again.';
 /** The AI account itself is out of credit or blocked: nothing the owner can fix by retrying. No provider detail is shown. */
 export const ACCOUNT_ERROR_TEXT = 'Ask Coop\'s AI account needs attention, so it cannot answer right now. Please tell your admin.';
@@ -82,6 +86,11 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   // F11: the answer text and the (non-error) tool results of this turn, for the log-only number check.
   let answer = '';
   const seen: unknown[] = [];
+  // EXP-04 (spec 7): after a run_query FINAL succeeded, the text of this turn is held until the number check has passed.
+  let exploreUsed = false;
+  let held = '';
+  let numberRetried = false;
+  const metricsTried: string[] = [];
 
   const convo: Anthropic.MessageParam[] = opts.messages.map((m, i) =>
     i === opts.messages.length - 1 && m.role === 'user'
@@ -89,20 +98,56 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       : {role: m.role, content: m.content},
   );
 
-  // Log-only (Slice 6 #1): figures the answer displays that no tool result, question, preamble or digest holds. It never
-  // changes, delays or blocks the answer, and a failure of the check itself is swallowed.
+  const numberContext = (): string =>
+    [...opts.messages.map((m) => m.content), opts.preamble, ...opts.system.filter((b) => b.text.startsWith(DIGEST_HEADING)).map((b) => b.text)].join('\n');
+
+  // Log-only (Slice 6 #1) for every non-Explore turn: figures the answer displays that no tool result, question, preamble or digest holds.
+  // It never changes, delays or blocks the answer, and a failure of the check itself is swallowed.
   const auditNumbers = (): void => {
     try {
-      const context = [...opts.messages.map((m) => m.content), opts.preamble, ...opts.system.filter((b) => b.text.startsWith(DIGEST_HEADING)).map((b) => b.text)].join('\n');
-      const {violations, checked} = checkNumbers(answer, seen, {context});
+      const {violations, checked} = checkNumbers(answer, seen, {context: numberContext()});
       if (violations.length > 0) logNumberViolation({violations, checked, user: opts.user}, sink);
     } catch {
       // the check is a safety net, never a dependency
     }
   };
 
+  // Explore enforce mode: the held text, checked. `emit`s it (with a note when figures are unmatched) and clears it.
+  // `retry` is true when the caller can still ask the model for a rewrite; then a violation is NOT emitted and the list is returned instead.
+  const releaseHeld = (retry: boolean): string[] | null => {
+    const text = held;
+    if (text === '') return null;
+    let list: string[] = [];
+    try {
+      const {violations, checked} = checkNumbers(text, seen, {context: numberContext()});
+      list = violations.map((v) => v.value);
+      if (list.length > 0) {
+        if (retry) return list;
+        logNumberViolation({violations, checked, user: opts.user}, sink);
+      }
+    } catch {
+      logNumberCheckFailed({user: opts.user}, sink);
+      list = [];
+    }
+    held = '';
+    emit({t: 'text', d: list.length > 0 ? `${text}\n\nNote: some figures here could not be matched to the query rows: ${list.slice(0, 10).join(', ')}.` : text});
+    return null;
+  };
+  const dropHeld = (): void => {
+    answer = answer.slice(0, Math.max(0, answer.length - held.length));
+    held = '';
+  };
+
   const finish = (reason: string | null, done: boolean): ChatLoopSummary => {
     stopReason = reason;
+    if (exploreUsed && opts.exploreGap) {
+      try {
+        const g = opts.exploreGap();
+        logRegistryGap({fingerprints: g.fingerprints, views: g.views, metricsTried, user: opts.user}, sink);
+      } catch {
+        // a log line is never a dependency
+      }
+    }
     if (done) emit({t: 'done', steps, usage});
     logTurn({steps, usage, ms: clock() - t0, stopReason, user: opts.user}, sink);
     return {steps, usage, stopReason};
@@ -112,6 +157,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     if (signal?.aborted) return finish('aborted', false);
     // Wall-clock budget: stop gracefully BEFORE starting another model step, so Vercel never has to kill the stream mid-answer.
     if (clock() - t0 > deadlineMs) {
+      releaseHeld(false);
       emit({t: 'text', d: `${answer.trim() ? '\n\n' : ''}${DEADLINE_TEXT}`});
       return finish('deadline', true);
     }
@@ -138,7 +184,8 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
         if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
           if (ev.delta.text.trim() !== '') textSeen = true;
           answer += ev.delta.text;
-          emit({t: 'text', d: ev.delta.text});
+          if (exploreUsed) held += ev.delta.text; // held until the number check passes (EXP-04)
+          else emit({t: 'text', d: ev.delta.text});
         }
       }
       res = await stream.finalMessage();
@@ -156,20 +203,33 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     usage.cacheWrite += res.usage?.cache_creation_input_tokens ?? 0;
 
     if (res.stop_reason === 'refusal') {
+      held = '';
       emit({t: 'text', d: REFUSAL_TEXT});
       return finish('refusal', true);
     }
     if (res.stop_reason === 'max_tokens') {
+      releaseHeld(false);
       emit({t: 'text', d: CUT_OFF_TEXT});
       return finish('max_tokens', true);
     }
     const calls = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (res.stop_reason !== 'tool_use' || calls.length === 0) {
-      auditNumbers();
-      return finish(res.stop_reason, true);
+      if (!exploreUsed) {
+        auditNumbers();
+        return finish(res.stop_reason, true);
+      }
+      // Explore: the answer is checked before anyone sees it. One rewrite on a violation (it consumes a step), then the note.
+      const bad = releaseHeld(!numberRetried && steps < maxSteps);
+      if (bad === null) return finish(res.stop_reason, true);
+      numberRetried = true;
+      dropHeld();
+      convo.push({role: 'assistant', content: res.content as Anthropic.ContentBlockParam[]});
+      convo.push({role: 'user', content: [{type: 'text', text: `${NUMBER_NUDGE_TEXT} Figures not found in the query rows: ${bad.slice(0, 10).join(', ')}. Rewrite the answer using only figures from the rows, or say you cannot tell.`}]});
+      continue;
     }
 
     if (steps >= maxSteps) {
+      releaseHeld(false);
       emit({t: 'text', d: MAX_STEPS_TEXT});
       return finish('max_steps', true);
     }
@@ -179,10 +239,39 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     const isRender = (name: string) => name.startsWith('render_');
     const nudge = !textSeen && !nudged && calls.some((c) => isRender(c.name));
     if (nudge) nudged = true;
-    const results = await Promise.all(
-      calls.map((c) => (nudge && isRender(c.name) ? {is_error: true, content: {error: ORDER_NUDGE_TEXT}} : dispatchToolCall({name: c.name, input: c.input, user: opts.user}, opts.executors, sink))),
+    // EXP-04: held Explore text is checked the moment the model asks to draw (the owner would otherwise see blocks before the words).
+    let numberNudge: string | null = null;
+    if (held.trim() !== '' && calls.some((c) => isRender(c.name))) {
+      const bad = releaseHeld(!numberRetried);
+      if (bad !== null) {
+        numberRetried = true;
+        dropHeld();
+        numberNudge = `${NUMBER_NUDGE_TEXT} Figures not found in the query rows: ${bad.slice(0, 10).join(', ')}. Rewrite your text using only figures from the rows, then repeat the same render calls.`;
+      }
+    }
+    for (const c of calls) {
+      if (c.name === 'query_metric' && c.input !== null && typeof c.input === 'object' && typeof (c.input as {metric?: unknown}).metric === 'string') metricsTried.push((c.input as {metric: string}).metric);
+    }
+    const results: ToolResult[] = await Promise.all(
+      calls.map((c) =>
+        numberNudge !== null && isRender(c.name)
+          ? {is_error: true, content: {error: numberNudge}}
+          : nudge && isRender(c.name)
+            ? {is_error: true, content: {error: ORDER_NUDGE_TEXT}}
+            : dispatchToolCall({name: c.name, input: c.input, user: opts.user}, opts.executors, sink),
+      ),
     );
+    // A hard guard trip fails the request (spec 3.5): no further model step, nothing held is shown.
+    if (results.some((r) => r.trip)) {
+      held = '';
+      emit({t: 'text', d: REFUSAL_TEXT});
+      return finish('guard_trip', true);
+    }
     for (const r of results) if (!r.is_error) seen.push(r.content);
+    calls.forEach((c, i) => {
+      const content = results[i].content as {id?: unknown} | null;
+      if (c.name === 'run_query' && !results[i].is_error && typeof content?.id === 'string') exploreUsed = true;
+    });
     convo.push({
       role: 'user',
       content: calls.map((c, i): Anthropic.ToolResultBlockParam => ({
