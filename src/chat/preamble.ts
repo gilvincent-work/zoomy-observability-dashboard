@@ -14,7 +14,7 @@ function longToday(now: Date): string {
   return `${WEEKDAYS[pht.getUTCDay()]}, ${pht.getUTCDate()} ${FULL_MONTHS[pht.getUTCMonth()]} ${pht.getUTCFullYear()}`;
 }
 
-const NOT_AVAILABLE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (weekly digest only), customer-level data.';
+const NOT_AVAILABLE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (weekly digest only). Contact details (email, phone, instagram) are not exposed by the metrics. Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet. A free-form query tool is planned, not available yet.';
 
 /** Per-turn context when the live-data path is unavailable: today's date and an honest "not available" (no data, no figures). */
 export function buildDegradedPreamble(now: Date): string {
