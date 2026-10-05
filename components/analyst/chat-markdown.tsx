@@ -8,11 +8,11 @@ import remarkGfm from 'remark-gfm';
 //  2. Links are absolute http(s) only, open in a new tab and carry rel noopener. The library default also lets mailto:, irc: and
 //     relative links through; a chat answer needs none of them.
 //  3. Explore answers (`knownHostsOnly`): query rows hold text typed by customers and staff, so a link may only point at a host in
-//     KNOWN_LINK_HOSTS (the marketplaces the shop sells on). Any other link renders as plain text.
+//     KNOWN_LINK_HOSTS. The list is empty on purpose (owner, 2026-10-05: chat needs no links), so every link renders as plain text.
 // Copy still copies the raw text (CopyButton gets the message text, not this output).
 
 /** Pinned by a test: a change is a reviewed diff. */
-export const KNOWN_LINK_HOSTS: readonly string[] = ['shopee.ph', 'www.shopee.ph', 'lazada.com.ph', 'www.lazada.com.ph'];
+export const KNOWN_LINK_HOSTS: readonly string[] = [];
 
 /** react-markdown `urlTransform`: keep an absolute http(s) URL, drop everything else (the link then renders as plain text). With `knownHosts`, the host must be on the list. */
 export function safeLinkUrl(value: string, knownHosts?: readonly string[]): string {

@@ -73,12 +73,14 @@ describe('assistant markdown: Explore answers link only to known hosts', () => {
   it('lookalike hosts and userinfo tricks are refused', () => {
     for (const u of ['https://shopee.ph.evil.example/x', 'https://evil.example@shopee.ph/x', 'https://notshopee.ph/x', 'http://127.0.0.1/x']) expect(safeLinkUrl(u, KNOWN_LINK_HOSTS), u).toBe('');
   });
-  it('a marketplace link still works, and images are still dropped', () => {
-    expect(known('[shop](https://shopee.ph/zoomy)')).toContain('href="https://shopee.ph/zoomy"');
+  it('no link is clickable (the list is empty), and images are still dropped', () => {
+    const out = known('[shop](https://shopee.ph/zoomy)');
+    expect(out).not.toMatch(/<a /);
+    expect(out).toContain('shop');
     expect(known('![x](https://shopee.ph/p.png)')).not.toMatch(/<img/);
   });
-  it('the known host list is pinned (a change is a reviewed diff)', () => {
-    expect([...KNOWN_LINK_HOSTS]).toEqual(['shopee.ph', 'www.shopee.ph', 'lazada.com.ph', 'www.lazada.com.ph']);
+  it('the known host list is pinned empty (adding a host is a reviewed diff)', () => {
+    expect([...KNOWN_LINK_HOSTS]).toEqual([]);
   });
   it('without the flag the existing behaviour is unchanged', () => {
     expect(safeLinkUrl('https://example.com/a')).toBe('https://example.com/a');
