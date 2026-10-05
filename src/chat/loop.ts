@@ -58,6 +58,12 @@ export const REFUSAL_TEXT = "I can't help with that one.";
 export const CUT_OFF_TEXT = '\n\nThe answer was cut off.';
 /** The default wall-clock budget of one turn: the route allows 60 s, so a graceful stop has 10 s of room. */
 export const CHAT_DEADLINE_MS = 50_000;
+/**
+ * Soft deadline: after this much of the turn no NEW tool-using step starts. A turn that already has tool results then gets exactly one
+ * tool-less composing step (stopReason 'wrapped_up') instead of running into the hard deadline with nothing to say.
+ */
+export const TOOL_DEADLINE_MS = 30_000;
+export const WRAP_UP_TEXT = 'Time is short: answer now from the results above, and say what you could not check.';
 export const DEADLINE_TEXT = 'That took longer than I allow. Try a narrower question.';
 export const MAX_STEPS_TEXT = 'That took more steps than I allow. Try asking a narrower question.';
 // DASH-01 as a gate: the first time a step asks to render before any text was written, every render call in that step is
@@ -94,6 +100,8 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   // F1: how long each model step and each tool batch took (numbers only; the chat_turn line carries them).
   const stepMs: number[] = [];
   const toolMs: number[] = [];
+  const softMs = Math.min(TOOL_DEADLINE_MS, deadlineMs);
+  let wrapping = false; // the compose reserve was started: every further step of this turn is tool-less
 
   const convo: Anthropic.MessageParam[] = opts.messages.map((m, i) =>
     i === opts.messages.length - 1 && m.role === 'user'
@@ -164,6 +172,11 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       emit({t: 'text', d: `${answer.trim() ? '\n\n' : ''}${DEADLINE_TEXT}`});
       return finish('deadline', true);
     }
+    if (!wrapping && seen.length > 0 && clock() - t0 > softMs) {
+      wrapping = true;
+      const last = convo[convo.length - 1];
+      if (last?.role === 'user' && Array.isArray(last.content)) convo[convo.length - 1] = {role: 'user', content: [...last.content, {type: 'text', text: WRAP_UP_TEXT}]};
+    }
     steps += 1;
     const stepStart = clock();
 
@@ -179,7 +192,8 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
         cache_control: {type: 'ephemeral' as const},
         system: opts.system,
         // No tools (degraded digest-only mode): the API rejects an empty tools list, so omit tools and tool_choice.
-        ...(opts.tools.length > 0 ? {tools: [...opts.tools], tool_choice: {type: 'auto' as const}} : {}),
+        // The compose step keeps `tools` (the API requires them while tool_use blocks are in the history) but forbids calling them.
+        ...(opts.tools.length > 0 ? {tools: [...opts.tools], tool_choice: wrapping ? {type: 'none' as const} : {type: 'auto' as const}} : {}),
         messages: [...convo],
       };
       assertRequestShape(params, sink);
@@ -219,13 +233,15 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     }
     const calls = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (res.stop_reason !== 'tool_use' || calls.length === 0) {
+      const endReason = wrapping && res.stop_reason === 'end_turn' ? 'wrapped_up' : res.stop_reason;
       if (!exploreUsed) {
         auditNumbers();
-        return finish(res.stop_reason, true);
+        return finish(endReason, true);
       }
       // Explore: the answer is checked before anyone sees it. One rewrite on a violation (it consumes a step), then the note.
-      const bad = releaseHeld(!numberRetried && steps < maxSteps);
-      if (bad === null) return finish(res.stop_reason, true);
+      // A rewrite never starts past the hard deadline: the held answer is shown with its note instead.
+      const bad = releaseHeld(!numberRetried && steps < maxSteps && clock() - t0 <= deadlineMs);
+      if (bad === null) return finish(endReason, true);
       numberRetried = true;
       dropHeld();
       convo.push({role: 'assistant', content: res.content as Anthropic.ContentBlockParam[]});

@@ -30,7 +30,7 @@ export function assertRequestShape(params: unknown, sink?: AuditSink): void {
   if ('tool_choice' in p) {
     const tc = p.tool_choice as {type?: unknown} | null;
     const keys = tc && typeof tc === 'object' ? Object.keys(tc) : [];
-    if (!tc || typeof tc !== 'object' || tc.type !== 'auto' || keys.length !== 1) fail('tool_choice must be exactly {type:"auto"}', tc, sink);
+    if (!tc || typeof tc !== 'object' || (tc.type !== 'auto' && tc.type !== 'none') || keys.length !== 1) fail('tool_choice must be exactly {type:"auto"} (or {type:"none"} for the compose-only step)', tc, sink);
   }
   if ('tools' in p) {
     if (!Array.isArray(p.tools)) fail('tools must be an array', typeof p.tools, sink);

@@ -140,3 +140,40 @@ describe('EXP-02 params for the tool log never hold SQL', () => {
     expect(JSON.stringify(t.s.info.mock.calls)).not.toContain('Maria Santos');
   });
 });
+
+describe('compose reserve with the Explore number check', () => {
+  // The script runs when a step starts, so it advances the fake clock by that step's duration.
+  const timed = (durations: number[], answer: string) => {
+    let t = 0;
+    const m = new FakeModel((n) => ((t += durations[n - 1] ?? 0), n === 1 ? toolTurn('', RUN()) : {text: [answer], stop_reason: 'end_turn'}));
+    return {m, clock: () => t};
+  };
+
+  it('the held wrap-up answer is checked and released normally', async () => {
+    const {m, clock} = timed([35_000, 5_000], 'Dogs made ₱1,200.50 from 14 orders.'); // step 1 ends t=35 > 30 soft
+    const t = run(m, {clock});
+    const sum = await t.go();
+    expect(sum.stopReason).toBe('wrapped_up');
+    expect(text(t.events)).toBe('Dogs made ₱1,200.50 from 14 orders.');
+  });
+
+  it('a wrapped-up answer with a bad figure gets NO retry once past the hard deadline: it is shown with the note', async () => {
+    const {m, clock} = timed([35_000, 20_000], 'Dogs made ₱9,999.'); // wrap-up ends t=55 > 50
+    const t = run(m, {clock});
+    const sum = await t.go();
+    expect(m.requests).toHaveLength(2);
+    expect(sum.stopReason).toBe('wrapped_up');
+    expect(text(t.events)).toContain('9,999');
+    expect(text(t.events)).toContain('could not be matched');
+  });
+
+  it('a bad figure inside the deadline still gets its one rewrite, and the rewrite is tool-less too', async () => {
+    let t = 0;
+    const m = new FakeModel((n) => ((t += 35_000 * (n === 1 ? 1 : 0) + 1_000), n === 1 ? toolTurn('', RUN()) : {text: [n === 2 ? 'Dogs made ₱9,999.' : 'Dogs made ₱1,200.50.'], stop_reason: 'end_turn'}));
+    const r = run(m, {clock: () => t});
+    const sum = await r.go();
+    expect(sum.steps).toBe(3);
+    expect(JSON.parse(m.requests[2]).tool_choice).toEqual({type: 'none'});
+    expect(text(r.events)).toBe('Dogs made ₱1,200.50.');
+  });
+});
