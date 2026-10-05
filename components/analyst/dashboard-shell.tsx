@@ -4,11 +4,13 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, FileBarChart, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Tag, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, FileBarChart, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Store, Tag, Upload, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
+import {CompanySwitcher} from './company-switcher';
+import {shouldRedirectFromZoomy} from '@/src/company-nav';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
 import {CustomRangePicker} from './custom-range-picker';
@@ -80,11 +82,15 @@ function CoopMark() {
 export function DashboardShell({
   digests,
   user,
+  nav,
   children,
 }: {
   digests: DigestArchiveRow[];
   usingMock?: boolean;
   user?: {name?: string | null; email?: string | null; image?: string | null};
+  /** Tenant chrome: active company + companies to switch between. Absent = the
+   *  single-tenant (Zoomy) path, which renders exactly as before. */
+  nav?: {companyId: string | null; isCoopAdmin: boolean; companies: {id: string; name: string}[]};
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || '/';
@@ -92,6 +98,9 @@ export function DashboardShell({
   // Mobile "More" sheet (below md). Deterministic false default → matches SSR, so
   // desktop hydration is unaffected (mirrors the navExpanded pattern below).
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Sign-out confirmation — signing out is easy to hit by accident and costs a
+  // re-auth, so both entry points open a confirm dialog instead of acting directly.
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const initials = (user?.name || user?.email || 'ZY')
     .split(/[\s@.]+/)
     .filter(Boolean)
@@ -177,26 +186,50 @@ export function DashboardShell({
     if (overviewGroupActive) setOverviewOpen(true);
   }, [overviewGroupActive]);
 
+  // Per-company nav. nav absent => legacy single-tenant Zoomy (incl. local dev-auth
+  // bypass, where nav is null). nav present => the same rule the server guard uses:
+  // Zoomy passes, everyone else (Goldline, or the data-blind Coop Admin whose
+  // companyId is null) is non-Zoomy. Non-Zoomy gets ONLY their own tab (Uploads);
+  // the Zoomy-specific tabs are hidden (and the pages are guarded server-side too).
+  const isZoomy = !shouldRedirectFromZoomy(nav ?? null);
+  const showUploads = !isZoomy;
+  const activeName = nav?.isCoopAdmin
+    ? 'Coop Admin'
+    : (nav?.companies.find((c) => c.id === nav?.companyId)?.name ?? 'Zoomy');
+  const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
+  const overviewTab: NavItem = {href: '/overview', label: 'Overview', icon: BarChart3};
+  const storesTab: NavItem = {href: '/stores', label: 'Stores', icon: Store};
+  const overviewChildren = isZoomy ? OVERVIEW_CHILDREN : [];
+  const flatTabs = isZoomy ? FLAT_TABS : [overviewTab, uploadsTab, storesTab];
+
   // ── Mobile nav model (below md only) ──────────────────────────────────────
   // The left rail is hidden under md; these drive a bottom tab bar (5 primary
   // destinations) + a "More" sheet for the rest. Reuses leafActive so highlight
   // logic is identical to the rail. Desktop never renders any of this (md:hidden).
-  const mobileTabs = [
-    {href: '/', label: 'Home', icon: Home, active: leafActive('/', pathname, channel)},
-    {href: '/?channel=all', label: 'Sales', icon: BarChart3, active: leafActive('/?channel=all', pathname, channel)},
-    {href: '/inventory', label: 'Inventory', icon: Package, active: leafActive('/inventory', pathname, channel)},
-    {href: '/offline-sales', label: 'Offline', icon: Receipt, active: leafActive('/offline-sales', pathname, channel)},
-  ];
-  const moreItems: NavItem[] = [
-    {href: '/health', label: 'Business Health', icon: Gauge},
-    {href: '/offline-sales/orders', label: 'Transactions', icon: ReceiptText},
-    {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
-    {href: '/customers', label: 'Customers', icon: Users},
-    {href: '/reports', label: 'Reports', icon: FileBarChart},
-    {href: '/traffic', label: 'Traffic', icon: Activity},
-    {href: '/repricer', label: 'Repricer', icon: Tag},
-    {href: '/settings', label: 'Settings', icon: Settings},
-  ];
+  const mobileTabs = isZoomy
+    ? [
+        {href: '/', label: 'Home', icon: Home, active: leafActive('/', pathname, channel)},
+        {href: '/?channel=all', label: 'Sales', icon: BarChart3, active: leafActive('/?channel=all', pathname, channel)},
+        {href: '/inventory', label: 'Inventory', icon: Package, active: leafActive('/inventory', pathname, channel)},
+        {href: '/offline-sales', label: 'Offline', icon: Receipt, active: leafActive('/offline-sales', pathname, channel)},
+      ]
+    : [
+        {href: '/overview', label: 'Overview', icon: BarChart3, active: leafActive('/overview', pathname, channel)},
+        {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
+        {href: '/stores', label: 'Stores', icon: Store, active: leafActive('/stores', pathname, channel)},
+      ];
+  const moreItems: NavItem[] = isZoomy
+    ? [
+        {href: '/health', label: 'Business Health', icon: Gauge},
+        {href: '/offline-sales/orders', label: 'Transactions', icon: ReceiptText},
+        {href: '/offline-sales/events', label: 'Events', icon: CalendarDays},
+        {href: '/customers', label: 'Customers', icon: Users},
+        {href: '/reports', label: 'Reports', icon: FileBarChart},
+        {href: '/traffic', label: 'Traffic', icon: Activity},
+        {href: '/repricer', label: 'Repricer', icon: Tag},
+        {href: '/settings', label: 'Settings', icon: Settings},
+      ]
+    : [];
   const moreActive = moreItems.some((i) => leafActive(i.href, pathname, channel));
 
   return (
@@ -215,17 +248,23 @@ export function DashboardShell({
           </span>
         </Link>
 
-        {/* Brand switcher (Zoomy) — visual for now. Hidden on the narrowest
-            screens so the mobile header (period + Ask + theme + avatar) doesn't
-            overflow; visible from sm up, so desktop is unchanged. */}
-        <button
-          type="button"
-          className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted max-sm:hidden"
-        >
-          <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
-          Zoomy
-          <ChevronDown className="size-3.5 text-muted-foreground" />
-        </button>
+        {/* Company switcher. A real switcher when the user has >1 company; otherwise
+            a static pill showing the active company (Zoomy by default). Hidden on the
+            narrowest screens so the mobile header doesn't overflow. */}
+        {nav && nav.companies.length > 1 ? (
+          <div className="ml-1 max-sm:hidden">
+            <CompanySwitcher companies={nav.companies} activeId={nav.companyId} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted max-sm:hidden"
+          >
+            <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
+            {activeName}
+            <ChevronDown className="size-3.5 text-muted-foreground" />
+          </button>
+        )}
 
         {/* Source switcher — the Customers hub's three contact lists */}
         {showSource && (
@@ -353,7 +392,8 @@ export function DashboardShell({
 
         {/* Right cluster: Ask Coop · theme · avatar */}
         <div className="ml-auto flex items-center gap-2">
-          <AskCoopPill />
+          {/* Ask Coop reads Zoomy data; hidden for non-Zoomy companies (the API 403s them). */}
+          {!showUploads && <AskCoopPill />}
           <ThemeToggle />
           <div className="relative">
             <button
@@ -375,7 +415,10 @@ export function DashboardShell({
                     {user?.email && <div className="truncate text-[11px] text-muted-foreground">{user.email}</div>}
                   </div>
                   <button
-                    onClick={() => signOut({callbackUrl: '/signin'})}
+                    onClick={() => {
+                      setAccountOpen(false);
+                      setSignOutOpen(true);
+                    }}
                     className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted"
                   >
                     <LogOut className="size-3.5 text-muted-foreground" /> Sign out
@@ -433,7 +476,7 @@ export function DashboardShell({
               </div>
               {overviewOpen && (
                 <div className="ml-3 mt-1 flex flex-col gap-1 border-l border-sidebar-border pl-3">
-                  {OVERVIEW_CHILDREN.map((c) => {
+                  {overviewChildren.map((c) => {
                     const active = leafActive(c.href, pathname, channel);
                     return (
                       <Link
@@ -488,7 +531,7 @@ export function DashboardShell({
                 <>
                   <button className="fixed inset-0 z-20 cursor-default" aria-hidden onClick={() => setOverviewFlyout(false)} />
                   <div role="menu" className="absolute left-full top-0 z-30 ml-2 w-52 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lg">
-                    {[OVERVIEW, ...OVERVIEW_CHILDREN].map((item) => {
+                    {[OVERVIEW, ...overviewChildren].map((item) => {
                       const active = leafActive(item.href, pathname, channel);
                       return (
                         <Link
@@ -513,7 +556,7 @@ export function DashboardShell({
             </div>
           )}
 
-          {FLAT_TABS.map((t) => {
+          {flatTabs.map((t) => {
             const active = leafActive(t.href, pathname, channel);
             return (
               <Link
@@ -642,7 +685,10 @@ export function DashboardShell({
               {user?.email && <div className="truncate text-[11px] text-muted-foreground">{user.email}</div>}
             </div>
             <button
-              onClick={() => signOut({callbackUrl: '/signin'})}
+              onClick={() => {
+                setMobileNavOpen(false);
+                setSignOutOpen(true);
+              }}
               className="flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-muted active:scale-[0.99]"
             >
               <LogOut className="size-4 text-muted-foreground" /> Sign out
@@ -651,6 +697,49 @@ export function DashboardShell({
         </div>
       </div>
     </div>
+    {signOutOpen && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="signout-title"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setSignOutOpen(false);
+        }}
+      >
+        <button
+          type="button"
+          aria-label="Cancel sign out"
+          onClick={() => setSignOutOpen(false)}
+          className="absolute inset-0 cursor-default bg-foreground/30 backdrop-blur-[1px]"
+        />
+        <div className="relative z-10 w-full max-w-xs overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+          <div className="flex flex-col gap-1 px-5 pt-5">
+            <h2 id="signout-title" className="font-heading text-base font-semibold text-foreground">
+              Sign out of Coop?
+            </h2>
+            <p className="text-sm text-muted-foreground">You&apos;ll need to sign in again to get back in.</p>
+          </div>
+          <div className="mt-4 flex justify-end gap-2 border-t border-border bg-muted/40 px-4 py-3">
+            <button
+              type="button"
+              autoFocus
+              onClick={() => setSignOutOpen(false)}
+              className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => signOut({callbackUrl: '/signin'})}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/10 px-3 py-1.5 text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:outline-none"
+            >
+              <LogOut className="size-3.5" /> Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </CoopChatProvider>
     </PlaybookProvider>
   );

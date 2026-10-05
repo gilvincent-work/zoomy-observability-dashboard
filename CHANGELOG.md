@@ -207,6 +207,66 @@ users yet: `/api/chat` is not rewired, and the existing digest chat behaves as b
 
 ---
 
+## 2026-10-05 — UX: sign-out confirmation
+- Signing out now opens a confirmation dialog ("Sign out of Coop?") instead of firing immediately — it was a one-click destructive action with no guard. Shared by both entry points (desktop account menu + mobile sheet); dismiss via Cancel, overlay click, or Escape; the confirm action uses the destructive token. No behaviour change beyond the extra confirm step.
+
+## 2026-10-05 — Goldline P3/P4: Stores leaderboard + sales overview (gl_sales analytics)
+- `src/goldline-analytics.ts` (server-only): `getGoldlineAnalytics(companyId)` derives store + SKU rollups and a headline summary from `gl_sales`, joined to `gl_stores` for names. Company-scoped on every read (service-role bypasses RLS, so `company_id` is the fence) and paginated via `fetchAllRows`; JS aggregation at v1 scale (RPC/view is the later optimization).
+- `app/stores/page.tsx` + `components/analyst/goldline-stores-view.tsx` (P4): per-store leaderboard — units / gross / net / SKU count — searchable, sortable, paginated, with summary stat cards. Empty-state prompts a CSV upload.
+- `app/overview/page.tsx` (P3): server-rendered sales summary (gross / units / net / stores-selling) + Top stores and Top SKUs bar lists. Empty-state when there are no sales yet.
+- Both pages scoped by `getDataContext` and surfaced in the non-Zoomy nav (Overview · Uploads · Stores); they're new routes, not under the Zoomy guard. Zoomy has no `gl_*` data so they render empty there (and its nav doesn't link them).
+- Staging seeded with a **catalog only** (5 `gl_stores`, 6 `gl_products` with the item_code↔sku_code crosswalk); `gl_sales`/`gl_inventory` intentionally left empty for manual CSV/PDF upload testing. typecheck + full suite (1840) + pagination guard pass.
+
+## 2026-10-05 — Goldline P0: tenant guard on Zoomy-only routes (data-isolation fence)
+- **Security fence before Goldline go-live.** The legacy Overview/Health/Inventory/Sales/… pages read Zoomy data with no company dimension, so a non-Zoomy viewer would have seen Zoomy data by URL. Added `requireZoomyData()` (`src/active-context.ts`) + a pure, unit-tested `shouldRedirectFromZoomy` (`src/company-nav.ts`, +3 tests): a Goldline user or the data-blind Coop Admin is redirected to `/uploads`; signed-out and local dev-auth bypass are a no-op.
+- Applied as a transparent **section guard layout** per Zoomy-only section (`app/{health,inventory,offline-sales,customers,reports,traffic,repricer,settings,lazada,crm}/layout.tsx`) plus the root overview (`app/page.tsx`) — one choke point per section, so future sub-pages are auto-guarded. `/uploads`, `/signin`, `/dev` are intentionally unguarded.
+- Ask Coop fenced to Zoomy too: `/api/chat` returns 403 for a non-Zoomy context, and the shell hides the “Ask coop” pill for non-Zoomy companies.
+- Zoomy is unaffected (guard no-ops for `companyId === 'zoomy'`). typecheck + tests + pagination guard pass; runtime pending the Staging deploy.
+- **Regression review (code-reviewer agent) + fixes**: (CRITICAL) the root layout fetched `getDigests()` for every authed user and serialized Zoomy data into the RSC payload on every route above the guards — now gated so Zoomy digests load only for a Zoomy viewer (dev-auth bypass + legacy no-membership staff stay Zoomy; a resolved Goldline/Coop-Admin gets none, which also hides the period switcher). (HIGH) the new `getActiveContext` import had broken `test/chat-route.test.ts` at import → mocked it, suite green again. (MED) the chat guard is skipped under dev-auth bypass so the "bypass never calls `auth()`" invariant holds. (MED) the shell now treats a data-blind Coop Admin (`companyId` null) as non-Zoomy — reusing the tested `shouldRedirectFromZoomy` as the single source of truth — so a non-Zoomy viewer's nav reduces to Uploads only (no Zoomy tabs / Ask Coop pill) and the pill/label are correct. Removed the now-redundant `showUploadsFor`.
+
+## 2026-10-05 — Goldline P0: company switcher + cookie-based active company + Uploads nav
+- `src/active-context.ts`: `getActiveContext` now falls back to an `active_company` cookie when no explicit company is requested (still re-validated against real memberships by `resolveActive`, so a cookie can never grant access). Adds `getNavContext()` — the active company, role, and switchable companies (names fetched only when a switcher would actually render) for the app shell.
+- `src/company.ts`: `fetchCompanies(ids)` — edge-safe PostgREST name lookup for the switcher, fail-soft `[]`.
+- `app/actions/company.ts` (`setActiveCompany`) + `components/analyst/company-switcher.tsx`: the top-bar tenant switcher writes the cookie via a server action then refreshes; only rendered when the user belongs to >1 company.
+- `components/analyst/dashboard-shell.tsx` + `app/layout.tsx`: the shell takes a `nav` prop and shows the switcher (>1 company) plus an **Uploads** tab for non-Zoomy companies. **Zoomy's single-tenant path is unchanged** — no `nav`/one company means no switcher and the exact legacy tabs. Deeper per-company nav reduction waits on the existing pages being company-scoped (next slice).
+- **Regression review (code-reviewer agent) + fixes**: both critical invariants held (Zoomy single-tenant nav unchanged; the cookie can't grant cross-tenant access — it's re-validated against memberships). Fixes: (1) the old static "Zoomy" header pill is replaced by the real switcher when >1 company, else a pill showing the active company's name (so it never double-renders or mislabels once multi-tenant) — `getNavContext` now always resolves names since the pill always shows one; (2) `setActiveCompany` cookie is `secure` in production; (3) `switchableCompanies` de-duplicates; (4) extracted a pure, unit-tested `showUploadsFor` (`src/company-nav.ts`, +2 tests) to pin the "Zoomy → no Uploads tab" invariant against future drift. Noted/accepted: under `DEV_AUTH_BYPASS` the switcher can't be exercised locally (nav resolves via real `auth()`).
+- typecheck + full suite + pagination guard pass; runtime pending the Staging deploy (and a 2nd seeded company to exercise the switcher).
+
+## 2026-10-05 — Goldline P2: Uploads UI (list + review workbench) + commit path
+- `app/uploads/page.tsx` + `components/analyst/uploads-view.tsx`: the per-company ingestion inbox — drop a `.csv`/`.pdf` (posts to the upload route scoped by active company), then a searchable / status- & type-filterable / paginated file list with status pills; a sales CSV commits and refreshes, a scanned PDF auto-routes to its review page. Scoped by `getDataContext`; a data-blind Coop Admin / non-member sees a gate, not data.
+- `app/uploads/[id]/page.tsx` + `components/analyst/upload-review.tsx`: the review workbench for a scanned page — editable store/period header, a document-confidence bar, and an exception-first rows table (flagged-only ↔ all toggle) with low-confidence rows highlighted and every count editable before commit. A CSV shows a status summary instead.
+- `app/uploads/actions.ts` (`commitReview`) + `src/goldline-data.ts` (`getUpload`, `getExtraction`, `commitInventory`): the commit server action re-derives the tenant context, re-checks `canEditData` + store scope, coerces/caps the submitted rows, then upserts `gl_inventory` (idempotent on the natural key) and closes the upload — all three writes company-scoped. `saveExtraction` now stages the full extracted page (header + rows) so review/commit have the store + period.
+- **Regression review (code-reviewer agent) + fixes**: (HIGH) `commitReview` now confirms the client-supplied `uploadId` belongs to the acting tenant (`getUpload`) before any write — closes a cross-tenant linkage where a crafted id could stamp one company's `gl_inventory` against another's upload; (MED) raw Postgres error text no longer reaches the browser — the commit action and the upload route's storage/DB 500s log server-side and return a generic message; (MED) period is validated as a real calendar date with `start ≤ end`, not just the YYYY-MM-DD shape; (LOW) committed counts are bounded (non-negative, ≤ 1,000,000) and rejected loudly. Confirmed clean by the reviewer: tenant scoping on all reads, auth gates, the `server-only`→client `import type` boundary (no runtime leak), and pagination.
+- Additive, new routes only — no existing page touched; nav wiring + company switcher come with the rescope slice. typecheck + full suite (1837) + pagination guard pass; runtime pending the Staging deploy.
+
+## 2026-10-05 — Goldline P2: archive data layer + upload/extraction route; Staging DB applied
+- `src/goldline-data.ts`: server-only writes/reads for the `gl_*` tables (same service-role seam as `src/data.ts`). `createUpload` stores the raw file in the private `goldline-uploads` Storage bucket then opens a `gl_uploads` row; `upsertSales` idempotently upserts parsed POS rows on the natural key; `saveExtraction` stages a Vision page in `gl_extractions`; `listUploads` reads newest-first through the paginator. Every row stamped with the active `company_id`.
+- `src/goldline-upload.ts` (+ 7 tests): pure upload gate — only `.csv`/`.pdf`, 25 MB cap, extension authoritative with a MIME-contradiction reject; returns the `gl_uploads` kind.
+- `app/api/goldline/upload/route.ts`: the POST endpoint. Scopes by the active company (`getDataContext` + `canEditData` — data-blind Coop Admin and read-only analysts refused), gates the file type first, then CSV → `gl_sales` (needs `period_start`/`period_end`) or PDF → Claude Vision page 1 → `gl_extractions` staged `needs_review`. Fails loud, marking the upload `failed`/`rejected` with a reason.
+- **Staging DB applied**: `companies.sql` + `goldline.sql` run on `syxwixxzmytvhwhkwdvw` — `companies` seeded with `zoomy`, 4 `pos_dashboard_users` migrated to Zoomy `company_admin`, all `gl_*` tables + the `company_role` enum present, private `goldline-uploads` Storage bucket created.
+- **Regression review (code-reviewer agent) + fixes**: (1) `store_manager` `storeScope` is now enforced on the write path — a new pure `outOfScopeStores` helper (`src/company.ts`, +3 tests) rejects an upload (CSV rows or a scanned form) for any store outside the caller's scope, the intra-tenant fence the DB `company_id` can't see; (2) uploaded filenames are sanitized to a safe basename (`safeObjectName`) before becoming a Storage key, so a crafted name can't escape the `company_id/` prefix; (3) the Vision call carries a 100s per-request timeout under the route's 120s limit so a hung call marks the upload `failed` instead of leaving it `processing`; (4) the extraction response is runtime shape-checked before it reaches the review queue. Accepted/deferred: membership/role is cached in the JWT (re-validated at sign-in, not per request) and the SDK call shape needs the Staging smoke test to confirm end-to-end.
+- typecheck + 34 tests + pagination guard pass. Route runtime is pending a Staging smoke test (needs `ANTHROPIC_API_KEY` for the PDF path).
+
+## 2026-10-05 — Goldline P1/P2: POS CSV parser + live Vision extraction wrapper
+- `src/goldline-csv.ts`: dependency-free RFC-4180 CSV parser + `parseGoldlinePos` mapping the real Nichido POS columns to `gl_sales`-ready rows — case/space-insensitive headers, thousands separators stripped, blank cells → null (not 0), rows missing store/SKU skipped with a note. 7 tests.
+- `src/goldline-extract-run.ts`: server-only live Claude Vision call (`extractInventoryPage`) over the P2 prompt/manifest/schema; reads `ANTHROPIC_API_KEY` from env, returns one parsed page or throws on `{error}` / invalid JSON. `extractionConfigured()` lets the PDF path disable cleanly without a key.
+- `src/goldline-extract.ts`: extraction model aligned to the chat's `claude-sonnet-5-5`.
+- typecheck + 24 tests + pagination guard pass. The live call is pending a Staging smoke test with the key in env.
+
+## 2026-10-05 — Goldline onboarding P2 (core): template-aware extraction prompt + schema
+- `src/goldline-extract.ts`: the pure, template-aware extraction core for the Nichido inventory forms — a per-page item manifest (page 1 enumerated from the verified scan; pages 2–6 pending generation from the blank templates, guarded so a page can't run blind), the fixed system prompt carrying the form-specific guardrails (slot-fill against the manifest, blank ≠ zero, column discipline, no total math, page-match, fail-loud `{error}`), and the JSON output schema (header + one row per item with per-field confidence + `alt`). No network/SDK here, so it unit-tests; the live Claude call + upload route is the next slice, smoke-tested on Staging with `ANTHROPIC_API_KEY` in env.
+- `src/goldline-extract.test.ts`: 6 cases over the prompt, manifest, and schema. typecheck + all tests + pagination guard pass.
+
+## 2026-10-05 — Goldline onboarding P1: gl_* data model + tenant scoping seam
+- `supabase/goldline.sql`: the `gl_*` tables, modeled on the real Nichido source files — `gl_stores`, `gl_products` (with the `item_code` ↔ `sku_code` crosswalk), `gl_sales` + `gl_inventory` (store × SKU × period, idempotent natural keys + indexes), `gl_uploads`, `gl_extractions` (Claude Vision output staged for review), and per-company `company_digest_archive` / `company_business_health`. RLS on, service-role only; additive, depends on `companies.sql`. Apply on Staging first.
+- `src/active-context.ts`: server accessor (`getActiveContext` / `getDataContext`) bridging the session to `resolveActive`, so pages scope by the active company and a data-blind Coop Admin gets no data context.
+- `.env.example`: `ANTHROPIC_API_KEY` placeholder (server-only, for Goldline PDF extraction; set in Vercel, never committed). typecheck, tests, and the pagination guard pass.
+
+## 2026-10-05 — Goldline onboarding P0: multi-tenant foundation (data-blind Coop Admin)
+- `supabase/companies.sql`: new `companies` + `company_users` tables and a `company_role` enum (coop_admin / company_admin / analyst / store_manager). RLS on with no policies (service-role only) — app-level scoping by the active `company_id` is the primary fence, this RLS is the backstop. Seeds Zoomy as the first company and migrates existing `pos_dashboard_users` to Zoomy members so sign-in can move off `ALLOWED_EMAILS` without locking anyone out. Additive — no existing table touched. Apply on Staging first.
+- `src/company.ts`: role/membership types, `resolveActive` (Coop Admin resolves to a cross-tenant, data-blind context), capability helpers (`canEditData` / `canManageTeam` / `isCoopAdmin`), and a fail-soft PostgREST membership fetch (edge-safe, no `server-only`).
+- `auth.ts`: sign-in now allows a `company_users` membership in addition to `ALLOWED_EMAILS` (backward-compatible); memberships are attached to the JWT at sign-in and surfaced on the session.
+- Tests: `src/company.test.ts` (11 cases) for the scoping + capability logic. typecheck, the new tests, and the pagination guard pass. Not yet applied to Staging; no company switcher or page rescoping yet (next slices).
 
 ## 2026-10-02 — Talk to Data: database setup runbook, grid proof; staging applied
 - `docs/talk-to-data-db-setup-runbook.md`: step-by-step for the three SQL files, the verify query, the proof, the Vercel env vars, rollback and a symptom table. Staging was applied and verified today (proof ALL PASS, 49 of 49); PROD is next.
@@ -277,6 +337,194 @@ Fixes from the consolidated independent review of `feat/talk-to-data-spikes`. Ea
 
 ---
 
+## 2026-10-01 — Talk to Data: the Ask Coop Data Analyst skill — `feat(chat)`
+
+How Ask Coop thinks, now as runtime product content in its cached prompt
+(`src/chat/skills/ask-coop-data-analyst/`): a core "How you think" procedure (understand, check the
+data first, get every number from a tool, sanity-check, state the method, present like an analyst,
+close the loop), a voice, and four topics (parts and totals, comparing periods, allocated figures
+and prices, coverage and data quality). Every rule has a stable id; a gear marks the 18 rules the
+app also enforces in code.
+
+- **The guide and the code cannot drift:** tests fail if an id exists on only one side, if a
+  placeholder is unfilled, if a number in the text differs from the code constant, if a gear rule has
+  no test titled with its id (the gate is shown to fail), or if the skill passes its size budget
+  (about 2,400 tokens today, cap 4,500, estimate).
+- **Scope decision:** the chart-form and dashboard-layout topics describe things that do not exist
+  until the chart tools (F7), so they ship with F7. Today's skill says only what the app can do.
+- Replaces the two stopgap guardrail lines from the previous step with rules BI-08 (rank claims
+  only about the rows shown) and ANL-04 (no number words).
+- **Kept out of the prompt on purpose** (tests guard it): production-derived figures (a prompt gets
+  parroted and the data changes), and any promise to "log" or "save" something Coop cannot do.
+- Vercel: a real `next build` shows the skill files are traced into the chat route, so no config was
+  needed.
+- **Live skill evals** (12 cases, real model, synthetic data, mechanical scoring): 11 of 12 pass.
+  Reading the failures led to three changes: a narrow question must not get an unrequested comparison
+  (THINK-06 and a scorer check), the small-sample rule now says "say small sample before any figure
+  and lead with counts" instead of banning a share the owner asked for, and a scorer false negative
+  was fixed. The remaining failure was a 4th sentence, so the cap became 4 (a method line and a next
+  question already make 3).
+- **No regression** on the 14 base questions with the skill loaded (real data, read-only): median
+  5.4 s, p95 11.3 s, median cost $0.015 and max $0.033 (estimates); cached prefix 12k to 15k tokens.
+
+---
+
+## 2026-10-01 — Talk to Data: Ask Coop answers from live POS data — `feat(chat)`
+
+The first real answer. A question in the Ask Coop drawer is answered from live offline POS
+data through the metrics registry, streamed, with the data check first. Verified in a real
+browser against the real (read-only) data: the dog/cat bundle split reproduces the plan's
+figures with the caveats first.
+
+- **Data check:** `describe_data` and a short coverage note on every question (today's date
+  in Philippine time, the date range, how much is untagged, what is not available), so the
+  model learns the limits before it queries. This fixes the wrong-year date seen in the spike.
+- **Tool loop** (`src/chat/loop.ts`): a manual, streamed Messages-API loop on Sonnet 5.5 with
+  two strict tools, up to 8 steps, the model's thinking blocks passed back unchanged, every
+  request through the layer-1 shape check. NDJSON stream; the drawer shows a status line
+  ("Looking at bundle sales") while it works.
+- **Decision:** where the live-data path is not ready (production before the read-only
+  database role is applied, a missing secret, a failed load) the chat **degrades to
+  digest-only** (no tools, no POS reads, one `chat_degraded` log line) instead of returning
+  503, so today's working digest chat does not go down on staging or PROD. The plan had a hard
+  503. Safety is unchanged: no POS data is read without the guarded path.
+- A tool that refuses a request (unknown dimension, undeclared measure) now reaches the
+  model flagged as an error with the allowed values.
+- **Live measurements** (14 questions, real model, effort medium, estimates): median 6.3 s,
+  data questions 8.4 s, p95 12.8 s, cost median $0.014 and max $0.044, prompt cache hits on
+  every call after the first, 0 guard trips, 0 errors.
+- Reading the live answers found three defects, fixed before shipping: a rank claim from a cut
+  list ("sold the most units" when only the top 5 by revenue were shown), home-made number
+  words ("about half"), and a misleading "34% untagged" caveat on the SKU split (the share now
+  counts only orders that have pick detail). Two guardrail lines cover the first two until the
+  analyst skill lands.
+- The digest stays in the prompt for Shopee, Lazada and Website questions (the pinned legacy
+  import remains until `get_digest` exists).
+- Known, pre-existing and dev-only: `ask()` calls `send()` inside a React state updater, so
+  React Strict Mode sends the first question twice in development. Production runs it once.
+
+---
+
+## 2026-10-01 — Talk to Data: metrics registry, exact bundle allocation and checks — `feat(chat)`
+
+The semantic layer behind Ask Coop: every figure comes from one registry definition computed
+by code, never by the model. Nothing user-visible changes yet (`/api/chat` is not rewired;
+`describe_data`, the tool schemas and the model loop are the next features).
+
+- **Nine metrics** with declared measures and one-line methods: `offline_revenue`,
+  `offline_orders`, `offline_aov`, `top_products`, `payment_mix`, `event_rollup`, `pet_mix`,
+  `bundle_sales`, `bundle_picks`. A pure `runMetric(request, data, now)` rejects anything off
+  the closed shape (free-form keys, undeclared measures, bad dates) with the allowed values.
+- **Decision:** a bundle's pick lines carry ₱0, but peso values per SKU are derivable. Each
+  bundle's paid price is split across its picks by list-price weight **on the sale date**
+  (`src/pos-price-history.ts`, `src/pos-bundle-compute.ts`), in whole centavos with the
+  largest-remainder rule, so SKU totals add back to the paid total exactly (₱0 tolerance).
+- Checks and insights are code (`src/chat/checks.ts`, `insights.ts`): reconciles, round
+  row count, ₱0 lines, price changes, small sample, untagged share, partial coverage, sudden
+  change, mock source. A failed check marks the result unreliable.
+- Checked against the real PROD data (read-only, nothing committed): bundle revenue ₱147,300
+  (equals the existing `bundleSalesSummary`), named ₱106,950, dog 66.4% of tagged, Buy Any 4
+  92.8% of named, 582 picks allocating exactly ₱106,950 against ₱139,360 list value.
+- Found in that run: the SKU breakdown covers only ₱106,950 of the ₱147,300, because 68 older
+  bundle orders have no pick detail. The result now says so. Also fixed before shipping:
+  SKU rows were grouped by name, which would merge two products that share a name.
+- Dates are Philippine time, weeks run Monday to Sunday; a range outside the data is valid
+  and reports coverage partial or none (a wrong-year range returns "no data in that range").
+- SQL: three more dashboard-owned views for the role (`coop_chat_prices`,
+  `_price_changes`, `_events`; no cash or staff columns). Still not applied to any hosted
+  project. Local proof: 69 checks pass, and all nine metrics return identical results in
+  `ro_role` and `guarded_service` mode.
+
+---
+
+## 2026-10-01 — Talk to Data: database read-only role for Ask Coop — `feat(chat)`
+
+Layer 5 of the read-only enforcement: even if every code layer failed, the database
+refuses a write. **Nothing is applied to any hosted project yet**: the SQL is applied by
+hand (staging first, PROD by the co-worker) and gates the PROD release.
+
+- `supabase/coop_chat_readonly.sql` creates role `coop_chat_ro` (no login) and four
+  dashboard-owned definer views (`coop_chat_orders`, `_order_items`, `_products`,
+  `_bundles`) with no customer columns, SELECT only. It does not touch any `pos_*` DDL.
+- **Decision:** the earlier plan to revoke EXECUTE-from-PUBLIC on every `public` function
+  is NOT applied blindly: zoomy-pos owns those functions and may rely on that grant.
+  Instead a `db_pre_request` hook makes every request as `coop_chat_ro` run in a read-only
+  transaction (a callable write function then fails), and a read-only audit query lists
+  what the role can execute. The revoke/grant sweep is a separate optional file that needs
+  zoomy-pos sign-off.
+- Known limit: the hook stops writes, not reads through a callable read function. Layer 4
+  (the HTTP guard) blocks `/rpc` in the app; the sweep closes it in the database.
+- `src/chat/read/mint-jwt.ts` mints a 5-minute HS256 token (`node:crypto`, no new
+  dependency) from `CHAT_RO_JWT_SECRET`; `ro_role` mode fails closed (503) without it and
+  never reads the service-role key. Optional `CHAT_RO_APIKEY` is sent as the `apikey`
+  header (untested against the hosted gateway).
+- Proved on a throwaway local Supabase in Docker (`scripts/coop-chat-ro-proof.mjs`, 53
+  checks, idempotent, refuses non-local URLs), including: a SECURITY DEFINER write
+  function was callable by the role until the hook, and fails with "read-only
+  transaction" after it; service_role, anon and authenticated are unaffected.
+  `test/chat-ro-local.integration.test.ts` (skipped unless pointed at a local stack)
+  shows `ro_role` answers equal `guarded_service` answers and no customer value returns.
+- Architecture scanner: the `.update(` ban gets one pinned exception for `createHmac().update()`
+  in `mint-jwt.ts` only; the same call anywhere else still fails the build.
+
+---
+
+## 2026-10-01 — Talk to Data: read-only foundation for Ask Coop — `feat(chat)`
+
+Ask Coop is being upgraded to answer from live POS data (design:
+`../knowledge/architecture/2026-10-01-talk-to-data-design.md`). Before any data tool
+exists, this lands the layers that make sure it can only **read**. Nothing changes for
+users yet: `/api/chat` is not rewired, and the existing digest chat behaves as before.
+
+- **Decision:** "no write tool exists" is one layer of nine, not the guarantee. The model
+  reads text other people wrote (product names, notes), so each layer fails closed with
+  its own test. This is a release gate for every Talk to Data deploy.
+- `src/chat/tools.ts` frozen tool allowlist, `request-shape.ts` (no web, code or MCP
+  tools, no forced tool choice), `audit.ts` (`chat_tool` / `chat_guard_trip` log lines).
+- `src/chat/read/`: a typed read client (`select` only), an HTTP guard (GET/HEAD only,
+  allowlisted relations, no `select=*`, no customer columns) and a fail-closed read mode
+  (production returns 503 unless `CHAT_READ_MODE=ro_role`).
+- `src/pos-orders-read.ts`: `readPosOrders(client)` extracted from `src/pos-sales.ts` so
+  chat and the pages share one paged read with an **injected** client. Page behaviour is
+  unchanged (fixture regression test, 1,352 items across two pages).
+- `test/chat-architecture.test.ts` fails the build if chat code imports a write path or
+  a full-power client. One documented legacy exception: the route's `getDigests` import,
+  removed when the route is rewritten.
+- Found while testing: the guard judged the raw path but took the host from the parsed
+  URL, so `https://host\@evil/...` slipped past. Fixed by requiring both to agree; tests
+  cover it.
+- Spike findings behind this: `scripts/spikes/` (strict tools + thinking on Sonnet 5.5,
+  and a SELECT-only database role through PostgREST). Layer 5, the database role, is the
+  next feature and gates production.
+
+---
+
+## 2026-10-01 — Transactions: Event filter + per-sale event badge/reassign; events-page reassign removed — `feat(events)`
+
+Follow-up to the multi-event feature. Reassigning a sale's event now lives only on
+the Transactions tab (not the events page), and transactions can be filtered and
+distinguished by event.
+
+- **Event filter** (`transaction-filters.tsx`, `pos-sales-compute.ts`,
+  `offline-orders`, orders `page.tsx`): a new `event` URL param (an event_id,
+  'untagged', or 'all') applied server-side in `getPosOrdersPage`. The control
+  shows only when the current scope has 2+ events, today's live events by default
+  or the selected date range's events (`eventFilterScope`); default All.
+- **Per-tile event badge** (`order-event-badge.tsx`): each transaction shows which
+  event it's in; on a day with 2+ overlapping events the badge doubles as the
+  reassign control (move to any overlapping event or Untagged, via
+  `reassignOrderEventAction`). `eventsCoveringOrder` enforces the "proper
+  conditions" (only interactive when the day is ambiguous).
+- **Removed** the per-event "Reassign sales" block and the Untagged bucket from the
+  events page (`offline-events.tsx`); correcting a sale's event is Transactions-only now.
+- **Note:** a sale's event can now be changed from two surfaces (this badge, and the
+  POS edit-sale sheet). It is last-write-wins with no version check, so a POS save
+  that lands after a dashboard reassign can revert it, the same pattern as
+  `pet_type` / `remarks` edits.
+
+Staging-only. Tests: event filter / scope / covering-order units; full suite green
+(362); `tsc` clean.
+
 ## 2026-10-01 — Inventory: filters inline, Filters button removed — `refactor(inventory)`
 
 The Filters button and its modal hid Status and Location behind a click. Type
@@ -297,6 +545,32 @@ It only sends `p_location` for Office, so the Event path still works against the
 old 3-argument function. Office edits need `zoomy-pos/supabase/phase4_set_stock_location_2026-10-01.sql`,
 which is written but **not applied** (it drops the 3-argument function, because a
 defaulted 4th parameter would make 3-argument calls ambiguous).
+
+## 2026-10-01 — Multi-event: same-day events, ambiguity-safe attribution, reassign control — `feat(events)`
+
+Companion to the POS multi-event feature (`../zoomy-pos/CHANGELOG.md`). Coop can
+now schedule overlapping / same-day events, and a sale tagged to the wrong event
+can be moved from the dashboard.
+
+- **DB (Staging RPCs)**: `upsert_pos_event` no longer raises on overlapping dates
+  (the no-overlap guard is removed); `attribute_untagged_orders_to_event` only
+  back-tags a sale on a day covered by exactly one event (ambiguous days are left
+  untagged); new `set_pos_order_event(p_order_id, p_event_id)` powers reassign and
+  is granted to `service_role` only (off the POS anon key).
+- **Attribution** (`pos-sales-compute.ts`): `effectiveEventId` only date-attributes
+  an untagged sale on an unambiguous (single-event) day; two or more covering
+  events leave it untagged rather than guessing the later-starting one. Added
+  `currentEventIds` (pin every live event) and `untaggedOnEventDays` (the Untagged
+  bucket source).
+- **Events page** (`offline-events`): pins all live events, not just one; a new
+  "Untagged sales on event days" bucket and a per-event "Reassign sales" control
+  (`event-reassign.tsx`) move an order to another event or untag it, through
+  `reassignOrderEventAction`.
+- **Form** (`event-form`): the overlap error is now a neutral "runs alongside"
+  note and no longer blocks Save.
+
+Staging-only. Tests: new multi-event attribution / pinning / untagged-bucket
+units; full suite green (346); `tsc` clean.
 
 ## 2026-10-01 — Pagination audit: forecast + Lazada reads no longer truncate at 1000 — `fix(data)`
 

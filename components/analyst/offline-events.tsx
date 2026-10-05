@@ -47,7 +47,7 @@ export function OfflineEventsView({
   rollups,
   orders,
   leads,
-  currentEventId,
+  currentEventIds,
   todayKey,
   usingMock,
   fetchedAt,
@@ -55,7 +55,7 @@ export function OfflineEventsView({
   rollups: EventRollup[];
   orders: PosOrder[];
   leads: SpinLead[];
-  currentEventId: string | null;
+  currentEventIds: string[];
   todayKey: string;
   usingMock: boolean;
   fetchedAt: string;
@@ -84,17 +84,20 @@ export function OfflineEventsView({
     return m;
   }, [orders]);
 
-  // Every event, for the form's live overlap check.
+  // Every event, for the form's live "runs alongside" note and the reassign targets.
   const allEvents = useMemo(() => rollups.map((r) => r.event), [rollups]);
 
-  // Filter + sort, then pin the live event to the very top so it stays on page 1.
+  // Which events are live today (same-day events allowed, so there can be several).
+  const currentSet = useMemo(() => new Set(currentEventIds), [currentEventIds]);
+
+  // Filter + sort, then pin every live event to the top so they stay on page 1.
   const ordered = useMemo(() => {
     const list = filterAndSortEvents(rollups, {query, when, sort}, todayKey);
-    if (!currentEventId) return list;
-    const idx = list.findIndex((r) => r.event.event_id === currentEventId);
-    if (idx <= 0) return list;
-    return [list[idx], ...list.slice(0, idx), ...list.slice(idx + 1)];
-  }, [rollups, query, when, sort, todayKey, currentEventId]);
+    if (currentSet.size === 0) return list;
+    const live = list.filter((r) => currentSet.has(r.event.event_id));
+    const rest = list.filter((r) => !currentSet.has(r.event.event_id));
+    return [...live, ...rest];
+  }, [rollups, query, when, sort, todayKey, currentSet]);
 
   const total = rollups.length;
   const matches = ordered.length;
@@ -191,7 +194,7 @@ export function OfflineEventsView({
                     orders={ordersByEvent.get(r.event.event_id) ?? []}
                     leads={leads}
                     todayKey={todayKey}
-                    spotlight={r.event.event_id === currentEventId}
+                    spotlight={currentSet.has(r.event.event_id)}
                     onEdit={() => { setCreating(false); setEditingId(r.event.event_id); }}
                   />
                 ),

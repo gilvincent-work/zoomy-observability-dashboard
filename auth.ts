@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
+import {fetchMemberships, type Membership} from '@/src/company';
 
 // Optional allowlist — comma-separated emails permitted to sign in. If empty,
 // any Google account is allowed (fine for a private/staging URL; set it for prod).
@@ -38,11 +39,33 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
   providers: [Google],
   pages: {signIn: '/signin'},
   callbacks: {
-    // Gate who may sign in.
-    signIn({profile}) {
+    // Gate who may sign in. Two allowed paths during the tenancy migration:
+    //   1. ALLOWED_EMAILS (legacy) — kept so no current user loses access.
+    //   2. membership in company_users (new) — anyone provisioned into a company.
+    // An empty ALLOWED_EMAILS still means "any Google account" (fine for staging).
+    async signIn({profile}) {
       const email = profile?.email?.toLowerCase();
       if (!email) return false;
-      return ALLOWED.length === 0 || ALLOWED.includes(email);
+      if (ALLOWED.length === 0 || ALLOWED.includes(email)) return true;
+      const memberships = await fetchMemberships(email);
+      return memberships.length > 0;
+    },
+    // On sign-in, attach the user's tenant memberships to the JWT so pages can
+    // resolve the active company without a per-request DB hit. `user` is only
+    // present at sign-in; normal requests skip the fetch (edge-safe).
+    async jwt({token, user, profile}) {
+      if (user) {
+        const email = (profile?.email ?? user.email ?? token.email ?? '').toLowerCase();
+        (token as {memberships?: Membership[]}).memberships = await fetchMemberships(email);
+      }
+      return token;
+    },
+    // Surface memberships on the session for Server Components (read via
+    // src/company.ts → resolveActive to get the active company + role).
+    session({session, token}) {
+      (session as {memberships?: Membership[]}).memberships =
+        (token as {memberships?: Membership[]}).memberships ?? [];
+      return session;
     },
     // Used by the middleware export to protect pages.
     authorized({auth}) {
