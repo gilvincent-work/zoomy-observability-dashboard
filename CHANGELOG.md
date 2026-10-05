@@ -10,6 +10,9 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — UX: sign-out confirmation
+- Signing out now opens a confirmation dialog ("Sign out of Coop?") instead of firing immediately — it was a one-click destructive action with no guard. Shared by both entry points (desktop account menu + mobile sheet); dismiss via Cancel, overlay click, or Escape; the confirm action uses the destructive token. No behaviour change beyond the extra confirm step.
+
 ## 2026-10-05 — Goldline P3/P4: Stores leaderboard + sales overview (gl_sales analytics)
 - `src/goldline-analytics.ts` (server-only): `getGoldlineAnalytics(companyId)` derives store + SKU rollups and a headline summary from `gl_sales`, joined to `gl_stores` for names. Company-scoped on every read (service-role bypasses RLS, so `company_id` is the fence) and paginated via `fetchAllRows`; JS aggregation at v1 scale (RPC/view is the later optimization).
 - `app/stores/page.tsx` + `components/analyst/goldline-stores-view.tsx` (P4): per-store leaderboard — units / gross / net / SKU count — searchable, sortable, paginated, with summary stat cards. Empty-state prompts a CSV upload.

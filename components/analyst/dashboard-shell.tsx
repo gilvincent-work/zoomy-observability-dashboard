@@ -98,6 +98,9 @@ export function DashboardShell({
   // Mobile "More" sheet (below md). Deterministic false default → matches SSR, so
   // desktop hydration is unaffected (mirrors the navExpanded pattern below).
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Sign-out confirmation — signing out is easy to hit by accident and costs a
+  // re-auth, so both entry points open a confirm dialog instead of acting directly.
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const initials = (user?.name || user?.email || 'ZY')
     .split(/[\s@.]+/)
     .filter(Boolean)
@@ -412,7 +415,10 @@ export function DashboardShell({
                     {user?.email && <div className="truncate text-[11px] text-muted-foreground">{user.email}</div>}
                   </div>
                   <button
-                    onClick={() => signOut({callbackUrl: '/signin'})}
+                    onClick={() => {
+                      setAccountOpen(false);
+                      setSignOutOpen(true);
+                    }}
                     className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted"
                   >
                     <LogOut className="size-3.5 text-muted-foreground" /> Sign out
@@ -679,7 +685,10 @@ export function DashboardShell({
               {user?.email && <div className="truncate text-[11px] text-muted-foreground">{user.email}</div>}
             </div>
             <button
-              onClick={() => signOut({callbackUrl: '/signin'})}
+              onClick={() => {
+                setMobileNavOpen(false);
+                setSignOutOpen(true);
+              }}
               className="flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-muted active:scale-[0.99]"
             >
               <LogOut className="size-4 text-muted-foreground" /> Sign out
@@ -688,6 +697,49 @@ export function DashboardShell({
         </div>
       </div>
     </div>
+    {signOutOpen && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="signout-title"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setSignOutOpen(false);
+        }}
+      >
+        <button
+          type="button"
+          aria-label="Cancel sign out"
+          onClick={() => setSignOutOpen(false)}
+          className="absolute inset-0 cursor-default bg-foreground/30 backdrop-blur-[1px]"
+        />
+        <div className="relative z-10 w-full max-w-xs overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+          <div className="flex flex-col gap-1 px-5 pt-5">
+            <h2 id="signout-title" className="font-heading text-base font-semibold text-foreground">
+              Sign out of Coop?
+            </h2>
+            <p className="text-sm text-muted-foreground">You&apos;ll need to sign in again to get back in.</p>
+          </div>
+          <div className="mt-4 flex justify-end gap-2 border-t border-border bg-muted/40 px-4 py-3">
+            <button
+              type="button"
+              autoFocus
+              onClick={() => setSignOutOpen(false)}
+              className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => signOut({callbackUrl: '/signin'})}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/10 px-3 py-1.5 text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/20 focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:outline-none"
+            >
+              <LogOut className="size-3.5" /> Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </CoopChatProvider>
     </PlaybookProvider>
   );
