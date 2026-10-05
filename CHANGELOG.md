@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline onboarding P0: multi-tenant foundation (data-blind Coop Admin)
+- `supabase/companies.sql`: new `companies` + `company_users` tables and a `company_role` enum (coop_admin / company_admin / analyst / store_manager). RLS on with no policies (service-role only) — app-level scoping by the active `company_id` is the primary fence, this RLS is the backstop. Seeds Zoomy as the first company and migrates existing `pos_dashboard_users` to Zoomy members so sign-in can move off `ALLOWED_EMAILS` without locking anyone out. Additive — no existing table touched. Apply on Staging first.
+- `src/company.ts`: role/membership types, `resolveActive` (Coop Admin resolves to a cross-tenant, data-blind context), capability helpers (`canEditData` / `canManageTeam` / `isCoopAdmin`), and a fail-soft PostgREST membership fetch (edge-safe, no `server-only`).
+- `auth.ts`: sign-in now allows a `company_users` membership in addition to `ALLOWED_EMAILS` (backward-compatible); memberships are attached to the JWT at sign-in and surfaced on the session.
+- Tests: `src/company.test.ts` (11 cases) for the scoping + capability logic. typecheck, the new tests, and the pagination guard pass. Not yet applied to Staging; no company switcher or page rescoping yet (next slices).
+
 ## 2026-10-02 — Talk to Data: database setup runbook, grid proof; staging applied
 - `docs/talk-to-data-db-setup-runbook.md`: step-by-step for the three SQL files, the verify query, the proof, the Vercel env vars, rollback and a symptom table. Staging was applied and verified today (proof ALL PASS, 49 of 49); PROD is next.
 - `supabase/coop_chat_readonly_proof_grid.sql`: the read-only proof as a PASS/FAIL result grid, because the Supabase SQL editor hides RAISE NOTICE output. Tested locally (49 of 49, data unchanged).
