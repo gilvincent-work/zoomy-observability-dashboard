@@ -5,6 +5,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import {logNumberCheckFailed, logNumberViolation, logRegistryGap, logTurn, type AuditSink} from './audit';
 import {checkNumbers} from './number-check';
+import {stripMarkdownTables} from './strip-tables';
 import {assertRequestShape} from './request-shape';
 import type {ChatStreamEvent, ChatUsage, ToolDefinition} from './stream-types';
 import {statusFor} from './tool-executors';
@@ -102,6 +103,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const exploreTurn = opts.tools.some((t) => t.name === RUN_QUERY_TOOL);
   let held = '';
   let numberRetried = false;
+  let drawn = false; // a block was drawn this turn (the model's render call succeeded, or the app's backstop drew one)
   const metricsTried: string[] = [];
   // F1: how long each model step and each tool batch took (numbers only; the chat_turn line carries them).
   const stepMs: number[] = [];
@@ -133,8 +135,10 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
 
   // Explore enforce mode: the held text, checked. `emit`s it (with a note when figures are unmatched) and clears it.
   // `retry` is true when the caller can still ask the model for a rewrite; then a violation is NOT emitted and the list is returned instead.
-  const releaseHeld = (retry: boolean): string[] | null => {
-    const text = held;
+  // `drawnNow`: the caller is about to draw a block (a render call in this step); with a block already drawn, the typed markdown tables are removed
+  // from the text first (the app draws the chart + table twin; live test 5, H2).
+  const releaseHeld = (retry: boolean, drawnNow = false): string[] | null => {
+    let text = held;
     if (text === '') return null;
     if (!exploreUsed) {
       // no run_query final succeeded: the text was only held for narration handling, and the number check stays log-only (auditNumbers)
@@ -142,6 +146,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       emit({t: 'text', d: text});
       return null;
     }
+    if (drawn || drawnNow) text = stripMarkdownTables(text);
     let list: string[] = [];
     try {
       const {violations, checked} = checkNumbers(text, seen, {context: numberContext(true), countNouns: true});
@@ -167,7 +172,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const backstop = async (): Promise<void> => {
     if (!exploreUsed || !opts.executors.autoRender) return;
     try {
-      await opts.executors.autoRender();
+      if ((await opts.executors.autoRender()).length > 0) drawn = true;
     } catch {
       // drawing is a convenience on top of the answer, never a dependency
     }
@@ -297,7 +302,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     // EXP-04: held Explore text is checked the moment the model asks to draw (the owner would otherwise see blocks before the words).
     let numberNudge: string | null = null;
     if (held.trim() !== '' && calls.some((c) => isRender(c.name))) {
-      const bad = releaseHeld(!numberRetried);
+      const bad = releaseHeld(!numberRetried, true);
       if (bad !== null) {
         numberRetried = true;
         dropHeld();
@@ -328,6 +333,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     calls.forEach((c, i) => {
       const content = results[i].content as {id?: unknown} | null;
       if (c.name === 'run_query' && !results[i].is_error && typeof content?.id === 'string') exploreUsed = true;
+      if (isRender(c.name) && !results[i].is_error && (content as {ok?: unknown} | null)?.ok === true) drawn = true;
     });
     convo.push({
       role: 'user',

@@ -215,6 +215,46 @@ describe('compose reserve with the Explore number check', () => {
   });
 });
 
+const TBL = '| pet | orders_count |\n|---|---:|\n| dog | 14 |';
+const WITH_TABLE = `Dogs lead with 14 orders.\n\n${TBL}\n\nBasis: completed orders.`;
+const PROSE = 'Dogs lead with 14 orders.\n\nBasis: completed orders.';
+
+// Live test 5 (H2): the app already draws the chart + table twin, so a typed table of the same rows is removed from the answer text.
+describe('EXP-03 typed markdown tables are removed once a block was drawn (live test 5, H2)', () => {
+  it('auto-rendered turn: the table is stripped, the prose around it stays', async () => {
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : {text: [WITH_TABLE], stop_reason: 'end_turn'}));
+    const t = run(m, {executors: {run_query: async () => ROWS, autoRender: async () => ['b1']}});
+    await t.go();
+    expect(text(t.events)).toBe(PROSE);
+  });
+  it('model-rendered turn: text before the render call loses its table', async () => {
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : n === 2 ? toolTurn(WITH_TABLE, RENDER) : {text: ['Done.'], stop_reason: 'end_turn'}));
+    const t = run(m);
+    await t.go();
+    expect(text(t.events)).toBe(`${PROSE}Done.`);
+    expect(t.rendered).toHaveLength(1);
+  });
+  it('an Explore turn where nothing was drawn keeps its table', async () => {
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : {text: [WITH_TABLE], stop_reason: 'end_turn'}));
+    const t = run(m, {executors: {run_query: async () => ROWS, autoRender: async () => []}});
+    await t.go();
+    expect(text(t.events)).toBe(WITH_TABLE);
+  });
+  it('a non-Explore turn keeps its table', async () => {
+    const m = new FakeModel(() => ({text: [WITH_TABLE], stop_reason: 'end_turn'}));
+    const t = run(m, {tools: CHAT_TOOLS});
+    await t.go();
+    expect(text(t.events)).toBe(WITH_TABLE);
+  });
+  it('a table inside a code fence is not stripped', async () => {
+    const fenced = `Here:\n\n\`\`\`\n${TBL}\n\`\`\`\n\nDone.`;
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', RUN()) : {text: [fenced], stop_reason: 'end_turn'}));
+    const t = run(m, {executors: {run_query: async () => ROWS, autoRender: async () => ['b1']}});
+    await t.go();
+    expect(text(t.events)).toBe(fenced);
+  });
+});
+
 // Live test 5 (H3): "Correction: my earlier reply said 6 orders" laundered a stale model-typed number through the earlier assistant turn.
 describe('EXP-04 Explore number context holds only user and app figures, not earlier assistant turns (live test 5, H3)', () => {
   const HISTORY = [
