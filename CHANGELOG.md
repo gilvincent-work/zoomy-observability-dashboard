@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline P2: archive data layer + upload/extraction route; Staging DB applied
+- `src/goldline-data.ts`: server-only writes/reads for the `gl_*` tables (same service-role seam as `src/data.ts`). `createUpload` stores the raw file in the private `goldline-uploads` Storage bucket then opens a `gl_uploads` row; `upsertSales` idempotently upserts parsed POS rows on the natural key; `saveExtraction` stages a Vision page in `gl_extractions`; `listUploads` reads newest-first through the paginator. Every row stamped with the active `company_id`.
+- `src/goldline-upload.ts` (+ 7 tests): pure upload gate — only `.csv`/`.pdf`, 25 MB cap, extension authoritative with a MIME-contradiction reject; returns the `gl_uploads` kind.
+- `app/api/goldline/upload/route.ts`: the POST endpoint. Scopes by the active company (`getDataContext` + `canEditData` — data-blind Coop Admin and read-only analysts refused), gates the file type first, then CSV → `gl_sales` (needs `period_start`/`period_end`) or PDF → Claude Vision page 1 → `gl_extractions` staged `needs_review`. Fails loud, marking the upload `failed`/`rejected` with a reason.
+- **Staging DB applied**: `companies.sql` + `goldline.sql` run on `syxwixxzmytvhwhkwdvw` — `companies` seeded with `zoomy`, 4 `pos_dashboard_users` migrated to Zoomy `company_admin`, all `gl_*` tables + the `company_role` enum present, private `goldline-uploads` Storage bucket created.
+- typecheck + 31 tests + pagination guard pass. Route runtime is pending a Staging smoke test (needs `ANTHROPIC_API_KEY` for the PDF path).
+
 ## 2026-10-05 — Goldline P1/P2: POS CSV parser + live Vision extraction wrapper
 - `src/goldline-csv.ts`: dependency-free RFC-4180 CSV parser + `parseGoldlinePos` mapping the real Nichido POS columns to `gl_sales`-ready rows — case/space-insensitive headers, thousands separators stripped, blank cells → null (not 0), rows missing store/SKU skipped with a note. 7 tests.
 - `src/goldline-extract-run.ts`: server-only live Claude Vision call (`extractInventoryPage`) over the P2 prompt/manifest/schema; reads `ANTHROPIC_API_KEY` from env, returns one parsed page or throws on `{error}` / invalid JSON. `extractionConfigured()` lets the PDF path disable cleanly without a key.
