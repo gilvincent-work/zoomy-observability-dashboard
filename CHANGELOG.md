@@ -10,6 +10,10 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline onboarding P2 (core): template-aware extraction prompt + schema
+- `src/goldline-extract.ts`: the pure, template-aware extraction core for the Nichido inventory forms — a per-page item manifest (page 1 enumerated from the verified scan; pages 2–6 pending generation from the blank templates, guarded so a page can't run blind), the fixed system prompt carrying the form-specific guardrails (slot-fill against the manifest, blank ≠ zero, column discipline, no total math, page-match, fail-loud `{error}`), and the JSON output schema (header + one row per item with per-field confidence + `alt`). No network/SDK here, so it unit-tests; the live Claude call + upload route is the next slice, smoke-tested on Staging with `ANTHROPIC_API_KEY` in env.
+- `src/goldline-extract.test.ts`: 6 cases over the prompt, manifest, and schema. typecheck + all tests + pagination guard pass.
+
 ## 2026-10-05 — Goldline onboarding P1: gl_* data model + tenant scoping seam
 - `supabase/goldline.sql`: the `gl_*` tables, modeled on the real Nichido source files — `gl_stores`, `gl_products` (with the `item_code` ↔ `sku_code` crosswalk), `gl_sales` + `gl_inventory` (store × SKU × period, idempotent natural keys + indexes), `gl_uploads`, `gl_extractions` (Claude Vision output staged for review), and per-company `company_digest_archive` / `company_business_health`. RLS on, service-role only; additive, depends on `companies.sql`. Apply on Staging first.
 - `src/active-context.ts`: server accessor (`getActiveContext` / `getDataContext`) bridging the session to `resolveActive`, so pages scope by the active company and a data-blind Coop Admin gets no data context.
