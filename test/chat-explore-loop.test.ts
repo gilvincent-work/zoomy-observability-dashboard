@@ -127,6 +127,16 @@ describe('EXP-02 a hard guard trip fails the request (spec 3.5)', () => {
     const all = JSON.stringify([t.s.info.mock.calls, t.s.error.mock.calls, t.s.warn.mock.calls]);
     expect(all).not.toContain('Maria Santos');
     expect(all).not.toContain('pos_orders');
-    expect(lines(t.s.info).find((l) => l.event === 'chat_tool')?.params).toEqual({step: 'final', sql_chars: SECRET.length, purpose_chars: 'Maria Santos'.length});
+  });
+});
+
+describe('EXP-02 params for the tool log never hold SQL', () => {
+  it('EXP-02 a normal run_query call logs only step and lengths', async () => {
+    const SQL = "select o.id from coop_explore_orders o where o.customer_handle = 'Maria Santos'";
+    const m = new FakeModel((n) => (n === 1 ? toolTurn('', toolUse('q', 'run_query', {purpose: 'Maria Santos orders', sql: SQL, step: 'probe'})) : {text: ['ok'], stop_reason: 'end_turn'}));
+    const t = run(m, {executors: {run_query: async () => ({id: null, rows: []})}});
+    await t.go();
+    expect(lines(t.s.info).find((l) => l.event === 'chat_tool')?.params).toEqual({step: 'probe', sql_chars: SQL.length, purpose_chars: 'Maria Santos orders'.length});
+    expect(JSON.stringify(t.s.info.mock.calls)).not.toContain('Maria Santos');
   });
 });
