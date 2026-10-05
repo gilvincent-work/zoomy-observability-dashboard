@@ -210,7 +210,7 @@ export function runMetric(input: unknown, data: MetricData, now: Date): MetricRe
   const cov = coverageOf(range.from, range.to, dataFrom, dataTo);
   const orders = slice(range.from, range.to);
   const base = {events: data.events, history, dimension: req.dimension, measure};
-  const ctx = {...base, orders, range: {from: range.from, to: range.to, label: range.label}, covered: {from: cov.coveredFrom, to: cov.coveredTo}};
+  const ctx = {...base, orders, range: {from: range.from, to: range.to, label: range.label}, covered: {from: cov.coveredFrom, to: cov.coveredTo}, taggedIds};
   const out = def.compute(ctx);
 
   const caveats: string[] = [...out.notes];
@@ -223,7 +223,12 @@ export function runMetric(input: unknown, data: MetricData, now: Date): MetricRe
     const byDate = inEvent.length - tagged;
     const parts = [`${tagged.toLocaleString('en-US')} tagged to the event${eventIds === null ? 's' : ''} in the POS`];
     if (byDate > 0) parts.push(`${byDate.toLocaleString('en-US')} untagged ${byDate === 1 ? 'sale' : 'sales'} on the event dates (attributed by date)`);
-    caveats.push(`Event orders = ${parts.join(' plus ')}; ${inEvent.length.toLocaleString('en-US')} total.`);
+    // With every event in play these are combined figures: never a claim about one event. Each event's own split is in its row.
+    caveats.push(
+      eventIds === null
+        ? `All events combined: ${parts.join(' plus ')}; ${inEvent.length.toLocaleString('en-US')} total. The split per event is in the rows (tagged_orders, date_orders); do not apply these combined counts to a single event.`
+        : `Event orders = ${parts.join(' plus ')}; ${inEvent.length.toLocaleString('en-US')} total.`,
+    );
   }
   if (req.pet !== 'all') caveats.push(`Filtered to orders tagged ${req.pet}.`);
 
