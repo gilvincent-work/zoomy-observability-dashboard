@@ -10,6 +10,11 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Goldline onboarding P1: gl_* data model + tenant scoping seam
+- `supabase/goldline.sql`: the `gl_*` tables, modeled on the real Nichido source files — `gl_stores`, `gl_products` (with the `item_code` ↔ `sku_code` crosswalk), `gl_sales` + `gl_inventory` (store × SKU × period, idempotent natural keys + indexes), `gl_uploads`, `gl_extractions` (Claude Vision output staged for review), and per-company `company_digest_archive` / `company_business_health`. RLS on, service-role only; additive, depends on `companies.sql`. Apply on Staging first.
+- `src/active-context.ts`: server accessor (`getActiveContext` / `getDataContext`) bridging the session to `resolveActive`, so pages scope by the active company and a data-blind Coop Admin gets no data context.
+- `.env.example`: `ANTHROPIC_API_KEY` placeholder (server-only, for Goldline PDF extraction; set in Vercel, never committed). typecheck, tests, and the pagination guard pass.
+
 ## 2026-10-05 — Goldline onboarding P0: multi-tenant foundation (data-blind Coop Admin)
 - `supabase/companies.sql`: new `companies` + `company_users` tables and a `company_role` enum (coop_admin / company_admin / analyst / store_manager). RLS on with no policies (service-role only) — app-level scoping by the active `company_id` is the primary fence, this RLS is the backstop. Seeds Zoomy as the first company and migrates existing `pos_dashboard_users` to Zoomy members so sign-in can move off `ALLOWED_EMAILS` without locking anyone out. Additive — no existing table touched. Apply on Staging first.
 - `src/company.ts`: role/membership types, `resolveActive` (Coop Admin resolves to a cross-tenant, data-blind context), capability helpers (`canEditData` / `canManageTeam` / `isCoopAdmin`), and a fail-soft PostgREST membership fetch (edge-safe, no `server-only`).
