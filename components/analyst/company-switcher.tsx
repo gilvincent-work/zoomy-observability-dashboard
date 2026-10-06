@@ -88,14 +88,14 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
   const activeBrand = brandFor(active?.companyId);
 
   function choose(key: string) {
-    if (key === activeKey) return;
     const next = views.find((v) => v.key === key);
+    if (key === activeKey || !next) return;
     startTransition(async () => {
-      await setActiveView(key);
+      await setActiveView(key); // sets the cookie + revalidates the layout (fresh RSC on push)
       // Land on the new view's home — the current page belongs to the previous view
-      // (e.g. Goldline's /uploads isn't part of Zoomy).
-      router.push(homeFor({isCoopAdmin: !next?.companyId, companyId: next?.companyId ?? null}));
-      router.refresh();
+      // (e.g. Goldline's /uploads isn't part of Zoomy). Kept inside the transition so
+      // the switcher stays pending until the new page starts rendering.
+      startTransition(() => router.push(homeFor({isCoopAdmin: next.companyId === null, companyId: next.companyId})));
     });
   }
 

@@ -12,6 +12,7 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-10-07 — Switching views takes you to that view's home
 - Bug: changing the view in the header switcher kept you on the current page. Switching from Goldline to Zoomy while on `/uploads` showed Zoomy's (empty) uploads inside the Zoomy nav. The switcher now navigates to the new view's home: Zoomy → `/`, Goldline (and other companies) → `/overview`, Coop Admin → `/admin/users`.
+- Review (code-reviewer): no critical, high or medium issues, and no redirect loop (`/` only redirects non-Zoomy views). Applied the lows: dropped a redundant refresh that could flash the old page, ignore unknown view keys, and keep the switcher pending until the new page starts rendering.
 - `homeFor` now knows Zoomy's home too. Before, a Zoomy user bounced off a Coop-Admin-only page landed on the company `/overview`; it now goes to `/`. Tested.
 
 ## 2026-10-07 — One shell, two brands: company wordmarks in the switcher
