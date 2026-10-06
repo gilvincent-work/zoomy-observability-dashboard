@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Multi-role access P2: Users & Roles console + membership-only gate
+- `src/admin-data.ts`: Coop-Admin role-management data layer — `listUsers` (grouped by email), `listCompanies`, `grantRole`/`setStatus`/`revoke`, `countCoopAdmins`; every write logged to `company_user_audit`; bounded count/single reads marked `pagination-ok`.
+- `app/admin/actions.ts`: coop_admin-gated server actions (re-checked server-side, never trusting the client) with lockout guards — can't remove/suspend the last active Coop Admin, can't suspend/revoke your own Coop Admin; email/role/company validated.
+- `app/admin/users` + `admin-users-view`: the console — grant form (company → Company User, or Coop Admin) + per-membership suspend / reactivate / revoke. Data-blind.
+- `auth.ts`: sign-in gate is now **membership-only** (dropped `ALLOWED_EMAILS`); pre-granted `invited` memberships flip to `active` on first sign-in.
+- typecheck + full suite (1844) + pagination guard pass.
+
 ## 2026-10-06 — Multi-role access P1: active-view model + "Your access" switcher
 - `src/company.ts`: `resolveActive` is now VIEW-based — the user picks the active view (a company id, or the `coop_admin` sentinel) instead of coop_admin always winning. `membershipViews`/`viewKey` expose the selectable views; `canManageRoles` (coop_admin-only) replaces `canManageTeam`; `fetchMemberships` reads `status` and drops suspended rows. Membership gains optional `status`.
 - `src/active-context.ts`: `active_view` cookie (was `active_company`); `getNavContext` returns every view (+ names) and the active key; `requireZoomyData` redirects a non-Zoomy view to `homeFor()` (Coop Admin → /admin/users, company → /overview).
