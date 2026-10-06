@@ -10,6 +10,36 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Goldline Inventory page, tied to the scan uploads; Uploads revamp
+- **Inventory (plan §07f)** at `/stock` (nav: Overview · Stores · Inventory · Uploads). `/inventory` stays Zoomy's page behind the Zoomy data guard. One store × form period at a time, picked by store and period selects (`?store=&period=YYYY-MM-DD_YYYY-MM-DD`), defaulting to the latest period. Shows a "N low · M out" pill, four KPI tiles (Ending value, Items tracked, Low stock, Out of stock), and a table: Item, Product (★ bestseller, product line when catalogued), Stk / Drw / Sell straight from the form, On hand, Value, Status. Filters (All / Low / Out / Not counted), search, pagination.
+- Rules, stated on the page and tested in `src/goldline-inventory.ts`:
+  - **On hand** is the form's Ending column when it's written, otherwise stockroom + drawer + selling area. Delivery isn't added again because it's already in the physical counts.
+  - **A blank row is "Not counted", never zero or Out.**
+  - **Low** means fewer than 10 on hand.
+  - **Value** is on hand × catalog price. Only 6 products have prices so far, so the tile says how many items are unpriced.
+- **Tied to uploads:**
+  - The page lists the scans it was built from, by form page, each linking to its review. It names the form pages (1–5) not in yet, with an Upload link.
+  - A banner links to scans still waiting for review (`/uploads?status=needs_review` now pre-filters the list).
+  - A committed scan's review page has "View in Inventory →" for its store and period.
+- New additive view `gl_inventory_snapshots` (`supabase/goldline_inventory_snapshots.sql`): one row per company/store/period with item count, scans, consultant and last commit. It feeds the pickers so the page never scans all of `gl_inventory`. `security_invoker`; anon/authenticated revoked. Applied to Staging; promote with the other Goldline SQL.
+- **Uploads revamp:**
+  - **Add a file:** a real drag-and-drop zone (keyboard accessible) with colored type badges. Picking a file shows a file row (type, size, what happens next), date fields for a CSV's period (validated), and one clear action ("Upload and read scan" / "Upload sales").
+  - **Live progress:** a step tracker (Upload → Find the page → Read the counts → Save for review) and a progress bar. The upload band is real bytes. The server now streams real milestones as NDJSON when asked (`Accept: application/x-ndjson`; other callers get the unchanged JSON). Within a stage the bar eases toward, but never reaches, its end (`src/upload-progress.ts`), so it can't claim "done" early. Elapsed time is shown; errors show inline with "Try again".
+  - **File list:** colored type badges (CSV green, PDF violet, XLS red) per the plan.
+- **Delete, with consequences spelled out:**
+  - Deleting a committed upload now also removes the data it's still the source of: its `gl_inventory` counts or `gl_sales` rows. Counts a later scan has overwritten belong to that scan and stay. Previously they lingered with a dead source link.
+  - A confirmation dialog (Base UI AlertDialog) checks the impact first and warns, e.g. "This scan is committed. Deleting it also removes its 43 inventory counts for 1 · CUBAO, Oct 1–15, 2026 from Inventory."
+  - A toast confirms what was deleted.
+- **Regression review (code-reviewer) + fixes:**
+  - (HIGH) If the delete-impact check failed, the dialog said "no numbers change" while the delete still removed committed counts. A failed check now shows the reason with Retry, and Delete stays disabled until the impact is known. `deleteImpact` fails loud on query errors, and the dialog resets between files.
+  - (HIGH) Store-scoped roles weren't fenced on the new paths. Inventory now only lists snapshots for the role's stores. Deleting, and checking a delete's impact, refuse uploads that touch stores outside scope (`uploadStores`, paged).
+  - (MEDIUM) The dialog now warns that counts this scan replaced from an earlier scan won't come back on their own.
+  - (MEDIUM) `deleteUpload` checks the extraction delete. The upload row still goes last, so a failure leaves a visible, retryable upload.
+  - (MEDIUM) A CSV with no readable rows now shows its real reason instead of "Upload failed (422)".
+  - (MEDIUM) The stream tolerates a client disconnect. A new `safeHandle` marks a stored upload failed on any unexpected error, instead of leaving it in "processing".
+  - (LOW) A `?period=` without `?store=` now narrows the pick.
+- Tests: `goldline-inventory.test.ts`, `upload-progress.test.ts`. typecheck + full suite (2485) + pagination guard pass; impeccable detector: no findings.
+
 ## 2026-10-06 — Removed the "Your access" tab; the header switcher is the one place to switch views
 - Dropped the "Your access" nav item (desktop rail and mobile bar) and deleted the `/account` page and `account-view.tsx`, which nothing else linked to. The header view switcher already does the same job.
 - Decision: the header switcher was hidden on phones (`max-sm:hidden`), so "Your access" was the only way to switch views there. The switcher now shows at every width, with the name truncated tighter on phones so the header fits.

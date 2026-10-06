@@ -3,7 +3,7 @@
 import {revalidatePath} from 'next/cache';
 import {getDataContext} from '@/src/active-context';
 import {canEditData, outOfScopeStores} from '@/src/company';
-import {commitInventory, deleteUpload, getUpload, type ReviewedInventoryRow} from '@/src/goldline-data';
+import {commitInventory, deleteImpact, deleteUpload, getUpload, uploadStores, type DeleteImpact, type ReviewedInventoryRow} from '@/src/goldline-data';
 
 // Server action behind the review screen's "Commit" button. Re-derives the tenant
 // context server-side (never trusts a company id from the client beyond the switcher
@@ -46,15 +46,49 @@ function coerceRow(r: unknown): ReviewedInventoryRow | null {
   };
 }
 
-/** Delete an upload (file + staged extraction + row), scoped to the active company. */
+/** What a delete would remove (committed inventory counts / sales rows), for the
+ *  confirmation dialog. Read-only; same company scoping as the delete itself. */
+export async function deleteImpactAction(input: {
+  company: string | null;
+  uploadId: string;
+}): Promise<{ok: true; impact: DeleteImpact} | {ok: false; error: string}> {
+  const ctx = await getDataContext(input.company);
+  if (!ctx || !ctx.companyId) return {ok: false, error: 'Not authorized.'};
+  if (!canEditData(ctx.role)) return {ok: false, error: 'Your role cannot delete uploads.'};
+  try {
+    const out = await outOfScopeFor(ctx, input.uploadId);
+    if (out) return {ok: false, error: out};
+    const impact = await deleteImpact(ctx.companyId, input.uploadId);
+    if (!impact) return {ok: false, error: 'Upload not found.'};
+    return {ok: true, impact};
+  } catch (e) {
+    console.error('deleteImpactAction', e);
+    return {ok: false, error: 'Couldn’t check what this file feeds. Please try again.'};
+  }
+}
+
+/** A store-scoped role may only delete uploads for its own stores. Returns the refusal
+ *  message, or null when allowed (unscoped roles always pass). */
+async function outOfScopeFor(ctx: {companyId: string | null; storeScope?: string[] | null}, uploadId: string): Promise<string | null> {
+  if (!ctx.companyId || !ctx.storeScope) return null;
+  const out = outOfScopeStores(ctx.storeScope, await uploadStores(ctx.companyId, uploadId));
+  return out.length ? `This file covers stores outside your access (${out.slice(0, 5).join(', ')}).` : null;
+}
+
+/** Delete an upload — file, staged extraction, the inventory counts / sales rows it
+ *  is still the source of, and the row — scoped to the active company. */
 export async function deleteUploadAction(input: {company: string | null; uploadId: string}): Promise<CommitResult> {
   const ctx = await getDataContext(input.company);
   if (!ctx || !ctx.companyId) return {ok: false, error: 'Not authorized.'};
   if (!canEditData(ctx.role)) return {ok: false, error: 'Your role cannot delete uploads.'};
   try {
+    const out = await outOfScopeFor(ctx, input.uploadId);
+    if (out) return {ok: false, error: out};
     const ok = await deleteUpload(ctx.companyId, input.uploadId);
     if (!ok) return {ok: false, error: 'Upload not found.'};
     revalidatePath('/uploads');
+    revalidatePath('/stock');
+    revalidatePath('/overview');
     return {ok: true, committed: 0};
   } catch (e) {
     console.error('deleteUploadAction', e);

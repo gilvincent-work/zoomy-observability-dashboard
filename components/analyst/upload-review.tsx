@@ -3,7 +3,7 @@
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
-import {ArrowLeft, CheckCircle2, ExternalLink, FileText, Loader2, Maximize2, X} from 'lucide-react';
+import {ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, FileText, Loader2, Maximize2, X} from 'lucide-react';
 import type {ExtractionRecord, UploadRow} from '@/src/goldline-data';
 import type {ExtractedRow} from '@/src/goldline-extract-run';
 import {commitReview} from '@/app/uploads/actions';
@@ -41,6 +41,7 @@ export function UploadReview({
   extraction,
   scanUrl,
   productNames = {},
+  inventoryHref = null,
 }: {
   company: string;
   canEdit: boolean;
@@ -50,6 +51,8 @@ export function UploadReview({
   scanUrl?: string | null;
   /** item_code → printed product name (from the page manifest), for the rows table. */
   productNames?: Record<string, string>;
+  /** Inventory page for the store + period this scan was committed to, once committed. */
+  inventoryHref?: string | null;
 }) {
   const router = useRouter();
   const committed = upload.status === 'committed' || extraction?.status === 'confirmed';
@@ -120,8 +123,15 @@ export function UploadReview({
       </div>
 
       {committed && (
-        <div className="flex items-center gap-2 rounded-md bg-emerald-500/15 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
-          <CheckCircle2 className="size-4" /> This upload is committed.
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-emerald-500/15 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+          <span className="inline-flex items-center gap-2">
+            <CheckCircle2 className="size-4" /> This upload is committed.
+          </span>
+          {inventoryHref && (
+            <Link href={inventoryHref} className="inline-flex items-center gap-1 font-medium underline-offset-4 hover:underline">
+              View in Inventory <ArrowRight className="size-3.5" />
+            </Link>
+          )}
         </div>
       )}
 
