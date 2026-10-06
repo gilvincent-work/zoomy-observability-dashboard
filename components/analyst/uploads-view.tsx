@@ -18,6 +18,7 @@ import {deleteUploadAction} from '@/app/uploads/actions';
 import type {UploadKind, UploadRow, UploadStatus} from '@/src/goldline-data';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
+import {NativeSelect} from '@/components/ui/native-select';
 import {Pagination} from '@/components/analyst/pagination';
 import {cn} from '@/lib/utils';
 
@@ -277,13 +278,13 @@ export function UploadsView({
                 className="h-8 w-56 rounded-md border border-border bg-background pr-2 pl-7 text-sm"
               />
             </div>
-            <select
+            <NativeSelect
+              aria-label="Filter by status"
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value as StatusFilter);
                 setPage(1);
               }}
-              className="h-8 rounded-md border border-border bg-background px-2 text-sm"
             >
               <option value="all">All statuses</option>
               <option value="needs_review">Needs review</option>
@@ -291,19 +292,19 @@ export function UploadsView({
               <option value="processing">Processing</option>
               <option value="failed">Failed</option>
               <option value="rejected">Rejected</option>
-            </select>
-            <select
+            </NativeSelect>
+            <NativeSelect
+              aria-label="Filter by type"
               value={kindFilter}
               onChange={(e) => {
                 setKindFilter(e.target.value as KindFilter);
                 setPage(1);
               }}
-              className="h-8 rounded-md border border-border bg-background px-2 text-sm"
             >
               <option value="all">All types</option>
               <option value="pos_csv">Sales CSV</option>
               <option value="inventory_pdf">Inventory PDF</option>
-            </select>
+            </NativeSelect>
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">

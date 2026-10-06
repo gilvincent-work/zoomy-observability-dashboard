@@ -1,4 +1,5 @@
 import {redirect} from 'next/navigation';
+import {auth} from '@/auth';
 import {getActiveContext} from '@/src/active-context';
 import {canManageRoles} from '@/src/company';
 import {homeFor} from '@/src/company-nav';
@@ -13,6 +14,8 @@ export default async function Page() {
   const ctx = await getActiveContext();
   if (!ctx) redirect('/');
   if (!canManageRoles(ctx.role)) redirect(homeFor(ctx));
-  const [users, companies] = await Promise.all([listUsers(), listCompanies()]);
-  return <AdminUsersView users={users} companies={companies} />;
+  const [users, companies, session] = await Promise.all([listUsers(), listCompanies(), auth()]);
+  // `me` only drives UI hints ("You", disabled self-removal); the server actions
+  // enforce the real self/last-admin guards.
+  return <AdminUsersView users={users} companies={companies} me={session?.user?.email?.toLowerCase() ?? null} />;
 }
