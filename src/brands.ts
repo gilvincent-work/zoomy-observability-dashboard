@@ -9,12 +9,14 @@ export type Brand = {
   wordmark: string;
   tagline?: string; // small line under the wordmark (e.g. Zoomy's "TREATS")
   style: 'bold' | 'thin';
-  color?: string; // brand color for the wordmark; theme text color when omitted
+  // Brand color per theme (each clears AA at small sizes on that theme's surfaces);
+  // theme text color when omitted.
+  color?: {light: string; dark: string};
   about: string; // one line describing the business (menu caption)
 };
 
 export const BRANDS: Record<string, Brand> = {
-  zoomy: {wordmark: 'Zoomy!', tagline: 'TREATS', style: 'bold', color: '#D9483B', about: 'pet treats · events · POS app sync'},
+  zoomy: {wordmark: 'Zoomy!', tagline: 'TREATS', style: 'bold', color: {light: '#B8382C', dark: '#F0705F'}, about: 'pet treats · events · POS app sync'},
   goldline: {wordmark: 'NICHIDO', style: 'thin', about: 'cosmetics · stores · CSV + handwritten forms'},
 };
 

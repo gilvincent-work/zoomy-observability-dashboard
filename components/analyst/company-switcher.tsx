@@ -84,6 +84,7 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
   const [pending, startTransition] = useTransition();
   const active = views.find((v) => v.key === activeKey) ?? views[0];
   const {coop, companies} = groupViews(views);
+  const activeBrand = brandFor(active?.companyId);
 
   function choose(key: string) {
     if (key === activeKey) return;
@@ -100,10 +101,10 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
         aria-label={active ? `Current view: ${title(active)}${active.companyId ? `, ${roleLabel(active)}` : ''}. Switch view` : 'Switch view'}
         className="group flex h-8 max-w-[16rem] items-center gap-2 rounded-lg border border-border bg-background pr-2 pl-1 text-[13px] font-medium text-foreground outline-none transition-[background-color,transform] duration-150 ease-out hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[0.98] data-[popup-open]:bg-muted disabled:opacity-60"
       >
-        {active && brandFor(active.companyId) ? (
+        {activeBrand ? (
           // The company's wordmark stands in for its name (which stays in aria-label).
           <span className="flex items-center pl-1.5">
-            <BrandMark brand={brandFor(active.companyId)!} size={brandFor(active.companyId)!.style === 'thin' ? 11 : 13} />
+            <BrandMark brand={activeBrand} size={activeBrand.style === 'thin' ? 11 : 13} />
           </span>
         ) : (
           <>

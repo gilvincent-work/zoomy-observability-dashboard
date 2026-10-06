@@ -202,6 +202,9 @@ export function DashboardShell({
   const isCoopAdminView = Boolean(nav?.isCoopAdmin);
   const activeView = nav?.views.find((v) => v.key === nav.activeKey);
   const activeName = isCoopAdminView ? 'Coop Admin' : (activeView?.name ?? 'Zoomy');
+  // Wordmark for the single-view label: the active company's brand. Only with no nav
+  // at all (local dev bypass / legacy staff) is it assumed to be Zoomy.
+  const staticBrand = brandFor(isCoopAdminView ? null : nav ? activeView?.companyId : 'zoomy');
 
   const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
   const overviewTab: NavItem = {href: '/overview', label: 'Overview', icon: BarChart3};
@@ -280,9 +283,9 @@ export function DashboardShell({
           </div>
         ) : (
           <span className="ml-1 inline-flex h-8 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm font-medium max-sm:hidden">
-            {brandFor(isCoopAdminView ? null : (activeView?.companyId ?? 'zoomy')) ? (
+            {staticBrand ? (
               <>
-                <BrandMark brand={brandFor(activeView?.companyId ?? 'zoomy')!} size={brandFor(activeView?.companyId ?? 'zoomy')!.style === 'thin' ? 11 : 13} />
+                <BrandMark brand={staticBrand} size={staticBrand.style === 'thin' ? 11 : 13} />
                 <span className="sr-only">{activeName}</span>
               </>
             ) : (
