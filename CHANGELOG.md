@@ -10,6 +10,26 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Multi-role access: regression-review fixes (session freshness, atomic-ish audit, admin index)
+- **CRITICAL**: revoke/suspend now takes effect in real time. Admin actions (`app/admin/actions.ts`) re-read the actor's roles from the DB — not the session token — before any write; the JWT refreshes memberships every ~5 min and session `maxAge` is 8h (`auth.ts`). A revoked/suspended membership stops working within minutes instead of living in the JWT until it expires.
+- MED: audit writes are best-effort (`src/admin-data.ts`) — a committed role change is never reported "failed" because the audit insert hiccuped; failures are logged instead.
+- LOW: partial unique index `company_users_one_coop_admin_per_email` (NULL company) backstops duplicate coop_admin rows (applied to Staging + `supabase/multi_role.sql`).
+- Reviewer confirmed: no cookie/param privilege escalation, role-write authz, lockout guards (incl. no grant-bypass of the last admin), membership-only gate (suspended excluded, invited activated), coop_admin NULL-company handling, tenant isolation, client/server boundary, Zoomy legacy unchanged. typecheck + full suite (1844) + pagination guard pass.
+
+## 2026-10-06 — Multi-role access P2: Users & Roles console + membership-only gate
+- `src/admin-data.ts`: Coop-Admin role-management data layer — `listUsers` (grouped by email), `listCompanies`, `grantRole`/`setStatus`/`revoke`, `countCoopAdmins`; every write logged to `company_user_audit`; bounded count/single reads marked `pagination-ok`.
+- `app/admin/actions.ts`: coop_admin-gated server actions (re-checked server-side, never trusting the client) with lockout guards — can't remove/suspend the last active Coop Admin, can't suspend/revoke your own Coop Admin; email/role/company validated.
+- `app/admin/users` + `admin-users-view`: the console — grant form (company → Company User, or Coop Admin) + per-membership suspend / reactivate / revoke. Data-blind.
+- `auth.ts`: sign-in gate is now **membership-only** (dropped `ALLOWED_EMAILS`); pre-granted `invited` memberships flip to `active` on first sign-in.
+- typecheck + full suite (1844) + pagination guard pass.
+
+## 2026-10-06 — Multi-role access P1: active-view model + "Your access" switcher
+- `src/company.ts`: `resolveActive` is now VIEW-based — the user picks the active view (a company id, or the `coop_admin` sentinel) instead of coop_admin always winning. `membershipViews`/`viewKey` expose the selectable views; `canManageRoles` (coop_admin-only) replaces `canManageTeam`; `fetchMemberships` reads `status` and drops suspended rows. Membership gains optional `status`.
+- `src/active-context.ts`: `active_view` cookie (was `active_company`); `getNavContext` returns every view (+ names) and the active key; `requireZoomyData` redirects a non-Zoomy view to `homeFor()` (Coop Admin → /admin/users, company → /overview).
+- `app/actions/company.ts`: `setActiveView`. `company-switcher.tsx` → `ViewSwitcher` (shows `Company · Role` / `Coop Admin`). `app/account` + `account-view`: shared "Your access" page (not Zoomy-guarded) to switch views.
+- `dashboard-shell`: per-view nav — Zoomy legacy unchanged; Coop Admin view → Users & Roles + Your access; a company view → Overview/Uploads/Stores/Your access; header view-switcher when >1 view.
+- `supabase/multi_role.sql`: additive `company_users.status` + `company_user_audit` (applied to Staging). Tests updated/added (viewKey, membershipViews, resolveActive-by-view, canManageRoles, homeFor). typecheck + full suite (1844) + pagination guard pass.
+
 ## 2026-10-05 — Local dummy pet data for trying Ask Coop Explore by hand
 - Test (local DB only): `scripts/local-supabase/dummy-pets.sh apply | remove | status` loads a fictional, deterministic layer into the local Docker Supabase: 6 `[DUMMY] ` events (Aug to Oct 2026, one a lowercase / trailing-space respelling of another), 254 orders (about 30 percent with no `pet_type`, 35 on event dates with no event id, 5 voided, products P1 to P4 and bundles B1/B2 only) with 436 order items, and 122 `spin_wheel_leads` (campaign `dummy-*`, `example.com` emails, fake handles) whose free-text `pet` column mixes "Name / Breed", no slash, name only, breed only, odd case, extra spaces, "Aspin mix", empty, null and two hostile values. Pet-type mix differs by event (SM Aura dog-heavy, Circuit Makati cat-heavy, Trinoma "both"-heavy), so rankings are not ties. Markers: event ids `D-*`, order ids 100000 to 199999, campaigns `dummy-*`; `remove` deletes exactly those and restores the plain fixture.
 - Expected answers: `dummy-pets-expected.sql` (SELECT-only) and its saved output `dummy-pets-expected.txt` (pet type per event, breeds per event, leads with no breed, tagged vs date-attributed orders, weekday sales). The header of `dummy-pets.sh` has the how-to and 8 sample questions (Taglish and English). Decision: run `dummy-pets.sh remove` before `npm test`: with the data applied the golden test EXP-03 R01 fails by design (its name search also matches the dummy "Circuit Makati Weekend"); the RO proof exits 0 either way.
