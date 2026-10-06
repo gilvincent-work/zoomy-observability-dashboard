@@ -43,7 +43,7 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
   const codes = extraction?.data?.rows?.map((r) => r.item_code) ?? [];
   const [catalog, pageStrip] = extraction
     ? await Promise.all([catalogForCodes(ctx.companyId, codes), formPageStrip(ctx.companyId, upload.id)])
-    : [{}, []];
+    : [{}, null];
   return (
     <UploadReview
       company={ctx.companyId}

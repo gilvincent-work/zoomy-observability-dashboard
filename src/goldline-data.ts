@@ -411,30 +411,88 @@ export async function catalogForCodes(
 }
 
 export type FormPageCell = {page: number; uploadId: string | null; status: UploadStatus | null; flagged: number; current: boolean};
+export type FormPageStrip = {
+  /** count = the scans committed into the same store + period; batch = scans the same
+   *  person uploaded around the same time (pages 2–5 carry no store until reviewed). */
+  scope: 'count' | 'batch';
+  cells: FormPageCell[];
+};
+
+const BATCH_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 /**
- * The review page's "form pages 1–5" strip: for each page, the scan being reviewed if
- * it's that page, otherwise the company's most recent scan of that page (so a reviewer
- * working through a store's form can hop page to page). `flagged` = rows under the
- * review threshold. Company-scoped; reads only the latest extractions.
+ * The review page's "form pages 1–5" strip, limited to the SAME form so a link never
+ * opens another store's page:
+ *  • committed scan → the scans committed into the same store + period count;
+ *  • pending scan   → the uploader's other scans within ±12 h (one sitting's batch).
+ * For each page: this scan if it's that page, else the newest sibling of that page.
+ * Company-scoped; every read is bounded.
  */
-export async function formPageStrip(companyId: string, currentUploadId: string, flagBelow = 0.6): Promise<FormPageCell[]> {
-  if (!goldlineConfigured()) return [];
+export async function formPageStrip(companyId: string, currentUploadId: string, flagBelow = 0.6): Promise<FormPageStrip | null> {
+  if (!goldlineConfigured()) return null;
   const supa = db();
-  const ext = await supa
-    .from('gl_extractions')
-    .select('upload_id,page,rows,created_at')
-    .eq('company_id', companyId)
-    .order('created_at', {ascending: false})
-    .limit(60); // pagination-ok: the most recent scans only, by design
+  const upload = await getUpload(companyId, currentUploadId);
+  if (!upload) return null;
+
+  let scope: FormPageStrip['scope'] = 'batch';
+  let ids: string[] = [];
+  if (upload.status === 'committed') {
+    // pagination-ok: single row — where this scan landed.
+    const at = await supa
+      .from('gl_inventory')
+      .select('store_code,period_start,period_end')
+      .eq('company_id', companyId)
+      .eq('source_upload_id', currentUploadId)
+      .limit(1)
+      .maybeSingle();
+    if (at.data) {
+      scope = 'count';
+      const snap = at.data as {store_code: string; period_start: string; period_end: string};
+      const src = (await fetchAllRows('gl_inventory', (from, to) =>
+        supa
+          .from('gl_inventory')
+          .select('source_upload_id')
+          .eq('company_id', companyId)
+          .eq('store_code', snap.store_code)
+          .eq('period_start', snap.period_start)
+          .eq('period_end', snap.period_end)
+          .order('id')
+          .range(from, to),
+      )) as unknown as Array<{source_upload_id: string | null}>;
+      ids = [...new Set(src.map((r) => r.source_upload_id).filter((x): x is string => Boolean(x)))];
+    }
+  }
+  if (scope === 'batch') {
+    const t = Date.parse(upload.created_at);
+    let q = supa
+      .from('gl_uploads')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('kind', 'inventory_pdf')
+      .in('status', ['needs_review', 'committed'])
+      .gte('created_at', new Date(t - BATCH_WINDOW_MS).toISOString())
+      .lte('created_at', new Date(t + BATCH_WINDOW_MS).toISOString())
+      .order('created_at', {ascending: false})
+      .limit(50); // pagination-ok: one sitting's scans
+    q = upload.uploaded_by ? q.eq('uploaded_by', upload.uploaded_by) : q.is('uploaded_by', null);
+    const near = await q;
+    if (near.error) throw new Error(`gl_uploads read failed: ${near.error.message}`);
+    ids = ((near.data ?? []) as Array<{id: string}>).map((u) => u.id);
+  }
+  if (!ids.includes(currentUploadId)) ids.push(currentUploadId);
+
+  const [ext, ups] = await Promise.all([
+    // pagination-ok: one extraction per scan in this form (bounded by ids).
+    supa.from('gl_extractions').select('upload_id,page,rows,created_at').eq('company_id', companyId).in('upload_id', ids.slice(0, 60)),
+    // pagination-ok: same bound.
+    supa.from('gl_uploads').select('id,status,created_at').eq('company_id', companyId).in('id', ids.slice(0, 60)),
+  ]);
   if (ext.error) throw new Error(`gl_extractions read failed: ${ext.error.message}`);
-  const list = (ext.data ?? []) as Array<{upload_id: string; page: number; rows: {rows?: Array<{confidence?: unknown}>} | null}>;
-  const ids = [...new Set(list.map((e) => e.upload_id))];
-  const ups = ids.length
-    ? await supa.from('gl_uploads').select('id,status').eq('company_id', companyId).in('id', ids) // pagination-ok: ≤ 60 ids
-    : {data: [], error: null};
   if (ups.error) throw new Error(`gl_uploads read failed: ${ups.error.message}`);
-  const statusOf = new Map(((ups.data ?? []) as Array<{id: string; status: UploadStatus}>).map((u) => [u.id, u.status]));
+  const meta = new Map(((ups.data ?? []) as Array<{id: string; status: UploadStatus; created_at: string}>).map((u) => [u.id, u]));
+  const list = ((ext.data ?? []) as Array<{upload_id: string; page: number; rows: {rows?: Array<{confidence?: unknown}>} | null}>)
+    .filter((e) => meta.has(e.upload_id))
+    .sort((a, b) => (meta.get(b.upload_id)?.created_at ?? '').localeCompare(meta.get(a.upload_id)?.created_at ?? ''));
   const flaggedOf = (e: (typeof list)[number]) =>
     (e.rows?.rows ?? []).filter((r) => {
       const c = typeof r.confidence === 'number' && Number.isFinite(r.confidence) ? r.confidence : 1;
@@ -442,17 +500,15 @@ export async function formPageStrip(companyId: string, currentUploadId: string, 
     }).length;
 
   const current = list.find((e) => e.upload_id === currentUploadId);
-  return [1, 2, 3, 4, 5].map((page) => {
-    const pick =
-      current && current.page === page
-        ? current
-        : list.find((e) => e.page === page && e.upload_id !== currentUploadId && statusOf.has(e.upload_id));
+  const cells = [1, 2, 3, 4, 5].map((page) => {
+    const pick = current && current.page === page ? current : list.find((e) => e.page === page && e.upload_id !== currentUploadId);
     return {
       page,
       uploadId: pick?.upload_id ?? null,
-      status: pick ? (statusOf.get(pick.upload_id) ?? null) : null,
+      status: pick ? (meta.get(pick.upload_id)?.status ?? null) : null,
       flagged: pick ? flaggedOf(pick) : 0,
       current: Boolean(current && current.page === page),
     };
   });
+  return {scope, cells};
 }

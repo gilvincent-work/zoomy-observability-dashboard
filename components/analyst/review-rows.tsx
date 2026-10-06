@@ -1,6 +1,6 @@
 'use client';
 
-import {forwardRef, useMemo, useState} from 'react';
+import {useMemo} from 'react';
 import {Check, ChevronLeft, ChevronRight, Search} from 'lucide-react';
 import type {ExtractedRow} from '@/src/goldline-extract-run';
 import {bandOf, rowConfidence, toneText, type Band} from '@/src/review-confidence';
@@ -37,6 +37,8 @@ type Props = {
   resolved: ReadonlySet<number>;
   active: number | null; // the flag the navigator is on
   view: ReviewView;
+  query: string;
+  onQuery: (q: string) => void;
   editable: boolean;
   onView: (v: ReviewView) => void;
   onCell: (index: number, key: ColKey, raw: string) => void;
@@ -44,11 +46,22 @@ type Props = {
   onStep: (dir: 1 | -1) => void;
 };
 
-export const ReviewRows = forwardRef<HTMLDivElement, Props>(function ReviewRows(
-  {rows, productNames, catalog, flagged, resolved, active, view, editable, onView, onCell, onResolve, onStep},
-  ref,
-) {
-  const [query, setQuery] = useState('');
+export function ReviewRows({
+  rows,
+  productNames,
+  catalog,
+  flagged,
+  resolved,
+  active,
+  view,
+  query,
+  onQuery,
+  editable,
+  onView,
+  onCell,
+  onResolve,
+  onStep,
+}: Props) {
   const flaggedSet = useMemo(() => new Set(flagged), [flagged]);
   const q = query.trim().toLowerCase();
   const indexed = useMemo(() => rows.map((r, i) => ({...r, i})), [rows]);
@@ -137,7 +150,7 @@ export const ReviewRows = forwardRef<HTMLDivElement, Props>(function ReviewRows(
   };
 
   return (
-    <Card ref={ref} tabIndex={-1} className="scroll-mt-4 outline-none">
+    <Card className="scroll-mt-4">
       <CardHeader className="gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>
@@ -176,7 +189,7 @@ export const ReviewRows = forwardRef<HTMLDivElement, Props>(function ReviewRows(
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => onQuery(e.target.value)}
               placeholder="Search item or code…"
               aria-label="Search rows"
               className="h-8 w-full rounded-md border border-border bg-background pr-2.5 pl-8 text-sm outline-none transition-colors hover:border-foreground/25 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
@@ -201,7 +214,7 @@ export const ReviewRows = forwardRef<HTMLDivElement, Props>(function ReviewRows(
                 groups.map((g) => (
                   <tbody key={`${g.family}-${g.items[0].i}`}>
                     <tr className="bg-muted/50">
-                      <th colSpan={COLS.length + (editable ? 3 : 2)} scope="colgroup" className="px-2 py-1.5 text-left text-xs font-semibold">
+                      <th colSpan={COLS.length + (editable ? 3 : 2)} scope="rowgroup" className="px-2 py-1.5 text-left text-xs font-semibold">
                         {g.family}
                         {g.price != null && <span className="ml-1.5 font-mono font-normal text-muted-foreground">· ₱{g.price.toLocaleString('en-US')}</span>}
                       </th>
@@ -218,4 +231,4 @@ export const ReviewRows = forwardRef<HTMLDivElement, Props>(function ReviewRows(
       </CardContent>
     </Card>
   );
-});
+}

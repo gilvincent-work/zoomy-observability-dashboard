@@ -1,10 +1,10 @@
 'use client';
 
-import {useMemo, useRef, useState} from 'react';
+import {useMemo, useState} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, FileText, Loader2, Maximize2, X} from 'lucide-react';
-import type {ExtractionRecord, FormPageCell, UploadRow} from '@/src/goldline-data';
+import type {ExtractionRecord, FormPageStrip, UploadRow} from '@/src/goldline-data';
 import type {ExtractedRow} from '@/src/goldline-extract-run';
 import {commitReview} from '@/app/uploads/actions';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
@@ -41,7 +41,7 @@ export function UploadReview({
   productNames = {},
   inventoryHref = null,
   catalog = {},
-  pageStrip = [],
+  pageStrip = null,
 }: {
   company: string;
   canEdit: boolean;
@@ -55,8 +55,8 @@ export function UploadReview({
   inventoryHref?: string | null;
   /** item_code → printed product line + price (catalog), for the form grid and totals check. */
   catalog?: Record<string, CatalogLite>;
-  /** Form pages 1–5: the latest scan of each, with flag counts (page strip). */
-  pageStrip?: FormPageCell[];
+  /** Form pages 1–5 of THIS form (same count, or the same upload batch), with flags. */
+  pageStrip?: FormPageStrip | null;
 }) {
   const router = useRouter();
   const committed = upload.status === 'committed' || extraction?.status === 'confirmed';
@@ -67,7 +67,6 @@ export function UploadReview({
   const [storeCode, setStoreCode] = useState(head?.store_code ?? '');
   const [periodStart, setPeriodStart] = useState(head?.period_start ?? '');
   const [periodEnd, setPeriodEnd] = useState(head?.period_end ?? '');
-  const rowsRef = useRef<HTMLDivElement>(null);
   // Flags = rows under the threshold, fixed at load (editing a value doesn't change
   // the reader's confidence). A flag is resolved by editing its row or "Looks right".
   const flagged = useMemo(
@@ -78,6 +77,7 @@ export function UploadReview({
   const [active, setActive] = useState<number | null>(null);
   const [view, setView] = useState<ReviewView>(flagged.length ? 'needs' : 'all');
   const [formTotal, setFormTotal] = useState('');
+  const [query, setQuery] = useState(''); // the rows search, lifted so jumping to a flag can clear it
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{kind: 'ok' | 'err'; text: string} | null>(null);
 
@@ -92,7 +92,9 @@ export function UploadReview({
       next[index] = {...next[index], [key]: toIntOrNull(raw)};
       return next;
     });
-    if (flagged.includes(index)) resolve(index); // correcting a flagged row resolves it
+    // Correcting a flagged row resolves it — only when the value actually changes.
+    const original = head?.rows?.[index]?.[key] ?? null;
+    if (flagged.includes(index) && toIntOrNull(raw) !== original) resolve(index);
   }
 
   function resolve(index: number) {
@@ -103,6 +105,7 @@ export function UploadReview({
   function goToFlag(index: number | null) {
     if (index == null) return;
     setActive(index);
+    setQuery(''); // a search could be hiding the target row
     requestAnimationFrame(() => {
       const row = document.getElementById(`review-row-${index}`);
       row?.scrollIntoView({behavior: 'smooth', block: 'center'});
@@ -148,10 +151,12 @@ export function UploadReview({
           <ArrowLeft className="size-3.5" /> Back to uploads
         </Link>
         <h1 className="font-heading text-xl font-semibold tracking-tight break-all">{upload.filename}</h1>
-        {extraction && pageStrip.length > 0 && (
+        {extraction && pageStrip && (
           <nav aria-label="Form pages" className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="mr-1 text-muted-foreground">Form pages</span>
-            {pageStrip.map((p) => {
+            <span className="mr-1 text-muted-foreground">
+              {pageStrip.scope === 'count' ? 'Pages in this count' : 'Pages uploaded with this one'}
+            </span>
+            {pageStrip.cells.map((p) => {
               const inner = (
                 <>
                   {p.page}
@@ -169,12 +174,12 @@ export function UploadReview({
               if (p.current) return <span key={p.page} className={cls} aria-current="page">{inner}</span>;
               if (!p.uploadId)
                 return (
-                  <span key={p.page} className={cn(cls, 'border-dashed text-muted-foreground/60')} title="No scan of this page yet">
+                  <span key={p.page} className={cn(cls, 'border-dashed text-muted-foreground/60')} title="No scan of this page in this form yet">
                     {p.page}
                   </span>
                 );
               return (
-                <Link key={p.page} href={`/uploads/${p.uploadId}`} className={cn(cls, 'hover:bg-muted')} title={`Open the latest scan of page ${p.page}`}>
+                <Link key={p.page} href={`/uploads/${p.uploadId}`} className={cn(cls, 'hover:bg-muted')} title={`Open page ${p.page} of this form`}>
                   {inner}
                 </Link>
               );
@@ -365,8 +370,9 @@ export function UploadReview({
           </Card>
 
           <ReviewRows
-            ref={rowsRef}
             rows={rows}
+            query={query}
+            onQuery={setQuery}
             productNames={productNames}
             catalog={catalog}
             flagged={flagged}
@@ -382,7 +388,8 @@ export function UploadReview({
             }}
             onStep={(dir) => {
               setView('needs');
-              goToFlag(stepFlag(flagged, active, dir));
+              // Walk the open flags first; once all are resolved, walk them all.
+              goToFlag(stepFlag(open.length ? open : flagged, active, dir));
             }}
           />
 

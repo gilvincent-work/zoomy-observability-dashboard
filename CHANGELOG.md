@@ -20,7 +20,12 @@ Dates are local working dates (GMT+8). Newest first.
 - **Commit is held until every flag is resolved** (plan §07d), with a "Resolve N flagged rows to commit" shortcut. The button reads "Confirm & commit".
 - **Totals check.** Shows this page's ending value (on hand × printed price, with the same on-hand rule as Inventory) beside an optional "Total written on the form" field. Result: ✓ Reconciled within ₱1, or "Off by ₱X", saying which way.
 - **Page strip.** Pages 1–5 under the file name: the current page, the latest scan of each other page (links), a red dot when that scan has flags, a ✓ when it's committed, and a dashed chip when a page has no scan yet.
-- Pure logic in `src/review-workbench.ts` (tested). New reads `catalogForCodes` and `formPageStrip`, both company-scoped and bounded. typecheck + full suite (2503) + pagination guard pass; impeccable detector: no findings.
+- **Regression review (code-reviewer) + fixes:**
+  - No critical or high issues.
+  - (MEDIUM) The page strip was company-wide, so a page link could open another store's scan. It's now limited to the same form: a committed scan shows the scans committed into the same store + period ("Pages in this count"); a pending scan shows the uploader's other scans within ±12 h ("Pages uploaded with this one"), since pages 2–5 carry no store until reviewed. The current scan is read directly, not from a capped list.
+  - (MEDIUM) A typed search could hide the next flag's row, so the navigator and "Resolve N flagged rows" did nothing. The search is lifted to the page and cleared when jumping to a flag.
+  - (LOW) Editing resolves a flag only when the value actually changes. The navigator walks unresolved flags first. Removed a dead ref, and the family header uses `scope="rowgroup"`.
+- Pure logic in `src/review-workbench.ts` (tested). New reads `catalogForCodes` and `formPageStrip`, both company-scoped and bounded. typecheck + full suite + pagination guard pass; impeccable detector: no findings.
 
 ## 2026-10-06 — Scan review: confidence front and center
 - The review page's Document card now leads with how sure the OCR was, said three ways:
