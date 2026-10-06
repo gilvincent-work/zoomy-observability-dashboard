@@ -15,6 +15,11 @@ Dates are local working dates (GMT+8). Newest first.
 - Decision: the probe lives in `src/chat/explore/probe.ts` (pure, injected runner) and the real driver is reached only through `explore-setup.ts` (`exploreHealth`), so the architecture rule that only `client.ts` imports `postgres` and only `explore-setup.ts` imports `client.ts` still holds. `ExploreDbError` now carries the driver code (`sqlstate`, never text) so the probe can tell a wrong password from a closed port. Runbook: "Explore status in /api/chat/health".
 - Test: `chat-explore-probe.test.ts` (fake runner) and `chat-explore-probe.integration.test.ts` (local Docker only, loopback guard first).
 
+## 2026-10-06 — Uploads: inline scan preview (CSP-safe) + honest non-page-1 handling
+- **Preview**: the review page embedded the PDF with `<object>`, which the app CSP (`object-src 'none'`) blocks → "Can't preview inline". New same-origin proxy `GET /api/goldline/uploads/[id]/file` (company-scoped, streams the private file as application/pdf) + an `<iframe>` (frame-src is open) so the scan renders inline; signed URL stays server-side.
+- **Non-page-1 PDFs**: the route reads every upload against page 1's manifest, so a later page (2.pdf/3.pdf) returned 0 rows and showed a misleading empty-but-committable review. Since a real page 1 always yields one row per printed item, 0 rows now fails loud with a clear "this doesn't look like page 1 — page 1 only in v1" message. (Full multi-page support still needs the blank page 2–6 templates.)
+- typecheck + full suite (2405) + pagination guard pass.
+
 ## 2026-10-06 — Uploads review: scanned-file preview (planned in §07d)
 - `src/goldline-data.ts`: `signedUploadUrl(companyId, uploadId)` — a short-lived (10 min) signed URL to the stored scan, company-scoped (ownership re-checked, so one tenant can't fetch another's file); `UploadRow` + the reads now carry `storage_path`.
 - `app/uploads/[id]/page.tsx` + `components/analyst/upload-review.tsx`: the review page shows the scanned PDF inline (collapsible `<object>` + "Open" in a new tab) above the extracted rows, so the reviewer can compare the source against the numbers. The bucket is private; the browser loads it via the signed URL. typecheck + full suite (2405) + pagination guard pass.
