@@ -69,6 +69,18 @@ If the chat says live data is not available after the deploy, the env vars are m
 | Chat answers digest-only ("I have no chart tools in this chat") | `CHAT_READ_MODE`/`CHAT_RO_JWT_SECRET`/`CHAT_RO_APIKEY` missing, a wrong value, or the redeploy was skipped | Step 7. Diagnose with `scripts/check-ro-token.mjs` (run by a person: `CHECK_URL`, `CHAT_RO_JWT_SECRET`, `CHECK_APIKEY` = the publishable key): variant A `401 Invalid API key` = set `CHAT_RO_APIKEY`; variant B `200` = it works |
 | Hook notice says skipped | The project already has a pre-request hook | Add the two lines by hand (before-you-start step 3) |
 
+## Explore status in /api/chat/health
+
+Signed in, open `/api/chat/health` on the deployment. The `explore` object says whether Explore is on **for you** and why not. It shows flags only, never a URL, password or email list.
+
+| Field | Meaning |
+|---|---|
+| `enabled` / `reason` | `reason` is the code from the access check, in order: `mode_off` (`EXPLORE_MODE` is not exactly `on`), `url_missing`, `url_invalid`, `url_role` (the URL user is not `coop_explore_ro` or `coop_explore_ro.<ref>`), `url_not_local` (outside production the host must be loopback), `not_ro_role` (production needs `CHAT_READ_MODE=ro_role`), `allowed_emails_unset` (production needs `ALLOWED_EMAILS`), `list_empty` (`EXPLORE_ALLOWED_EMAILS` empty), `user_not_allowed` (your sign-in email is not on it) |
+| `EXPLORE_MODE`, `EXPLORE_DATABASE_URL`, `EXPLORE_ALLOWED_EMAILS`, `ALLOWED_EMAILS` | `set`, `on`, `length`, `count`; for the URL also `roleOk`, `host` (hostname only) and `kind` (`pooler`, `direct`, `loopback`, `other`) |
+| `probe` | Only when `enabled`. One fixed read-only check through the chat's own driver envelope, 5 s cap. `{ok:true, role, readOnly, ms}`, or `{ok:false, code}` |
+
+`probe.code`: `connection_refused` (host or port wrong or down), `auth_failed` (wrong password or role), `timeout`, `undefined_table` (the Explore SQL is not applied on this project: re-run `coop_chat_explore.sql`), `permission_denied` (grants missing), `wrong_role` / `not_read_only` (the URL logs in as the wrong role), `unreachable` (other connection failure), `other`.
+
 ## Rollback (only if something goes wrong, PROD owner decides)
 
 Nothing here modifies existing tables, so rollback is dropping what was added. Run in the SQL editor, and only on the project that needs it:

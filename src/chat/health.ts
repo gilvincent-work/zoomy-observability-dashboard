@@ -1,5 +1,7 @@
 // Ask Coop deployment health: what THIS deployment sees in its environment, as booleans, lengths and kinds only. Never a value.
 // It exists because the live path fails closed to digest-only without saying why, and a hosted deployment's env is invisible.
+import {csv, parseUrl} from './explore/config';
+import {EXPLORE_ROLE, type ExploreEnv} from './explore/types';
 import {resolveChatReadMode, type ChatReadEnv} from './read/mode';
 
 type Env = Record<string, string | undefined>;
@@ -43,5 +45,24 @@ export function describeChatEnv(env: Env) {
     SUPABASE_URL_ARCHIVE: shape('SUPABASE_URL_ARCHIVE', env.SUPABASE_URL_ARCHIVE),
     SUPABASE_SERVICE_ROLE_KEY_ARCHIVE: {set: Boolean(env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE)},
     ANTHROPIC_API_KEY: {set: Boolean(env.ANTHROPIC_API_KEY)},
+  };
+}
+
+/** Explore flags, no values: presence, a role check, the hostname only (no user, password, port or query), and list counts. */
+export function describeExploreEnv(env: ExploreEnv) {
+  const raw = env.EXPLORE_DATABASE_URL?.trim() ?? '';
+  let url: {set: false} | {set: true; length: number; roleOk: boolean; host: string | null; kind: 'pooler' | 'direct' | 'loopback' | 'other'} = {set: false};
+  if (raw !== '') {
+    const p = parseUrl(raw);
+    const host = p.ok ? p.hostname.replace(/^\[|\]$/g, '') : null;
+    const kind = !host ? 'other' : ['127.0.0.1', 'localhost', '::1'].includes(host) ? 'loopback' : host.endsWith('.pooler.supabase.com') ? 'pooler' : /^db\.[a-z0-9]+\.supabase\.co$/.test(host) ? 'direct' : 'other';
+    url = {set: true, length: raw.length, roleOk: p.ok && (p.username === EXPLORE_ROLE || p.username.startsWith(`${EXPLORE_ROLE}.`)), host, kind};
+  }
+  const list = (v: string | undefined) => ({set: csv(v).length > 0, count: csv(v).length});
+  return {
+    EXPLORE_MODE: {set: Boolean(env.EXPLORE_MODE), on: env.EXPLORE_MODE === 'on'},
+    EXPLORE_DATABASE_URL: url,
+    EXPLORE_ALLOWED_EMAILS: list(env.EXPLORE_ALLOWED_EMAILS),
+    ALLOWED_EMAILS: list(env.ALLOWED_EMAILS),
   };
 }
