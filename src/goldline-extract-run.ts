@@ -56,8 +56,9 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
     system,
     // Structured output — the first text block is valid JSON matching the schema.
     output_config: {format: {type: 'json_schema', schema: EXTRACTION_SCHEMA}},
-    // Pure extraction: no need for extended thinking.
-    thinking: {type: 'disabled'},
+    // Note: no `thinking` param. Sonnet 5 rejects `{type:'disabled'}` with a 400
+    // ("send {type:'between_tools'} instead"); for a pure, no-tools extraction we
+    // just omit it and let the model default. Keep it omitted unless we add tools.
     messages: [
       {
         role: 'user',

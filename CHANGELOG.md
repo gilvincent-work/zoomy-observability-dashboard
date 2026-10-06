@@ -15,6 +15,17 @@ Dates are local working dates (GMT+8). Newest first.
 - Decision: the probe lives in `src/chat/explore/probe.ts` (pure, injected runner) and the real driver is reached only through `explore-setup.ts` (`exploreHealth`), so the architecture rule that only `client.ts` imports `postgres` and only `explore-setup.ts` imports `client.ts` still holds. `ExploreDbError` now carries the driver code (`sqlstate`, never text) so the probe can tell a wrong password from a closed port. Runbook: "Explore status in /api/chat/health".
 - Test: `chat-explore-probe.test.ts` (fake runner) and `chat-explore-probe.integration.test.ts` (local Docker only, loopback guard first).
 
+## 2026-10-06 — Uploads review: scanned-file preview (planned in §07d)
+- `src/goldline-data.ts`: `signedUploadUrl(companyId, uploadId)` — a short-lived (10 min) signed URL to the stored scan, company-scoped (ownership re-checked, so one tenant can't fetch another's file); `UploadRow` + the reads now carry `storage_path`.
+- `app/uploads/[id]/page.tsx` + `components/analyst/upload-review.tsx`: the review page shows the scanned PDF inline (collapsible `<object>` + "Open" in a new tab) above the extracted rows, so the reviewer can compare the source against the numbers. The bucket is private; the browser loads it via the signed URL. typecheck + full suite (2405) + pagination guard pass.
+
+## 2026-10-06 — UX: human-readable upload extraction errors
+- `src/goldline-extract.ts` `humanizeExtractError` (+tests): maps raw extraction / Claude API errors to short, plain-language messages — the page 2–6 manifest gap ("supports page 1… pages 2–6 coming soon"), page_mismatch, unreadable scan, busy/rate/timeout — and a safe generic for anything else (400s, invalid_request_error) so a raw JSON blob never reaches the UI.
+- `app/api/goldline/upload/route.ts`: the PDF extraction catch now logs the raw error server-side and shows/stores the friendly message (both the inline error and the file row's reject reason). typecheck + full suite (2405) + pagination guard pass.
+
+## 2026-10-06 — Fix: Goldline PDF extraction 400 (invalid thinking param)
+- `src/goldline-extract-run.ts`: removed `thinking: {type: "disabled"}` from the Claude Vision call — `claude-sonnet-5-5` rejects it with a 400 ("send {type: between_tools} instead"). For a pure, no-tools extraction we omit the param and let the model default, so a scanned PDF upload reaches the review workbench instead of failing. (The upload/auth/storage/key path was already working; only this param was wrong.)
+
 ## 2026-10-06 — Multi-role access: regression-review fixes (session freshness, atomic-ish audit, admin index)
 - **CRITICAL**: revoke/suspend now takes effect in real time. Admin actions (`app/admin/actions.ts`) re-read the actor's roles from the DB — not the session token — before any write; the JWT refreshes memberships every ~5 min and session `maxAge` is 8h (`auth.ts`). A revoked/suspended membership stops working within minutes instead of living in the JWT until it expires.
 - MED: audit writes are best-effort (`src/admin-data.ts`) — a committed role change is never reported "failed" because the audit insert hiccuped; failures are logged instead.
