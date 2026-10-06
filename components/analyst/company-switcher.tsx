@@ -95,7 +95,7 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
         className="group flex h-8 max-w-[16rem] items-center gap-2 rounded-lg border border-border bg-background pr-2 pl-1 text-[13px] font-medium text-foreground outline-none transition-[background-color,transform] duration-150 ease-out hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[0.98] data-[popup-open]:bg-muted disabled:opacity-60"
       >
         {active && <ViewBadge view={active} size="sm" />}
-        <span className="truncate">{active ? title(active) : 'Select view'}</span>
+        <span className="truncate max-sm:max-w-[8.5rem]">{active ? title(active) : 'Select view'}</span>
         {pending ? (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
         ) : (
