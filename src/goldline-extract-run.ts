@@ -3,7 +3,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   buildSystemPrompt,
   buildManifestPrompt,
+  buildPageDetectPrompt,
   EXTRACTION_SCHEMA,
+  PAGE_DETECT_SCHEMA,
   EXTRACT_MODEL,
 } from './goldline-extract';
 
@@ -38,6 +40,46 @@ export function extractionConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
+/** A document content block for a base64 PDF — shared by the detect + extract calls. */
+function pdfDoc(pdfBase64: string) {
+  return {type: 'document', source: {type: 'base64', media_type: 'application/pdf', data: pdfBase64}};
+}
+
+/** First text block of a response, JSON-parsed; throws loud on empty/invalid JSON. */
+function parseJsonContent(res: {content?: Array<{type: string; text?: string}>}): unknown {
+  const text = res.content?.find((b) => b.type === 'text' && typeof b.text === 'string')?.text;
+  if (!text) throw new Error('Vision returned no text content');
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('Vision did not return valid JSON');
+  }
+}
+
+/**
+ * Identify which page of the Nichido form a scan is, from its footer. Returns 1–6,
+ * or 0 if it isn't a recognizable form page. A cheap, low-token call so the route can
+ * pick the right manifest without asking the user which page they uploaded.
+ */
+export async function detectPage(pdfBase64: string): Promise<number> {
+  if (!extractionConfigured()) throw new Error('ANTHROPIC_API_KEY is not set');
+  const client = new Anthropic();
+  const params = {
+    model: EXTRACT_MODEL,
+    max_tokens: 100,
+    system: buildPageDetectPrompt(),
+    output_config: {format: {type: 'json_schema', schema: PAGE_DETECT_SCHEMA}},
+    messages: [{role: 'user', content: [pdfDoc(pdfBase64)]}],
+  };
+  const res = (await client.messages.create(
+    params as unknown as Parameters<typeof client.messages.create>[0],
+    {timeout: 60_000},
+  )) as {content?: Array<{type: string; text?: string}>};
+  const parsed = parseJsonContent(res) as {page?: unknown};
+  const n = typeof parsed.page === 'number' ? Math.trunc(parsed.page) : 0;
+  return n >= 0 && n <= 6 ? n : 0;
+}
+
 /**
  * Read ONE scanned inventory page with Claude Vision against the fixed template.
  * Throws on: no key, a page with no manifest, no text/invalid JSON, or an `{error}`
@@ -59,15 +101,7 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
     // Note: no `thinking` param. Sonnet 5 rejects `{type:'disabled'}` with a 400
     // ("send {type:'between_tools'} instead"); for a pure, no-tools extraction we
     // just omit it and let the model default. Keep it omitted unless we add tools.
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {type: 'document', source: {type: 'base64', media_type: 'application/pdf', data: pdfBase64}},
-          {type: 'text', text: manifest},
-        ],
-      },
-    ],
+    messages: [{role: 'user', content: [pdfDoc(pdfBase64), {type: 'text', text: manifest}]}],
   };
 
   // Cast through unknown: output_config/thinking are newer params and the exact SDK
@@ -79,15 +113,7 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
     {timeout: 100_000},
   )) as {content?: Array<{type: string; text?: string}>};
 
-  const text = res.content?.find((b) => b.type === 'text' && typeof b.text === 'string')?.text;
-  if (!text) throw new Error('Extraction returned no text content');
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error('Extraction did not return valid JSON');
-  }
+  const parsed = parseJsonContent(res);
   if (parsed && typeof parsed === 'object' && 'error' in parsed) {
     throw new Error(`Extraction declined: ${String((parsed as {error: unknown}).error)}`);
   }

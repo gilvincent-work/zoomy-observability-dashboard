@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Goldline: inventory pages 2–5 extraction + page auto-detect + 2-column review
+- **Manifests pages 2–5** (`src/goldline-extract.ts`): enumerated every printed item from the blank Nichido templates (page 2 ~67, page 3 ~60, page 4 ~68 incl. accessories, page 5 ~25). Page 4's accessories share a printed ITEM# (ACCS 288/150/125…) so codes are synthesized from the brush number to keep each row unique. Page 6 is the daily Sales Report (not inventory) — intentionally no manifest. Added `INVENTORY_PAGES`.
+- **Page auto-detect** (`buildPageDetectPrompt` + `PAGE_DETECT_SCHEMA`; `detectPage` in `goldline-extract-run.ts`): a cheap Vision call reads the footer "PAGE # N", then the upload route extracts with that page's manifest — upload any single page and it just works. Page 6 / unrecognized pages get a clear out-of-scope message (no empty review). Removed the hardcoded page=1.
+- **Review preview** (`app/api/goldline/uploads/[id]/file` + `upload-review.tsx`): the proxy now buffers bytes + sets content-length / X-Frame-Options SAMEORIGIN (fixes the blank "can't preview" box). New 2-column layout — a compact, sticky scan thumbnail (~28%, click to enlarge in a full-screen lightbox) on the left, the editable table + commit on the right (~72%).
+- Tests: manifest integrity (unique codes, non-empty, page-6 absent), per-page prompt, detect schema. typecheck + full suite (2409) + pagination guard pass.
+
 ## 2026-10-06 — Uploads: inline scan preview (CSP-safe) + honest non-page-1 handling
 - **Preview**: the review page embedded the PDF with `<object>`, which the app CSP (`object-src 'none'`) blocks → "Can't preview inline". New same-origin proxy `GET /api/goldline/uploads/[id]/file` (company-scoped, streams the private file as application/pdf) + an `<iframe>` (frame-src is open) so the scan renders inline; signed URL stays server-side.
 - **Non-page-1 PDFs**: the route reads every upload against page 1's manifest, so a later page (2.pdf/3.pdf) returned 0 rows and showed a misleading empty-but-committable review. Since a real page 1 always yields one row per printed item, 0 rows now fails loud with a clear "this doesn't look like page 1 — page 1 only in v1" message. (Full multi-page support still needs the blank page 2–6 templates.)

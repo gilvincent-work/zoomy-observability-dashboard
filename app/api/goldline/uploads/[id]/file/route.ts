@@ -18,14 +18,19 @@ export async function GET(_req: Request, {params}: {params: Promise<{id: string}
   if (!url) return new Response('Not found.', {status: 404});
 
   const upstream = await fetch(url);
-  if (!upstream.ok || !upstream.body) return new Response('Could not load the file.', {status: 502});
+  if (!upstream.ok) return new Response('Could not load the file.', {status: 502});
+  // Buffer the bytes (not a passthrough stream): more reliable for an <iframe> PDF
+  // embed, and lets us set an accurate content-length.
+  const buf = await upstream.arrayBuffer();
 
-  return new Response(upstream.body, {
+  return new Response(buf, {
     status: 200,
     headers: {
       'content-type': 'application/pdf',
       'content-disposition': 'inline',
-      // Private + short-lived; the URL is behind auth and company scope.
+      'content-length': String(buf.byteLength),
+      // Same-origin embedding only; the URL is behind auth + company scope.
+      'x-frame-options': 'SAMEORIGIN',
       'cache-control': 'private, max-age=0, must-revalidate',
     },
   });

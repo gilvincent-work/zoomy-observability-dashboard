@@ -2,8 +2,11 @@ import {describe, it, expect} from 'vitest';
 import {
   buildSystemPrompt,
   buildManifestPrompt,
+  buildPageDetectPrompt,
   EXTRACTION_SCHEMA,
+  PAGE_DETECT_SCHEMA,
   MANIFESTS,
+  INVENTORY_PAGES,
   COLUMN_KEYS,
   humanizeExtractError,
 } from './goldline-extract';
@@ -29,11 +32,15 @@ describe('buildManifestPrompt', () => {
     expect(m).toContain('ending_on_hand (col5)');
   });
 
-  it('throws for a page whose manifest is not yet generated', () => {
-    expect(() => buildManifestPrompt(2)).toThrow(/manifest/i);
+  it('builds a manifest for every inventory page (1–5)', () => {
+    for (const p of [1, 2, 3, 4, 5]) {
+      const m = buildManifestPrompt(p);
+      expect(m).toContain(`PAGE ${p} of 6`);
+    }
   });
 
-  it('throws for an out-of-range page', () => {
+  it('throws for page 6 (the sales report — no item manifest) and out-of-range pages', () => {
+    expect(() => buildManifestPrompt(6)).toThrow(/manifest/i);
     expect(() => buildManifestPrompt(99)).toThrow();
   });
 });
@@ -49,6 +56,37 @@ describe('EXTRACTION_SCHEMA', () => {
 
   it('page-1 manifest covers all 43 coded rows (Final Powder has no item code)', () => {
     expect(MANIFESTS[1].length).toBe(43);
+  });
+});
+
+describe('manifests pages 1–5', () => {
+  it('has a non-empty manifest for every inventory page and none for page 6', () => {
+    for (const p of INVENTORY_PAGES) expect(MANIFESTS[p]?.length ?? 0).toBeGreaterThan(0);
+    expect(MANIFESTS[6]).toBeUndefined();
+  });
+
+  it('every item code is unique within its page', () => {
+    for (const p of INVENTORY_PAGES) {
+      const codes = MANIFESTS[p].map((i) => i.code);
+      expect(new Set(codes).size).toBe(codes.length);
+    }
+  });
+
+  it('no blank codes or products', () => {
+    for (const p of INVENTORY_PAGES) {
+      for (const item of MANIFESTS[p]) {
+        expect(item.code.trim().length).toBeGreaterThan(0);
+        expect(item.product.trim().length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('page detection', () => {
+  it('prompt asks for the footer page and the schema bounds 0–6', () => {
+    expect(buildPageDetectPrompt()).toMatch(/PAGE # N|page/i);
+    expect(PAGE_DETECT_SCHEMA.properties.page.minimum).toBe(0);
+    expect(PAGE_DETECT_SCHEMA.properties.page.maximum).toBe(6);
   });
 });
 
