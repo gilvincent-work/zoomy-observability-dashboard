@@ -10,6 +10,18 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Scan review: confidence front and center
+- The review page's Document card now leads with how sure the OCR was, said three ways:
+  - **A large score** in the dashboard's metric face, colored by band: high ≥ 85%, medium 60–85%, low < 60%, which is the existing flag threshold.
+  - **A verdict and what to do next.** High: "Check the N rows flagged below, then commit". Medium: review carefully against the scan. Low: check every row, a clearer scan helps.
+  - **A stacked bar of rows by band** with counts, because an average can hide a few bad rows.
+- "Review N flagged rows" jumps to the flagged rows.
+- A one-line note says confidence is the reader's own estimate, not a guarantee.
+- Per-row confidence chips use the same bands and colors, so the summary and the table agree.
+- The store and period fields sit below with clearer labels, and the card shows the detected form page ("page 2 of 5"). Pages 2–5 get a hint to reuse page 1's store and period so all pages land in one Inventory count.
+- **Regression review (code-reviewer):** no critical, high or medium issues; flagging and the commit flow are unchanged. Fixed the lows: row chips clamp to 0–100%; malformed (NaN) confidences are treated as 1 in both the summary and the table via `rowConfidence`, so they can't disagree; chip text is mixed toward the foreground (`toneText`) so amber clears AA contrast in light mode.
+- Pure logic in `src/review-confidence.ts` (tested). typecheck + full suite (2491) pass; impeccable detector: no findings.
+
 ## 2026-10-06 — Starting view for multi-role users: last used by default, pinnable in Settings
 - Each sign-in now starts in the user's **starting view**: their pinned view (Settings → Starting view) if they still hold it, else the **most recent view they used**, else the first view. A view they no longer hold is skipped. Rules in `startViewKey` (`src/company.ts`, tested in `src/start-view.test.ts`).
 - "Most recent" is stored server-side, so it follows the person across devices and browsers. Every switch writes `last_view`. New additive table `company_user_prefs` (`supabase/company_user_prefs.sql`: user_email PK, default_view, last_view; RLS on, anon/authenticated revoked; applied to Staging, promote with the other SQL).
