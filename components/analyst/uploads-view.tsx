@@ -344,14 +344,12 @@ export function UploadsView({
                             <Icon className="size-4 shrink-0 text-muted-foreground" />
                             <span className="truncate">{u.filename}</span>
                           </span>
-                          {u.reject_reason && (
-                            <span className="mt-0.5 block truncate text-xs text-destructive">{u.reject_reason}</span>
-                          )}
                         </td>
                         <td className="py-2.5 pr-3 text-xs text-muted-foreground">
                           {u.kind === 'pos_csv' ? 'Sales CSV' : 'Inventory PDF'}
                         </td>
-                        <td className="py-2.5 pr-3">
+                        {/* The pill carries the state; the reason is a hover detail, not a red line per row. */}
+                        <td className="py-2.5 pr-3" title={u.reject_reason ?? undefined}>
                           <StatusPill status={u.status} />
                         </td>
                         <td className="py-2.5 pr-3 text-xs text-muted-foreground tabular-nums">{fmtWhen(u.created_at)}</td>

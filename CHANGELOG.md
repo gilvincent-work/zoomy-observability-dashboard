@@ -10,6 +10,11 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Goldline uploads: the real cause of "couldn't process this scan"
+- Read from the new `gl_uploads.error_detail`: every PDF failed with `400 output_config.format.schema: For 'integer' type, properties maximum, minimum are not supported`. The page-detect schema (`PAGE_DETECT_SCHEMA`) put `minimum: 0, maximum: 6` on the page integer, which structured outputs reject. Removed the bounds; `detectPage` already clamps to 0–6. The earlier "document-only message" diagnosis (below) was wrong; that change is harmless and stays. Tests now assert neither schema carries numeric bounds.
+- Not a credits problem. `humanizeExtractError` now names an out-of-credits account plainly ("Automatic reading is paused…") instead of falling to the generic message.
+- Uploads list: dropped the red reason line under each filename; the status pill is enough. The reason is kept as a hover title on the pill.
+
 ## 2026-10-06 — Goldline uploads: fix PDF extraction regression + review/nav/preview issues
 - **PDF extraction was broken for ALL pages (incl. page 1)** after the page-auto-detect slice: `detectPage`'s user message contained a document block with **no text block**, which the API rejects (400). Added a text block + bumped its `max_tokens`. This is the fix for "1.pdf / 2.pdf … can't be scanned."
 - **Larger pages**: extraction `max_tokens` 8000 → 16000 (pages 2 & 4 have ~67–68 rows; 8000 truncated the JSON). `store_code` is now optional in the schema/guard (only page 1 carries the store header; pages 2–5 have none) and normalized to `''`.
