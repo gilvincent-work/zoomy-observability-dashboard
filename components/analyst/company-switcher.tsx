@@ -98,6 +98,14 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
   }, [pending, switching]);
   // Remove the overlay after its exit fade. Separate effect keyed on the phase, so
   // the state change above can't cancel this timer.
+  // If the switch never registers as pending (e.g. pushing to the URL we're already
+  // on), don't wait for the 8 s net — start the exit after a short beat.
+  const waiting = switching?.phase === 'in' && !switching.started;
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => setSwitching((s) => (s && !s.started ? {...s, phase: 'out'} : s)), 1500);
+    return () => clearTimeout(t);
+  }, [waiting]);
   // Safety net: never leave the veil up if a switch stalls.
   const showing = Boolean(switching);
   useEffect(() => {
@@ -131,6 +139,10 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
   return (
     <>
     {switching && typeof document !== 'undefined' && createPortal(<SwitchOverlay view={switching.view} leaving={switching.phase === 'out'} />, document.body)}
+    {/* Always-present live region: announced reliably (an inserted role=status often isn't). */}
+    <span className="sr-only" role="status" aria-live="polite">
+      {switching?.phase === 'in' ? `Switching to ${switching.view.companyId ? switching.view.name : 'Coop Admin'}` : ''}
+    </span>
     <Menu.Root>
       <Menu.Trigger
         disabled={pending}
@@ -187,17 +199,17 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
  * The view-switch moment: the page veils and the destination's mark eases in while
  * the new view loads, then the veil fades out over it — a quick crossfade between
  * tenants. Enter 200 ms / exit 160 ms, strong ease-out (exit faster than enter);
- * reduced motion keeps only a short fade. role=status announces the switch.
+ * reduced motion keeps only a short fade. Visual only (aria-hidden); the switcher's
+ * persistent live region announces the switch.
  */
 function SwitchOverlay({view, leaving}: {view: SwitcherView; leaving: boolean}) {
   const brand = brandFor(view.companyId);
   const name = view.companyId ? view.name : 'Coop Admin';
   return (
     <div
-      role="status"
-      aria-live="polite"
+      aria-hidden
       data-leaving={leaving || undefined}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-[3px] transition-opacity duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] starting:opacity-0 data-[leaving]:opacity-0 data-[leaving]:duration-150 motion-reduce:backdrop-blur-none"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-[3px] transition-opacity duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] starting:opacity-0 data-[leaving]:opacity-0 data-[leaving]:duration-[170ms] motion-reduce:backdrop-blur-none"
     >
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-popover px-8 py-6 shadow-xl transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] starting:scale-[0.96] starting:opacity-0 motion-reduce:transition-opacity motion-reduce:starting:scale-100">
         {brand ? <BrandMark brand={brand} size={brand.style === 'thin' ? 18 : 24} /> : <ViewBadge view={view} />}
