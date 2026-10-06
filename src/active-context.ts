@@ -8,21 +8,28 @@ import {
   fetchCompanies,
   membershipViews,
   resolveActive,
+  pickCookieView,
   type ActiveContext,
   type CompanyRole,
   type Membership,
 } from '@/src/company';
 
-/** Cookie the switcher writes to pick the active VIEW — a company id, or the
- *  `coop_admin` sentinel. A hint only: always re-validated against real memberships. */
+/** Cookie the switcher writes to pick the active VIEW — `${viewSid}:${viewKey}`
+ *  (see viewCookieValue). A hint only: always re-validated against real memberships. */
 export const VIEW_COOKIE = 'active_view';
 
-async function cookieView(): Promise<string | null> {
+type ViewSession = {viewSid?: string | null; startView?: string | null};
+
+/** The view to use for this request: the switcher's choice made during THIS sign-in,
+ *  else the sign-in's starting view (pinned default → most recent → first). */
+async function cookieView(session: ViewSession | null): Promise<string | null> {
+  let raw: string | null = null;
   try {
-    return (await cookies()).get(VIEW_COOKIE)?.value ?? null;
+    raw = (await cookies()).get(VIEW_COOKIE)?.value ?? null;
   } catch {
-    return null;
+    raw = null;
   }
+  return pickCookieView(raw, session?.viewSid, session?.startView);
 }
 
 // Server-side seam for tenant scoping. A Server Component or route calls
@@ -41,7 +48,7 @@ export async function getActiveContext(requested?: string | null): Promise<Activ
   const session = await auth();
   if (!session) return null;
   const memberships = (session as {memberships?: Membership[]}).memberships ?? [];
-  const pick = requested ?? (await cookieView());
+  const pick = requested ?? (await cookieView(session as ViewSession));
   return resolveActive(memberships, pick);
 }
 
@@ -85,7 +92,7 @@ export async function getNavContext(): Promise<NavContext | null> {
   const session = await auth();
   if (!session) return null;
   const memberships = (session as {memberships?: Membership[]}).memberships ?? [];
-  const active = resolveActive(memberships, await cookieView());
+  const active = resolveActive(memberships, await cookieView(session as ViewSession));
   if (!active) return null;
 
   const views = membershipViews(memberships);

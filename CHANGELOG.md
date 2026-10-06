@@ -10,6 +10,21 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Starting view for multi-role users: last used by default, pinnable in Settings
+- Each sign-in now starts in the user's **starting view**: their pinned view (Settings → Starting view) if they still hold it, else the **most recent view they used**, else the first view. A view they no longer hold is skipped. Rules in `startViewKey` (`src/company.ts`, tested in `src/start-view.test.ts`).
+- "Most recent" is stored server-side, so it follows the person across devices and browsers. Every switch writes `last_view`. New additive table `company_user_prefs` (`supabase/company_user_prefs.sql`: user_email PK, default_view, last_view; RLS on, anon/authenticated revoked; applied to Staging, promote with the other SQL).
+- Decision: the switcher's `active_view` cookie is now bound to one sign-in (`${viewSid}:${key}`). The sign-in id and starting view are minted in the JWT callback at sign-in and carried on the session. A cookie left from an earlier sign-in no longer overrides the starting view; within a session, switching works as before. Sessions from before this change keep the old cookie behavior until their next sign-in (`pickCookieView`), so nobody signed in at deploy loses switching.
+- **Settings** is no longer Zoomy-only. `/settings` shows "Starting view" to anyone with more than one view (any view: Zoomy, Goldline, Coop Admin). Zoomy's digest preferences still show only in the Zoomy view. Settings appears in the Goldline and Coop Admin nav (and the mobile More sheet) only for multi-role users; a single-role non-Zoomy user is sent home from `/settings`.
+- The Starting view card matches the header switcher (same badges, Coop Admin then companies A–Z), with "Where I left off" (showing what that currently is) on top. It saves on change, with a live "Saved" status; the server re-validates the choice against the person's roles (`setDefaultViewAction`).
+- **Regression review (code-reviewer) + fixes:**
+  - No critical or high issues.
+  - (MEDIUM) A failed preferences read at sign-in would have silently pinned the first view for the whole 8-hour session. `fetchViewPrefsResult` now tells "none saved" apart from "unreadable", and on an error the JWT retries at most once a minute until it resolves.
+  - (MEDIUM) The settings layout now notes that new routes under `app/settings/` aren't Zoomy-guarded.
+  - (LOW) The `last_view` write runs in `after()`, so switching doesn't wait on it, and failures are logged.
+  - (LOW) The Starting view options are disabled while a save is in flight, so there are no out-of-order reverts.
+  - Reviewer confirmed: no input can grant a view, a user can't write another's prefs, the cookie stays bound across token refreshes, and pre-change sessions keep switching.
+- typecheck + full suite (2493) + pagination guard pass; impeccable detector: no findings.
+
 ## 2026-10-06 — Goldline Inventory page, tied to the scan uploads; Uploads revamp
 - **Inventory (plan §07f)** at `/stock` (nav: Overview · Stores · Inventory · Uploads). `/inventory` stays Zoomy's page behind the Zoomy data guard. One store × form period at a time, picked by store and period selects (`?store=&period=YYYY-MM-DD_YYYY-MM-DD`), defaulting to the latest period. Shows a "N low · M out" pill, four KPI tiles (Ending value, Items tracked, Low stock, Out of stock), and a table: Item, Product (★ bestseller, product line when catalogued), Stk / Drw / Sell straight from the form, On hand, Value, Status. Filters (All / Low / Out / Not counted), search, pagination.
 - Rules, stated on the page and tested in `src/goldline-inventory.ts`:
