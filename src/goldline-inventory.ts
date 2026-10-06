@@ -151,7 +151,9 @@ export function pickSnapshot(snapshots: Snapshot[], store?: string | null, perio
   const exact = snapshots.find((s) => s.store_code === store && periodParam(s) === period);
   if (exact) return exact;
   const byStore = store ? snapshots.filter((s) => s.store_code === store) : [];
-  const pool = byStore.length ? byStore : snapshots;
+  // A period on its own still narrows the choice (lowest store code within it).
+  const byPeriod = !byStore.length && period ? snapshots.filter((s) => periodParam(s) === period) : [];
+  const pool = byStore.length ? byStore : byPeriod.length ? byPeriod : snapshots;
   return [...pool].sort(
     (a, b) =>
       b.period_end.localeCompare(a.period_end) ||

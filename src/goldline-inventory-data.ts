@@ -65,11 +65,18 @@ const EMPTY: InventoryPageData = {
   pendingReview: 0,
 };
 
-export async function getInventoryPage(companyId: string, store?: string | null, period?: string | null): Promise<InventoryPageData> {
+/** `storeScope` (a store-scoped role) limits which stores' snapshots are visible;
+ *  null/undefined = every store in the company. */
+export async function getInventoryPage(
+  companyId: string,
+  store?: string | null,
+  period?: string | null,
+  storeScope?: string[] | null,
+): Promise<InventoryPageData> {
   if (!url || !key) return EMPTY;
   const supa = db();
 
-  const [snapshots, stores, pending] = await Promise.all([
+  const [allSnapshots, stores, pending] = await Promise.all([
     fetchAllRows('gl_inventory_snapshots', (from, to) =>
       supa
         .from('gl_inventory_snapshots')
@@ -86,6 +93,8 @@ export async function getInventoryPage(companyId: string, store?: string | null,
     supa.from('gl_uploads').select('id', {count: 'exact', head: true}).eq('company_id', companyId).eq('status', 'needs_review'),
   ]);
 
+  const scope = storeScope ? new Set(storeScope) : null;
+  const snapshots = scope ? allSnapshots.filter((s) => scope.has(s.store_code)) : allSnapshots;
   const storeNames = Object.fromEntries(stores.map((s) => [s.store_code, s.name]));
   const pendingReview = pending.count ?? 0;
   const selected = pickSnapshot(snapshots, store, period);

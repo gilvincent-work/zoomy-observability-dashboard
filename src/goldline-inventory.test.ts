@@ -95,6 +95,9 @@ describe('pickSnapshot', () => {
   it('keeps the requested store when only the period is unknown', () => {
     expect(pickSnapshot(all, '1', 'nope')).toMatchObject({store_code: '1', period_end: '2026-09-30'});
   });
+  it('honours a period on its own', () => {
+    expect(pickSnapshot(all, null, '2026-09-16_2026-09-30')).toMatchObject({store_code: '1', period_end: '2026-09-30'});
+  });
   it('is null with nothing committed', () => {
     expect(pickSnapshot([])).toBeNull();
   });

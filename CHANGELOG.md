@@ -30,7 +30,15 @@ Dates are local working dates (GMT+8). Newest first.
   - Deleting a committed upload now also removes the data it's still the source of: its `gl_inventory` counts or `gl_sales` rows. Counts a later scan has overwritten belong to that scan and stay. Previously they lingered with a dead source link.
   - A confirmation dialog (Base UI AlertDialog) checks the impact first and warns, e.g. "This scan is committed. Deleting it also removes its 43 inventory counts for 1 · CUBAO, Oct 1–15, 2026 from Inventory."
   - A toast confirms what was deleted.
-- Tests: `goldline-inventory.test.ts`, `upload-progress.test.ts`. typecheck + full suite (2484) + pagination guard pass; impeccable detector: no findings.
+- **Regression review (code-reviewer) + fixes:**
+  - (HIGH) If the delete-impact check failed, the dialog said "no numbers change" while the delete still removed committed counts. A failed check now shows the reason with Retry, and Delete stays disabled until the impact is known. `deleteImpact` fails loud on query errors, and the dialog resets between files.
+  - (HIGH) Store-scoped roles weren't fenced on the new paths. Inventory now only lists snapshots for the role's stores. Deleting, and checking a delete's impact, refuse uploads that touch stores outside scope (`uploadStores`, paged).
+  - (MEDIUM) The dialog now warns that counts this scan replaced from an earlier scan won't come back on their own.
+  - (MEDIUM) `deleteUpload` checks the extraction delete. The upload row still goes last, so a failure leaves a visible, retryable upload.
+  - (MEDIUM) A CSV with no readable rows now shows its real reason instead of "Upload failed (422)".
+  - (MEDIUM) The stream tolerates a client disconnect. A new `safeHandle` marks a stored upload failed on any unexpected error, instead of leaving it in "processing".
+  - (LOW) A `?period=` without `?store=` now narrows the pick.
+- Tests: `goldline-inventory.test.ts`, `upload-progress.test.ts`. typecheck + full suite (2485) + pagination guard pass; impeccable detector: no findings.
 
 ## 2026-10-06 — View switcher revamp: Coop Admin set apart, companies A–Z, color badges
 - The top-bar view switcher (same `ViewSwitcher` component) now pins **Coop Admin** at the top with a shield badge and the caption "People & roles · no business data", then a divider, then **companies A–Z** under a "Companies" label (the label only shows when there's a Coop section to separate from). Each company has a stable color monogram badge ("GC", "Z") so views are told apart at a glance; the active one is marked with a check.

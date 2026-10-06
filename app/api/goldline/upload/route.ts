@@ -66,22 +66,33 @@ function isoDate(v: FormDataEntryValue | null): string | null {
 export async function POST(req: Request): Promise<Response> {
   const wantsStream = (req.headers.get('accept') ?? '').includes('application/x-ndjson');
   if (!wantsStream) {
-    const out = await handle(req, () => {});
+    const out = await safeHandle(req, () => {});
     return json(out.body, out.status);
   }
   const enc = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (obj: unknown) => controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`));
+      // The browser may go away mid-upload (closed tab): enqueue/close then throw.
+      // Swallow that — the server-side work still finishes and records its status.
+      let open = true;
+      const send = (obj: unknown) => {
+        if (!open) return;
+        try {
+          controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`));
+        } catch {
+          open = false;
+        }
+      };
+      const out = await safeHandle(req, send);
+      send({type: 'result', httpStatus: out.status, ...out.body});
       try {
-        const out = await handle(req, send);
-        send({type: 'result', httpStatus: out.status, ...out.body});
-      } catch (e) {
-        console.error('goldline upload: stream failed', msg(e));
-        send({type: 'result', httpStatus: 500, error: 'Upload failed — please try again.'});
-      } finally {
         controller.close();
+      } catch {
+        /* already closed by a disconnect */
       }
+    },
+    cancel() {
+      /* client disconnected; handle() keeps running to completion */
     },
   });
   return new Response(stream, {
@@ -89,7 +100,25 @@ export async function POST(req: Request): Promise<Response> {
   });
 }
 
-async function handle(req: Request, emit: Emit): Promise<Outcome> {
+/** handle() plus a last-resort net: an unexpected throw AFTER the file is stored marks
+ *  that upload failed (instead of leaving it stuck in "processing") and returns a 500. */
+async function safeHandle(req: Request, emit: Emit): Promise<Outcome> {
+  const track: {uploadId?: string} = {};
+  try {
+    return await handle(req, emit, track);
+  } catch (e) {
+    console.error('goldline upload: unexpected failure', msg(e));
+    if (track.uploadId) {
+      await setUploadStatus(track.uploadId, 'failed', {
+        rejectReason: 'Something went wrong while processing this file. Please try again.',
+        errorDetail: msg(e),
+      }).catch(() => {});
+    }
+    return {body: {uploadId: track.uploadId, status: 'failed', error: 'Upload failed — please try again.'}, status: 500};
+  }
+}
+
+async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {}): Promise<Outcome> {
   const json = (body: Record<string, unknown>, status = 200): Outcome => ({body, status});
   const requested = new URL(req.url).searchParams.get('company');
 
@@ -132,6 +161,7 @@ async function handle(req: Request, emit: Emit): Promise<Outcome> {
     console.error('goldline upload: store failed', e);
     return json({error: 'Could not store the file — please try again.'}, 500);
   }
+  track.uploadId = uploadId;
   emit({type: 'stage', stage: 'stored'});
 
   // --- POS sales CSV -------------------------------------------------------

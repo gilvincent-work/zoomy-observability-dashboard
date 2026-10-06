@@ -2,7 +2,7 @@
 
 import {useEffect, useState, useTransition} from 'react';
 import {AlertDialog} from '@base-ui/react/alert-dialog';
-import {AlertTriangle, Loader2, Trash2} from 'lucide-react';
+import {AlertTriangle, Loader2, RotateCcw, Trash2} from 'lucide-react';
 import type {DeleteImpact, UploadRow} from '@/src/goldline-data';
 import {deleteImpactAction, deleteUploadAction} from '@/app/uploads/actions';
 import {FileTypeBadge} from '@/components/analyst/file-type-badge';
@@ -30,24 +30,36 @@ export function DeleteUploadDialog({
   onClose: () => void;
   onDeleted: (text: string) => void;
 }) {
-  const [impact, setImpact] = useState<DeleteImpact | null | 'loading'>('loading');
+  // 'loading' → checking; {error} → the check failed (Delete stays disabled — we never
+  // claim "nothing changes" without knowing); DeleteImpact → known.
+  const [impact, setImpact] = useState<DeleteImpact | {error: string} | 'loading'>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    if (!upload) return;
+    if (!upload) {
+      setImpact('loading'); // reset so the next file never flashes this one's impact
+      setError(null);
+      return;
+    }
     let live = true;
     setImpact('loading');
     setError(null);
-    deleteImpactAction({company, uploadId: upload.id}).then((r) => {
-      if (live) setImpact(r);
-    });
+    deleteImpactAction({company, uploadId: upload.id})
+      .then((r) => {
+        if (live) setImpact(r.ok ? r.impact : {error: r.error});
+      })
+      .catch(() => {
+        if (live) setImpact({error: 'Couldn’t check what this file feeds. Please try again.'});
+      });
     return () => {
       live = false;
     };
-  }, [company, upload]);
+  }, [company, upload, attempt]);
 
-  const loaded = impact !== 'loading' ? impact : null;
+  const failed = impact !== 'loading' && 'error' in impact ? impact.error : null;
+  const loaded = impact !== 'loading' && !('error' in impact) ? impact : null;
   const inv = loaded?.inventoryRows ?? 0;
   const sales = loaded?.salesRows ?? 0;
   const affects = inv > 0 || sales > 0;
@@ -97,6 +109,13 @@ export function DeleteUploadDialog({
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" aria-hidden /> Checking what this file feeds…
               </span>
+            ) : failed ? (
+              <span role="alert" className="flex flex-wrap items-center justify-between gap-2 text-destructive">
+                {failed}
+                <Button variant="outline" size="sm" onClick={() => setAttempt((a) => a + 1)}>
+                  <RotateCcw className="size-3.5" /> Retry
+                </Button>
+              </span>
             ) : affects ? (
               <>
                 <span
@@ -121,7 +140,10 @@ export function DeleteUploadDialog({
                     )}
                   </span>
                 </span>
-                <span>The file and its reading are deleted too. To bring the numbers back, upload and commit it again.</span>
+                <span>
+                  The file and its reading are deleted too. To bring the numbers back, upload and commit it again. If an earlier scan
+                  covered the same items, its counts were replaced by this one and won&apos;t return on their own — re-commit that scan.
+                </span>
               </>
             ) : (
               <span>
@@ -138,7 +160,7 @@ export function DeleteUploadDialog({
 
           <div className="flex flex-wrap justify-end gap-2">
             <AlertDialog.Close render={<Button variant="ghost" disabled={pending} />}>Cancel</AlertDialog.Close>
-            <Button variant="destructive" onClick={confirm} disabled={pending || impact === 'loading'}>
+            <Button variant="destructive" onClick={confirm} disabled={pending || !loaded}>
               {pending && <Loader2 className="size-4 animate-spin" />}
               {affects ? (inv > 0 ? 'Delete and remove counts' : 'Delete and remove sales') : 'Delete file'}
             </Button>

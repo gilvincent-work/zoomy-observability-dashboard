@@ -20,7 +20,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 type StageEvent =
   | {type: 'stage'; stage: 'stored' | 'parsing' | 'detecting' | 'saving'}
   | {type: 'stage'; stage: 'reading'; page: number; items: number};
-type Result = {httpStatus: number; uploadId?: string; status?: string; error?: string; rowsCommitted?: number};
+type Result = {httpStatus: number; uploadId?: string; status?: string; error?: string; errors?: string[]; rowsCommitted?: number};
 
 const fmtSize = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 const fmtElapsed = (ms: number) => {
@@ -170,7 +170,7 @@ export function UploadPanel({
       }
       setBusy(false);
       // Shown inline with "Try again"; the list refresh picks up the failed/rejected row.
-      setError(res.error ?? `Upload failed (${res.httpStatus}).`);
+      setError(res.error ?? res.errors?.[0] ?? `Upload failed (${res.httpStatus}).`);
       onDone({kind: 'err', text: ''});
     } catch (e) {
       setBusy(false);

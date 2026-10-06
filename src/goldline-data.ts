@@ -114,6 +114,26 @@ export type DeleteImpact = {
   snapshots: Array<{store_code: string; store_name: string | null; period_start: string; period_end: string}>;
 };
 
+/** Every store an upload touches: the stores of the counts / sales rows it is the
+ *  source of, plus the store read off a scan that isn't committed yet. Used to keep a
+ *  store-scoped role inside its stores when deleting. */
+export async function uploadStores(companyId: string, id: string): Promise<string[]> {
+  if (!goldlineConfigured()) return [];
+  const supa = db();
+  // Paged: a sales export can hold far more than PostgREST's 1000-row cap. Only
+  // called for store-scoped roles, so the full read is rare.
+  const page = (table: 'gl_inventory' | 'gl_sales') =>
+    fetchAllRows(table, (from, to) =>
+      supa.from(table).select('store_code').eq('company_id', companyId).eq('source_upload_id', id).order('id').range(from, to),
+    ) as unknown as Promise<Array<{store_code: string}>>;
+  const [inv, sales, ext] = await Promise.all([page('gl_inventory'), page('gl_sales'), getExtraction(companyId, id)]);
+  const codes = new Set<string>();
+  for (const r of [...inv, ...sales]) if (r.store_code) codes.add(r.store_code);
+  const header = ext?.data?.store_code?.trim();
+  if (header) codes.add(header);
+  return [...codes];
+}
+
 export async function deleteImpact(companyId: string, id: string): Promise<DeleteImpact | null> {
   if (!goldlineConfigured()) return null;
   const supa = db();
@@ -125,6 +145,9 @@ export async function deleteImpact(companyId: string, id: string): Promise<Delet
     // pagination-ok: count-only head request, returns no rows.
     supa.from('gl_sales').select('id', {count: 'exact', head: true}).eq('company_id', companyId).eq('source_upload_id', id),
   ]);
+  // Fail loud: an unknown impact must never be shown as "nothing changes".
+  if (inv.error) throw new Error(`gl_inventory count failed: ${inv.error.message}`);
+  if (sales.error) throw new Error(`gl_sales count failed: ${sales.error.message}`);
   let snapshots: DeleteImpact['snapshots'] = [];
   if ((inv.count ?? 0) > 0) {
     // pagination-ok: a scan feeds one store/period; limit guards the odd re-commit.
@@ -167,12 +190,14 @@ export async function deleteUpload(companyId: string, id: string): Promise<boole
   if (inv.error) throw new Error(`gl_inventory delete failed: ${inv.error.message}`);
   const sales = await supa.from('gl_sales').delete().eq('company_id', companyId).eq('source_upload_id', id);
   if (sales.error) throw new Error(`gl_sales delete failed: ${sales.error.message}`);
-  // Best-effort file + extraction cleanup, then the row (the one scoped by company).
+  const ext = await supa.from('gl_extractions').delete().eq('company_id', companyId).eq('upload_id', id);
+  if (ext.error) throw new Error(`gl_extractions delete failed: ${ext.error.message}`);
+  // The stored file is best-effort (an orphaned object is harmless and private);
+  // the row goes last so a failure above leaves a visible, retryable upload.
   if (upload.storage_path) {
     const rm = await supa.storage.from(GOLDLINE_BUCKET).remove([upload.storage_path]);
     if (rm.error) console.error('deleteUpload: storage remove failed', rm.error.message);
   }
-  await supa.from('gl_extractions').delete().eq('company_id', companyId).eq('upload_id', id);
   const res = await supa.from('gl_uploads').delete().eq('company_id', companyId).eq('id', id);
   if (res.error) throw new Error(`gl_uploads delete failed: ${res.error.message}`);
   return true;

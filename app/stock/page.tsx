@@ -19,6 +19,6 @@ export default async function Page(props: {searchParams: Promise<{store?: string
     );
   }
   const sp = await props.searchParams;
-  const data = await getInventoryPage(ctx.companyId, sp.store ?? null, sp.period ?? null);
+  const data = await getInventoryPage(ctx.companyId, sp.store ?? null, sp.period ?? null, ctx.storeScope ?? null);
   return <GoldlineInventoryView data={data} canEdit={canEditData(ctx.role)} />;
 }
