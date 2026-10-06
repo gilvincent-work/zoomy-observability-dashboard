@@ -66,10 +66,12 @@ export async function detectPage(pdfBase64: string): Promise<number> {
   const client = new Anthropic();
   const params = {
     model: EXTRACT_MODEL,
-    max_tokens: 100,
+    max_tokens: 300,
     system: buildPageDetectPrompt(),
     output_config: {format: {type: 'json_schema', schema: PAGE_DETECT_SCHEMA}},
-    messages: [{role: 'user', content: [pdfDoc(pdfBase64)]}],
+    // The user turn MUST include a text block alongside the document — a document-only
+    // message is rejected (a 400 that broke ALL PDF extraction, incl. page 1).
+    messages: [{role: 'user', content: [pdfDoc(pdfBase64), {type: 'text', text: 'Which page of the form is this? Return JSON only.'}]}],
   };
   // Short timeout: detect runs BEFORE extract in the same request, so their timeouts
   // must sum under the route's maxDuration. 20s (detect) + 85s (extract) = 105s < 120s.
@@ -96,7 +98,9 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
   const client = new Anthropic();
   const params = {
     model: EXTRACT_MODEL,
-    max_tokens: 8000,
+    // Pages 2 & 4 have ~67–68 rows; 8000 tokens truncated the JSON. 16000 covers the
+    // largest page's one-object-per-item output with headroom.
+    max_tokens: 16000,
     system,
     // Structured output — the first text block is valid JSON matching the schema.
     output_config: {format: {type: 'json_schema', schema: EXTRACTION_SCHEMA}},
@@ -124,14 +128,17 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
   if (!isExtractedPage(parsed)) {
     throw new Error('Extraction JSON did not match the expected page shape');
   }
-  return parsed;
+  // store_code is header-only (page 1); normalize a missing/null one to '' so the
+  // rest of the pipeline (and the reviewer's editable field) has a string.
+  return {...parsed, store_code: typeof parsed.store_code === 'string' ? parsed.store_code : ''};
 }
 
-/** Minimal runtime guard: header store_code + a rows array of {item_code} objects. */
+/** Minimal runtime guard: a rows array of {item_code} objects (store_code is optional —
+ *  only page 1 has the header). */
 function isExtractedPage(v: unknown): v is ExtractedPage {
   if (!v || typeof v !== 'object') return false;
   const p = v as {store_code?: unknown; rows?: unknown};
-  if (typeof p.store_code !== 'string') return false;
+  if (p.store_code != null && typeof p.store_code !== 'string') return false;
   if (!Array.isArray(p.rows)) return false;
   return p.rows.every(
     (r) => r && typeof r === 'object' && typeof (r as {item_code?: unknown}).item_code === 'string',

@@ -296,8 +296,10 @@ export const EXTRACTION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    store_code: {type: 'string'},
-    store_name: {type: 'string'},
+    // Only page 1 carries the store/period/consultant header; pages 2–5 have none, so
+    // store_code may be empty/absent there (the reviewer fills it before commit).
+    store_code: {type: ['string', 'null']},
+    store_name: {type: ['string', 'null']},
     period_start: {type: ['string', 'null']},
     period_end: {type: ['string', 'null']},
     consultant: {type: ['string', 'null']},
@@ -320,5 +322,5 @@ export const EXTRACTION_SCHEMA = {
       },
     },
   },
-  required: ['store_code', 'rows'],
+  required: ['rows'],
 } as const;

@@ -40,6 +40,7 @@ export function UploadReview({
   upload,
   extraction,
   scanUrl,
+  productNames = {},
 }: {
   company: string;
   canEdit: boolean;
@@ -47,6 +48,8 @@ export function UploadReview({
   extraction: ExtractionRecord | null;
   /** Same-origin proxy path to the stored scan (streams the private file), or null. */
   scanUrl?: string | null;
+  /** item_code → printed product name (from the page manifest), for the rows table. */
+  productNames?: Record<string, string>;
 }) {
   const router = useRouter();
   const committed = upload.status === 'committed' || extraction?.status === 'confirmed';
@@ -297,9 +300,14 @@ export function UploadReview({
                         const low = (r.confidence ?? 1) < LOW;
                         return (
                           <tr key={`${r.item_code}-${i}`} className={cn('border-b border-border/60', low && 'bg-amber-500/5')}>
-                            <td className="py-1.5 pr-3 font-mono text-xs">
-                              {r.item_code}
-                              {r.alt && <span className="ml-1 text-[10px] text-amber-700 dark:text-amber-400">alt {r.alt}</span>}
+                            <td className="py-1.5 pr-3">
+                              <span className="font-mono text-xs">{r.item_code}</span>
+                              {productNames[r.item_code] && (
+                                <span className="block max-w-[14rem] truncate text-xs text-muted-foreground">
+                                  {productNames[r.item_code]}
+                                </span>
+                              )}
+                              {r.alt && <span className="block text-[10px] text-amber-700 dark:text-amber-400">alt {r.alt}</span>}
                             </td>
                             {COLS.map((c) => (
                               <td key={c.key} className="py-1.5 pr-3 text-right">

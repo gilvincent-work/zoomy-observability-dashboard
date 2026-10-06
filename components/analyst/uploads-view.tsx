@@ -1,6 +1,6 @@
 'use client';
 
-import {useMemo, useRef, useState} from 'react';
+import {useMemo, useRef, useState, useTransition} from 'react';
 import {useRouter} from 'next/navigation';
 import {
   AlertTriangle,
@@ -10,9 +10,11 @@ import {
   FileText,
   Loader2,
   Search,
+  Trash2,
   Upload,
   XCircle,
 } from 'lucide-react';
+import {deleteUploadAction} from '@/app/uploads/actions';
 import type {UploadKind, UploadRow, UploadStatus} from '@/src/goldline-data';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -83,6 +85,19 @@ export function UploadsView({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [page, setPage] = useState(1);
+
+  // Delete: a confirm step (which row), and a pending transition.
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deleting, startDelete] = useTransition();
+
+  function remove(id: string) {
+    setConfirmId(null);
+    startDelete(async () => {
+      const res = await deleteUploadAction({company, uploadId: id});
+      if (res.ok) router.refresh();
+      else setNotice({kind: 'err', text: res.error});
+    });
+  }
 
   const isCsv = file ? extOf(file.name) === '.csv' : false;
   const needsPeriod = isCsv;
@@ -303,7 +318,8 @@ export function UploadsView({
                     <th className="py-2 pr-3 font-medium">Type</th>
                     <th className="py-2 pr-3 font-medium">Status</th>
                     <th className="py-2 pr-3 font-medium">Uploaded</th>
-                    <th className="py-2 font-medium">By</th>
+                    <th className="py-2 pr-3 font-medium">By</th>
+                    {canEdit && <th className="py-2 font-medium sr-only">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -339,7 +355,37 @@ export function UploadsView({
                           <StatusPill status={u.status} />
                         </td>
                         <td className="py-2.5 pr-3 text-xs text-muted-foreground tabular-nums">{fmtWhen(u.created_at)}</td>
-                        <td className="max-w-[12rem] truncate py-2.5 text-xs text-muted-foreground">{u.uploaded_by ?? '—'}</td>
+                        <td className="max-w-[12rem] truncate py-2.5 pr-3 text-xs text-muted-foreground">{u.uploaded_by ?? '—'}</td>
+                        {canEdit && (
+                          <td className="py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                            {confirmId === u.id ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  className="text-destructive hover:text-destructive"
+                                  disabled={deleting}
+                                  onClick={() => remove(u.id)}
+                                >
+                                  {deleting ? <Loader2 className="size-3.5 animate-spin" /> : 'Confirm'}
+                                </Button>
+                                <Button variant="ghost" size="xs" disabled={deleting} onClick={() => setConfirmId(null)}>
+                                  Cancel
+                                </Button>
+                              </span>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Delete ${u.filename}`}
+                                className="text-muted-foreground hover:text-destructive"
+                                onClick={() => setConfirmId(u.id)}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

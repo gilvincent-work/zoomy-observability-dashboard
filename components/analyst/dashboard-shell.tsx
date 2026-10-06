@@ -464,8 +464,9 @@ export function DashboardShell({
           )}
         >
           {/* Overview — a group: an accordion in the expanded rail, a single
-              icon in the collapsed rail (its children need the labels). */}
-          {navExpanded ? (
+              icon in the collapsed rail (its children need the labels). Zoomy only;
+              non-Zoomy companies get a flat Overview tab below instead (no duplicate). */}
+          {isZoomy && (navExpanded ? (
             <div className="flex flex-col">
               <div className="flex items-center gap-1">
                 <Link
@@ -572,7 +573,7 @@ export function DashboardShell({
                 </>
               )}
             </div>
-          )}
+          ))}
 
           {flatTabs.map((t) => {
             const active = leafActive(t.href, pathname, channel);
