@@ -28,7 +28,7 @@ const roleLabel = (v: SwitcherView) => ROLE_LABEL[v.role] ?? v.role;
 const title = (v: SwitcherView) => (v.companyId ? v.name : 'Coop Admin');
 
 /** The view's badge: a colored monogram for a company, a shield for Coop Admin. */
-function ViewBadge({view, size = 'md'}: {view: SwitcherView; size?: 'sm' | 'md'}) {
+export function ViewBadge({view, size = 'md'}: {view: SwitcherView; size?: 'sm' | 'md'}) {
   const box = size === 'sm' ? 'size-5 rounded-[5px] text-[9px]' : 'size-7 rounded-md text-[11px]';
   if (!view.companyId) {
     return (

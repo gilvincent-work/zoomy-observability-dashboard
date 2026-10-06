@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
-import {fetchMemberships, type Membership} from '@/src/company';
+import {fetchMemberships, fetchViewPrefs, startViewKey, type Membership} from '@/src/company';
 
 // Access is membership-driven (v2): a user may sign in only if a Coop Admin has
 // granted them a role in company_users. No email allowlist — the first Coop Admin is
@@ -77,7 +77,7 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
     // resolve the active company without a per-request DB hit. `user` is only
     // present at sign-in; normal requests skip the fetch (edge-safe).
     async jwt({token, user, profile}) {
-      const t = token as {memberships?: Membership[]; mAt?: number; email?: string | null};
+      const t = token as {memberships?: Membership[]; mAt?: number; email?: string | null; viewSid?: string; startView?: string | null};
       const email = (profile?.email ?? user?.email ?? t.email ?? '').toLowerCase();
       // Refresh memberships at sign-in AND periodically (every ~5 min) so a revoked
       // or role-changed membership stops taking effect quickly, rather than living in
@@ -87,13 +87,23 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
         t.memberships = await fetchMemberships(email);
         t.mAt = Date.now();
       }
+      // Each sign-in gets a fresh view session id + its starting view (pinned default
+      // → most recent → first). The switcher's cookie is bound to viewSid, so a cookie
+      // left from an earlier sign-in is ignored and the user lands in this view.
+      if (email && user) {
+        t.viewSid = crypto.randomUUID();
+        t.startView = startViewKey(t.memberships ?? [], await fetchViewPrefs(email));
+      }
       return token;
     },
     // Surface memberships on the session for Server Components (read via
     // src/company.ts → resolveActive to get the active company + role).
     session({session, token}) {
-      (session as {memberships?: Membership[]}).memberships =
-        (token as {memberships?: Membership[]}).memberships ?? [];
+      const t = token as {memberships?: Membership[]; viewSid?: string; startView?: string | null};
+      const s = session as {memberships?: Membership[]; viewSid?: string | null; startView?: string | null};
+      s.memberships = t.memberships ?? [];
+      s.viewSid = t.viewSid ?? null;
+      s.startView = t.startView ?? null;
       return session;
     },
     // Used by the middleware export to protect pages.
