@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — View switcher revamp: Coop Admin set apart, companies A–Z, color badges
+- The top-bar view switcher (same `ViewSwitcher` component) now pins **Coop Admin** at the top with a shield badge and the caption "People & roles · no business data", then a divider, then **companies A–Z** under a "Companies" label (the label only shows when there's a Coop section to separate from). Each company has a stable color monogram badge ("GC", "Z") so views are told apart at a glance; the active one is marked with a check.
+- The trigger shows the active view's badge and name only. The role moved into the menu's second line, which fixes the "Goldline Cosmetics · Compa…" truncation.
+- Rebuilt on Base UI Menu (radio items, keyboard + screen-reader semantics, portal so it's never clipped, origin-aware 150 ms entry) instead of the hand-rolled dropdown and click-catcher overlay. A spinner replaces the chevron while switching.
+- Decision: the order is display-only (`groupViews` in `src/view-switcher.ts`); `membershipViews` keeps its order because default-view resolution depends on it. Colors: Goldline is fixed to gold and Zoomy to green, any other company gets a stable hue from its id (`companyHue`), in light and dark variants. No company has `theme` set yet; a brand color there can override this later.
+- Tested (`src/view-switcher.test.ts`). Design skills: impeccable (detector: no findings) + emil-design-eng. typecheck + full suite (2450) pass.
+
 ## 2026-10-06 — Users & Roles console redesigned (people-first, no re-typing emails)
 - Pain point: giving an existing person a second role meant re-typing their email in the top "Grant a role" form. The console is now people-first: one row per person (initials, email, "You" marker, role count) with their access as chips. "+ Add access" on the row lists only roles they don't hold yet; one click grants it.
 - Each access chip shows a status dot (active / invited / suspended) and opens a menu: Suspend or Reactivate, and Remove access…, which asks for an inline confirmation on the row (no modal). Your own Coop Admin chip explains that it can't be suspended or removed; the server still enforces the self and last-admin guards.
