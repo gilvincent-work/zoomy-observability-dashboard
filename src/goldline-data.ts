@@ -196,7 +196,7 @@ export type ExtractionRecord = {
   data: ExtractedPage;
 };
 
-/** The staged extraction for an upload (lowest page first; v1 extracts page 1). */
+/** The staged extraction for an upload — one page per PDF (the auto-detected page). */
 export async function getExtraction(companyId: string, uploadId: string): Promise<ExtractionRecord | null> {
   if (!goldlineConfigured()) return null;
   const supa = db();
