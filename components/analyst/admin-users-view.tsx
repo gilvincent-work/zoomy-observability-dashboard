@@ -11,6 +11,7 @@ import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {NativeSelect} from '@/components/ui/native-select';
 import {cn} from '@/lib/utils';
+import {companyHue} from '@/src/view-switcher';
 
 // Coop Admin "Users & Roles" console — the only write surface for access. People
 // first: one row per person, their access as chips. Adding a role happens on the
@@ -45,6 +46,33 @@ const MENU_POPUP =
   'z-50 min-w-56 origin-[var(--transform-origin)] rounded-lg border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,transform] duration-150 ease-out data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0';
 const MENU_ITEM =
   'flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none select-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-muted';
+
+// Each company's chips carry the same hue as its badge in the header view switcher
+// (src/view-switcher.ts companyHue), so a company reads the same everywhere. Coop
+// Admin is a neutral tint with a shield. Status is shown only when it's the exception
+// (invited / suspended); "active" is the unmarked default so it doesn't fight the hue.
+const hueVars = (companyId: string) => ({['--hue' as string]: companyHue(companyId)});
+const COMPANY_TONE =
+  'border-[oklch(0.62_0.12_var(--hue)/0.4)] bg-[oklch(0.62_0.12_var(--hue)/0.12)] text-[oklch(0.42_0.11_var(--hue))] ' +
+  'hover:border-[oklch(0.62_0.12_var(--hue)/0.7)] hover:bg-[oklch(0.62_0.12_var(--hue)/0.2)] ' +
+  'data-[popup-open]:border-[oklch(0.62_0.12_var(--hue)/0.7)] data-[popup-open]:bg-[oklch(0.62_0.12_var(--hue)/0.2)] ' +
+  'dark:border-[oklch(0.75_0.12_var(--hue)/0.38)] dark:bg-[oklch(0.75_0.12_var(--hue)/0.13)] dark:text-[oklch(0.86_0.09_var(--hue))] ' +
+  'dark:hover:border-[oklch(0.75_0.12_var(--hue)/0.65)] dark:hover:bg-[oklch(0.75_0.12_var(--hue)/0.2)] ' +
+  'dark:data-[popup-open]:border-[oklch(0.75_0.12_var(--hue)/0.65)] dark:data-[popup-open]:bg-[oklch(0.75_0.12_var(--hue)/0.2)]';
+const COOP_TONE =
+  'border-foreground/25 bg-foreground/[0.06] text-foreground hover:border-foreground/45 hover:bg-foreground/10 data-[popup-open]:border-foreground/45 data-[popup-open]:bg-foreground/10';
+
+/** A small company color dot (menus, invite tiles); a shield for Coop Admin. */
+function ToneDot({companyId}: {companyId: string | null}) {
+  if (!companyId) return <ShieldCheck aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
+  return (
+    <span
+      aria-hidden
+      style={hueVars(companyId)}
+      className="inline-block size-2.5 shrink-0 rounded-full bg-[oklch(0.62_0.12_var(--hue))] dark:bg-[oklch(0.75_0.12_var(--hue))]"
+    />
+  );
+}
 
 function StatusDot({status, className}: {status: Status; className?: string}) {
   const color = status === 'active' ? 'var(--status-good)' : status === 'invited' ? 'var(--status-warn)' : undefined;
@@ -274,8 +302,9 @@ export function AdminUsersView({users, companies, me}: {users: AdminUser[]; comp
         </Card>
 
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>Chip color = company</span>
           <span className="inline-flex items-center gap-1.5">
-            <StatusDot status="active" /> Active
+            <ShieldCheck className="size-3.5" aria-hidden /> Coop Admin
           </span>
           <span className="inline-flex items-center gap-1.5">
             <StatusDot status="invited" /> Invited — gets access on first Google sign-in
@@ -366,7 +395,7 @@ function PersonRow({
                   <div className="px-2 pt-1 pb-1.5 text-[11px] font-medium text-muted-foreground">Give {user.email.split('@')[0]}</div>
                   {addable.map((o) => (
                     <Menu.Item key={o.companyKey} className={MENU_ITEM} onClick={() => onAdd(o)}>
-                      {o.company ? <Plus className="size-3.5 text-muted-foreground" /> : <ShieldCheck className="size-3.5 text-muted-foreground" />}
+                      <ToneDot companyId={o.company ? o.companyKey : null} />
                       {o.label}
                     </Menu.Item>
                   ))}
@@ -423,16 +452,19 @@ function AccessChip({
     <Menu.Root>
       <Menu.Trigger
         aria-label={`${accessLabel(m)}, ${m.status}. Manage`}
+        style={m.companyId ? hueVars(m.companyId) : undefined}
         className={cn(
-          'inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-border bg-background pr-2 pl-2.5 text-xs outline-none transition-[background-color,border-color,transform] duration-150 ease-out hover:border-foreground/30 focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[0.97] data-[popup-open]:border-foreground/30 data-[popup-open]:bg-muted disabled:opacity-60',
-          suspended && 'border-dashed text-muted-foreground',
+          'inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border pr-2 pl-2.5 text-xs outline-none transition-[background-color,border-color,transform,opacity] duration-150 ease-out focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[0.97] disabled:opacity-60',
+          m.companyId ? COMPANY_TONE : COOP_TONE,
+          suspended && 'border-dashed opacity-75',
         )}
       >
-        <StatusDot status={m.status} />
+        {!m.companyId && <ShieldCheck aria-hidden className="size-3.5 shrink-0" />}
+        {m.status !== 'active' && <StatusDot status={m.status} />}
         <span className={cn('truncate', !suspended && 'font-medium')}>{m.companyId ? m.companyName : 'Coop Admin'}</span>
-        {m.companyId && <span className="truncate text-muted-foreground">· {roleText(m)}</span>}
-        {m.status !== 'active' && <span className="text-muted-foreground">({m.status})</span>}
-        <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+        {m.companyId && <span className="truncate opacity-75">· {roleText(m)}</span>}
+        {m.status !== 'active' && <span className="opacity-75">({m.status})</span>}
+        <ChevronDown className="size-3 shrink-0 opacity-70" />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" sideOffset={6}>
@@ -562,7 +594,10 @@ function InvitePanel({
                       onChange={() => toggle(o.companyKey)}
                     />
                     <span className="flex min-w-0 flex-col">
-                      <span className="truncate font-medium">{o.company ?? 'Coop Admin'}</span>
+                      <span className="flex items-center gap-1.5 truncate font-medium">
+                        <ToneDot companyId={o.company ? o.companyKey : null} />
+                        {o.company ?? 'Coop Admin'}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         {has ? 'Already has this' : o.company ? 'Company User — sees and uploads this company’s data' : 'Manages people and roles; sees no business data'}
                       </span>
