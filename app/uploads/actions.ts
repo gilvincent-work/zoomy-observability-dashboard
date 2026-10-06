@@ -3,7 +3,7 @@
 import {revalidatePath} from 'next/cache';
 import {getDataContext} from '@/src/active-context';
 import {canEditData, outOfScopeStores} from '@/src/company';
-import {commitInventory, deleteUpload, getUpload, type ReviewedInventoryRow} from '@/src/goldline-data';
+import {commitInventory, deleteImpact, deleteUpload, getUpload, type DeleteImpact, type ReviewedInventoryRow} from '@/src/goldline-data';
 
 // Server action behind the review screen's "Commit" button. Re-derives the tenant
 // context server-side (never trusts a company id from the client beyond the switcher
@@ -46,7 +46,21 @@ function coerceRow(r: unknown): ReviewedInventoryRow | null {
   };
 }
 
-/** Delete an upload (file + staged extraction + row), scoped to the active company. */
+/** What a delete would remove (committed inventory counts / sales rows), for the
+ *  confirmation dialog. Read-only; same company scoping as the delete itself. */
+export async function deleteImpactAction(input: {company: string | null; uploadId: string}): Promise<DeleteImpact | null> {
+  const ctx = await getDataContext(input.company);
+  if (!ctx || !ctx.companyId || !canEditData(ctx.role)) return null;
+  try {
+    return await deleteImpact(ctx.companyId, input.uploadId);
+  } catch (e) {
+    console.error('deleteImpactAction', e);
+    return null;
+  }
+}
+
+/** Delete an upload — file, staged extraction, the inventory counts / sales rows it
+ *  is still the source of, and the row — scoped to the active company. */
 export async function deleteUploadAction(input: {company: string | null; uploadId: string}): Promise<CommitResult> {
   const ctx = await getDataContext(input.company);
   if (!ctx || !ctx.companyId) return {ok: false, error: 'Not authorized.'};
@@ -55,6 +69,8 @@ export async function deleteUploadAction(input: {company: string | null; uploadI
     const ok = await deleteUpload(ctx.companyId, input.uploadId);
     if (!ok) return {ok: false, error: 'Upload not found.'};
     revalidatePath('/uploads');
+    revalidatePath('/stock');
+    revalidatePath('/overview');
     return {ok: true, committed: 0};
   } catch (e) {
     console.error('deleteUploadAction', e);

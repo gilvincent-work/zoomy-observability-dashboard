@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 // Uploads home: the per-company ingestion inbox. Scoped by the active company —
 // a data-blind Coop Admin or a user with no membership sees the gate, never data.
-export default async function Page() {
+export default async function Page(props: {searchParams: Promise<{status?: string}>}) {
   const ctx = await getDataContext();
   if (!ctx || !ctx.companyId) {
     return (
@@ -20,12 +20,17 @@ export default async function Page() {
     );
   }
   const uploads = await listUploads(ctx.companyId);
+  // ?status=needs_review (e.g. from Inventory's "Review" link) pre-sets the filter.
+  const {status} = await props.searchParams;
+  const STATUSES = ['needs_review', 'committed', 'processing', 'failed', 'rejected'] as const;
+  const initialStatus = STATUSES.find((s) => s === status) ?? 'all';
   return (
     <UploadsView
       company={ctx.companyId}
       canEdit={canEditData(ctx.role)}
       configured={goldlineConfigured()}
       uploads={uploads}
+      initialStatus={initialStatus}
     />
   );
 }

@@ -11,7 +11,7 @@ import {
   upsertSales,
 } from '@/src/goldline-data';
 import {detectPage, extractInventoryPage, extractionConfigured, type ExtractedPage} from '@/src/goldline-extract-run';
-import {humanizeExtractError, INVENTORY_PAGES} from '@/src/goldline-extract';
+import {humanizeExtractError, INVENTORY_PAGES, MANIFESTS} from '@/src/goldline-extract';
 
 // Goldline upload endpoint. Accepts ONE file (multipart/form-data, field `file`)
 // scoped to the active company (?company=<slug>):
@@ -34,6 +34,20 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+// Progress events for the Uploads screen. Only REAL milestones are sent (stored,
+// page found, reading, saving) — the client draws its bar from these, never from a
+// fake timer alone. Opt-in: a request with `Accept: application/x-ndjson` gets one
+// JSON object per line and a final {type:'result'}; any other caller gets the
+// unchanged single JSON response.
+export type UploadStage =
+  | {type: 'stage'; stage: 'stored'}
+  | {type: 'stage'; stage: 'parsing'}
+  | {type: 'stage'; stage: 'detecting'}
+  | {type: 'stage'; stage: 'reading'; page: number; items: number}
+  | {type: 'stage'; stage: 'saving'};
+type Emit = (e: UploadStage) => void;
+type Outcome = {body: Record<string, unknown>; status: number};
+
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Page-level confidence = mean of the per-row confidences (0 when empty). */
@@ -50,6 +64,33 @@ function isoDate(v: FormDataEntryValue | null): string | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  const wantsStream = (req.headers.get('accept') ?? '').includes('application/x-ndjson');
+  if (!wantsStream) {
+    const out = await handle(req, () => {});
+    return json(out.body, out.status);
+  }
+  const enc = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (obj: unknown) => controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`));
+      try {
+        const out = await handle(req, send);
+        send({type: 'result', httpStatus: out.status, ...out.body});
+      } catch (e) {
+        console.error('goldline upload: stream failed', msg(e));
+        send({type: 'result', httpStatus: 500, error: 'Upload failed — please try again.'});
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no'},
+  });
+}
+
+async function handle(req: Request, emit: Emit): Promise<Outcome> {
+  const json = (body: Record<string, unknown>, status = 200): Outcome => ({body, status});
   const requested = new URL(req.url).searchParams.get('company');
 
   // Scope first: null means not signed in, no membership, or a data-blind Coop Admin.
@@ -91,6 +132,7 @@ export async function POST(req: Request): Promise<Response> {
     console.error('goldline upload: store failed', e);
     return json({error: 'Could not store the file — please try again.'}, 500);
   }
+  emit({type: 'stage', stage: 'stored'});
 
   // --- POS sales CSV -------------------------------------------------------
   if (cls.kind === 'pos_csv') {
@@ -100,6 +142,7 @@ export async function POST(req: Request): Promise<Response> {
       await setUploadStatus(uploadId, 'failed', {rejectReason: 'Missing period_start / period_end (YYYY-MM-DD).'});
       return json({uploadId, status: 'failed', error: 'A POS upload needs period_start and period_end (YYYY-MM-DD).'}, 422);
     }
+    emit({type: 'stage', stage: 'parsing'});
     const {rows, errors} = parseGoldlinePos(new TextDecoder().decode(bytes));
     if (!rows.length) {
       await setUploadStatus(uploadId, 'failed', {rejectReason: errors[0] ?? 'No rows parsed.'});
@@ -114,6 +157,7 @@ export async function POST(req: Request): Promise<Response> {
       return json({uploadId, status: 'rejected', error: reason}, 403);
     }
     try {
+      emit({type: 'stage', stage: 'saving'});
       const committed = await upsertSales(companyId, rows, {start, end}, uploadId);
       await setUploadStatus(uploadId, 'committed');
       return json({uploadId, status: 'committed', rowsCommitted: committed, warnings: errors});
@@ -140,6 +184,7 @@ export async function POST(req: Request): Promise<Response> {
     // Auto-detect which page this scan is (from the footer), then extract with that
     // page's manifest. Page 6 is the daily Sales Report (not inventory); 0 = not a
     // recognizable form page. Both are a clean, out-of-scope stop, not a failure.
+    emit({type: 'stage', stage: 'detecting'});
     const page = await detectPage(pdfBase64);
     if (page === 0) {
       const reason = 'This doesn’t look like a Nichido inventory form page. Please upload a clear scan of an inventory page (1–5).';
@@ -152,6 +197,7 @@ export async function POST(req: Request): Promise<Response> {
       return json({uploadId, status: 'rejected', error: reason}, 422);
     }
 
+    emit({type: 'stage', stage: 'reading', page, items: MANIFESTS[page]?.length ?? 0});
     const extracted = await extractInventoryPage(pdfBase64, page);
     // Same store-scope fence for the scanned form's store.
     const outPdf = outOfScopeStores(ctx.storeScope, [extracted.store_code]);
@@ -160,6 +206,7 @@ export async function POST(req: Request): Promise<Response> {
       await setUploadStatus(uploadId, 'rejected', {rejectReason: reason});
       return json({uploadId, status: 'rejected', error: reason}, 403);
     }
+    emit({type: 'stage', stage: 'saving'});
     await saveExtraction({companyId, uploadId, page, extracted, docConfidence: avgConfidence(extracted)});
     await setUploadStatus(uploadId, 'needs_review', {pageCount: page});
     return json({uploadId, status: 'needs_review', page, rows: extracted.rows.length, docConfidence: avgConfidence(extracted)});

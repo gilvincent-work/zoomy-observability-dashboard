@@ -204,6 +204,7 @@ export function DashboardShell({
   const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
   const overviewTab: NavItem = {href: '/overview', label: 'Overview', icon: BarChart3};
   const storesTab: NavItem = {href: '/stores', label: 'Stores', icon: Store};
+  const stockTab: NavItem = {href: '/stock', label: 'Inventory', icon: Package};
   const accountTab: NavItem = {href: '/account', label: 'Your access', icon: Settings};
   const usersTab: NavItem = {href: '/admin/users', label: 'Users & Roles', icon: Users};
 
@@ -212,7 +213,7 @@ export function DashboardShell({
     ? FLAT_TABS
     : isCoopAdminView
       ? [usersTab, accountTab]
-      : [overviewTab, uploadsTab, storesTab, accountTab];
+      : [overviewTab, storesTab, stockTab, uploadsTab, accountTab];
 
   // ── Mobile nav model (below md only) ──────────────────────────────────────
   // The left rail is hidden under md; these drive a bottom tab bar + a "More" sheet.
@@ -231,8 +232,9 @@ export function DashboardShell({
         ]
       : [
           {href: '/overview', label: 'Overview', icon: BarChart3, active: leafActive('/overview', pathname, channel)},
-          {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
           {href: '/stores', label: 'Stores', icon: Store, active: leafActive('/stores', pathname, channel)},
+          {href: '/stock', label: 'Inventory', icon: Package, active: leafActive('/stock', pathname, channel)},
+          {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
         ];
   const moreItems: NavItem[] = isZoomy
     ? [
