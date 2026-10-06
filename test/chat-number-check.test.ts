@@ -232,3 +232,35 @@ describe('checkNumbers: known false negatives (target is a violation; remove .fa
     expect(values('Sales were ₱12.', UNITS)).toEqual(['₱12']);
   });
 });
+
+// Live test 4 (G01): "6 orders at Circuit Makati Weekend" was 5 + 2 added in the model's head (the true figure was 7). Single digits were exempt.
+describe('checkNumbers countNouns (Explore enforce mode): a single digit before a count noun must be a cell', () => {
+  const rows = [{result: {rows: [{event: 'Circuit Makati Weekend', orders_count: 5}, {event: 'circuit makati weekend', orders_count: 2}]}}];
+  const check = (t: string, on = true) => checkNumbers(t, rows, {countNouns: on}).violations.map((v) => v.value);
+  it('flags "6 orders" when the rows hold 5 and 2 and no 6 or 7', () => {
+    expect(check('6 orders at Circuit Makati Weekend.')).toEqual(['6']);
+  });
+  it('also flags a typed per-event total that is no cell ("7 orders")', () => {
+    expect(check('7 orders at SM Aura.')).toEqual(['7']);
+  });
+  it('passes "7 orders" when a cell holds 7, and "5 orders" / "2 leads" that are cells', () => {
+    expect(checkNumbers('7 orders at Circuit Makati Weekend.', [{rows: [{orders_count: 7}]}], {countNouns: true}).violations).toEqual([]);
+    expect(check('5 orders under one spelling and 2 orders under the other.')).toEqual([]);
+    expect(check('2 leads.')).toEqual([]);
+  });
+  it('does not flag "2 spellings" or "3 notes" (not count nouns), nor number words', () => {
+    expect(check('The event has 2 spellings and 3 notes; six orders.')).toEqual([]);
+  });
+  it('covers every listed noun, plural or singular', () => {
+    for (const n of ['order', 'orders', 'lead', 'leads', 'sign-up', 'sign-ups', 'signup', 'event', 'events', 'customer', 'customers', 'unit', 'units', 'item', 'items', 'pack', 'packs', 'bundle', 'bundles']) {
+      expect(check(`8 ${n} here`), n).toEqual(['8']);
+    }
+  });
+  it('is off by default: registry and non-Explore behaviour is unchanged', () => {
+    expect(check('6 orders at Circuit Makati Weekend.', false)).toEqual([]);
+    expect(checkNumbers('6 orders', rows).violations).toEqual([]);
+  });
+  it('a digit the question already gave is not a new claim', () => {
+    expect(checkNumbers('3 orders', rows, {countNouns: true, context: 'show me the top 3 orders'}).violations).toEqual([]);
+  });
+});

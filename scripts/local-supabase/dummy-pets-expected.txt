@@ -1,0 +1,116 @@
+== A. Pet type per event (tagged orders, completed): orders, revenue, rank by orders; NULL pet_type shown as (untagged)
+             ev_name             |  pet_type  | orders | revenue | rank_by_orders 
+---------------------------------+------------+--------+---------+----------------
+ [dummy] circuit makati weekend  | cat        |     25 |   12114 |              1
+ [dummy] circuit makati weekend  | dog        |     11 |    6541 |              2
+ [dummy] circuit makati weekend  | both       |      3 |    1050 |              3
+ [dummy] circuit makati weekend  | (untagged) |     20 |   11863 |               
+ [dummy] greenhills bazaar night | dog        |      9 |    4302 |              1
+ [dummy] greenhills bazaar night | cat        |      5 |    1995 |              2
+ [dummy] greenhills bazaar night | both       |      2 |    1399 |              3
+ [dummy] greenhills bazaar night | (untagged) |      7 |    3020 |               
+ [dummy] modern market bazaar    | dog        |     17 |    7507 |              1
+ [dummy] modern market bazaar    | cat        |     12 |    6127 |              2
+ [dummy] modern market bazaar    | (untagged) |     15 |    4993 |               
+ [dummy] sm aura pet fair        | dog        |     28 |   13785 |              1
+ [dummy] sm aura pet fair        | cat        |      9 |    3508 |              2
+ [dummy] sm aura pet fair        | both       |      5 |    2184 |              3
+ [dummy] sm aura pet fair        | (untagged) |     12 |    5324 |               
+ [dummy] trinoma pet weekend     | both       |     15 |    7963 |              1
+ [dummy] trinoma pet weekend     | dog        |      8 |    4078 |              2
+ [dummy] trinoma pet weekend     | cat        |      3 |     974 |              3
+ [dummy] trinoma pet weekend     | (untagged) |      8 |    3407 |               
+(19 rows)
+
+== A2. Top pet type per event (ties would show both)
+             ev_name             | top_pet_type | orders | revenue 
+---------------------------------+--------------+--------+---------
+ [dummy] circuit makati weekend  | cat          |     25 |   12114
+ [dummy] greenhills bazaar night | dog          |      9 |    4302
+ [dummy] modern market bazaar    | dog          |     17 |    7507
+ [dummy] sm aura pet fair        | dog          |     28 |   13785
+ [dummy] trinoma pet weekend     | both         |     15 |    7963
+(5 rows)
+
+== B. Breed counts per event from leads (text after the slash, lower, trimmed, spaces collapsed); event = collected_at Manila day inside the window; merged by lower(btrim(name))
+             ev_name             |                      breed                       | leads | rk 
+---------------------------------+--------------------------------------------------+-------+----
+ [dummy] circuit makati weekend  | puspin                                           |     7 |  1
+ [dummy] circuit makati weekend  | persian                                          |     4 |  2
+ [dummy] circuit makati weekend  | siamese                                          |     3 |  3
+ [dummy] circuit makati weekend  | aspin                                            |     2 |  4
+ [dummy] circuit makati weekend  | chihuahua                                        |     1 |  5
+ [dummy] circuit makati weekend  | maine coon                                       |     1 |  5
+ [dummy] circuit makati weekend  | pomeranian                                       |     1 |  5
+ [dummy] circuit makati weekend  | shih tzu                                         |     1 |  5
+ [dummy] greenhills bazaar night | aspin                                            |     3 |  1
+ [dummy] greenhills bazaar night | puspin                                           |     3 |  1
+ [dummy] greenhills bazaar night | shih tzu                                         |     3 |  1
+ [dummy] greenhills bazaar night | chihuahua                                        |     2 |  4
+ [dummy] greenhills bazaar night | husky                                            |     1 |  5
+ [dummy] greenhills bazaar night | maine coon                                       |     1 |  5
+ [dummy] greenhills bazaar night | siamese                                          |     1 |  5
+ [dummy] modern market bazaar    | aspin                                            |     8 |  1
+ [dummy] modern market bazaar    | golden retriever                                 |     3 |  2
+ [dummy] modern market bazaar    | shih tzu                                         |     3 |  2
+ [dummy] modern market bazaar    | siamese                                          |     3 |  2
+ [dummy] modern market bazaar    | corgi                                            |     1 |  5
+ [dummy] modern market bazaar    | husky                                            |     1 |  5
+ [dummy] modern market bazaar    | persian                                          |     1 |  5
+ [dummy] modern market bazaar    | puspin                                           |     1 |  5
+ [dummy] modern market bazaar    | shih tzu'); drop table pos_orders; -- [x](https: |     1 |  5
+ [dummy] sm aura pet fair        | aspin                                            |     8 |  1
+ [dummy] sm aura pet fair        | puspin                                           |     4 |  2
+ [dummy] sm aura pet fair        | husky                                            |     2 |  3
+ [dummy] sm aura pet fair        | dachshund                                        |     1 |  4
+ [dummy] sm aura pet fair        | persian                                          |     1 |  4
+ [dummy] sm aura pet fair        | pomeranian                                       |     1 |  4
+ [dummy] sm aura pet fair        | shih tzu                                         |     1 |  4
+ [dummy] trinoma pet weekend     | puspin                                           |     7 |  1
+ [dummy] trinoma pet weekend     | aspin                                            |     2 |  2
+ [dummy] trinoma pet weekend     | corgi                                            |     2 |  2
+ [dummy] trinoma pet weekend     | maine coon                                       |     2 |  2
+ [dummy] trinoma pet weekend     | poodle                                           |     2 |  2
+ [dummy] trinoma pet weekend     | bengal                                           |     1 |  6
+ [dummy] trinoma pet weekend     | husky                                            |     1 |  6
+ [dummy] trinoma pet weekend     | persian                                          |     1 |  6
+(39 rows)
+
+== C. Leads with no breed (null/empty pet, no slash, or nothing after the slash), per event and in total
+             ev_name             | leads | leads_no_breed 
+---------------------------------+-------+----------------
+ [dummy] circuit makati weekend  |    28 |              8
+ [dummy] greenhills bazaar night |    16 |              2
+ [dummy] modern market bazaar    |    26 |              4
+ [dummy] sm aura pet fair        |    28 |             10
+ [dummy] trinoma pet weekend     |    24 |              6
+ ALL EVENTS                      |   122 |             30
+(6 rows)
+
+== D. Orders per event: tagged to the event vs attributed by date only (event_id NULL, Manila day in the window); completed only
+             ev_name             | tagged_orders | tagged_revenue | date_only_orders | date_only_revenue | total_orders | total_revenue 
+---------------------------------+---------------+----------------+------------------+-------------------+--------------+---------------
+ [dummy] circuit makati weekend  |            59 |          31568 |               10 |              4938 |           69 |         36506
+ [dummy] greenhills bazaar night |            23 |          10716 |                4 |              2418 |           27 |         13134
+ [dummy] modern market bazaar    |            44 |          18627 |                7 |              4363 |           51 |         22990
+ [dummy] sm aura pet fair        |            54 |          24801 |                8 |              4966 |           62 |         29767
+ [dummy] trinoma pet weekend     |            34 |          16422 |                6 |              2443 |           40 |         18865
+(5 rows)
+
+== E. Weekday sales, all dummy completed orders (Manila weekday; 1 = Monday)
+ isodow | weekday | orders | revenue 
+--------+---------+--------+---------
+      6 | Sat     |     86 |   43977
+      7 | Sun     |     67 |   33724
+      5 | Fri     |     64 |   28628
+      3 | Wed     |     15 |    6887
+      1 | Mon     |     15 |    6537
+      4 | Thu     |      2 |    1509
+(6 rows)
+
+== F. Housekeeping: dummy row counts, voided orders, untagged share
+ orders | voided | pet_null | pet_null_pct | no_event_id 
+--------+--------+----------+--------------+-------------
+    254 |      5 |       76 |         29.9 |          35
+(1 row)
+

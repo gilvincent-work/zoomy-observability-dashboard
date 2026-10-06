@@ -1,9 +1,9 @@
 import {describe, expect, it, vi} from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import {readFileSync} from 'node:fs';
-import {runChatLoop, CHAT_DEADLINE_MS, CUT_OFF_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
+import {runChatLoop, CHAT_DEADLINE_MS, TOOL_DEADLINE_MS, WRAP_UP_TEXT, CUT_OFF_TEXT, DEGENERATE_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
 import {assertRequestShape} from '../src/chat/request-shape';
-import {CHAT_TOOLS} from '../src/chat/tool-defs';
+import {CHAT_TOOLS, exploreTools} from '../src/chat/tool-defs';
 import type {ChatStreamEvent} from '../src/chat/stream-types';
 import type {ToolExecutors} from '../src/chat/tools';
 
@@ -15,6 +15,7 @@ type Scripted = {text?: string[]; content?: Block[]; stop_reason?: string; usage
 class FakeClient implements MessagesClient {
   requests: string[] = []; // JSON snapshots taken at call time
   onCall?: (n: number) => void;
+  aborts = 0;
   constructor(private script: (call: number) => Scripted) {}
   messages = {
     stream: (params: unknown) => {
@@ -27,6 +28,7 @@ class FakeClient implements MessagesClient {
           if (s instanceof Error) throw s;
           for (const d of s.text ?? []) yield {type: 'content_block_delta', index: 0, delta: {type: 'text_delta', text: d}} as Anthropic.MessageStreamEvent;
         },
+        abort: () => { this.aborts += 1; },
         finalMessage: async () => {
           if (s instanceof Error) throw s;
           const u = s.usage ?? {};
@@ -70,6 +72,41 @@ const turnLines = (s: ReturnType<typeof sink>) => s.info.mock.calls.map((c) => J
 const guardTrips = (s: ReturnType<typeof sink>) => s.error.mock.calls.map((c) => JSON.parse(c[0] as string)).filter((l) => l.event === 'chat_guard_trip');
 
 describe('runChatLoop', () => {
+  it('degenerate loop: a repeated unit stops the stream, trims the tail, says so honestly and ends with done', async () => {
+    const client = new FakeClient(() => ({text: ['Last week you sold 12 bags.', ...Array.from({length: 1000}, () => '<br> ')], stop_reason: 'max_tokens'}));
+    const {events, opts} = setup(client);
+    const r = await runChatLoop(opts);
+    const text = events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('');
+    expect(r.stopReason).toBe('degenerate');
+    expect(client.aborts).toBe(1);
+    expect(text).toContain('Last week you sold 12 bags.');
+    expect(text.split('<br>').length - 1).toBeLessThan(20);
+    expect(text.endsWith(DEGENERATE_TEXT)).toBe(true);
+    expect(events[events.length - 1].t).toBe('done');
+    expect(events.filter((e) => e.t === 'text' && (e as {d: string}).d === CUT_OFF_TEXT)).toHaveLength(0);
+  });
+
+  it('degenerate loop in a held (explore) turn: the held text is trimmed before release', async () => {
+    const client = new FakeClient(() => ({text: ['Sales were fine.', ...Array.from({length: 1000}, () => '<br> ')], stop_reason: 'max_tokens'}));
+    const {events, opts} = setup(client, {tools: exploreTools()});
+    const r = await runChatLoop(opts);
+    const text = events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('');
+    expect(r.stopReason).toBe('degenerate');
+    expect(text.split('<br>').length - 1).toBeLessThan(3);
+    expect(text).toContain('Sales were fine.');
+    expect(text.endsWith(DEGENERATE_TEXT)).toBe(true);
+  });
+
+  it('a legitimately repeated short phrase (under 20 reps) does not trip', async () => {
+    const row = '| - |'.repeat(15);
+    const client = new FakeClient(() => ({text: ['Table:\n', row, '\nDone.']}));
+    const {events, opts} = setup(client);
+    const r = await runChatLoop(opts);
+    expect(r.stopReason).toBe('end_turn');
+    expect(client.aborts).toBe(0);
+    expect(events.map((e) => (e.t === 'text' ? e.d : '')).join('')).toContain(row);
+  });
+
   it('degraded mode: with no tools the request omits tools and tool_choice, still passes the layer-1 check, and answers', async () => {
     const client = new FakeClient(() => ({text: ['Live POS data is not available right now.']}));
     const {events, opts} = setup(client, {tools: [], executors: {}});
@@ -145,6 +182,71 @@ describe('runChatLoop', () => {
     expect(events.at(-2)).toEqual({t: 'text', d: MAX_STEPS_TEXT});
     expect(events.at(-1)).toMatchObject({t: 'done', steps: 8});
     expect(turnLines(s)[0]).toMatchObject({steps: 8, stopReason: 'max_steps'});
+  });
+
+
+  it('chat_turn logs the duration of each model step and each tool batch', async () => {
+    let t = 0;
+    const client = new FakeClient((n) => (n === 1 ? toolTurn(toolUse('t1', 'query_metric', QUERY)) : {text: ['Done.']}));
+    client.onCall = () => void (t += 7_000);
+    const {opts, s} = setup(client, {clock: () => t, executors: {query_metric: async () => ((t += 300), {rows: []})}});
+    await runChatLoop(opts);
+    expect(turnLines(s)[0].step_ms).toEqual([7_000, 7_000]);
+    expect(turnLines(s)[0].tool_ms).toEqual([300]);
+  });
+
+  describe('compose reserve (soft tool deadline)', () => {
+    const turn = (stepMs: number, over: Partial<ChatLoopOptions> = {}, answer = 'Revenue was ₱100.') => {
+      let t = 0;
+      const client: FakeClient = new FakeClient((n): Scripted => (client.req(n - 1).tool_choice && (client.req(n - 1).tool_choice as {type: string}).type === 'none' ? {text: [answer]} : toolTurn(toolUse(`t${n}`, 'query_metric', QUERY))));
+      client.onCall = () => void (t += stepMs);
+      return {client, ...setup(client, {clock: () => t, ...over})};
+    };
+
+    it('pins the soft deadline at 30 s', () => {
+      expect(TOOL_DEADLINE_MS).toBe(30_000);
+      expect(WRAP_UP_TEXT).toMatch(/answer now from the results above/);
+    });
+
+    it('past the soft deadline with tool results, exactly ONE tool-less composing step runs, with the nudge after the results', async () => {
+      const {client, opts, events, s} = turn(20_000); // step1 ends t=20, step2 ends t=40 (> 30 soft, < 50 hard)
+      const summary = await runChatLoop(opts);
+      expect(client.requests).toHaveLength(3);
+      expect(summary).toMatchObject({steps: 3, stopReason: 'wrapped_up'});
+      const third = client.req(2);
+      expect(third.tool_choice).toEqual({type: 'none'});
+      expect(third.tools).toBeDefined(); // the API needs tools while tool_use blocks are in the history
+      const last = third.messages.at(-1)!;
+      expect(last.role).toBe('user');
+      const blocks = last.content as {type: string; text?: string}[];
+      expect(blocks.map((b) => b.type)).toEqual(['tool_result', 'text']); // results first, nudge last
+      expect(blocks[1].text).toBe(WRAP_UP_TEXT);
+      expect(client.req(0).tool_choice).toEqual({type: 'auto'});
+      expect(events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('')).toBe('Revenue was ₱100.');
+      expect(turnLines(s)[0]).toMatchObject({steps: 3, stopReason: 'wrapped_up'});
+    });
+
+    it('a turn before the soft deadline is untouched (normal tool loop, no wrap-up)', async () => {
+      const {client, opts} = turn(10_000, {maxSteps: 3});
+      const summary = await runChatLoop(opts);
+      expect(client.requests).toHaveLength(3); // t=0,10,20 all start under 30 s; max_steps ends it
+      expect(summary.stopReason).toBe('max_steps');
+    });
+
+    it('past the HARD deadline the old graceful stop still wins (no composing step)', async () => {
+      const {client, opts} = turn(26_000); // step2 ends t=52 > 50
+      const summary = await runChatLoop(opts);
+      expect(client.requests).toHaveLength(2);
+      expect(summary.stopReason).toBe('deadline');
+    });
+  });
+
+  it('a tool-less turn that is slow is not wrapped: only tool results earn a compose reserve', async () => {
+    let t = 0;
+    const client = new FakeClient((n) => (n === 1 ? {text: ['Hello.'], stop_reason: 'end_turn'} : {text: ['x']}));
+    client.onCall = () => void (t += 45_000);
+    const summary = await runChatLoop(setup(client, {clock: () => t}).opts);
+    expect(summary.stopReason).toBe('end_turn');
   });
 
   describe('wall-clock deadline', () => {

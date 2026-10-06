@@ -1,6 +1,7 @@
 import {mkdtempSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import {describe, expect, it, vi} from 'vitest';
 
 vi.mock('server-only', () => ({}));
@@ -8,26 +9,33 @@ vi.mock('server-only', () => ({}));
 import {buildStaticSystem} from '../src/chat/context';
 import {SMALL_SAMPLE_N} from '../src/chat/checks';
 import {estimateTokens, renderSkill} from '../src/chat/skills/load';
-import {RULES, SKILL_CONSTANTS, SKILL_TOPICS} from '../src/chat/skills/rules';
+import {EXPLORE_TOPICS, RULES, SKILL_CONSTANTS, SKILL_TOPICS} from '../src/chat/skills/rules';
 import {KPI_MAX, PIE_MAX_SEGMENTS, SERIES_FOLD_AT, TABLE_MIN_CLASSES} from '../src/chat/recommend-view';
 
 const SKILL_DIR = path.join(process.cwd(), 'src/chat/skills/ask-coop-data-analyst');
 const text = renderSkill();
-const tags = [...text.matchAll(/\[([A-Z]+-\d+)( ⚙)?\]/g)].map((m) => ({id: m[1], gear: Boolean(m[2])}));
+const TAG = /\[([A-Z]+-\d+)( ⚙)?\]/g;
+const tagsOf = (t: string) => [...t.matchAll(TAG)].map((m) => ({id: m[1], gear: Boolean(m[2])}));
+const tags = tagsOf(text);
+const exploreText = renderSkill({explore: true});
+const exploreTags = tagsOf(exploreText);
+// sha256 of the non-explore render before Explore mode existed (15,668 characters). Measured with renderSkill() on fix/ask-coop b28abd0.
+const BASELINE_SHA256 = '963c0e5c4a983433852b5a219c3e95884ab274f4a8602eef00a76ca200d91332';
 
 function fixtureDir(files: {skill: string; topic?: string}): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'skill-'));
   mkdirSync(path.join(dir, 'topics'));
   writeFileSync(path.join(dir, 'SKILL.md'), files.skill);
-  for (const t of SKILL_TOPICS) writeFileSync(path.join(dir, 'topics', `${t}.md`), files.topic ?? `# ${t}\n\nPlain.`);
+  for (const t of [...SKILL_TOPICS, ...EXPLORE_TOPICS]) writeFileSync(path.join(dir, 'topics', `${t}.md`), files.topic ?? `# ${t}\n\nPlain.`);
   return dir;
 }
 const skillWith = (body: string) => `---\nname: ask-coop-data-analyst\ndescription: test\n---\n\n# Title\n\n${body}\n`;
 
 describe('rule ids stay in sync between the text and rules.ts', () => {
-  it('every tag in the text exists in RULES', () => {
+  it('every tag in the text exists in RULES (both variants)', () => {
     const known = new Set(RULES.map((r) => r.id));
     expect(tags.filter((t) => !known.has(t.id)).map((t) => t.id)).toEqual([]);
+    expect(exploreTags.filter((t) => !known.has(t.id)).map((t) => t.id)).toEqual([]);
   });
   // S1S#5: a rule id removed from rules.ts but still tagged in the text must fail. Same extraction and predicate as above, on a text
   // that plants a stale tag and a rule that appears twice, to show the gate can fail.
@@ -38,15 +46,36 @@ describe('rule ids stay in sync between the text and rules.ts', () => {
     expect(planted.filter((id) => !known.has(id))).toEqual(['OLD-99']);
     expect(planted.filter((id) => id === 'THINK-01')).toHaveLength(2);
   });
-  it('every RULES id appears exactly once in the text', () => {
-    const counts = new Map<string, number>();
-    for (const t of tags) counts.set(t.id, (counts.get(t.id) ?? 0) + 1);
-    expect(RULES.filter((r) => counts.get(r.id) !== 1).map((r) => r.id)).toEqual([]);
+  const count = (ts: typeof tags, id: string) => ts.filter((t) => t.id === id).length;
+  it('every RULES id appears exactly once in the explore variant; EXP-* never in the non-explore one', () => {
+    expect(RULES.filter((r) => count(exploreTags, r.id) !== 1).map((r) => r.id)).toEqual([]);
+    expect(RULES.filter((r) => count(tags, r.id) !== (r.id.startsWith('EXP-') ? 0 : 1)).map((r) => r.id)).toEqual([]);
     expect(new Set(RULES.map((r) => r.id)).size).toBe(RULES.length);
   });
-  it('the gear tag is on exactly the rules enforced in code', () => {
+  it('the gear tag is on exactly the rules enforced in code (both variants)', () => {
     const byId = new Map(RULES.map((r) => [r.id, r.enforcedBy]));
     expect(tags.filter((t) => t.gear !== (byId.get(t.id) === 'code')).map((t) => t.id)).toEqual([]);
+    expect(exploreTags.filter((t) => t.gear !== (byId.get(t.id) === 'code')).map((t) => t.id)).toEqual([]);
+  });
+});
+
+describe('explore markers', () => {
+  it('keep the right variant, never leak, and an unbalanced marker throws', () => {
+    const dir = fixtureDir({skill: skillWith('A\n[[explore]]\nE\n[[/explore]]\n[[!explore]]\nN\n[[/!explore]]\nZ')});
+    expect(renderSkill({dir, constants: {}})).toContain('A\nN\nZ');
+    expect(renderSkill({dir, constants: {}, explore: true})).toContain('A\nE\nZ');
+    expect(renderSkill({dir, constants: {}})).not.toMatch(/\[\[/);
+    const bad = fixtureDir({skill: skillWith('A\n[[explore]]\nE\nZ')});
+    expect(() => renderSkill({dir: bad, constants: {}, explore: true})).toThrow(/Unbalanced/);
+  });
+  it('the explore edits to THINK-01, 02, 03 and 07 are only in the explore variant', () => {
+    for (const s of ['all available data', 'run_query cannot answer it', 'from the rows of a query you ran', 'Exploratory, not a registered metric']) {
+      expect(exploreText).toContain(s);
+      expect(text).not.toContain(s);
+    }
+    for (const s of ['ask which dates before any tool call', 'Say "not available" only when no metric declares the measure, and then']) {
+      expect(text).toContain(s);
+    }
   });
 });
 
@@ -83,6 +112,21 @@ describe('size and caching', () => {
   });
   it('renderSkill is identical across calls', () => {
     expect(renderSkill()).toBe(renderSkill());
+    expect(renderSkill({explore: true})).toBe(renderSkill({explore: true}));
+  });
+  it('the non-explore render is byte-identical to the pre-Explore text', () => {
+    expect(createHash('sha256').update(text).digest('hex')).toBe(BASELINE_SHA256);
+  });
+  it('the explore variant fits its budget (6,300) and puts sql-explore after dashboard-composition', () => {
+    const tokens = estimateTokens(exploreText);
+    console.log(`explore skill: ${exploreText.length} characters, about ${tokens} tokens`);
+    expect(tokens).toBeLessThan(6300);
+    expect(exploreText.indexOf('## Topic: dashboard-composition')).toBeGreaterThan(-1);
+    expect(exploreText.indexOf('## Topic: dashboard-composition')).toBeLessThan(exploreText.indexOf('## Topic: sql-explore'));
+    expect([...EXPLORE_TOPICS]).toEqual(['sql-explore']);
+  });
+  it('the non-explore text never promises the Explore tool', () => {
+    expect(text).not.toMatch(/run_query|sql-explore|Exploratory/);
   });
   it('buildStaticSystem is byte-identical across calls and carries the whole skill', () => {
     const a = buildStaticSystem();
@@ -162,7 +206,8 @@ describe('every rule enforced by code has a test titled with its id', () => {
       return [...src.matchAll(/\bit\(\s*(['"`])((?:\\.|(?!\1).)*)\1/g)].map((m) => m[2]);
     });
   };
-  const codeIds = RULES.filter((r) => r.enforcedBy === 'code').map((r) => r.id);
+  // The EXP-* code rules are covered by test/chat-explore-*.test.ts (A and the Integrator; chat-explore-rules.test.ts checks them).
+  const codeIds = RULES.filter((r) => r.enforcedBy === 'code' && !r.id.startsWith('EXP-')).map((r) => r.id);
 
   it('finds a test whose title starts with "<ID>: " for every ⚙ rule, and none for a guide-only rule', () => {
     const t = titles();

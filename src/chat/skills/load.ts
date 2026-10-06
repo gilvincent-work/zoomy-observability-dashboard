@@ -2,12 +2,12 @@
 // vitest can import it. Reads the markdown once per process and caches the result.
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
-import {SKILL_CONSTANTS, SKILL_TOPICS} from './rules';
+import {EXPLORE_TOPICS, SKILL_CONSTANTS, SKILL_TOPICS} from './rules';
 
 const DEFAULT_SKILL_DIR = 'src/chat/skills/ask-coop-data-analyst';
 const PLACEHOLDER = /\{\{([A-Za-z0-9_]+)\}\}/g;
 
-let cached: string | null = null;
+const cached: {base: string | null; explore: string | null} = {base: null, explore: null};
 
 function parseFrontmatter(raw: string): {name: string; description: string; body: string} {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
@@ -38,21 +38,41 @@ export function estimateTokens(text: string): number {
 }
 
 /**
- * The whole skill as one string: the core, then each topic under a heading in SKILL_TOPICS order. Cached for the
- * default directory; an injected `dir` or `constants` (tests) is always read fresh.
+ * Keeps `[[explore]]` blocks only when `explore`, `[[!explore]]` blocks only when not. Markers sit on their own lines and are
+ * always removed, so dropping them leaves the other variant's text byte-for-byte as written.
  */
-export function renderSkill(opts?: {dir?: string; constants?: Record<string, number>}): string {
+export function applyVariant(text: string, explore: boolean): string {
+  for (const kind of ['explore', '!explore']) {
+    const opens = text.match(new RegExp(`^\\[\\[${kind}\\]\\]`, 'gm'))?.length ?? 0;
+    const closes = text.match(new RegExp(`^\\[\\[/${kind}\\]\\]`, 'gm'))?.length ?? 0;
+    if (opens !== closes) throw new Error('Unbalanced [[explore]] marker in the skill text');
+  }
+  const drop = explore ? '!explore' : 'explore';
+  const dropBlock = new RegExp(`^\\[\\[${drop}\\]\\][ \\t]*\\r?\\n[\\s\\S]*?^\\[\\[/${drop}\\]\\][ \\t]*(?:\\r?\\n|$)`, 'gm');
+  const out = text.replace(dropBlock, '').replace(/^\[\[\/?!?explore\]\][ \t]*\r?\n?/gm, '');
+  if (/\[\[\/?!?explore\]\]/.test(out)) throw new Error('Unbalanced [[explore]] marker in the skill text');
+  return out;
+}
+
+/**
+ * The whole skill as one string: the core, then each topic under a heading in SKILL_TOPICS order (plus EXPLORE_TOPICS when
+ * `explore`). Cached per variant for the default directory; an injected `dir` or `constants` (tests) is always read fresh.
+ */
+export function renderSkill(opts?: {explore?: boolean; dir?: string; constants?: Record<string, number>}): string {
+  const explore = opts?.explore === true;
+  const slot = explore ? 'explore' : 'base';
   const isDefault = !opts?.dir && !opts?.constants;
-  if (isDefault && cached !== null) return cached;
+  if (isDefault && cached[slot] !== null) return cached[slot] as string;
   const dir = opts?.dir ?? path.join(process.cwd(), DEFAULT_SKILL_DIR);
   const {name, description, body} = parseFrontmatter(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'));
   // The name and description live only in the heading line of the rendered text.
-  const core = body.trim().replace(/^# (.+)$/m, (_h, title: string) => `# ${title} (${name}): ${description}`);
-  const topics = SKILL_TOPICS.map((topic) => {
-    const text = readFileSync(path.join(dir, 'topics', `${topic}.md`), 'utf8').trim();
+  const core = applyVariant(body, explore).trim().replace(/^# (.+)$/m, (_h, title: string) => `# ${title} (${name}): ${description}`);
+  const names: readonly string[] = explore ? [...SKILL_TOPICS, ...EXPLORE_TOPICS] : SKILL_TOPICS;
+  const topics = names.map((topic) => {
+    const text = applyVariant(readFileSync(path.join(dir, 'topics', `${topic}.md`), 'utf8'), explore).trim();
     return text.replace(/^# (.+)$/m, (_h, title: string) => `## Topic: ${topic} (${title})`);
   });
   const rendered = fillConstants([core, ...topics].join('\n\n'), opts?.constants ?? SKILL_CONSTANTS);
-  if (isDefault) cached = rendered;
+  if (isDefault) cached[slot] = rendered;
   return rendered;
 }

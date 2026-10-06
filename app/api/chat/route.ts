@@ -6,7 +6,8 @@ import {CHAT_DEADLINE_MS, runChatLoop, SAFE_ERROR_TEXT} from '@/src/chat/loop';
 import {encodeEvent} from '@/src/chat/stream-protocol';
 import {buildDegradedPreamble, buildPreamble} from '@/src/chat/preamble';
 import {openReportSession} from '@/src/chat/report-session';
-import {CHAT_TOOLS} from '@/src/chat/tool-defs';
+import {CHAT_TOOLS, exploreTools} from '@/src/chat/tool-defs';
+import {setupExplore} from '@/src/chat/explore-setup';
 import {createExecutors} from '@/src/chat/tool-executors';
 import {getChatDigest, getChatMetricDataOrDegrade} from '@/src/chat/server';
 import type {ChatStreamEvent} from '@/src/chat/stream-types';
@@ -64,17 +65,20 @@ export async function POST(req: Request) {
   const live = await getChatMetricDataOrDegrade();
   // Live mode is not anchored to any digest week: the owner defines the dates. Only degraded mode loads (masked) digests.
   const rows = live.ok ? [] : await getDigests(); // PII-masked server-side
-  const system = [
-    {type: 'text' as const, text: buildStaticSystem({tools: live.ok}), cache_control: {type: 'ephemeral' as const}},
-    {type: 'text' as const, text: live.ok ? buildLiveContextBlock() : buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
-  ];
-
   const now = new Date();
   const user = session.user.email ?? null;
-  const anthropic = new Anthropic({apiKey: key});
   // F8: the open dashboard the drawer sends back. Untrusted: validated and re-run here; invalid or oversized is ignored
   // (one log line, no content). Digest-only mode has no tools, so a report is ignored there.
   const report = live.ok ? openReportSession(body.report, live.data, now, () => console.warn(JSON.stringify({event: 'chat_report_rejected'}))) : null;
+  // Explore (run_query): fail-closed. Only an allowed user on a ready read path gets the tool, the prompt block and the executor.
+  const explore = live.ok && report ? setupExplore({env: process.env, email: user, now, user, store: report.store}) : null;
+  const system = [
+    {type: 'text' as const, text: buildStaticSystem({tools: live.ok, explore: explore !== null}), cache_control: {type: 'ephemeral' as const}},
+    {type: 'text' as const, text: live.ok ? buildLiveContextBlock({explore: explore !== null}) : buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
+  ];
+
+  const anthropic = new Anthropic({apiKey: key});
+  const coverage = explore ? await explore.coverageLine() : null;
   return ndjson((emit) =>
     runChatLoop({
       client: anthropic,
@@ -82,18 +86,19 @@ export async function POST(req: Request) {
       maxTokens: COOP_CHAT.maxTokens,
       effort: CHAT_EFFORT,
       system,
-      tools: live.ok ? CHAT_TOOLS : [],
+      tools: live.ok ? (explore ? exploreTools() : CHAT_TOOLS) : [],
       messages,
-      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline()) : buildDegradedPreamble(now),
+      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage) : buildDegradedPreamble(now),
       executors:
         live.ok && report
-          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest})
+          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, explore: explore?.executor})
           : {},
       emit,
       user,
       // maxDuration is 60 s from the request, so the loop's 50 s budget loses what the digest and data loads already used.
       deadlineMs: Math.max(0, CHAT_DEADLINE_MS - (Date.now() - started)),
       signal: req.signal,
+      exploreGap: explore?.executor.gap,
     }).then(() => undefined),
   );
 }

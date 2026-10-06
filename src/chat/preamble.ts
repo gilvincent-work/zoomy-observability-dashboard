@@ -14,7 +14,7 @@ function longToday(now: Date): string {
   return `${WEEKDAYS[pht.getUTCDay()]}, ${pht.getUTCDate()} ${FULL_MONTHS[pht.getUTCMonth()]} ${pht.getUTCFullYear()}`;
 }
 
-const NOT_AVAILABLE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (weekly digest only), customer-level data.';
+const NOT_AVAILABLE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (weekly digest only). Contact details (email, phone, instagram) are not exposed by the metrics. Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet. A free-form query tool is planned, not available yet.';
 
 /** Per-turn context when the live-data path is unavailable: today's date and an honest "not available" (no data, no figures). */
 export function buildDegradedPreamble(now: Date): string {
@@ -22,7 +22,7 @@ export function buildDegradedPreamble(now: Date): string {
 }
 
 /** `outline` is the figure-free text of the open report (F8), or '' / absent when none is open. It rides in the per-turn preamble only, never in the cached system or tools. */
-export function buildPreamble(data: MetricData, now: Date, outline?: string): string {
+export function buildPreamble(data: MetricData, now: Date, outline?: string, exploreCoverage?: string | null): string {
   const c = buildCoverage(data);
   const head = `[context] Today is ${longToday(now)} (Philippine time; ${phtDate(now)}).`;
   let cover: string;
@@ -34,7 +34,8 @@ export function buildPreamble(data: MetricData, now: Date, outline?: string): st
     cover = `${lead} ${shortDate(c.dataFrom)} to ${shortDate(c.dataTo)} (${c.orders} completed orders${share}).`;
   }
   const base = `${head} ${cover} ${NOT_AVAILABLE} If a question is outside this range, say what the data covers.`;
-  return outline ? `${base}\n${outline}` : base;
+  const withCoverage = exploreCoverage ? `${base}\n${exploreCoverage}` : base;
+  return outline ? `${withCoverage}\n${outline}` : withCoverage;
 }
 
 const TOOL_RULES =

@@ -157,3 +157,31 @@ describe('render_chart', () => {
     expect(run('render_chart', null)).toMatchObject({error: expect.stringMatching(/must be an object/)});
   });
 });
+
+describe('G2 auto chart titles come from column labels, never from row or series values', () => {
+  const explore = {exploratory: {label: 'x', sql: 's', coverage_note: '', warnings: []}};
+  const render = (r: MetricResult) => {
+    const s: ResultStore = new Map([[r.id, r]]);
+    return ok(run('render_chart', {source: r.id, kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: ''}, s));
+  };
+  it('two category columns: "<measure> by <dim> and <dim>", not the pet values', () => {
+    const r = mk('x1', [col('event', 'text', 'category', 'Event'), col('pet', 'text', 'category', 'Pet'), col('orders_count', 'count', 'measure', 'Orders')],
+      [{event: 'A', pet: 'dog', orders_count: 4}, {event: 'A', pet: 'cat', orders_count: 3}, {event: 'B', pet: 'dog', orders_count: 2}, {event: 'B', pet: 'cat', orders_count: 1}], explore);
+    const t = render(r).map((b) => b.title);
+    expect(t).toEqual(['Orders by Event and Pet']);
+  });
+  it('a six-breed pivot is "Counts by Event"; no breed name reaches the title', () => {
+    const breeds = ['no_breed_given', 'puspin', 'golden_retriever', 'persian', 'aspin', 'shih_tzu'];
+    const r = mk('x2', [col('event', 'text', 'category', 'Event'), ...breeds.map((b) => col(b, 'count', 'measure', b.replace(/_/g, ' ')))],
+      [{event: 'A', ...Object.fromEntries(breeds.map((b, i) => [b, i + 1]))}, {event: 'B', ...Object.fromEntries(breeds.map((b, i) => [b, i]))}], explore);
+    const s: ResultStore = new Map([[r.id, r]]);
+    const blocks = ok(run('render_chart', {source: 'x2', kind: 'auto', orientation: 'auto', x: 'auto', y: breeds, title: ''}, s));
+    expect(blocks.map((b) => b.title)).toEqual(['Counts by Event']);
+    expect(blocks[0].kind === 'chart' && blocks[0].chart.series).toHaveLength(6);
+  });
+  it('up to three measure columns are named by their labels; an Explore peso column reads "(PHP)"', () => {
+    const r = mk('x3', [col('event', 'text', 'category', 'Event'), col('a', 'PHP', 'measure', 'Revenue'), col('b', 'PHP', 'measure', 'Cost')], [{event: 'A', a: 5, b: 2}, {event: 'B', a: 4, b: 1}], explore);
+    const s: ResultStore = new Map([[r.id, r]]);
+    expect(ok(run('render_chart', {source: 'x3', kind: 'auto', orientation: 'auto', x: 'auto', y: ['a', 'b'], title: ''}, s))[0].title).toBe('Revenue (PHP) and Cost (PHP) by Event');
+  });
+});

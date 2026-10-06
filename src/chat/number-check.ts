@@ -10,6 +10,8 @@
 //   - a ratio: "3.9×", "3.9x" (any size);
 //   - a plain count of 2 or more digits ("1,352", "36"), or any plain decimal ("595.45").
 //   Single plain digits (3 orders) and the words one to ten are never checked: they are counting, not reporting a result.
+//   Exception, Explore enforce mode only (`countNouns`): a single digit followed by order(s), lead(s), sign-up(s), event(s), customer(s),
+//   unit(s), item(s), pack(s) or bundle(s) is checked (live test 4: "6 orders" was two cells added in the model's head, the true figure was 7).
 //
 // WHAT IS IGNORED (not a claim about the data):
 //   dates and ranges ("Sep 11 to 27", "11 Sep", "2026-09-27", "9/27"), times, years (1900 to 2099 written plain),
@@ -48,6 +50,11 @@ export interface NumberCheckResult {
 export interface NumberCheckOptions {
   /** Text whose figures are not new claims: the user's question, earlier turns, the preamble, the digest block. */
   context?: string;
+  /**
+   * Explore enforce mode: also check a single plain digit when a count noun follows it ("6 orders", "2 leads"), because a model that adds
+   * two cells in its head types a small figure that is in no row. Words ("six") and digits before other nouns ("2 spellings") stay unchecked.
+   */
+  countNouns?: boolean;
 }
 
 interface Figure {
@@ -79,9 +86,12 @@ const NOISE: RegExp[] = [
   /\bSKU\s+\d+/gi,
 ];
 
+// The nouns that make a single digit a reported count (Explore enforce mode only): "6 orders", "2 sign-ups".
+const COUNT_NOUN = /^\s+(?:orders?|leads?|sign-?ups?|events?|customers?|units?|items?|packs?|bundles?)\b/i;
+
 const blank = (s: string): string => s.replace(/[^\n]/g, ' ');
 
-function figuresIn(answer: string): Figure[] {
+function figuresIn(answer: string, countNouns = false): Figure[] {
   let masked = answer;
   for (const re of NOISE) masked = masked.replace(re, blank);
   const out: Figure[] = [];
@@ -99,7 +109,8 @@ function figuresIn(answer: string): Figure[] {
     const kind: Figure['kind'] = prefix ? 'peso' : tail === '%' ? 'percent' : tail === '×' || times !== undefined ? 'ratio' : 'count';
     if (value === 0) continue;
     // A plain number is a reported figure only with 2+ integer digits or a decimal part.
-    if (kind === 'count' && scaleLetter === undefined && digits.length < 2 && decimals === 0) continue;
+    const counted = countNouns && COUNT_NOUN.test(masked.slice((m.index ?? 0) + raw.length, (m.index ?? 0) + raw.length + 14));
+    if (kind === 'count' && scaleLetter === undefined && digits.length < 2 && decimals === 0 && !counted) continue;
     out.push({raw: raw.trim(), value, unit: scale * 10 ** -decimals, kind, index: m.index ?? 0});
   }
   return out;
@@ -142,7 +153,7 @@ function shows(n: number, f: Figure): boolean {
 }
 
 export function checkNumbers(answerText: string, toolResults: unknown[], opts: NumberCheckOptions = {}): NumberCheckResult {
-  const figures = figuresIn(answerText);
+  const figures = figuresIn(answerText, opts.countNouns);
   if (figures.length === 0) return {checked: 0, violations: []};
   const source = sourceNumbers(toolResults);
   const given = (opts.context ?? '').match(NUMBER_IN_TEXT)?.map((s) => Number(s.replace(/,/g, ''))) ?? [];
