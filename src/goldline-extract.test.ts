@@ -83,10 +83,18 @@ describe('manifests pages 1–5', () => {
 });
 
 describe('page detection', () => {
-  it('prompt asks for the footer page and the schema bounds 0–6', () => {
+  it('prompt asks for the footer page', () => {
     expect(buildPageDetectPrompt()).toMatch(/PAGE # N|page/i);
-    expect(PAGE_DETECT_SCHEMA.properties.page.minimum).toBe(0);
-    expect(PAGE_DETECT_SCHEMA.properties.page.maximum).toBe(6);
+  });
+
+  it('schema carries no numeric bounds (structured outputs reject min/max on integer)', () => {
+    const json = JSON.stringify(PAGE_DETECT_SCHEMA);
+    expect(json).not.toMatch(/"minimum"|"maximum"/);
+    expect(PAGE_DETECT_SCHEMA.properties.page.type).toBe('integer');
+  });
+
+  it('extraction schema carries no numeric bounds either', () => {
+    expect(JSON.stringify(EXTRACTION_SCHEMA)).not.toMatch(/"minimum"|"maximum"/);
   });
 });
 
@@ -100,6 +108,10 @@ describe('humanizeExtractError', () => {
     expect(humanizeExtractError(new Error('Extraction declined: page_mismatch'))).toMatch(/inventory page/i);
     expect(humanizeExtractError(new Error('Extraction did not return valid JSON'))).toMatch(/clearer/i);
     expect(humanizeExtractError(new Error('Overloaded'))).toMatch(/busy/i);
+  });
+  it('names an out-of-credits account plainly', () => {
+    const raw = '400 {"error":{"message":"Your credit balance is too low to access the Anthropic API."}}';
+    expect(humanizeExtractError(new Error(raw))).toMatch(/out of credits/i);
   });
   it('never leaks a raw 400 / JSON blob — falls back to a safe generic', () => {
     const raw = '400 {"type":"error","error":{"type":"invalid_request_error","message":"..."}}';

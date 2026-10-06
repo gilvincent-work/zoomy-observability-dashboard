@@ -249,7 +249,9 @@ export function buildPageDetectPrompt(): string {
 export const PAGE_DETECT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  properties: {page: {type: 'integer', minimum: 0, maximum: 6}},
+  // No minimum/maximum: structured outputs reject numeric bounds on 'integer'
+  // (400 that failed every PDF). detectPage clamps the value to 0–6 instead.
+  properties: {page: {type: 'integer'}},
   required: ['page'],
 } as const;
 
@@ -268,6 +270,9 @@ export function humanizeExtractError(raw: unknown): string {
   }
   if (s.includes('anthropic_api_key') || s.includes('not configured')) {
     return 'Automatic reading isn’t set up for this environment yet — the file was saved for manual review.';
+  }
+  if (s.includes('credit balance') || s.includes('billing')) {
+    return 'Automatic reading is paused (the AI account is out of credits). The file was saved — ask an admin to top up, then try again.';
   }
   if (s.includes('overloaded') || s.includes('529')) {
     return 'The reader is busy right now. Please try uploading again in a moment.';
