@@ -10,6 +10,15 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Goldline stock forecast, Action Feed and Store health
+- **Movement engine** (`src/goldline-movement.ts`, tested). Goldline's POS export isn't mapped to the form's item codes yet, so movement is **estimated from consecutive counts**: units sold in a cycle = last on hand + this cycle's delivery − this on hand. Velocity is the average over up to 3 cycles. From it come days of cover, a stock-out date, and a suggested order up to two cycles of cover. Status: Out; Reorder (< 10 days); Within a cycle; Healthy; Needs 2 counts. Also flags dead stock (on hand, nothing moved in 2 cycles) and anomalies (a cycle ≥ 3× the usual and ≥ 5 units, or a count that rose with no delivery). Every page says the figures are estimates.
+- **Stock forecast** (`/stock/forecast`, plan §07g), a "Forecast" tab next to "Counts" on Inventory. A store picker, four tiles (reorder now, out, runs out within a cycle, healthy), and a table sorted by urgency (on hand, sold/cycle, cover, runs out, order, status). Until a store has two counts it explains why cover is blank and still shows on hand.
+- **Action Feed** (`/action-feed`, plan §07h). A ranked to-do list: missing counts, out of stock, reorders, anomalies, dead stock with the pesos tied up. It covers all stores by default (each card tagged with its store) or one store, with filter chips by kind. Each card has one action (Order → forecast, Review / Plan → counts, Upload). Ranked by severity, then pesos at stake (`src/goldline-actions.ts`, tested). The plan's "ask the data" box is left out, since Goldline Chat is out of scope.
+- **Store health** (`/store-health`). Health redefined for Goldline's data (no orders or CAC, so no QRR): a 0–100 score per store for the current form period. Weights: in-stock rate 40, days of cover 25, stock that's moving 15, form committed within 3 days of period end 20 (late = half). Cover and dead-stock parts stay neutral until a store has two counts. The page shows a company score (average of stores with a count), KPIs, and a store table worst-first with links to each store's counts. The scoring is explained on the page.
+- **Data** (`src/goldline-ops-data.ts`): company- and store-scope fenced; reads only the last ~70 days of counts (up to 4 per store) plus the snapshot view, catalog and stores. Stores with no count this period surface as missing.
+- **Nav** (Goldline): Overview · Stores · Inventory · Actions · Health · Uploads (Settings for multi-role). Mobile bar: Overview, Inventory, Actions, Uploads; More: Stores, Health.
+- typecheck + full suite (2513) + pagination guard pass; impeccable detector: no findings.
+
 ## 2026-10-06 — Scan review extras: form grid, flag navigator, page strip, totals check
 - **Two views of the rows.**
   - "Needs review" lists only the flagged rows; it's the default when anything is flagged.
