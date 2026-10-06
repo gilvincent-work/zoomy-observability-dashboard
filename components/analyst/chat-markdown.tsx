@@ -26,6 +26,15 @@ export function safeLinkUrl(value: string, knownHosts?: readonly string[]): stri
   }
 }
 
+/** The model can degenerate into a `<br> <br> ...` loop, or type a tool call as text (`<render_chart> </render_chart>`) when tools are off; neither must show literally.
+ *  A <br> run becomes one newline, a typed render tag is dropped (fenced code is left alone). */
+export function collapseBr(text: string): string {
+  return text
+    .split(/(```[\s\S]*?(?:```|$))/)
+    .map((part, i) => (i % 2 ? part : part.replace(/<\/?render_[a-z_]+\s*\/?>/gi, '').replace(/(?:<br\s*\/?>\s*)+/gi, '\n').replace(/\n[ \t]*\n(?=[ \t]*\n)/g, '\n\n')))
+    .join('');
+}
+
 export function ChatMarkdown({text, knownHostsOnly = false}: {text: string; knownHostsOnly?: boolean}) {
   return (
     <Markdown
@@ -43,7 +52,7 @@ export function ChatMarkdown({text, knownHostsOnly = false}: {text: string; know
         )),
       }}
     >
-      {text}
+      {collapseBr(text)}
     </Markdown>
   );
 }
