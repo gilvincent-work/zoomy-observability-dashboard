@@ -1,7 +1,7 @@
 import {notFound} from 'next/navigation';
 import {getDataContext} from '@/src/active-context';
 import {canEditData} from '@/src/company';
-import {getExtraction, getUpload} from '@/src/goldline-data';
+import {getExtraction, getUpload, signedUploadUrl} from '@/src/goldline-data';
 import {UploadReview} from '@/components/analyst/upload-review';
 
 export const dynamic = 'force-dynamic';
@@ -23,13 +23,17 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
   }
   const upload = await getUpload(ctx.companyId, id);
   if (!upload) notFound();
-  const extraction = upload.kind === 'inventory_pdf' ? await getExtraction(ctx.companyId, id) : null;
+  const [extraction, scanUrl] = await Promise.all([
+    upload.kind === 'inventory_pdf' ? getExtraction(ctx.companyId, id) : Promise.resolve(null),
+    upload.storage_path ? signedUploadUrl(ctx.companyId, id) : Promise.resolve(null),
+  ]);
   return (
     <UploadReview
       company={ctx.companyId}
       canEdit={canEditData(ctx.role)}
       upload={upload}
       extraction={extraction}
+      scanUrl={scanUrl}
     />
   );
 }

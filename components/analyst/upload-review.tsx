@@ -3,7 +3,7 @@
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
-import {ArrowLeft, CheckCircle2, Loader2} from 'lucide-react';
+import {ArrowLeft, CheckCircle2, ExternalLink, FileText, Loader2} from 'lucide-react';
 import type {ExtractionRecord, UploadRow} from '@/src/goldline-data';
 import type {ExtractedRow} from '@/src/goldline-extract-run';
 import {commitReview} from '@/app/uploads/actions';
@@ -39,14 +39,18 @@ export function UploadReview({
   canEdit,
   upload,
   extraction,
+  scanUrl,
 }: {
   company: string;
   canEdit: boolean;
   upload: UploadRow;
   extraction: ExtractionRecord | null;
+  /** Short-lived signed URL to the stored scan (private bucket), or null. */
+  scanUrl?: string | null;
 }) {
   const router = useRouter();
   const committed = upload.status === 'committed' || extraction?.status === 'confirmed';
+  const [scanOpen, setScanOpen] = useState(true);
 
   const head = extraction?.data;
   const [rows, setRows] = useState<EditRow[]>(() => (head?.rows ?? []).map((r) => ({...r})));
@@ -113,6 +117,42 @@ export function UploadReview({
         <div className="flex items-center gap-2 rounded-md bg-emerald-500/15 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
           <CheckCircle2 className="size-4" /> This upload is committed.
         </div>
+      )}
+
+      {/* Scanned file preview — the source next to the extracted numbers. The bucket
+          is private, so scanUrl is a short-lived signed URL (null if unavailable). */}
+      {scanUrl && (
+        <Card>
+          <CardHeader className="gap-0">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="inline-flex items-center gap-2">
+                <FileText className="size-4 text-muted-foreground" /> Scanned file
+              </CardTitle>
+              <div className="flex items-center gap-1">
+                <a href={scanUrl} target="_blank" rel="noopener noreferrer">
+                  <Button variant="ghost" size="xs">
+                    <ExternalLink className="size-3.5" /> Open
+                  </Button>
+                </a>
+                <Button variant="ghost" size="xs" onClick={() => setScanOpen((o) => !o)}>
+                  {scanOpen ? 'Hide' : 'Show'}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          {scanOpen && (
+            <CardContent>
+              <object data={scanUrl} type="application/pdf" className="h-[480px] w-full rounded-md border border-border bg-muted">
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
+                  Can’t preview the file inline.
+                  <a href={scanUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">
+                    Open the scan in a new tab
+                  </a>
+                </div>
+              </object>
+            </CardContent>
+          )}
+        </Card>
       )}
 
       {/* CSV / no-extraction summary */}
