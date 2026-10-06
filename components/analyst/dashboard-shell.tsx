@@ -10,6 +10,8 @@ import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {ViewSwitcher} from './company-switcher';
+import {BrandMark} from './brand-mark';
+import {brandFor} from '@/src/brands';
 import {shouldRedirectFromZoomy} from '@/src/company-nav';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
@@ -277,9 +279,18 @@ export function DashboardShell({
             <ViewSwitcher views={nav.views} activeKey={nav.activeKey} />
           </div>
         ) : (
-          <span className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium max-sm:hidden">
-            <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
-            {activeName}
+          <span className="ml-1 inline-flex h-8 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm font-medium max-sm:hidden">
+            {brandFor(isCoopAdminView ? null : (activeView?.companyId ?? 'zoomy')) ? (
+              <>
+                <BrandMark brand={brandFor(activeView?.companyId ?? 'zoomy')!} size={brandFor(activeView?.companyId ?? 'zoomy')!.style === 'thin' ? 11 : 13} />
+                <span className="sr-only">{activeName}</span>
+              </>
+            ) : (
+              <>
+                <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
+                {activeName}
+              </>
+            )}
           </span>
         )}
 

@@ -10,6 +10,15 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — One shell, two brands: company wordmarks in the switcher
+- Plan §07i: the only per-company difference a user sees is the logo and the data behind it.
+  - The header view switcher shows the active company's wordmark: Zoomy's red **Zoomy!** over "TREATS", Goldline's light, wide-tracked **NICHIDO**. The company name stays in the accessible label.
+  - Menu rows show each wordmark in a fixed-width slot (so names align), then the company name and a line with the role and what the business is ("Company User · cosmetics · stores · CSV + handwritten forms").
+  - A single-role user's header label shows the wordmark too.
+  - Coop Admin keeps its shield; companies without a brand entry keep their color monogram.
+- Brand definitions live in `src/brands.ts`; `components/analyst/brand-mark.tsx` renders them. These are typographic recreations, since no official logo files exist in the repo. Official artwork should be added as inline SVG (the security-headers test forbids remote `<img>`).
+- typecheck + full suite (2503) pass; impeccable detector: no findings.
+
 ## 2026-10-06 — Scan review extras: form grid, flag navigator, page strip, totals check
 - **Two views of the rows.**
   - "Needs review" lists only the flagged rows; it's the default when anything is flagged.
