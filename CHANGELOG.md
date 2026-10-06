@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — View switcher revamp: Coop Admin set apart, companies A–Z, color badges
+- The top-bar view switcher (same `ViewSwitcher` component) now pins **Coop Admin** at the top with a shield badge and the caption "People & roles · no business data", then a divider, then **companies A–Z** under a "Companies" label (the label only shows when there's a Coop section to separate from). Each company has a stable color monogram badge ("GC", "Z") so views are told apart at a glance; the active one is marked with a check.
+- The trigger shows the active view's badge and name only. The role moved into the menu's second line, which fixes the "Goldline Cosmetics · Compa…" truncation.
+- Rebuilt on Base UI Menu (radio items, keyboard + screen-reader semantics, portal so it's never clipped, origin-aware 150 ms entry) instead of the hand-rolled dropdown and click-catcher overlay. A spinner replaces the chevron while switching.
+- Decision: the order is display-only (`groupViews` in `src/view-switcher.ts`); `membershipViews` keeps its order because default-view resolution depends on it. Colors: Goldline is fixed to gold and Zoomy to green, any other company gets a stable hue from its id (`companyHue`), in light and dark variants. No company has `theme` set yet; a brand color there can override this later.
+- Tested (`src/view-switcher.test.ts`). Design skills: impeccable (detector: no findings) + emil-design-eng. typecheck + full suite (2450) pass.
+
 ## 2026-10-06 — Goldline uploads: the real cause of "couldn't process this scan"
 - Read from the new `gl_uploads.error_detail`: every PDF failed with `400 output_config.format.schema: For 'integer' type, properties maximum, minimum are not supported`. The page-detect schema (`PAGE_DETECT_SCHEMA`) put `minimum: 0, maximum: 6` on the page integer, which structured outputs reject. Removed the bounds; `detectPage` already clamps to 0–6. The earlier "document-only message" diagnosis (below) was wrong; that change is harmless and stays. Tests now assert neither schema carries numeric bounds.
 - Not a credits problem. `humanizeExtractError` now names an out-of-credits account plainly ("Automatic reading is paused…") instead of falling to the generic message.
