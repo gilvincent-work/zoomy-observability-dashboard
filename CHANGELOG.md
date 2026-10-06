@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Switching views takes you to that view's home
+- Bug: changing the view in the header switcher kept you on the current page. Switching from Goldline to Zoomy while on `/uploads` showed Zoomy's (empty) uploads inside the Zoomy nav. The switcher now navigates to the new view's home: Zoomy → `/`, Goldline (and other companies) → `/overview`, Coop Admin → `/admin/users`.
+- Review (code-reviewer): no critical, high or medium issues, and no redirect loop (`/` only redirects non-Zoomy views). Applied the lows: dropped a redundant refresh that could flash the old page, ignore unknown view keys, and keep the switcher pending until the new page starts rendering.
+- **View-switch animation** (multi-role users; only they have the switcher). Picking a view veils the page with a soft blur, and a card with the destination's wordmark or badge ("Switching to Goldline Cosmetics…") eases in: 200 ms, strong ease-out, scale 0.96 → 1. It fades out faster (150 ms) once the new view has rendered, which reads as a crossfade between tenants. Reduced motion keeps only a short fade. Announced via `role="status"`. The exit waits until the switch has actually been pending, and an 8 s safety net means the veil can never stick. Review fixes: if the switch never registers as loading it exits after 1.5 s (not 8 s); announced via a persistent live region (the overlay itself is aria-hidden); exit fade aligned to the removal timer. The shell stays mounted across navigation, so the overlay can't be cut short.
+- `homeFor` now knows Zoomy's home too. Before, a Zoomy user bounced off a Coop-Admin-only page landed on the company `/overview`; it now goes to `/`. Tested.
+
 ## 2026-10-07 — One shell, two brands: company wordmarks in the switcher
 - Plan §07i: the only per-company difference a user sees is the logo and the data behind it.
   - The header view switcher shows the active company's wordmark: Zoomy's red **Zoomy!** over "TREATS", Goldline's light, wide-tracked **NICHIDO**. The company name stays in the accessible label.
