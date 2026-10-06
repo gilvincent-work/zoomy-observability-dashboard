@@ -3,7 +3,7 @@
 import {revalidatePath} from 'next/cache';
 import {getDataContext} from '@/src/active-context';
 import {canEditData, outOfScopeStores} from '@/src/company';
-import {commitInventory, getUpload, type ReviewedInventoryRow} from '@/src/goldline-data';
+import {commitInventory, deleteUpload, getUpload, type ReviewedInventoryRow} from '@/src/goldline-data';
 
 // Server action behind the review screen's "Commit" button. Re-derives the tenant
 // context server-side (never trusts a company id from the client beyond the switcher
@@ -44,6 +44,22 @@ function coerceRow(r: unknown): ReviewedInventoryRow | null {
     delivery: toIntOrNull(o.delivery),
     ending_on_hand: toIntOrNull(o.ending_on_hand),
   };
+}
+
+/** Delete an upload (file + staged extraction + row), scoped to the active company. */
+export async function deleteUploadAction(input: {company: string | null; uploadId: string}): Promise<CommitResult> {
+  const ctx = await getDataContext(input.company);
+  if (!ctx || !ctx.companyId) return {ok: false, error: 'Not authorized.'};
+  if (!canEditData(ctx.role)) return {ok: false, error: 'Your role cannot delete uploads.'};
+  try {
+    const ok = await deleteUpload(ctx.companyId, input.uploadId);
+    if (!ok) return {ok: false, error: 'Upload not found.'};
+    revalidatePath('/uploads');
+    return {ok: true, committed: 0};
+  } catch (e) {
+    console.error('deleteUploadAction', e);
+    return {ok: false, error: 'Could not delete the upload — please try again.'};
+  }
 }
 
 export async function commitReview(input: {

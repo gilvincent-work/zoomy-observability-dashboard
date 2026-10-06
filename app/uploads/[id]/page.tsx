@@ -2,6 +2,7 @@ import {notFound} from 'next/navigation';
 import {getDataContext} from '@/src/active-context';
 import {canEditData} from '@/src/company';
 import {getExtraction, getUpload} from '@/src/goldline-data';
+import {MANIFESTS} from '@/src/goldline-extract';
 import {UploadReview} from '@/components/analyst/upload-review';
 
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,10 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
   // Same-origin proxy (streams the private file) so the browser can embed it in an
   // <iframe> under the app CSP; null when there's no stored file.
   const scanUrl = upload.storage_path ? `/api/goldline/uploads/${upload.id}/file` : null;
+  // Product names come from the detected page's manifest (item_code → printed product),
+  // so the reviewer sees names next to the codes.
+  const productNames: Record<string, string> = {};
+  for (const item of MANIFESTS[extraction?.page ?? 0] ?? []) productNames[item.code] = item.product;
   return (
     <UploadReview
       company={ctx.companyId}
@@ -34,6 +39,7 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
       upload={upload}
       extraction={extraction}
       scanUrl={scanUrl}
+      productNames={productNames}
     />
   );
 }

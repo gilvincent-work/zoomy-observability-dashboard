@@ -55,7 +55,11 @@ async function recordSignIn(email?: string | null) {
 
 export const {handlers, auth, signIn, signOut} = NextAuth({
   providers: [Google],
-  pages: {signIn: '/signin'},
+  // Trust the deployment host (Vercel staging/prod custom domains) so the OAuth
+  // callback resolves the right origin instead of bouncing to the Configuration
+  // error page. Auth errors land on /signin, not the raw Auth.js error screen.
+  trustHost: true,
+  pages: {signIn: '/signin', error: '/signin'},
   // Shorter-lived JWT sessions bound how long a stale membership snapshot can live;
   // updateAge rolls the token (and triggers the jwt refresh) ~every 5 min of activity.
   session: {strategy: 'jwt', maxAge: 8 * 60 * 60, updateAge: 5 * 60},
