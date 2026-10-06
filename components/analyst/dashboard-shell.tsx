@@ -9,7 +9,7 @@ import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
-import {CompanySwitcher} from './company-switcher';
+import {ViewSwitcher} from './company-switcher';
 import {shouldRedirectFromZoomy} from '@/src/company-nav';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
@@ -90,7 +90,12 @@ export function DashboardShell({
   user?: {name?: string | null; email?: string | null; image?: string | null};
   /** Tenant chrome: active company + companies to switch between. Absent = the
    *  single-tenant (Zoomy) path, which renders exactly as before. */
-  nav?: {companyId: string | null; isCoopAdmin: boolean; companies: {id: string; name: string}[]};
+  nav?: {
+    activeKey: string;
+    companyId: string | null;
+    isCoopAdmin: boolean;
+    views: {key: string; companyId: string | null; role: string; name: string}[];
+  };
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || '/';
@@ -186,26 +191,32 @@ export function DashboardShell({
     if (overviewGroupActive) setOverviewOpen(true);
   }, [overviewGroupActive]);
 
-  // Per-company nav. nav absent => legacy single-tenant Zoomy (incl. local dev-auth
-  // bypass, where nav is null). nav present => the same rule the server guard uses:
-  // Zoomy passes, everyone else (Goldline, or the data-blind Coop Admin whose
-  // companyId is null) is non-Zoomy. Non-Zoomy gets ONLY their own tab (Uploads);
-  // the Zoomy-specific tabs are hidden (and the pages are guarded server-side too).
+  // Per-view nav. nav absent => legacy single-tenant Zoomy (incl. local dev-auth
+  // bypass). Zoomy keeps its exact legacy tabs. The data-blind Coop Admin view gets
+  // the role console; any other company view (Goldline) gets its own tabs. Pages are
+  // guarded server-side regardless. The active view drives all of this.
   const isZoomy = !shouldRedirectFromZoomy(nav ?? null);
-  const showUploads = !isZoomy;
-  const activeName = nav?.isCoopAdmin
-    ? 'Coop Admin'
-    : (nav?.companies.find((c) => c.id === nav?.companyId)?.name ?? 'Zoomy');
+  const showUploads = !isZoomy; // Ask Coop (Zoomy-only) is hidden for non-Zoomy views
+  const isCoopAdminView = Boolean(nav?.isCoopAdmin);
+  const activeView = nav?.views.find((v) => v.key === nav.activeKey);
+  const activeName = isCoopAdminView ? 'Coop Admin' : (activeView?.name ?? 'Zoomy');
+
   const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
   const overviewTab: NavItem = {href: '/overview', label: 'Overview', icon: BarChart3};
   const storesTab: NavItem = {href: '/stores', label: 'Stores', icon: Store};
+  const accountTab: NavItem = {href: '/account', label: 'Your access', icon: Settings};
+  const usersTab: NavItem = {href: '/admin/users', label: 'Users & Roles', icon: Users};
+
   const overviewChildren = isZoomy ? OVERVIEW_CHILDREN : [];
-  const flatTabs = isZoomy ? FLAT_TABS : [overviewTab, uploadsTab, storesTab];
+  const flatTabs = isZoomy
+    ? FLAT_TABS
+    : isCoopAdminView
+      ? [usersTab, accountTab]
+      : [overviewTab, uploadsTab, storesTab, accountTab];
 
   // ── Mobile nav model (below md only) ──────────────────────────────────────
-  // The left rail is hidden under md; these drive a bottom tab bar (5 primary
-  // destinations) + a "More" sheet for the rest. Reuses leafActive so highlight
-  // logic is identical to the rail. Desktop never renders any of this (md:hidden).
+  // The left rail is hidden under md; these drive a bottom tab bar + a "More" sheet.
+  // Reuses leafActive so highlight logic matches the rail. Desktop never renders this.
   const mobileTabs = isZoomy
     ? [
         {href: '/', label: 'Home', icon: Home, active: leafActive('/', pathname, channel)},
@@ -213,11 +224,16 @@ export function DashboardShell({
         {href: '/inventory', label: 'Inventory', icon: Package, active: leafActive('/inventory', pathname, channel)},
         {href: '/offline-sales', label: 'Offline', icon: Receipt, active: leafActive('/offline-sales', pathname, channel)},
       ]
-    : [
-        {href: '/overview', label: 'Overview', icon: BarChart3, active: leafActive('/overview', pathname, channel)},
-        {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
-        {href: '/stores', label: 'Stores', icon: Store, active: leafActive('/stores', pathname, channel)},
-      ];
+    : isCoopAdminView
+      ? [
+          {href: '/admin/users', label: 'Users', icon: Users, active: leafActive('/admin/users', pathname, channel)},
+          {href: '/account', label: 'Access', icon: Settings, active: leafActive('/account', pathname, channel)},
+        ]
+      : [
+          {href: '/overview', label: 'Overview', icon: BarChart3, active: leafActive('/overview', pathname, channel)},
+          {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
+          {href: '/stores', label: 'Stores', icon: Store, active: leafActive('/stores', pathname, channel)},
+        ];
   const moreItems: NavItem[] = isZoomy
     ? [
         {href: '/health', label: 'Business Health', icon: Gauge},
@@ -229,7 +245,9 @@ export function DashboardShell({
         {href: '/repricer', label: 'Repricer', icon: Tag},
         {href: '/settings', label: 'Settings', icon: Settings},
       ]
-    : [];
+    : isCoopAdminView
+      ? []
+      : [accountTab];
   const moreActive = moreItems.some((i) => leafActive(i.href, pathname, channel));
 
   return (
@@ -248,12 +266,12 @@ export function DashboardShell({
           </span>
         </Link>
 
-        {/* Company switcher. A real switcher when the user has >1 company; otherwise
-            a static pill showing the active company (Zoomy by default). Hidden on the
-            narrowest screens so the mobile header doesn't overflow. */}
-        {nav && nav.companies.length > 1 ? (
+        {/* View switcher. A real switcher when the user holds >1 view (company role(s)
+            and/or Coop Admin); otherwise a static pill showing the active view. Hidden
+            on the narrowest screens so the mobile header doesn't overflow. */}
+        {nav && nav.views.length > 1 ? (
           <div className="ml-1 max-sm:hidden">
-            <CompanySwitcher companies={nav.companies} activeId={nav.companyId} />
+            <ViewSwitcher views={nav.views} activeKey={nav.activeKey} />
           </div>
         ) : (
           <button

@@ -2,12 +2,30 @@ import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import {fetchMemberships, type Membership} from '@/src/company';
 
-// Optional allowlist — comma-separated emails permitted to sign in. If empty,
-// any Google account is allowed (fine for a private/staging URL; set it for prod).
-const ALLOWED = (process.env.ALLOWED_EMAILS || '')
-  .split(',')
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
+// Access is membership-driven (v2): a user may sign in only if a Coop Admin has
+// granted them a role in company_users. No email allowlist — the first Coop Admin is
+// seeded directly in the DB. See src/admin-data.ts for the grant path.
+
+// Flip any `invited` memberships for this email to `active` on first sign-in, so a
+// pre-granted email shows as active once the person actually arrives. Fail-soft.
+async function activateInvites(email?: string | null) {
+  const addr = email?.toLowerCase();
+  const url = process.env.SUPABASE_URL_ARCHIVE;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE;
+  if (!addr || !url || !key) return;
+  try {
+    await fetch(
+      `${url}/rest/v1/company_users?user_email=eq.${encodeURIComponent(addr)}&status=eq.invited`,
+      {
+        method: 'PATCH',
+        headers: {apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json', prefer: 'return=minimal'},
+        body: JSON.stringify({status: 'active'}),
+      },
+    );
+  } catch {
+    // never block sign-in on a bookkeeping failure
+  }
+}
 
 // Record a Coop sign-in into pos_dashboard_users so the low-stock email can reach
 // everyone who actually uses the dashboard. Fires in the Node OAuth-callback route
@@ -38,15 +56,16 @@ async function recordSignIn(email?: string | null) {
 export const {handlers, auth, signIn, signOut} = NextAuth({
   providers: [Google],
   pages: {signIn: '/signin'},
+  // Shorter-lived JWT sessions bound how long a stale membership snapshot can live;
+  // updateAge rolls the token (and triggers the jwt refresh) ~every 5 min of activity.
+  session: {strategy: 'jwt', maxAge: 8 * 60 * 60, updateAge: 5 * 60},
   callbacks: {
-    // Gate who may sign in. Two allowed paths during the tenancy migration:
-    //   1. ALLOWED_EMAILS (legacy) — kept so no current user loses access.
-    //   2. membership in company_users (new) — anyone provisioned into a company.
-    // An empty ALLOWED_EMAILS still means "any Google account" (fine for staging).
+    // Gate who may sign in: membership-driven only. A user needs a non-suspended
+    // role in company_users (granted by a Coop Admin). No email allowlist.
     async signIn({profile}) {
       const email = profile?.email?.toLowerCase();
       if (!email) return false;
-      if (ALLOWED.length === 0 || ALLOWED.includes(email)) return true;
+      // Membership-driven: only a user a Coop Admin has granted a role may sign in.
       const memberships = await fetchMemberships(email);
       return memberships.length > 0;
     },
@@ -54,9 +73,15 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
     // resolve the active company without a per-request DB hit. `user` is only
     // present at sign-in; normal requests skip the fetch (edge-safe).
     async jwt({token, user, profile}) {
-      if (user) {
-        const email = (profile?.email ?? user.email ?? token.email ?? '').toLowerCase();
-        (token as {memberships?: Membership[]}).memberships = await fetchMemberships(email);
+      const t = token as {memberships?: Membership[]; mAt?: number; email?: string | null};
+      const email = (profile?.email ?? user?.email ?? t.email ?? '').toLowerCase();
+      // Refresh memberships at sign-in AND periodically (every ~5 min) so a revoked
+      // or role-changed membership stops taking effect quickly, rather than living in
+      // the JWT until it expires. Suspended rows are dropped by fetchMemberships.
+      const stale = typeof t.mAt !== 'number' || Date.now() - t.mAt > 5 * 60 * 1000;
+      if (email && (user || stale)) {
+        t.memberships = await fetchMemberships(email);
+        t.mAt = Date.now();
       }
       return token;
     },
@@ -73,9 +98,11 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
     },
   },
   events: {
-    // A successful sign-in — capture the email for the alert recipient list.
-    signIn({user}) {
-      return recordSignIn(user?.email);
+    // A successful sign-in — capture the email for the alert recipient list, and
+    // flip any pre-granted `invited` memberships to `active`.
+    async signIn({user}) {
+      await recordSignIn(user?.email);
+      await activateInvites(user?.email);
     },
   },
 });

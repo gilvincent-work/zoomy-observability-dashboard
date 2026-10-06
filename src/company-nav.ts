@@ -12,3 +12,9 @@
 export function shouldRedirectFromZoomy(ctx: {companyId: string | null} | null): boolean {
   return ctx !== null && ctx.companyId !== 'zoomy';
 }
+
+/** Where a non-Zoomy active view lands when bounced off a Zoomy-only route: the
+ *  data-blind Coop Admin goes to the role console, a company view to its overview. */
+export function homeFor(ctx: {isCoopAdmin: boolean} | null): string {
+  return ctx?.isCoopAdmin ? '/admin/users' : '/overview';
+}
