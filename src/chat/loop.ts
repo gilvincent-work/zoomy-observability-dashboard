@@ -4,6 +4,7 @@
 // system + tools prefix is identical on every request so the prompt cache holds.
 import type Anthropic from '@anthropic-ai/sdk';
 import {logNumberCheckFailed, logNumberViolation, logRegistryGap, logTurn, type AuditSink} from './audit';
+import {trailingRepeat} from './degenerate';
 import {checkNumbers} from './number-check';
 import {stripMarkdownTables} from './strip-tables';
 import {assertRequestShape} from './request-shape';
@@ -14,6 +15,7 @@ import {dispatchToolCall, RUN_QUERY_TOOL, type ToolExecutors, type ToolResult} f
 /** The only part of the Anthropic SDK the loop touches. The real `new Anthropic()` satisfies it. */
 export interface MessageStreamLike extends AsyncIterable<Anthropic.MessageStreamEvent> {
   finalMessage(): Promise<Anthropic.Message>;
+  abort?(): void;
 }
 export interface MessagesClient {
   messages: {
@@ -60,6 +62,7 @@ export interface ChatLoopSummary {
 
 export const REFUSAL_TEXT = "I can't help with that one.";
 export const CUT_OFF_TEXT = '\n\nThe answer was cut off.';
+export const DEGENERATE_TEXT = '\n\nThe answer got stuck repeating itself. Try asking again.';
 /** The default wall-clock budget of one turn: the route allows 60 s, so a graceful stop has 10 s of room. */
 export const CHAT_DEADLINE_MS = 50_000;
 /**
@@ -67,7 +70,7 @@ export const CHAT_DEADLINE_MS = 50_000;
  * tool-less composing step (stopReason 'wrapped_up') instead of running into the hard deadline with nothing to say.
  */
 export const TOOL_DEADLINE_MS = 30_000;
-export const WRAP_UP_TEXT = 'Time is short: answer now from the results above, and say what you could not check.';
+export const WRAP_UP_TEXT = 'Time is short: answer now from the results above, and say what you could not check. Plain text only: you cannot call tools now, so do not write tool calls or tags such as <render_chart>.';
 export const DEADLINE_TEXT = 'That took longer than I allow. Try a narrower question.';
 export const MAX_STEPS_TEXT = 'That took more steps than I allow. Try asking a narrower question.';
 // DASH-01 as a gate: the first time a step asks to render before any text was written, every render call in that step is
@@ -230,13 +233,36 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       };
       assertRequestShape(params, sink);
       const stream = client.messages.stream(params, {signal});
+      let degenerate = false;
       for await (const ev of stream) {
         if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
           if (ev.delta.text.trim() !== '') textSeen = true;
-          answer += ev.delta.text;
-          if (exploreUsed || exploreTurn) held += ev.delta.text; // held until the number check passes (EXP-04) and until the step is known to be the answer
-          else emit({t: 'text', d: ev.delta.text});
+          let d = ev.delta.text;
+          let trimHeld = 0;
+          answer += d;
+          // A runaway repeat ("<br> <br> ..."): keep one copy, stop reading, emit nothing more of it. Text already emitted live stays (< 20 repeats).
+          const rep = trailingRepeat(answer);
+          if (rep) {
+            const cut = answer.length - (rep.start + rep.unit);
+            answer = answer.slice(0, answer.length - cut);
+            d = d.slice(0, Math.max(0, d.length - cut));
+            trimHeld = cut;
+            degenerate = true;
+          }
+          if (exploreUsed || exploreTurn) held = (held + ev.delta.text).slice(0, (held + ev.delta.text).length - trimHeld); // held until the number check passes (EXP-04) and until the step is known to be the answer
+          else if (d !== '') emit({t: 'text', d});
+          if (degenerate) {
+            stream.abort?.();
+            break;
+          }
         }
+      }
+      if (degenerate) {
+        stepMs.push(clock() - stepStart);
+        await backstop();
+        releaseHeld(false);
+        emit({t: 'text', d: DEGENERATE_TEXT});
+        return finish('degenerate', true);
       }
       res = await stream.finalMessage();
       stepMs.push(clock() - stepStart);

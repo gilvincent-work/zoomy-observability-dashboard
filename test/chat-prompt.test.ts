@@ -152,4 +152,9 @@ describe('explore variants of the period rule and the guardrails (spec 6.4)', ()
     expect(buildStaticSystem({tools: true, explore: true})).toBe(on); // cache-stable
     expect(buildStaticSystem({tools: false, explore: true})).toBe(buildStaticSystem({tools: false})); // digest-only never promises a tool
   });
+  it('output rules forbid HTML tags and promising an unmade tool call', () => {
+    const p = buildCoopSystemPrompt(MOCK_DIGESTS);
+    expect(p).toMatch(/never write HTML tags/i);
+    expect(p).toMatch(/unless you call the tool for it in the same step/);
+  });
 });
