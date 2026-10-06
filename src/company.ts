@@ -13,13 +13,45 @@
 // RLS on company_users/companies is the backstop for the day someone forgets.
 
 export type CompanyRole = 'coop_admin' | 'company_admin' | 'analyst' | 'store_manager';
+export type MembershipStatus = 'active' | 'invited' | 'suspended';
 
 /** One row from company_users. `companyId` is null only for coop_admin (cross-tenant). */
 export type Membership = {
   companyId: string | null;
   role: CompanyRole;
   storeScope?: string[] | null;
+  status?: MembershipStatus;
 };
+
+/** The sentinel view key for the cross-tenant Coop Admin view (its companyId is null). */
+export const COOP_VIEW_KEY = 'coop_admin';
+
+/** Stable key identifying a membership as a selectable "view" (company id, or the sentinel). */
+export function viewKey(m: {companyId: string | null}): string {
+  return m.companyId ?? COOP_VIEW_KEY;
+}
+
+/** One selectable view a user can switch into. */
+export type MembershipView = {
+  key: string;
+  companyId: string | null;
+  role: CompanyRole;
+  storeScope?: string[] | null;
+};
+
+/** A user's views in a stable order: company memberships (by id) then the Coop Admin view. */
+export function membershipViews(memberships: Membership[]): MembershipView[] {
+  const companies = memberships
+    .filter((m) => m.companyId)
+    .sort((a, b) => (a.companyId as string).localeCompare(b.companyId as string));
+  const coop = memberships.filter((m) => !m.companyId);
+  return [...companies, ...coop].map((m) => ({
+    key: viewKey(m),
+    companyId: m.companyId,
+    role: m.role,
+    storeScope: m.storeScope ?? null,
+  }));
+}
 
 /** The resolved tenant context for a request: which company is active and what it may do. */
 export type ActiveContext = {
@@ -46,43 +78,36 @@ export function canEditData(role: CompanyRole): boolean {
   return role === 'company_admin' || role === 'store_manager';
 }
 
-/** Can this role manage its company's team (invite/suspend members)? */
-export function canManageTeam(role: CompanyRole): boolean {
-  return role === 'company_admin';
+/** Only a Coop Admin may grant/change/revoke roles (v1: no company self-serve). */
+export function canManageRoles(role: CompanyRole): boolean {
+  return role === 'coop_admin';
 }
 
 /**
- * Resolve the active tenant context from a user's memberships.
+ * Resolve the active tenant context from a user's memberships + the view they picked.
  *
- * - A coop_admin membership (companyId null) always resolves to the data-blind
- *   cross-tenant context, regardless of `requested` — the operator has no data view.
- * - Otherwise pick the requested company if the user is a member of it, else the
- *   first company membership (stable: callers should pass the user's chosen slug).
+ * Multi-role (v2): the active view is the user's CHOICE, not forced. `requested` is a
+ * view key (a company id, or the `coop_admin` sentinel) — typically from the
+ * `active_view` cookie / switcher. Coop Admin is just one selectable view: when it's
+ * active the context is data-blind; a company view sees that company's data.
+ * - Picks the requested view if the user holds it, else the first view (stable order).
  * - Returns null when the user has no memberships (not allowed in).
  */
 export function resolveActive(
   memberships: Membership[],
   requested?: string | null,
 ): ActiveContext | null {
-  if (!memberships.length) return null;
+  const views = membershipViews(memberships);
+  if (!views.length) return null;
 
-  const coop = memberships.find((m) => m.role === 'coop_admin');
-  if (coop) {
-    return {companyId: null, role: 'coop_admin', isCoopAdmin: true, canSeeData: false};
-  }
-
-  const companyMemberships = memberships.filter((m) => m.companyId);
-  if (!companyMemberships.length) return null;
-
-  const chosen =
-    (requested && companyMemberships.find((m) => m.companyId === requested)) ||
-    companyMemberships[0];
+  const chosen = (requested && views.find((v) => v.key === requested)) || views[0];
+  const dataView = chosen.role !== 'coop_admin' && Boolean(chosen.companyId);
 
   return {
     companyId: chosen.companyId,
     role: chosen.role,
-    isCoopAdmin: false,
-    canSeeData: true,
+    isCoopAdmin: chosen.role === 'coop_admin',
+    canSeeData: dataView,
     storeScope: chosen.storeScope ?? null,
   };
 }
@@ -139,7 +164,7 @@ export async function fetchMemberships(email?: string | null): Promise<Membershi
   if (!addr || !url || !key) return [];
   try {
     const res = await fetch(
-      `${url}/rest/v1/company_users?select=company_id,role,store_scope&user_email=eq.${encodeURIComponent(addr)}`,
+      `${url}/rest/v1/company_users?select=company_id,role,store_scope,status&user_email=eq.${encodeURIComponent(addr)}`,
       {headers: {apikey: key, authorization: `Bearer ${key}`}},
     );
     if (!res.ok) return [];
@@ -147,8 +172,13 @@ export async function fetchMemberships(email?: string | null): Promise<Membershi
       company_id: string | null;
       role: CompanyRole;
       store_scope: string[] | null;
+      status: MembershipStatus | null;
     }>;
-    return rows.map((r) => ({companyId: r.company_id, role: r.role, storeScope: r.store_scope}));
+    // Suspended memberships grant nothing; active + invited are usable (an invite
+    // flips to active on first sign-in). `status` may be absent on very old rows → treat as active.
+    return rows
+      .map((r) => ({companyId: r.company_id, role: r.role, storeScope: r.store_scope, status: r.status ?? 'active'}))
+      .filter((m) => m.status !== 'suspended');
   } catch {
     return [];
   }
