@@ -26,11 +26,17 @@ describe('audit log', () => {
     expect(JSON.parse(err.mock.calls[0][0] as string)).toMatchObject({event: 'chat_guard_trip', layer: 'tool_allowlist', detail: {name: 'update_price'}, user: 'u'});
   });
 
+  it('chat_turn carries per-step and per-tool-batch durations (numbers only)', () => {
+    const sink = {info: vi.fn(), error: vi.fn()};
+    logTurn({steps: 2, usage: {input: 1, output: 1, cacheRead: 0, cacheWrite: 0}, ms: 50, stopReason: 'end_turn', stepMs: [20, 25], toolMs: [5]}, sink);
+    expect(JSON.parse(sink.info.mock.calls[0][0] as string)).toMatchObject({step_ms: [20, 25], tool_ms: [5]});
+  });
+
   it('logs one chat_turn JSON line', () => {
     const sink = {info: vi.fn(), error: vi.fn()};
     logTurn({steps: 2, usage: {input: 10, output: 5, cacheRead: 100, cacheWrite: 0}, ms: 1234, stopReason: 'end_turn', user: 'a@b.c'}, sink);
     expect(sink.info).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(sink.info.mock.calls[0][0] as string)).toEqual({event: 'chat_turn', steps: 2, usage: {input: 10, output: 5, cacheRead: 100, cacheWrite: 0}, ms: 1234, stopReason: 'end_turn', user: 'a@b.c', ts: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)});
+    expect(JSON.parse(sink.info.mock.calls[0][0] as string)).toEqual({event: 'chat_turn', steps: 2, usage: {input: 10, output: 5, cacheRead: 100, cacheWrite: 0}, ms: 1234, stopReason: 'end_turn', step_ms: [], tool_ms: [], user: 'a@b.c', ts: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)});
   });
 
   it('redacts secret-looking keys, nested too', () => {

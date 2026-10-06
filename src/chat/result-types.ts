@@ -14,7 +14,7 @@ export type MetricId =
   | 'bundle_picks';
 
 /** What a stored result may be: a registry metric, or one of the lookup tools' results (F10). Only registry metrics can be re-run or saved. */
-export type ResultMetricId = MetricId | 'digest' | 'product_lookup';
+export type ResultMetricId = MetricId | 'digest' | 'product_lookup' | 'explore';
 
 export type PetKey = 'dog' | 'cat' | 'both' | 'untagged';
 
@@ -108,6 +108,8 @@ export interface ResultMeta {
   insights: Insight[];
   checks: Check[];
   reliable: boolean; // false when any check is 'fail'
+  /** Set only on an Explore (run_query) result: the label the block shows, the SQL for the disclosure (never given to the model), a code-written coverage note and lint warnings. */
+  exploratory?: {label: string; sql: string; coverage_note: string; warnings: string[]};
 }
 
 export interface MetricResult {

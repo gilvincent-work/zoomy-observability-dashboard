@@ -131,7 +131,10 @@ describe('Slice 4 #1: Save creates the report and version 1 from a draft', () =>
     const a = await saveReport({spec: draft(), title: '  Weekly   <i>view</i>  ', visibility: 'private'});
     if (!a.ok) throw new Error(a.error);
     expect(h.db.reportById(a.id)).toMatchObject({title: 'Weekly <i>view</i>', visibility: 'private'});
-    expect(await saveReport({spec: draft([kpiBlock('b1')], {title: ''})})).toEqual({ok: false, error: 'Give the report a title.'});
+    // A blank title never blocks saving (the model may not have named the dashboard): the first block title is used.
+    const t1 = await saveReport({spec: draft([chartBlock('b1')], {title: ''})});
+    if (!t1.ok) throw new Error(t1.error);
+    expect(String(h.db.reportById(t1.id)?.title).length).toBeGreaterThan(0);
     const long = await saveReport({spec: draft(), title: 'y'.repeat(300)});
     if (!long.ok) throw new Error(long.error);
     expect(String(h.db.reportById(long.id)?.title)).toHaveLength(120);

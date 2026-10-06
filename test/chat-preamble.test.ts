@@ -23,8 +23,17 @@ describe('buildPreamble', () => {
     const p = buildPreamble(data(), now);
     expect(p).toContain('Thursday, 1 October 2026');
     expect(p).toContain('live and covers 11 Sep 2026 to 27 Sep 2026 (3 completed orders; 33% have no pet tag)');
-    expect(p).toMatch(/Traffic.*Meta ads.*Shopee.*customer-level/);
+    expect(p).toMatch(/Traffic.*Meta ads.*Shopee/);
     expect(p).toMatch(/outside this range/);
+  });
+
+  it('does not forbid pet and event questions as "customer-level data"', () => {
+    const p = buildPreamble(data(), now);
+    expect(p).not.toMatch(/customer-level/i);
+    expect(p).toMatch(/Contact details \(email, phone, instagram\) are not exposed/);
+    expect(p).toMatch(/Pet type and event ARE available/);
+    expect(p).toMatch(/free-form query tool is planned, not available yet/);
+    expect(buildDegradedPreamble(now)).not.toMatch(/customer-level/i);
   });
 
   it('is deterministic', () => {

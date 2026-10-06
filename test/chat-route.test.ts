@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   sdkKeys: [] as (string | undefined)[],
   sdkFail: false,
   loopOpts: [] as {deadlineMs?: number; signal?: AbortSignal}[],
+  exploreRuns: [] as string[],
 }));
 
 vi.mock('server-only', () => ({}));
@@ -89,6 +90,14 @@ vi.mock('@/src/chat/preamble', async () => await import('../src/chat/preamble'))
 vi.mock('@/src/chat/report-session', async () => await import('../src/chat/report-session'));
 vi.mock('@/src/chat/tool-defs', async () => await import('../src/chat/tool-defs'));
 vi.mock('@/src/chat/tool-executors', async () => await import('../src/chat/tool-executors'));
+// Explore: the real gate and executor, but the driver is a fake that records what it is asked (never a real connection).
+vi.mock('@/src/chat/explore-setup', async () => {
+  const real = await import('../src/chat/explore-setup');
+  return {
+    setupExplore: (a: Parameters<typeof real.setupExplore>[0]) =>
+      real.setupExplore({...a, runQuery: async (sent) => { h.exploreRuns.push(sent); return {columns: [], rows: [], fetched: 0, ms: 1}; }}),
+  };
+});
 vi.mock('@/src/dev-auth', async () => await import('../src/dev-auth'));
 
 const USER = {user: {email: 'owner@example.test'}};
@@ -125,6 +134,8 @@ beforeEach(() => {
   h.sdkKeys.length = 0;
   h.sdkFail = false;
   h.loopOpts.length = 0;
+  h.exploreRuns.length = 0;
+  vi.stubEnv('EXPLORE_MODE', '');
   vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-not-a-real-key');
   vi.stubEnv('DEV_AUTH_BYPASS', '');
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -427,5 +438,58 @@ describe('POST /api/chat: degraded mode (live data not available)', () => {
     const text = await drain(await post(ask()));
     expect(text).not.toContain('read-only database role');
     expect(JSON.stringify(lastRequest())).not.toContain('read-only database role');
+  });
+});
+
+describe('POST /api/chat: Explore gating (fail closed)', () => {
+  const ON = () => {
+    vi.stubEnv('EXPLORE_MODE', 'on');
+    vi.stubEnv('EXPLORE_DATABASE_URL', 'postgres://coop_explore_ro:pw@127.0.0.1:54421/postgres');
+    vi.stubEnv('EXPLORE_ALLOWED_EMAILS', 'owner@example.test');
+  };
+  const toolNames = (p: Record<string, unknown>) => (p.tools as {name: string}[]).map((t) => t.name);
+
+  it('off by default: ten tools, no run_query, no exploratory prompt block, no coverage query', async () => {
+    await drain(await post(ask()));
+    expect(toolNames(lastRequest())).toEqual(CHAT_TOOLS.map((t) => t.name));
+    expect(systemOf(lastRequest())[0].text).toBe(buildStaticSystem({tools: true}));
+    expect(systemOf(lastRequest())[0].text).not.toMatch(/coop_explore_/);
+    expect(h.exploreRuns).toEqual([]);
+  });
+
+  it('on for an allowed user: run_query is the 11th tool, the prompt has the catalog and the all-available-data rule, and the preamble carries the coverage line source', async () => {
+    ON();
+    await drain(await post(ask()));
+    expect(toolNames(lastRequest())).toContain('run_query');
+    expect(toolNames(lastRequest())).toHaveLength(11);
+    expect(systemOf(lastRequest())[0].text).toBe(buildStaticSystem({tools: true, explore: true}));
+    expect(systemOf(lastRequest())[1].text).toBe(buildLiveContextBlock({explore: true}));
+    expect(h.exploreRuns).toHaveLength(1); // the fixed coverage statement, wrapped in the cursor, through the injected driver
+    expect(h.exploreRuns[0]).toMatch(/^DECLARE coop_explore_c NO SCROLL CURSOR FOR with oc as/);
+    const explicitBreakpoints = JSON.stringify(lastRequest()).match(/"cache_control":\{"type":"ephemeral"\}/g) ?? [];
+    expect(explicitBreakpoints.length).toBeLessThanOrEqual(4); // last tool + 2 system blocks + the automatic one
+  });
+
+  it('on but the signed-in user is not on the Explore list: nothing changes', async () => {
+    ON();
+    vi.stubEnv('EXPLORE_ALLOWED_EMAILS', 'someone.else@example.test');
+    await drain(await post(ask()));
+    expect(toolNames(lastRequest())).toHaveLength(10);
+    expect(h.exploreRuns).toEqual([]);
+  });
+
+  it('on with a URL that is not the Explore role (a service URL pasted by mistake): off', async () => {
+    ON();
+    vi.stubEnv('EXPLORE_DATABASE_URL', 'postgres://postgres:pw@127.0.0.1:54421/postgres');
+    await drain(await post(ask()));
+    expect(toolNames(lastRequest())).toHaveLength(10);
+  });
+
+  it('on but the live read path is degraded (digest-only): no tools at all, so no run_query', async () => {
+    ON();
+    h.live = {ok: false, reason: 'degraded'};
+    await drain(await post(ask()));
+    expect(lastRequest().tools).toBeUndefined();
+    expect(h.exploreRuns).toEqual([]);
   });
 });

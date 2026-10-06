@@ -5,7 +5,7 @@ vi.mock('server-only', () => ({}));
 import {buildCoopSystemPrompt, buildDigestBlock, buildLiveContextBlock, buildStaticSystem} from '../src/chat/context';
 import {READ_ONLY_STATEMENT} from '../src/chat/read-only-statement';
 import {buildStaticCatalog} from '../src/chat/preamble';
-import {COOP_CHAT} from '../src/chat/config';
+import {COOP_CHAT, buildGuardrails} from '../src/chat/config';
 import {MOCK_DIGESTS} from '../src/mock';
 
 describe('system prompt carries the read-only statement', () => {
@@ -114,5 +114,42 @@ describe('live context block: the owner defines the dates (no digest anchoring)'
     expect(t).not.toMatch(/Selected period|```json/);
     expect(t).not.toMatch(/\d{4}-\d{2}-\d{2}|₱\s?\d/); // static text: no dates, no figures
     expect(buildLiveContextBlock()).toBe(t); // byte-identical: cache-friendly
+  });
+});
+
+describe('explore variants of the period rule and the guardrails (spec 6.4)', () => {
+  it('the non-explore period text is unchanged and still says to ask which dates', () => {
+    expect(buildLiveContextBlock({})).toBe(buildLiveContextBlock());
+    expect(buildLiveContextBlock()).toMatch(/If a question has no period, ask which dates before using any tool\./);
+  });
+  it('the explore period text makes a ranking or profile question with no period mean all available data', () => {
+    const t = buildLiveContextBlock({explore: true});
+    expect(t).toMatch(/all available data/);
+    expect(t).toMatch(/ranking, profile or "most\/least"/);
+    expect(t).not.toMatch(/\d{4}-\d{2}-\d{2}|₱\s?\d/);
+    expect(buildLiveContextBlock({explore: true})).toBe(t);
+  });
+  it('non-explore guardrails stay byte-identical to the constant; explore swaps exactly two lines', () => {
+    expect(buildGuardrails()).toBe(COOP_CHAT.guardrails);
+    expect(COOP_CHAT.guardrails).toMatch(/customer-level data are not available/);
+    expect(COOP_CHAT.guardrails).toMatch(/Customer names in the data are already masked/);
+    const ex = buildGuardrails({explore: true});
+    expect(ex).not.toMatch(/customer-level|already masked/);
+    expect(ex).toMatch(/Customer contact details \(email, phone, instagram\) can appear in exploratory results/);
+    const a = COOP_CHAT.guardrails.split('\n');
+    const b = ex.split('\n');
+    expect(b.length).toBe(a.length);
+    expect(b.filter((l, i) => l !== a[i]).length).toBe(2);
+  });
+  it('buildStaticSystem: explore carries the guardrail swap, the exploratory catalog and examples; the default does not', () => {
+    const off = buildStaticSystem();
+    const on = buildStaticSystem({tools: true, explore: true});
+    expect(off).toMatch(/customer-level data are not available/);
+    expect(off).not.toMatch(/run_query|coop_explore_/);
+    expect(on).toMatch(/coop_explore_orders/);
+    expect(on).toMatch(/Exploratory, not a registered metric/);
+    expect(on).not.toMatch(/already masked/);
+    expect(buildStaticSystem({tools: true, explore: true})).toBe(on); // cache-stable
+    expect(buildStaticSystem({tools: false, explore: true})).toBe(buildStaticSystem({tools: false})); // digest-only never promises a tool
   });
 });

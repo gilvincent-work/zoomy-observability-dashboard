@@ -104,6 +104,12 @@ describe('ariaSummary', () => {
     expect(ariaSummary(groupedVertical)).toContain('Dog, Cat, Both');
     expect(ariaSummary(donut4)).toContain('pie chart');
   });
+  it('names at most 3 series, then "and N more" (a pivot of many columns stays readable)', () => {
+    const many = {...groupedVertical, kind: 'chart' as const, chart: {...(groupedVertical as {chart: object}).chart, series: ['a', 'b', 'c', 'd', 'e'].map((k) => ({key: k, label: k, unit: 'count', entity: k, color: 'chart-1'}))}} as unknown as typeof groupedVertical;
+    const s = ariaSummary(many);
+    expect(s).toContain('across 5 series (a, b, c, and 2 more)');
+    expect(s).not.toContain('d, e');
+  });
   it('summarises tiles and tables', () => {
     expect(ariaSummary(kpiRow[0])).toContain('₱128,400');
     expect(ariaSummary(kpiRow[3])).toContain('—');

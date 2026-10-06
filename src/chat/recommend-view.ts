@@ -73,6 +73,8 @@ function totalColumn(cols: ResultColumn[], rows: MetricRow[]): ResultColumn | nu
 
 /** A share column whose values add to about 100 means the rows are the parts of one whole. */
 function rowsAreWhole(result: MetricResult): boolean {
+  // An Explore result with several measures (weekday + orders + revenue + share): the share belongs to one of them, so the rows are not "the parts of the plotted measure".
+  if (result.meta.exploratory && result.columns.filter((c) => c.role === 'measure').length >= 2) return false;
   const share = result.columns.find((c) => c.role === 'share' && c.unit === 'percent');
   if (!share) return false;
   const values = result.rows.map((r) => num(r[share.key])).filter((v): v is number => v !== null);
@@ -315,7 +317,9 @@ function decideChart(f: Facts, mixed: boolean): BlockDecision[] {
   const keys = [x.key, ...parts.map((p) => p.key)];
   const slim = (r: MetricRow): MetricRow => Object.fromEntries(keys.map((k) => [k, r[k] ?? null]));
   const primary = parts[0];
-  const ordered = isTime ? sortAsc(rows, x.key) : form === 'diverging_bar' || parts.length === 1 ? sortDesc(rows, primary.key) : [...rows].sort((a, b) => parts.reduce((s, p) => s + (num(b[p.key]) ?? 0), 0) - parts.reduce((s, p) => s + (num(a[p.key]) ?? 0), 0));
+  // One category column, several measures, a short list (an Explore weekday + orders + revenue result): the SQL chose the order (a calendar order), so it is kept.
+  const keepOrder = result.meta.exploratory !== undefined && !isTime && parts.length === 1 && rows.length <= TABLE_MIN_CLASSES && result.columns.filter((c) => c.role === 'measure').length >= 2 && result.columns.filter((c) => c.role === 'category').length === 1;
+  const ordered = isTime ? sortAsc(rows, x.key) : keepOrder ? rows : form === 'diverging_bar' || parts.length === 1 ? sortDesc(rows, primary.key) : [...rows].sort((a, b) => parts.reduce((s, p) => s + (num(b[p.key]) ?? 0), 0) - parts.reduce((s, p) => s + (num(a[p.key]) ?? 0), 0));
 
   const out: BlockDecision[] = [];
   let drawn = ordered;
@@ -343,6 +347,89 @@ function decideChart(f: Facts, mixed: boolean): BlockDecision[] {
   return out;
 }
 
+/** The measure an auto chart plots when a result has several: the one the title names, else the first peso measure, else the first. */
+function pickMeasure(measures: ResultColumn[], title: string): ResultColumn {
+  const t = title.toLowerCase();
+  const named = measures.find((m) => {
+    const word = m.label.toLowerCase();
+    return word !== '' && t.includes(word);
+  });
+  return named ?? measures.find((m) => m.unit === 'PHP') ?? measures[0];
+}
+
+const TWO_DIM_KINDS = new Set<ViewRequest['kind']>(['auto', 'grouped_bar', 'stacked_bar', 'stacked_bar_100']);
+const NO_VALUE = 'No tag';
+
+/**
+ * Two category columns and one measure (an Explore result such as event by pet): the first dimension is the axis, the second is the
+ * series (grouped or stacked bars), ONE measure is drawn. Returns null when the shape does not fit (non-additive duplicates, ...), and
+ * the caller falls back to the one-dimension path. Only the x tail past TABLE_MIN_CLASSES and the series tail past SERIES_FOLD_AT fold
+ * into "Other", and only for additive measures; the table twin always has every row.
+ */
+function decideTwoDim(result: MetricResult, request: ViewRequest, pick: {y?: string[]; title?: string}): BlockDecision | null {
+  const cats = result.columns.filter((c) => c.role === 'category');
+  if (cats.length !== 2 || result.columns.some((c) => c.role === 'time') || !TWO_DIM_KINDS.has(request.kind)) return null;
+  const numeric = result.columns.filter(isNumericColumn);
+  const wanted = pick.y?.length ? pick.y.map((k) => numeric.find((c) => c.key === k)).filter((c): c is ResultColumn => c !== undefined) : [];
+  if (pick.y?.length && wanted.length !== 1) return null;
+  const measures = numeric.filter((c) => c.role === 'measure');
+  const m = wanted[0] ?? (measures.length ? pickMeasure(measures, pick.title ?? '') : undefined);
+  if (!m || m.role !== 'measure' || !ADDITIVE.has(m.unit) || result.meta.measures.some((d) => d.key === m.key && d.kind === 'derived')) return null;
+  const [xc, sc] = cats;
+  const name = (r: MetricRow, c: ResultColumn): string => (r[c.key] === null || r[c.key] === undefined || r[c.key] === '' ? NO_VALUE : String(r[c.key]));
+
+  const cells = new Map<string, Map<string, number[]>>();
+  for (const r of result.rows) {
+    const v = num(r[m.key]);
+    if (v === null) continue;
+    const row = cells.get(name(r, xc)) ?? new Map<string, number[]>();
+    row.set(name(r, sc), [...(row.get(name(r, sc)) ?? []), v]);
+    cells.set(name(r, xc), row);
+  }
+  if (cells.size === 0) return null;
+  const total = (vs: number[]): number => sumOf(vs, m.unit);
+  const seriesTotals = new Map<string, number>();
+  for (const row of cells.values()) for (const [s, vs] of row) seriesTotals.set(s, sumOf([seriesTotals.get(s) ?? 0, total(vs)], m.unit));
+  const seriesNames = [...seriesTotals.keys()].sort((a, b) => (seriesTotals.get(b) ?? 0) - (seriesTotals.get(a) ?? 0));
+  if (seriesNames.length < 2) return null;
+
+  const adj: string[] = [];
+  const keep = seriesNames.length > SERIES_FOLD_AT ? seriesNames.slice(0, SERIES_FOLD_AT - 1) : seriesNames;
+  const foldedSeries = keep.length < seriesNames.length;
+  const shown = foldedSeries ? [...keep, 'Other'] : keep;
+  const keyOf = (s: string): string => (s === xc.key ? `${s} ` : s); // a value named like the axis field must not overwrite it
+  let wide: MetricRow[] = [...cells].map(([xName, row]) => {
+    const out: MetricRow = {[xc.key]: xName};
+    for (const s of shown) {
+      const vs = s === 'Other' && foldedSeries ? seriesNames.filter((n) => !keep.includes(n)).flatMap((n) => row.get(n) ?? []) : (row.get(s) ?? []);
+      out[keyOf(s)] = vs.length ? total(vs) : null;
+    }
+    return out;
+  });
+  const sum = (r: MetricRow): number => sumOf(shown.map((s) => num(r[keyOf(s)]) ?? 0), m.unit);
+  wide = wide.sort((a, b) => sum(b) - sum(a));
+  let folded: {count: number; into: string} | null = null;
+  if (wide.length > TABLE_MIN_CLASSES) {
+    const f2 = foldTail(wide, xc.key, shown.map((s) => ({key: keyOf(s), label: s, unit: m.unit, role: 'measure' as const})), TABLE_MIN_CLASSES, true);
+    wide = f2.rows;
+    folded = f2.folded;
+    adj.push(`More than ${TABLE_MIN_CLASSES} ${xc.label.toLowerCase()} values: the table has all ${cells.size} and the chart shows the top ${TABLE_MIN_CLASSES} plus "Other" (the other ${f2.folded?.count}).`);
+  }
+  if (foldedSeries) adj.push(`Showing the top ${SERIES_FOLD_AT - 1} of ${seriesNames.length} ${sc.label.toLowerCase()} values and the rest as "Other". The table has every row.`);
+  const colors = colorMap(shown);
+  const series: Series[] = shown.map((s) => ({key: keyOf(s), label: s, unit: m.unit, entity: s, color: colors[s]}));
+  const form: ChartForm = request.kind === 'auto' ? autoForm('grouped', series.length) : (request.kind as ChartForm);
+  const orientation = orientationFor(request, wide.map((r) => cell(r, xc.key)), adj);
+  const reason = `${xc.label} by ${sc.label.toLowerCase()}: ${m.label.toLowerCase()} as ${form === 'grouped_bar' ? 'side-by-side' : 'stacked'} bars, one series per ${sc.label.toLowerCase()} value.`;
+  return {
+    block: 'chart',
+    chart: {form, orientation, x: {key: xc.key, label: xc.label, unit: xc.unit}, series, rows: wide, folded},
+    chosen: chosen(form, orientation, reason, adj, request),
+    twin: twinOf(result),
+    emphasis: null,
+  };
+}
+
 /** Group columns by unit: different units never share a chart. */
 function byUnit(cols: ResultColumn[]): ResultColumn[][] {
   const groups = new Map<ColumnUnit, ResultColumn[]>();
@@ -350,13 +437,14 @@ function byUnit(cols: ResultColumn[]): ResultColumn[][] {
   return [...groups.values()];
 }
 
-function autoY(result: MetricResult): ResultColumn[] {
+function autoY(result: MetricResult, title = ''): ResultColumn[] {
   const numeric = result.columns.filter(isNumericColumn);
   const delta = numeric.find((c) => c.role === 'delta');
   if (delta) return [delta];
   const measures = numeric.filter((c) => c.role === 'measure');
   if (measures.length === 0) return numeric.slice(0, 1);
-  const primary = measures.find((c) => c.key === result.meta.measure) ?? measures[0];
+  // An Explore result has no registered primary measure: the title's measure, else the first peso measure, else the first count.
+  const primary = result.meta.exploratory ? pickMeasure(measures, title) : (measures.find((c) => c.key === result.meta.measure) ?? measures[0]);
   const sameUnit = measures.filter((c) => c.unit === primary.unit);
   // Over time, several measures of one unit that are not derived ratios are comparable series (online channels and offline
   // sales week by week): draw them all together as lines, never only the primary one.
@@ -377,7 +465,7 @@ function autoY(result: MetricResult): ResultColumn[] {
  * slices get a note); tier C substituted with the nearest valid form and a reason (line over unordered categories,
  * pie of negatives or of non-parts, a chart of one number, mixed units).
  */
-export function recommendView(result: MetricResult, request: ViewRequest, pick: {x?: string; y?: string[]} = {}): ViewDecision {
+export function recommendView(result: MetricResult, request: ViewRequest, pick: {x?: string; y?: string[]; /** the block title, only used to choose between several measures */ title?: string} = {}): ViewDecision {
   const {columns, rows} = result;
   const col = (key: string): ResultColumn | undefined => columns.find((c) => c.key === key);
   if (rows.length === 0) return {decisions: [tableDecision(result, request, 'The result has no rows.')]};
@@ -401,8 +489,12 @@ export function recommendView(result: MetricResult, request: ViewRequest, pick: 
     };
   }
 
+  if (!pick.x) {
+    const two = decideTwoDim(result, request, pick);
+    if (two) return {decisions: [two]};
+  }
   const x = (pick.x ? col(pick.x) : undefined) ?? columns.find((c) => c.role === 'time') ?? columns.find((c) => c.role === 'category');
-  const ys = pick.y?.length ? pick.y.map(col).filter((c): c is ResultColumn => c !== undefined && isNumericColumn(c)) : autoY(result);
+  const ys = pick.y?.length ? pick.y.map(col).filter((c): c is ResultColumn => c !== undefined && isNumericColumn(c)) : autoY(result, pick.title ?? '');
   if (!x || ys.length === 0) return {decisions: [tableDecision(result, request, 'This is a detail listing, which reads best as a table.')]};
 
   const groups = byUnit(ys);
