@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Goldline catalog: product lines, prices and bestsellers for all 263 form items
+- `gl_products` now covers every item on the inventory form, pages 1–5: **263 items, all priced, in 56 product lines, with 47 bestsellers.** Before, only 6 placeholder rows existed. Inventory value, Overview categories and the coming forecast / Action Feed / Health all depend on this.
+- Source of truth is the blank Nichido templates: their text layer prints each family heading with its price, every item code and shade, and "(Bestseller)". `scripts/goldline/build-catalog.py` matches every manifest item (`src/goldline-extract.ts`) to its template line (accessories that share a printed "ACCS ###" code are matched by name), inherits the family heading and price (an item's own printed price wins), and treats items printed with their own price under another heading as their own product (outside Accessories / Make-Up Collection). 0 unmatched items.
+- `supabase/seed_goldline_catalog.sql` is an idempotent upsert on (company_id, item_code). It sets product line, shade, price and bestseller and **leaves `sku_code` untouched** (the form doesn't print POS codes). Applied to Staging: 257 inserted, 6 updated.
+- Correction: the 6 earlier placeholder rows had invented values (e.g. FBPP01 at ₱250, marked bestseller). The template prints ₱150 and marks Golden Tan, not Salmon, so those were overwritten. Their placeholder POS SKU codes (3800500x) remain and still need real values from a POS export or master list.
+
 ## 2026-10-06 — Scan review: confidence front and center
 - The review page's Document card now leads with how sure the OCR was, said three ways:
   - **A large score** in the dashboard's metric face, colored by band: high ≥ 85%, medium 60–85%, low < 60%, which is the existing flag threshold.
