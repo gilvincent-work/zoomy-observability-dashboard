@@ -10,6 +10,16 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — One shell, two brands: company wordmarks in the switcher
+- Plan §07i: the only per-company difference a user sees is the logo and the data behind it.
+  - The header view switcher shows the active company's wordmark: Zoomy's red **Zoomy!** over "TREATS", Goldline's light, wide-tracked **NICHIDO**. The company name stays in the accessible label.
+  - Menu rows show each wordmark in a fixed-width slot (so names align), then the company name and a line with the role and what the business is ("Company User · cosmetics · stores · CSV + handwritten forms").
+  - A single-role user's header label shows the wordmark too.
+  - Coop Admin keeps its shield; companies without a brand entry keep their color monogram.
+- Brand definitions live in `src/brands.ts`; `components/analyst/brand-mark.tsx` renders them. These are typographic recreations, since no official logo files exist in the repo. Official artwork should be added as inline SVG (the security-headers test forbids remote `<img>`).
+- **Regression review (code-reviewer) + fixes:** no critical or high issues. (MEDIUM) The single-view label fell back to the Zoomy wordmark whenever a view had no company id; it now assumes Zoomy only when there's no nav at all (local dev / legacy). (MEDIUM) The Zoomy red (#D9483B) was below AA contrast at 13–14px. It's now theme-aware: #B8382C on light (≈5.1–5.8:1) and #F0705F on dark (≈5.1–5.7:1), via CSS variables. (LOW) Hoisted the brand lookup and removed the non-null assertions.
+- typecheck + full suite (2503) pass; impeccable detector: no findings.
+
 ## 2026-10-07 — Goldline stock forecast, Action Feed and Store health
 - **Movement engine** (`src/goldline-movement.ts`, tested). Goldline's POS export isn't mapped to the form's item codes yet, so movement is **estimated from consecutive counts**: units sold in a cycle = last on hand + this cycle's delivery − this on hand. Velocity is the average over up to 3 cycles. From it come days of cover, a stock-out date, and a suggested order up to two cycles of cover. Status: Out; Reorder (< 10 days); Within a cycle; Healthy; Needs 2 counts. Also flags dead stock (on hand, nothing moved in 2 cycles) and anomalies (a cycle ≥ 3× the usual and ≥ 5 units, or a count that rose with no delivery). Every page says the figures are estimates.
 - **Stock forecast** (`/stock/forecast`, plan §07g), a "Forecast" tab next to "Counts" on Inventory. A store picker, four tiles (reorder now, out, runs out within a cycle, healthy), and a table sorted by urgency (on hand, sold/cycle, cover, runs out, order, status). Until a store has two counts it explains why cover is blank and still shows on hand.

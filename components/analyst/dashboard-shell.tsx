@@ -10,6 +10,8 @@ import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {ViewSwitcher} from './company-switcher';
+import {BrandMark} from './brand-mark';
+import {brandFor} from '@/src/brands';
 import {shouldRedirectFromZoomy} from '@/src/company-nav';
 import {PlaybookProvider} from './playbook';
 import {CoopChatProvider, AskCoopPill} from './coop-chat';
@@ -200,6 +202,9 @@ export function DashboardShell({
   const isCoopAdminView = Boolean(nav?.isCoopAdmin);
   const activeView = nav?.views.find((v) => v.key === nav.activeKey);
   const activeName = isCoopAdminView ? 'Coop Admin' : (activeView?.name ?? 'Zoomy');
+  // Wordmark for the single-view label: the active company's brand. Only with no nav
+  // at all (local dev bypass / legacy staff) is it assumed to be Zoomy.
+  const staticBrand = brandFor(isCoopAdminView ? null : nav ? activeView?.companyId : 'zoomy');
 
   const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
   const overviewTab: NavItem = {href: '/overview', label: 'Overview', icon: BarChart3};
@@ -281,9 +286,18 @@ export function DashboardShell({
             <ViewSwitcher views={nav.views} activeKey={nav.activeKey} />
           </div>
         ) : (
-          <span className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium max-sm:hidden">
-            <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
-            {activeName}
+          <span className="ml-1 inline-flex h-8 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm font-medium max-sm:hidden">
+            {staticBrand ? (
+              <>
+                <BrandMark brand={staticBrand} size={staticBrand.style === 'thin' ? 11 : 13} />
+                <span className="sr-only">{activeName}</span>
+              </>
+            ) : (
+              <>
+                <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
+                {activeName}
+              </>
+            )}
           </span>
         )}
 
