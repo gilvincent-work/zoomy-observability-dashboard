@@ -53,6 +53,7 @@ export default async function Page() {
   const sub = (k: OverviewKpi) => {
     if (!o.hasSales) return 'No sales yet';
     if (!o.hasPrior) return 'First period on record';
+    if (!o.priorComparable) return 'No like-for-like previous period';
     if (k.deltaPct == null) return 'No prior figure to compare';
     return 'vs previous period';
   };

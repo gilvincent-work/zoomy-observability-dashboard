@@ -21,6 +21,9 @@ export type GoldlineOverview = {
   hasSales: boolean;
   window: {start: string | null; end: string | null};
   hasPrior: boolean;
+  /** The prior period is like-for-like (no overlap, about the same length), so a
+   *  change vs it means something. False hides the deltas. */
+  priorComparable: boolean;
   net: OverviewKpi;
   units: OverviewKpi;
   gross: OverviewKpi;
@@ -31,6 +34,30 @@ export type GoldlineOverview = {
 export const UNCATEGORIZED = 'Uncategorized';
 
 const periodKey = (r: OverviewSaleRow) => `${r.period_start ?? ''}|${r.period_end ?? ''}`;
+
+const DAY = 86_400_000;
+/** Inclusive length in days of an ISO date range; null when either end is missing. */
+export function periodDays(start: string | null, end: string | null): number | null {
+  if (!start || !end) return null;
+  const d = (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / DAY + 1;
+  return Number.isFinite(d) && d > 0 ? d : null;
+}
+
+/** Semi-monthly halves differ by a day or two (15 vs 16, Feb 13); allow that, but
+ *  not a partial or month-to-date file next to a full one. */
+const LENGTH_TOLERANCE_DAYS = 3;
+
+/** A prior period is comparable when it ends before the current one starts and is
+ *  about the same length — otherwise a "vs previous period" change is misleading. */
+export function comparablePeriods(
+  current: {start: string | null; end: string | null},
+  prior: {start: string | null; end: string | null},
+): boolean {
+  const a = periodDays(current.start, current.end);
+  const b = periodDays(prior.start, prior.end);
+  if (a == null || b == null || !prior.end || !current.start) return false;
+  return prior.end < current.start && Math.abs(a - b) <= LENGTH_TOLERANCE_DAYS;
+}
 
 /** Percent change rounded to one decimal; null when there's nothing to compare to. */
 export function deltaPct(current: number, prior: number | null): number | null {
@@ -48,6 +75,7 @@ export function buildOverview(rows: OverviewSaleRow[], lineBySku: Map<string, st
   });
   const [currentKey, current] = ordered[0] ?? [null, {start: null, end: null}];
   const priorKey = ordered[1]?.[0] ?? null;
+  const priorComparable = priorKey != null && comparablePeriods(current, ordered[1][1]);
 
   const sum = (key: string | null) => {
     const t = {net: 0, units: 0, gross: 0};
@@ -61,7 +89,7 @@ export function buildOverview(rows: OverviewSaleRow[], lineBySku: Map<string, st
     return t;
   };
   const cur = sum(currentKey);
-  const pri = priorKey != null ? sum(priorKey) : null;
+  const pri = priorKey != null && priorComparable ? sum(priorKey) : null;
   const kpi = (k: 'net' | 'units' | 'gross'): OverviewKpi => ({
     current: cur[k],
     prior: pri ? pri[k] : null,
@@ -88,6 +116,7 @@ export function buildOverview(rows: OverviewSaleRow[], lineBySku: Map<string, st
     hasSales: rows.length > 0,
     window: current,
     hasPrior: priorKey != null,
+    priorComparable,
     net: kpi('net'),
     units: kpi('units'),
     gross: kpi('gross'),

@@ -201,14 +201,50 @@ export async function getGoldlineOverviewData(companyId: string): Promise<Goldli
       .range(from, to),
   )) as unknown as Array<{sku_code: string | null; product_line: string | null}>;
 
-  const sales = (await fetchAllRows('gl_sales', (from, to) =>
-    supa
+  // Only the two periods the page shows: the latest one, and the latest one that ends
+  // before it starts (the comparison). Reading all of gl_sales on every render would
+  // grow with each upload (~150k rows per period at 300 stores).
+  type Period = {period_start: string; period_end: string};
+  // pagination-ok: single row (latest period marker).
+  const latest = await supa
+    .from('gl_sales')
+    .select('period_start,period_end')
+    .eq('company_id', companyId)
+    .order('period_end', {ascending: false})
+    .order('period_start', {ascending: false})
+    .limit(1)
+    .maybeSingle();
+  if (latest.error) throw new Error(`gl_sales latest period failed: ${latest.error.message}`);
+  const cur = latest.data as Period | null;
+
+  let prior: Period | null = null;
+  if (cur?.period_start) {
+    // pagination-ok: single row (previous period marker).
+    const prev = await supa
       .from('gl_sales')
-      .select('sku_code,gross_retail,units,net_of_vat,period_start,period_end')
+      .select('period_start,period_end')
       .eq('company_id', companyId)
-      .order('id', {ascending: true})
-      .range(from, to),
-  )) as unknown as Array<Record<string, unknown>>;
+      .lt('period_end', cur.period_start)
+      .order('period_end', {ascending: false})
+      .order('period_start', {ascending: false})
+      .limit(1)
+      .maybeSingle();
+    if (prev.error) throw new Error(`gl_sales previous period failed: ${prev.error.message}`);
+    prior = prev.data as Period | null;
+  }
+
+  const salesFor = async (p: Period) =>
+    (await fetchAllRows('gl_sales', (from, to) =>
+      supa
+        .from('gl_sales')
+        .select('sku_code,gross_retail,units,net_of_vat,period_start,period_end')
+        .eq('company_id', companyId)
+        .eq('period_start', p.period_start)
+        .eq('period_end', p.period_end)
+        .order('id', {ascending: true})
+        .range(from, to),
+    )) as unknown as Array<Record<string, unknown>>;
+  const sales = cur ? [...(await salesFor(cur)), ...(prior ? await salesFor(prior) : [])] : [];
 
   const lineBySku = new Map<string, string>();
   for (const p of products) if (p.sku_code && p.product_line) lineBySku.set(p.sku_code, p.product_line);

@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {buildOverview, deltaPct, greetingFor, UNCATEGORIZED, type OverviewSaleRow} from './goldline-overview';
+import {buildOverview, comparablePeriods, deltaPct, greetingFor, periodDays, UNCATEGORIZED, type OverviewSaleRow} from './goldline-overview';
 
 const row = (sku: string, net: number, start: string, end: string, extra: Partial<OverviewSaleRow> = {}): OverviewSaleRow => ({
   sku_code: sku,
@@ -34,6 +34,16 @@ describe('buildOverview', () => {
     expect(o.net.deltaPct).toBe(100);
     expect(o.units.current).toBe(2);
     expect(o.hasPrior).toBe(true);
+  });
+
+  it('hides deltas when the prior period is not like-for-like', () => {
+    // A month-to-date file after a semi-monthly one: not comparable.
+    const rows = [row('A', 100, '2026-09-16', '2026-09-30'), row('A', 40, '2026-10-01', '2026-10-05')];
+    const o = buildOverview(rows, new Map());
+    expect(o.window).toEqual({start: '2026-10-01', end: '2026-10-05'});
+    expect(o.hasPrior).toBe(true);
+    expect(o.priorComparable).toBe(false);
+    expect(o.net).toEqual({current: 40, prior: null, deltaPct: null});
   });
 
   it('has no delta with a single period', () => {
@@ -75,5 +85,21 @@ describe('greetingFor', () => {
     expect(greetingFor(8)).toBe('Good morning');
     expect(greetingFor(13)).toBe('Good afternoon');
     expect(greetingFor(20)).toBe('Good evening');
+  });
+});
+
+describe('comparablePeriods', () => {
+  it('accepts adjacent semi-monthly halves of slightly different length', () => {
+    expect(comparablePeriods({start: '2026-09-16', end: '2026-09-30'}, {start: '2026-09-01', end: '2026-09-15'})).toBe(true);
+    expect(comparablePeriods({start: '2026-03-01', end: '2026-03-15'}, {start: '2026-02-16', end: '2026-02-28'})).toBe(true);
+  });
+  it('rejects overlap, very different lengths, and missing dates', () => {
+    expect(comparablePeriods({start: '2026-09-10', end: '2026-09-30'}, {start: '2026-09-01', end: '2026-09-15'})).toBe(false);
+    expect(comparablePeriods({start: '2026-10-01', end: '2026-10-05'}, {start: '2026-09-16', end: '2026-09-30'})).toBe(false);
+    expect(comparablePeriods({start: null, end: '2026-09-30'}, {start: '2026-09-01', end: '2026-09-15'})).toBe(false);
+  });
+  it('periodDays is inclusive', () => {
+    expect(periodDays('2026-09-01', '2026-09-15')).toBe(15);
+    expect(periodDays(null, '2026-09-15')).toBeNull();
   });
 });
