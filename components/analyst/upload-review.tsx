@@ -1,19 +1,19 @@
 'use client';
 
-import {useMemo, useRef, useState} from 'react';
+import {useMemo, useState} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, FileText, Loader2, Maximize2, X} from 'lucide-react';
-import type {ExtractionRecord, UploadRow} from '@/src/goldline-data';
+import type {ExtractionRecord, FormPageStrip, UploadRow} from '@/src/goldline-data';
 import type {ExtractedRow} from '@/src/goldline-extract-run';
 import {commitReview} from '@/app/uploads/actions';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {DocumentConfidence} from '@/components/analyst/document-confidence';
-import {bandOf, LOW_BELOW, rowConfidence, toneText, type Band} from '@/src/review-confidence';
-
-const BAND_TONE: Record<Band, string> = {high: 'var(--status-good)', medium: 'var(--status-warn)', low: 'var(--status-crit)'};
+import {ReviewRows, type ColKey, type ReviewView} from '@/components/analyst/review-rows';
+import {LOW_BELOW, rowConfidence, toneText} from '@/src/review-confidence';
+import {pageTotal, reconcile, stepFlag, unresolvedFlags, type CatalogLite} from '@/src/review-workbench';
 
 // Review workbench for one scanned inventory page. Shows the staged Claude Vision
 // read, pre-filled and editable; low-confidence rows are flagged so the reviewer
@@ -21,13 +21,7 @@ const BAND_TONE: Record<Band, string> = {high: 'var(--status-good)', medium: 'va
 // gl_inventory. A sales CSV has no extraction, so it renders a status summary.
 
 const LOW = LOW_BELOW; // below this a row is flagged for human eyes (shared with the confidence summary).
-const COLS = [
-  {key: 'stockroom', label: 'Stock'},
-  {key: 'drawer', label: 'Drawer'},
-  {key: 'selling_area', label: 'Selling'},
-  {key: 'delivery', label: 'Delivery'},
-  {key: 'ending_on_hand', label: 'Ending'},
-] as const;
+const peso = (n: number) => `₱${n.toLocaleString('en-US', {maximumFractionDigits: 0})}`;
 
 type EditRow = ExtractedRow;
 
@@ -46,6 +40,8 @@ export function UploadReview({
   scanUrl,
   productNames = {},
   inventoryHref = null,
+  catalog = {},
+  pageStrip = null,
 }: {
   company: string;
   canEdit: boolean;
@@ -57,6 +53,10 @@ export function UploadReview({
   productNames?: Record<string, string>;
   /** Inventory page for the store + period this scan was committed to, once committed. */
   inventoryHref?: string | null;
+  /** item_code → printed product line + price (catalog), for the form grid and totals check. */
+  catalog?: Record<string, CatalogLite>;
+  /** Form pages 1–5 of THIS form (same count, or the same upload batch), with flags. */
+  pageStrip?: FormPageStrip | null;
 }) {
   const router = useRouter();
   const committed = upload.status === 'committed' || extraction?.status === 'confirmed';
@@ -67,23 +67,49 @@ export function UploadReview({
   const [storeCode, setStoreCode] = useState(head?.store_code ?? '');
   const [periodStart, setPeriodStart] = useState(head?.period_start ?? '');
   const [periodEnd, setPeriodEnd] = useState(head?.period_end ?? '');
-  const [showAll, setShowAll] = useState(false);
-  const rowsRef = useRef<HTMLDivElement>(null);
+  // Flags = rows under the threshold, fixed at load (editing a value doesn't change
+  // the reader's confidence). A flag is resolved by editing its row or "Looks right".
+  const flagged = useMemo(
+    () => (head?.rows ?? []).map((r, i) => ({c: rowConfidence(r.confidence), i})).filter((x) => x.c < LOW).map((x) => x.i),
+    [head],
+  );
+  const [resolved, setResolved] = useState<Set<number>>(() => new Set());
+  const [active, setActive] = useState<number | null>(null);
+  const [view, setView] = useState<ReviewView>(flagged.length ? 'needs' : 'all');
+  const [formTotal, setFormTotal] = useState('');
+  const [query, setQuery] = useState(''); // the rows search, lifted so jumping to a flag can clear it
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{kind: 'ok' | 'err'; text: string} | null>(null);
 
-  const flaggedCount = useMemo(() => rows.filter((r) => rowConfidence(r.confidence) < LOW).length, [rows]);
   const docConfidence = extraction?.docConfidence ?? null;
-  const visible = useMemo(
-    () => rows.map((r, i) => ({r, i})).filter(({r}) => showAll || rowConfidence(r.confidence) < LOW),
-    [rows, showAll],
-  );
+  const open = unresolvedFlags(flagged, resolved);
+  const totals = useMemo(() => pageTotal(rows, catalog), [rows, catalog]);
+  const check = reconcile(totals.total, formTotal);
 
-  function updateCell(index: number, key: (typeof COLS)[number]['key'], raw: string) {
+  function updateCell(index: number, key: ColKey, raw: string) {
     setRows((prev) => {
       const next = [...prev];
       next[index] = {...next[index], [key]: toIntOrNull(raw)};
       return next;
+    });
+    // Correcting a flagged row resolves it — only when the value actually changes.
+    const original = head?.rows?.[index]?.[key] ?? null;
+    if (flagged.includes(index) && toIntOrNull(raw) !== original) resolve(index);
+  }
+
+  function resolve(index: number) {
+    setResolved((prev) => (prev.has(index) ? prev : new Set(prev).add(index)));
+  }
+
+  /** Move the navigator to a flag and bring its row into view (first input focused). */
+  function goToFlag(index: number | null) {
+    if (index == null) return;
+    setActive(index);
+    setQuery(''); // a search could be hiding the target row
+    requestAnimationFrame(() => {
+      const row = document.getElementById(`review-row-${index}`);
+      row?.scrollIntoView({behavior: 'smooth', block: 'center'});
+      row?.querySelector<HTMLInputElement>('input')?.focus({preventScroll: true});
     });
   }
 
@@ -125,6 +151,42 @@ export function UploadReview({
           <ArrowLeft className="size-3.5" /> Back to uploads
         </Link>
         <h1 className="font-heading text-xl font-semibold tracking-tight break-all">{upload.filename}</h1>
+        {extraction && pageStrip && (
+          <nav aria-label="Form pages" className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="mr-1 text-muted-foreground">
+              {pageStrip.scope === 'count' ? 'Pages in this count' : 'Pages uploaded with this one'}
+            </span>
+            {pageStrip.cells.map((p) => {
+              const inner = (
+                <>
+                  {p.page}
+                  {p.status === 'committed' ? (
+                    <CheckCircle2 aria-label="committed" className="size-3" style={{color: toneText('var(--status-good)')}} />
+                  ) : p.flagged > 0 ? (
+                    <span aria-label={`${p.flagged} flagged`} className="size-1.5 rounded-full" style={{background: 'var(--status-crit)'}} />
+                  ) : null}
+                </>
+              );
+              const cls = cn(
+                'inline-flex h-7 min-w-9 items-center justify-center gap-1 rounded-md border px-2 font-medium tabular-nums transition-colors',
+                p.current ? 'border-primary bg-primary/10 text-foreground' : 'border-border',
+              );
+              if (p.current) return <span key={p.page} className={cls} aria-current="page">{inner}</span>;
+              if (!p.uploadId)
+                return (
+                  <span key={p.page} className={cn(cls, 'border-dashed text-muted-foreground/60')} title="No scan of this page in this form yet">
+                    {p.page}
+                  </span>
+                );
+              return (
+                <Link key={p.page} href={`/uploads/${p.uploadId}`} className={cn(cls, 'hover:bg-muted')} title={`Open page ${p.page} of this form`}>
+                  {inner}
+                </Link>
+              );
+            })}
+            <span className="ml-1 text-[11px] text-muted-foreground">red dot = has flags · ✓ committed</span>
+          </nav>
+        )}
       </div>
 
       {committed && (
@@ -223,9 +285,8 @@ export function UploadReview({
                 docConfidence={docConfidence}
                 rowConfidences={rows.map((r) => r.confidence)}
                 onReviewFlagged={() => {
-                  setShowAll(false);
-                  rowsRef.current?.scrollIntoView({behavior: 'smooth', block: 'start'});
-                  rowsRef.current?.focus({preventScroll: true});
+                  setView('needs');
+                  goToFlag(open[0] ?? flagged[0] ?? null);
                 }}
               />
 
@@ -271,115 +332,79 @@ export function UploadReview({
                   </p>
                 )}
               </fieldset>
+
+              {/* Totals check: the page's value vs the total written at the bottom of the form. */}
+              <section aria-label="Totals check" className="flex flex-col gap-2 border-t border-border pt-4">
+                <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium">This page&apos;s ending value</span>
+                    <span className="font-mono text-lg tabular-nums">{peso(totals.total)}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      on hand × printed price{totals.unpriced ? ` · ${totals.unpriced} counted ${totals.unpriced === 1 ? 'item has' : 'items have'} no price` : ''}
+                    </span>
+                  </div>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-medium">Total written on the form</span>
+                    <input
+                      inputMode="decimal"
+                      value={formTotal}
+                      onChange={(e) => setFormTotal(e.target.value)}
+                      placeholder="₱ from the TOTAL box"
+                      className="h-9 w-44 rounded-md border border-border bg-background px-2.5 font-mono text-sm tabular-nums outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+                    />
+                  </label>
+                  <span aria-live="polite" className="pb-2 text-sm font-medium">
+                    {check.state === 'match' && <span style={{color: toneText('var(--status-good)')}}>✓ Reconciled</span>}
+                    {check.state === 'off' && (
+                      <span style={{color: toneText('var(--status-crit)')}}>
+                        Off by {peso(Math.abs(check.diff))} — the page reads {check.diff > 0 ? 'higher' : 'lower'} than the form
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Optional. A mismatch usually means a misread count — check the flagged rows and any row with a big value.
+                </p>
+              </section>
             </CardContent>
           </Card>
 
-          <Card ref={rowsRef} tabIndex={-1} className="scroll-mt-4 outline-none">
-            <CardHeader className="gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle>
-                  Rows{' '}
-                  <span className="text-sm font-normal text-muted-foreground tabular-nums">
-                    ({flaggedCount} flagged of {rows.length})
-                  </span>
-                </CardTitle>
-                <div className="inline-flex overflow-hidden rounded-md border border-border text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setShowAll(false)}
-                    className={cn('px-2.5 py-1', !showAll ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-                  >
-                    Flagged {flaggedCount}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAll(true)}
-                    className={cn('px-2.5 py-1', showAll ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-                  >
-                    All {rows.length}
-                  </button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {visible.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  {rows.length === 0 ? 'No rows were extracted.' : 'Nothing flagged — switch to “All” to see every row.'}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                        <th className="py-2 pr-3 font-medium">Item</th>
-                        {COLS.map((c) => (
-                          <th key={c.key} className="py-2 pr-3 text-right font-medium">
-                            {c.label}
-                          </th>
-                        ))}
-                        <th className="py-2 pl-3 font-medium">Conf.</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visible.map(({r, i}) => {
-                        const low = rowConfidence(r.confidence) < LOW;
-                        return (
-                          <tr key={`${r.item_code}-${i}`} className={cn('border-b border-border/60', low && 'bg-amber-500/5')}>
-                            <td className="py-1.5 pr-3">
-                              <span className="font-mono text-xs">{r.item_code}</span>
-                              {productNames[r.item_code] && (
-                                <span className="block max-w-[14rem] truncate text-xs text-muted-foreground">
-                                  {productNames[r.item_code]}
-                                </span>
-                              )}
-                              {r.alt && <span className="block text-[10px] text-amber-700 dark:text-amber-400">alt {r.alt}</span>}
-                            </td>
-                            {COLS.map((c) => (
-                              <td key={c.key} className="py-1.5 pr-3 text-right">
-                                <input
-                                  inputMode="numeric"
-                                  value={r[c.key] ?? ''}
-                                  disabled={committed || !canEdit}
-                                  onChange={(e) => updateCell(i, c.key, e.target.value)}
-                                  className={cn(
-                                    'h-7 w-16 rounded-md border bg-background px-1.5 text-right text-sm tabular-nums',
-                                    low ? 'border-amber-500/60' : 'border-border',
-                                  )}
-                                />
-                              </td>
-                            ))}
-                            <td className="py-1.5 pl-3 text-right text-xs tabular-nums">
-                              {(() => {
-                                // Same three bands + colors as the confidence summary above.
-                                const c = rowConfidence(r.confidence);
-                                const tone = BAND_TONE[bandOf(c)];
-                                return (
-                                  <span
-                                    className="inline-flex min-w-11 justify-center rounded-full px-1.5 py-0.5 font-medium"
-                                    style={{color: toneText(tone), background: `color-mix(in oklab, ${tone} 14%, transparent)`}}
-                                  >
-                                    {Math.round(c * 100)}%
-                                  </span>
-                                );
-                              })()}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <ReviewRows
+            rows={rows}
+            query={query}
+            onQuery={setQuery}
+            productNames={productNames}
+            catalog={catalog}
+            flagged={flagged}
+            resolved={resolved}
+            active={active}
+            view={view}
+            editable={!committed && canEdit}
+            onView={setView}
+            onCell={updateCell}
+            onResolve={(i) => {
+              resolve(i);
+              goToFlag(unresolvedFlags(flagged, new Set(resolved).add(i))[0] ?? null);
+            }}
+            onStep={(dir) => {
+              setView('needs');
+              // Walk the open flags first; once all are resolved, walk them all.
+              goToFlag(stepFlag(open.length ? open : flagged, active, dir));
+            }}
+          />
 
           {/* Commit bar */}
           {!committed && canEdit && (
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={commit} disabled={busy || rows.length === 0}>
+              <Button onClick={commit} disabled={busy || rows.length === 0 || open.length > 0}>
                 {busy ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                {busy ? 'Committing…' : 'Commit to inventory'}
+                {busy ? 'Committing…' : 'Confirm & commit'}
               </Button>
+              {open.length > 0 && !notice && (
+                <button type="button" onClick={() => goToFlag(open[0])} className="text-xs text-muted-foreground underline-offset-4 hover:underline">
+                  Resolve {open.length} flagged {open.length === 1 ? 'row' : 'rows'} to commit
+                </button>
+              )}
               {notice && (
                 <span className={cn('text-xs', notice.kind === 'ok' ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive')}>
                   {notice.text}
