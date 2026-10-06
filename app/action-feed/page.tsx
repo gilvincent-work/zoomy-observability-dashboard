@@ -36,7 +36,12 @@ export default async function Page(props: {searchParams: Promise<{store?: string
       }).map((a) => ({...a, storeCode: s.storeCode, storeName: s.storeName})),
     )
     // Across stores: same ranking as within one (severity, then pesos at stake).
-    .sort((a, b) => ({critical: 0, warn: 1, info: 2})[a.severity] - ({critical: 0, warn: 1, info: 2})[b.severity] || b.impact - a.impact);
+    .sort(
+      (a, b) =>
+        ({critical: 0, warn: 1, info: 2})[a.severity] - ({critical: 0, warn: 1, info: 2})[b.severity] ||
+        b.impact - a.impact ||
+        `${a.storeCode}-${a.id}`.localeCompare(`${b.storeCode}-${b.id}`),
+    );
 
   return (
     <GoldlineActionsView

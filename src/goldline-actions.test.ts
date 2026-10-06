@@ -33,8 +33,9 @@ describe('buildActions', () => {
     expect(a[2].detail).toMatch(/₱2,024 tied up/);
   });
 
-  it('puts a missing count at the very top', () => {
+  it('a store without this period\'s count gets only the missing-count action', () => {
     const a = buildActions({...base, countedCurrent: false});
+    expect(a).toHaveLength(1);
     expect(a[0]).toMatchObject({kind: 'gap', severity: 'critical'});
     expect(a[0].title).toMatch(/Oct 1–Oct 15/);
   });

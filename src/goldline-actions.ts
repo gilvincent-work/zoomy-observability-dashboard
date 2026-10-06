@@ -52,7 +52,9 @@ export function buildActions(input: {
     });
   }
 
-  for (const m of items) {
+  // A store whose form isn't in for this period gets only the gap action — reorders /
+  // anomalies from its older count would be stale advice.
+  for (const m of countedCurrent ? items : []) {
     const name = nameOf(m.item_code);
     const perCycleValue = (m.velocity ?? 0) * priceOf(m.item_code);
     if (m.status === 'out') {

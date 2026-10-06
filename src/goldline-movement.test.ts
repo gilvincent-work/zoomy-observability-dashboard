@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {formTimeliness, storeHealth, storeMovement, type Count} from './goldline-movement';
+import {formTimeliness, isCurrentCount, pickCurrentPeriod, storeHealth, storeMovement, type Count} from './goldline-movement';
 import type {InventoryRowIn} from './goldline-inventory';
 
 const r = (item_code: string, onHand: number | null, delivery: number | null = null): InventoryRowIn => ({
@@ -53,6 +53,30 @@ describe('storeMovement', () => {
   });
 });
 
+describe('storeMovement — review fixes', () => {
+  it('normalizes a skipped cycle to one cycle of sales', () => {
+    // Sep 1–15, then (Sep 16–30 skipped), Oct 1–15: 30 days apart, 40 sold → 20 per 15-day cycle.
+    const m = storeMovement([count('2026-09-01', '2026-09-15', [r('A', 60)]), count('2026-10-01', '2026-10-15', [r('A', 20)])]);
+    expect(m.items[0].cyclesSold).toEqual([20]);
+    expect(m.items[0].velocity).toBe(20);
+  });
+  it('does not read a count that rose as a zero-sales cycle', () => {
+    const m = storeMovement([
+      count('2026-09-01', '2026-09-15', [r('A', 10)]),
+      count('2026-09-16', '2026-09-30', [r('A', 10)]),
+      count('2026-10-01', '2026-10-15', [r('A', 14)]),
+    ]);
+    const a = m.items[0];
+    expect(a.cyclesSold).toEqual([0]); // the rise isn't pushed as 0
+    expect(a.deadStock).toBe(false); // so one quiet cycle + a misread isn't "dead"
+    expect(a.anomaly).toEqual({kind: 'rose_without_delivery', by: 4});
+  });
+  it('compares form timeliness in Manila time', () => {
+    // 2026-10-18 23:30 UTC is Oct 19 in Manila → 4 days after Oct 15 → late.
+    expect(formTimeliness('2026-10-15', '2026-10-18T23:30:00Z')).toBe('late');
+  });
+});
+
 describe('formTimeliness', () => {
   it('on time within 3 days of the period end', () => {
     expect(formTimeliness('2026-10-15', '2026-10-18T09:00:00Z')).toBe('on_time');
@@ -72,5 +96,22 @@ describe('storeHealth', () => {
   });
   it('has no score without a count for the period', () => {
     expect(storeHealth(storeMovement([]), () => 1, 'missing').score).toBeNull();
+  });
+});
+
+describe('pickCurrentPeriod / isCurrentCount', () => {
+  const snap = (store_code: string, period_start: string, period_end: string) => ({store_code, period_start, period_end});
+  it('picks the period most stores counted, not one store\'s outlier', () => {
+    const p = pickCurrentPeriod([
+      snap('1', '2026-10-01', '2026-10-15'),
+      snap('2', '2026-10-01', '2026-10-15'),
+      snap('3', '2026-10-06', '2026-10-20'), // one store on an odd period
+    ]);
+    expect(p).toEqual({start: '2026-10-01', end: '2026-10-15'});
+  });
+  it('treats a count ending within 3 days as this period', () => {
+    expect(isCurrentCount('2026-10-16', {end: '2026-10-15'})).toBe(true);
+    expect(isCurrentCount('2026-09-30', {end: '2026-10-15'})).toBe(false);
+    expect(pickCurrentPeriod([])).toBeNull();
   });
 });

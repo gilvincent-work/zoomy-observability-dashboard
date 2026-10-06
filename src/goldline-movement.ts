@@ -53,21 +53,32 @@ export function storeMovement(counts: Count[]): {latest: Count | null; cycleDays
     const now = byCount[byCount.length - 1].get(code)!;
     const onHand = onHandOf(now).onHand;
 
-    // Units sold per consecutive pair of counts; skip pairs with a missing figure.
+    // Units sold between this item's consecutive counts. If a cycle was skipped (or the
+    // item was missing from a count), the gap spans more than one cycle, so the figure
+    // is normalized to one cycle's worth (sold × cycle ÷ days between the counts).
+    // A negative figure (count rose with no delivery) is NOT a zero-sales cycle — it's
+    // skipped, and reported as an anomaly when it's the newest cycle.
     const cyclesSold: number[] = [];
     let rose: number | null = null;
-    for (let k = 1; k < byCount.length; k++) {
-      const prev = byCount[k - 1].get(code);
+    let newestIsLatest = false; // whether the last entry is the cycle ending at the latest count
+    let prevIdx = -1;
+    for (let k = 0; k < byCount.length; k++) {
       const cur = byCount[k].get(code);
-      if (!prev || !cur) continue;
-      const a = onHandOf(prev).onHand;
-      const b = onHandOf(cur).onHand;
-      if (a == null || b == null) continue;
-      const sold = a + (cur.delivery ?? 0) - b;
-      if (sold < 0) {
-        if (k === byCount.length - 1) rose = -sold; // newest cycle: count went up with no delivery to explain it
-        cyclesSold.push(0);
-      } else cyclesSold.push(sold);
+      if (!cur || onHandOf(cur).onHand == null) continue;
+      if (prevIdx >= 0) {
+        const prev = byCount[prevIdx].get(code)!;
+        const a = onHandOf(prev).onHand as number;
+        const b = onHandOf(cur).onHand as number;
+        const gap = daysBetween(sorted[prevIdx].period_end, sorted[k].period_end);
+        const sold = a + (cur.delivery ?? 0) - b;
+        if (gap > 0 && sold >= 0) {
+          cyclesSold.push((sold * cycleDays) / gap);
+          newestIsLatest = k === byCount.length - 1;
+        } else if (sold < 0 && k === byCount.length - 1) {
+          rose = -sold; // newest cycle: count went up with no delivery to explain it
+        }
+      }
+      prevIdx = k;
     }
 
     const recent = cyclesSold.slice(-3);
@@ -88,11 +99,12 @@ export function storeMovement(counts: Count[]): {latest: Count | null; cycleDays
     else status = 'healthy';
 
     const lastTwo = cyclesSold.slice(-2);
-    const deadStock = onHand != null && onHand > 0 && lastTwo.length === 2 && lastTwo.every((s) => s === 0);
+    const deadStock = onHand != null && onHand > 0 && newestIsLatest && lastTwo.length === 2 && lastTwo.every((s) => s === 0);
 
     let anomaly: ItemMovement['anomaly'] = null;
     if (rose != null && rose > 0) anomaly = {kind: 'rose_without_delivery', by: rose};
-    else if (cyclesSold.length >= 2) {
+    else if (cyclesSold.length >= 2 && newestIsLatest) {
+      // Only the newest cycle can be a current spike.
       const last = cyclesSold[cyclesSold.length - 1];
       const before = cyclesSold.slice(-4, -1);
       const usual = before.reduce((x, y) => x + y, 0) / before.length;
@@ -105,15 +117,43 @@ export function storeMovement(counts: Count[]): {latest: Count | null; cycleDays
   return {latest, cycleDays, counts: sorted.length, items};
 }
 
+/**
+ * The company's current form period: among periods ending in the last ~2 cycles of
+ * the newest one, the one the most stores counted (ties → the later one). One store
+ * with an odd or mistyped period can't make every other store look "missing".
+ */
+export function pickCurrentPeriod(snaps: Array<{store_code: string; period_start: string; period_end: string}>): {start: string; end: string} | null {
+  if (!snaps.length) return null;
+  const newest = snaps.reduce((m, s) => (s.period_end > m ? s.period_end : m), snaps[0].period_end);
+  const stores = new Map<string, {start: string; end: string; stores: Set<string>}>();
+  for (const s of snaps) {
+    if (daysBetween(s.period_end, newest) > 31) continue;
+    const k = `${s.period_start}|${s.period_end}`;
+    const e = stores.get(k) ?? {start: s.period_start, end: s.period_end, stores: new Set<string>()};
+    e.stores.add(s.store_code);
+    stores.set(k, e);
+  }
+  const best = [...stores.values()].sort((a, b) => b.stores.size - a.stores.size || b.end.localeCompare(a.end))[0];
+  return best ? {start: best.start, end: best.end} : null;
+}
+
+/** A store's latest count is "this period" if it ends within 3 days of the period end. */
+export const PERIOD_TOLERANCE_DAYS = 3;
+export const isCurrentCount = (countEnd: string | null | undefined, period: {end: string} | null) =>
+  Boolean(countEnd && period && Math.abs(daysBetween(countEnd, period.end)) <= PERIOD_TOLERANCE_DAYS);
+
 // ── Store health ─────────────────────────────────────────────────────────────
 
 export type FormTimeliness = 'on_time' | 'late' | 'missing';
 /** On time = committed within 3 days after the period ends. */
 export const SUBMIT_GRACE_DAYS = 3;
 
+/** Calendar date of a timestamp in Manila (stores' local time), YYYY-MM-DD. */
+const manilaDate = (ts: string) => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Manila'}).format(new Date(ts));
+
 export function formTimeliness(periodEnd: string | null, committedAt: string | null): FormTimeliness {
   if (!periodEnd || !committedAt) return 'missing';
-  const lag = daysBetween(periodEnd, committedAt.slice(0, 10));
+  const lag = daysBetween(periodEnd, manilaDate(committedAt));
   return lag <= SUBMIT_GRACE_DAYS ? 'on_time' : 'late';
 }
 

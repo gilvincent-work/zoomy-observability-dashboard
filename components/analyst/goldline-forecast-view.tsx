@@ -28,6 +28,8 @@ const STATUS: Record<Status, {label: string; tone: string | null; rank: number}>
   not_counted: {label: 'Not counted', tone: null, rank: 5},
 };
 const PAGE_SIZE = 25;
+// Sort key for cover: known days first (ascending), then "no sales" (∞), then unknown.
+const coverRank = (d: number | null) => (d == null ? Number.MAX_VALUE : Number.isFinite(d) ? d : Number.MAX_VALUE / 2);
 
 export type ForecastData = {
   stores: Array<{code: string; name: string | null}>;
@@ -52,7 +54,7 @@ export function GoldlineForecastView({data, canEdit}: {data: ForecastData; canEd
       [...items].sort(
         (a, b) =>
           STATUS[a.status].rank - STATUS[b.status].rank ||
-          (a.coverDays ?? Infinity) - (b.coverDays ?? Infinity) ||
+          coverRank(a.coverDays) - coverRank(b.coverDays) ||
           a.item_code.localeCompare(b.item_code),
       ),
     [items],

@@ -17,7 +17,14 @@ Dates are local working dates (GMT+8). Newest first.
 - **Store health** (`/store-health`). Health redefined for Goldline's data (no orders or CAC, so no QRR): a 0–100 score per store for the current form period. Weights: in-stock rate 40, days of cover 25, stock that's moving 15, form committed within 3 days of period end 20 (late = half). Cover and dead-stock parts stay neutral until a store has two counts. The page shows a company score (average of stores with a count), KPIs, and a store table worst-first with links to each store's counts. The scoring is explained on the page.
 - **Data** (`src/goldline-ops-data.ts`): company- and store-scope fenced; reads only the last ~70 days of counts (up to 4 per store) plus the snapshot view, catalog and stores. Stores with no count this period surface as missing.
 - **Nav** (Goldline): Overview · Stores · Inventory · Actions · Health · Uploads (Settings for multi-role). Mobile bar: Overview, Inventory, Actions, Uploads; More: Stores, Health.
-- typecheck + full suite (2513) + pagination guard pass; impeccable detector: no findings.
+- **Regression review (code-reviewer) + fixes:**
+  - (HIGH) "Current period" was the newest count of any store, with an exact-match test, so one store with an odd or mistyped period made every other store "missing". It's now the period most stores counted in recent periods (`pickCurrentPeriod`), and a store counts as current if its latest count ends within 3 days of it (`isCurrentCount`).
+  - (HIGH) A skipped cycle or an item missing from one count turned two cycles of sales into one, inflating velocity, orders and spikes. Sales are now normalized to the actual days between the item's counts.
+  - (MEDIUM) A count that rose with no delivery was recorded as a zero-sales cycle and could fake "dead stock". It's now skipped (still reported as an anomaly). Spikes and dead stock only count when the newest cycle is the latest count.
+  - (MEDIUM) Stores without this period's count now get only the missing-count action, not reorders built from stale counts.
+  - (MEDIUM) The snapshot read is limited to the last 180 days, and store scope is applied in the queries, not just in code.
+  - (LOW) Form timeliness uses the Manila date. Stable cross-store sort. Fixed a NaN in the forecast's cover sort.
+- typecheck + full suite (2518) + pagination guard pass; impeccable detector: no findings.
 
 ## 2026-10-06 — Scan review extras: form grid, flag navigator, page strip, totals check
 - **Two views of the rows.**
