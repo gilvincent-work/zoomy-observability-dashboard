@@ -10,6 +10,17 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Scan review: confidence front and center
+- The review page's Document card now leads with how sure the OCR was, said three ways:
+  - **A large score** in the dashboard's metric face, colored by band: high ≥ 85%, medium 60–85%, low < 60%, which is the existing flag threshold.
+  - **A verdict and what to do next.** High: "Check the N rows flagged below, then commit". Medium: review carefully against the scan. Low: check every row, a clearer scan helps.
+  - **A stacked bar of rows by band** with counts, because an average can hide a few bad rows.
+- "Review N flagged rows" jumps to the flagged rows.
+- A one-line note says confidence is the reader's own estimate, not a guarantee.
+- Per-row confidence chips use the same bands and colors, so the summary and the table agree.
+- The store and period fields sit below with clearer labels, and the card shows the detected form page ("page 2 of 5"). Pages 2–5 get a hint to reuse page 1's store and period so all pages land in one Inventory count.
+- Pure logic in `src/review-confidence.ts` (tested). typecheck + full suite (2490) pass; impeccable detector: no findings.
+
 ## 2026-10-06 — Goldline Inventory page, tied to the scan uploads; Uploads revamp
 - **Inventory (plan §07f)** at `/stock` (nav: Overview · Stores · Inventory · Uploads). `/inventory` stays Zoomy's page behind the Zoomy data guard. One store × form period at a time, picked by store and period selects (`?store=&period=YYYY-MM-DD_YYYY-MM-DD`), defaulting to the latest period. Shows a "N low · M out" pill, four KPI tiles (Ending value, Items tracked, Low stock, Out of stock), and a table: Item, Product (★ bestseller, product line when catalogued), Stk / Drw / Sell straight from the form, On hand, Value, Status. Filters (All / Low / Out / Not counted), search, pagination.
 - Rules, stated on the page and tested in `src/goldline-inventory.ts`:

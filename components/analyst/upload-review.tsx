@@ -1,6 +1,6 @@
 'use client';
 
-import {useMemo, useState} from 'react';
+import {useMemo, useRef, useState} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, FileText, Loader2, Maximize2, X} from 'lucide-react';
@@ -10,13 +10,17 @@ import {commitReview} from '@/app/uploads/actions';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
+import {DocumentConfidence} from '@/components/analyst/document-confidence';
+import {bandOf, LOW_BELOW, type Band} from '@/src/review-confidence';
+
+const BAND_TONE: Record<Band, string> = {high: 'var(--status-good)', medium: 'var(--status-warn)', low: 'var(--status-crit)'};
 
 // Review workbench for one scanned inventory page. Shows the staged Claude Vision
 // read, pre-filled and editable; low-confidence rows are flagged so the reviewer
 // fixes the exceptions, confirms the header (store + period), and commits to
 // gl_inventory. A sales CSV has no extraction, so it renders a status summary.
 
-const LOW = 0.6; // below this a row is flagged for human eyes.
+const LOW = LOW_BELOW; // below this a row is flagged for human eyes (shared with the confidence summary).
 const COLS = [
   {key: 'stockroom', label: 'Stock'},
   {key: 'drawer', label: 'Drawer'},
@@ -64,6 +68,7 @@ export function UploadReview({
   const [periodStart, setPeriodStart] = useState(head?.period_start ?? '');
   const [periodEnd, setPeriodEnd] = useState(head?.period_end ?? '');
   const [showAll, setShowAll] = useState(false);
+  const rowsRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{kind: 'ok' | 'err'; text: string} | null>(null);
 
@@ -206,60 +211,70 @@ export function UploadReview({
         <>
           <Card>
             <CardHeader>
-              <CardTitle>Document</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Store code</span>
-                  <input
-                    value={storeCode}
-                    onChange={(e) => setStoreCode(e.target.value)}
-                    disabled={committed || !canEdit}
-                    className="h-8 w-28 rounded-md border border-border bg-background px-2 text-sm"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Period start</span>
-                  <input
-                    type="date"
-                    value={periodStart ?? ''}
-                    onChange={(e) => setPeriodStart(e.target.value)}
-                    disabled={committed || !canEdit}
-                    className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Period end</span>
-                  <input
-                    type="date"
-                    value={periodEnd ?? ''}
-                    onChange={(e) => setPeriodEnd(e.target.value)}
-                    disabled={committed || !canEdit}
-                    className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-                  />
-                </label>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <CardTitle>Document</CardTitle>
+                {extraction.page ? (
+                  <span className="text-xs text-muted-foreground">Inventory form · page {extraction.page} of 5</span>
+                ) : null}
               </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              <DocumentConfidence
+                docConfidence={docConfidence}
+                rowConfidences={rows.map((r) => r.confidence)}
+                onReviewFlagged={() => {
+                  setShowAll(false);
+                  rowsRef.current?.scrollIntoView({behavior: 'smooth', block: 'start'});
+                  rowsRef.current?.focus({preventScroll: true});
+                }}
+              />
 
-              {/* Confidence summary */}
-              {docConfidence !== null && (
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Document confidence</span>
-                    <span className="tabular-nums">{Math.round(docConfidence * 100)}%</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={cn('h-full rounded-full', docConfidence < LOW ? 'bg-amber-500' : 'bg-emerald-500')}
-                      style={{width: `${Math.round(Math.max(0, Math.min(1, docConfidence)) * 100)}%`}}
+              <fieldset className="flex flex-col gap-2">
+                <legend className="mb-2 text-xs font-medium text-muted-foreground">Which store and period is this count for?</legend>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-medium">Store code</span>
+                    <input
+                      value={storeCode}
+                      onChange={(e) => setStoreCode(e.target.value)}
+                      disabled={committed || !canEdit}
+                      placeholder="e.g. 1"
+                      className="h-9 rounded-md border border-border bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 disabled:opacity-60 w-28"
                     />
-                  </div>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-medium">Period start</span>
+                    <input
+                      type="date"
+                      value={periodStart ?? ''}
+                      onChange={(e) => setPeriodStart(e.target.value)}
+                      disabled={committed || !canEdit}
+                      className="h-9 rounded-md border border-border bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 disabled:opacity-60"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-medium">Period end</span>
+                    <input
+                      type="date"
+                      value={periodEnd ?? ''}
+                      min={periodStart || undefined}
+                      onChange={(e) => setPeriodEnd(e.target.value)}
+                      disabled={committed || !canEdit}
+                      className="h-9 rounded-md border border-border bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 disabled:opacity-60"
+                    />
+                  </label>
                 </div>
-              )}
+                {(extraction.page ?? 1) > 1 && !committed && (
+                  <p className="text-xs text-muted-foreground">
+                    Pages 2–5 don&apos;t print the store or period. Use the same ones as this store&apos;s page 1 so all pages land in
+                    one Inventory count.
+                  </p>
+                )}
+              </fieldset>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card ref={rowsRef} tabIndex={-1} className="scroll-mt-4 outline-none">
             <CardHeader className="gap-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <CardTitle>
@@ -333,10 +348,20 @@ export function UploadReview({
                                 />
                               </td>
                             ))}
-                            <td className="py-1.5 pl-3 text-xs tabular-nums">
-                              <span className={cn(low ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground')}>
-                                {Math.round((r.confidence ?? 1) * 100)}%
-                              </span>
+                            <td className="py-1.5 pl-3 text-right text-xs tabular-nums">
+                              {(() => {
+                                // Same three bands + colors as the confidence summary above.
+                                const c = r.confidence ?? 1;
+                                const tone = BAND_TONE[bandOf(c)];
+                                return (
+                                  <span
+                                    className="inline-flex min-w-11 justify-center rounded-full px-1.5 py-0.5 font-medium"
+                                    style={{color: tone, background: `color-mix(in oklab, ${tone} 14%, transparent)`}}
+                                  >
+                                    {Math.round(c * 100)}%
+                                  </span>
+                                );
+                              })()}
                             </td>
                           </tr>
                         );
