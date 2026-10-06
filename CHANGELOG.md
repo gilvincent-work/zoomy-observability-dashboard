@@ -10,6 +10,29 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Scan review extras: form grid, flag navigator, page strip, totals check
+- **Two views of the rows.**
+  - "Needs review" lists only the flagged rows; it's the default when anything is flagged.
+  - "All · form grid" mirrors the paper: rows grouped under the printed family headings with their price (from the new catalog), and flagged rows still highlighted.
+  - Search by item or code. Column headers carry the form's Tagalog column names as tooltips.
+- **Flag navigator.** "Flag ‹ 1 / N ›" walks the flagged rows (wrapping) and focuses the row's first input, with "k of N resolved" next to it.
+- **Resolving flags.** A flag is resolved by editing its row or clicking **Looks right**, which then jumps to the next open flag. The confidence card's "Review N flagged rows" now lands on the first open flag.
+- **Commit is held until every flag is resolved** (plan §07d), with a "Resolve N flagged rows to commit" shortcut. The button reads "Confirm & commit".
+- **Totals check.** Shows this page's ending value (on hand × printed price, with the same on-hand rule as Inventory) beside an optional "Total written on the form" field. Result: ✓ Reconciled within ₱1, or "Off by ₱X", saying which way.
+- **Page strip.** Pages 1–5 under the file name: the current page, the latest scan of each other page (links), a red dot when that scan has flags, a ✓ when it's committed, and a dashed chip when a page has no scan yet.
+- **Regression review (code-reviewer) + fixes:**
+  - No critical or high issues.
+  - (MEDIUM) The page strip was company-wide, so a page link could open another store's scan. It's now limited to the same form: a committed scan shows the scans committed into the same store + period ("Pages in this count"); a pending scan shows the uploader's other scans within ±12 h ("Pages uploaded with this one"), since pages 2–5 carry no store until reviewed. The current scan is read directly, not from a capped list.
+  - (MEDIUM) A typed search could hide the next flag's row, so the navigator and "Resolve N flagged rows" did nothing. The search is lifted to the page and cleared when jumping to a flag.
+  - (LOW) Editing resolves a flag only when the value actually changes. The navigator walks unresolved flags first. Removed a dead ref, and the family header uses `scope="rowgroup"`.
+- Pure logic in `src/review-workbench.ts` (tested). New reads `catalogForCodes` and `formPageStrip`, both company-scoped and bounded. typecheck + full suite + pagination guard pass; impeccable detector: no findings.
+
+## 2026-10-06 — Goldline catalog: product lines, prices and bestsellers for all 263 form items
+- `gl_products` now covers every item on the inventory form, pages 1–5: **263 items, all priced, in 56 product lines, with 47 bestsellers.** Before, only 6 placeholder rows existed. Inventory value, Overview categories and the coming forecast / Action Feed / Health all depend on this.
+- Source of truth is the blank Nichido templates: their text layer prints each family heading with its price, every item code and shade, and "(Bestseller)". `scripts/goldline/build-catalog.py` matches every manifest item (`src/goldline-extract.ts`) to its template line (accessories that share a printed "ACCS ###" code are matched by name), inherits the family heading and price (an item's own printed price wins), and treats items printed with their own price under another heading as their own product (outside Accessories / Make-Up Collection). 0 unmatched items.
+- `supabase/seed_goldline_catalog.sql` is an idempotent upsert on (company_id, item_code). It sets product line, shade, price and bestseller and **leaves `sku_code` untouched** (the form doesn't print POS codes). Applied to Staging: 257 inserted, 6 updated.
+- Correction: the 6 earlier placeholder rows had invented values (e.g. FBPP01 at ₱250, marked bestseller). The template prints ₱150 and marks Golden Tan, not Salmon, so those were overwritten. Their placeholder POS SKU codes (3800500x) remain and still need real values from a POS export or master list.
+
 ## 2026-10-06 — Scan review: confidence front and center
 - The review page's Document card now leads with how sure the OCR was, said three ways:
   - **A large score** in the dashboard's metric face, colored by band: high ≥ 85%, medium 60–85%, low < 60%, which is the existing flag threshold.

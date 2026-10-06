@@ -389,3 +389,126 @@ export async function listUploads(companyId: string): Promise<UploadRow[]> {
   );
   return rows as unknown as UploadRow[];
 }
+
+/** Catalog line + printed price for the given item codes (the review page's family
+ *  grouping and totals check). Company-scoped. */
+export async function catalogForCodes(
+  companyId: string,
+  codes: string[],
+): Promise<Record<string, {productLine: string | null; unitPrice: number | null}>> {
+  if (!goldlineConfigured() || !codes.length) return {};
+  const res = await db()
+    .from('gl_products')
+    .select('item_code,product_line,unit_price')
+    .eq('company_id', companyId)
+    .in('item_code', codes.slice(0, 500)); // pagination-ok: one form page's codes (≤ ~70)
+  if (res.error) throw new Error(`gl_products read failed: ${res.error.message}`);
+  const out: Record<string, {productLine: string | null; unitPrice: number | null}> = {};
+  for (const p of (res.data ?? []) as Array<{item_code: string; product_line: string | null; unit_price: string | number | null}>) {
+    out[p.item_code] = {productLine: p.product_line, unitPrice: p.unit_price == null ? null : Number(p.unit_price)};
+  }
+  return out;
+}
+
+export type FormPageCell = {page: number; uploadId: string | null; status: UploadStatus | null; flagged: number; current: boolean};
+export type FormPageStrip = {
+  /** count = the scans committed into the same store + period; batch = scans the same
+   *  person uploaded around the same time (pages 2–5 carry no store until reviewed). */
+  scope: 'count' | 'batch';
+  cells: FormPageCell[];
+};
+
+const BATCH_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * The review page's "form pages 1–5" strip, limited to the SAME form so a link never
+ * opens another store's page:
+ *  • committed scan → the scans committed into the same store + period count;
+ *  • pending scan   → the uploader's other scans within ±12 h (one sitting's batch).
+ * For each page: this scan if it's that page, else the newest sibling of that page.
+ * Company-scoped; every read is bounded.
+ */
+export async function formPageStrip(companyId: string, currentUploadId: string, flagBelow = 0.6): Promise<FormPageStrip | null> {
+  if (!goldlineConfigured()) return null;
+  const supa = db();
+  const upload = await getUpload(companyId, currentUploadId);
+  if (!upload) return null;
+
+  let scope: FormPageStrip['scope'] = 'batch';
+  let ids: string[] = [];
+  if (upload.status === 'committed') {
+    // pagination-ok: single row — where this scan landed.
+    const at = await supa
+      .from('gl_inventory')
+      .select('store_code,period_start,period_end')
+      .eq('company_id', companyId)
+      .eq('source_upload_id', currentUploadId)
+      .limit(1)
+      .maybeSingle();
+    if (at.data) {
+      scope = 'count';
+      const snap = at.data as {store_code: string; period_start: string; period_end: string};
+      const src = (await fetchAllRows('gl_inventory', (from, to) =>
+        supa
+          .from('gl_inventory')
+          .select('source_upload_id')
+          .eq('company_id', companyId)
+          .eq('store_code', snap.store_code)
+          .eq('period_start', snap.period_start)
+          .eq('period_end', snap.period_end)
+          .order('id')
+          .range(from, to),
+      )) as unknown as Array<{source_upload_id: string | null}>;
+      ids = [...new Set(src.map((r) => r.source_upload_id).filter((x): x is string => Boolean(x)))];
+    }
+  }
+  if (scope === 'batch') {
+    const t = Date.parse(upload.created_at);
+    let q = supa
+      .from('gl_uploads')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('kind', 'inventory_pdf')
+      .in('status', ['needs_review', 'committed'])
+      .gte('created_at', new Date(t - BATCH_WINDOW_MS).toISOString())
+      .lte('created_at', new Date(t + BATCH_WINDOW_MS).toISOString())
+      .order('created_at', {ascending: false})
+      .limit(50); // pagination-ok: one sitting's scans
+    q = upload.uploaded_by ? q.eq('uploaded_by', upload.uploaded_by) : q.is('uploaded_by', null);
+    const near = await q;
+    if (near.error) throw new Error(`gl_uploads read failed: ${near.error.message}`);
+    ids = ((near.data ?? []) as Array<{id: string}>).map((u) => u.id);
+  }
+  if (!ids.includes(currentUploadId)) ids.push(currentUploadId);
+
+  const [ext, ups] = await Promise.all([
+    // pagination-ok: one extraction per scan in this form (bounded by ids).
+    supa.from('gl_extractions').select('upload_id,page,rows,created_at').eq('company_id', companyId).in('upload_id', ids.slice(0, 60)),
+    // pagination-ok: same bound.
+    supa.from('gl_uploads').select('id,status,created_at').eq('company_id', companyId).in('id', ids.slice(0, 60)),
+  ]);
+  if (ext.error) throw new Error(`gl_extractions read failed: ${ext.error.message}`);
+  if (ups.error) throw new Error(`gl_uploads read failed: ${ups.error.message}`);
+  const meta = new Map(((ups.data ?? []) as Array<{id: string; status: UploadStatus; created_at: string}>).map((u) => [u.id, u]));
+  const list = ((ext.data ?? []) as Array<{upload_id: string; page: number; rows: {rows?: Array<{confidence?: unknown}>} | null}>)
+    .filter((e) => meta.has(e.upload_id))
+    .sort((a, b) => (meta.get(b.upload_id)?.created_at ?? '').localeCompare(meta.get(a.upload_id)?.created_at ?? ''));
+  const flaggedOf = (e: (typeof list)[number]) =>
+    (e.rows?.rows ?? []).filter((r) => {
+      const c = typeof r.confidence === 'number' && Number.isFinite(r.confidence) ? r.confidence : 1;
+      return c < flagBelow;
+    }).length;
+
+  const current = list.find((e) => e.upload_id === currentUploadId);
+  const cells = [1, 2, 3, 4, 5].map((page) => {
+    const pick = current && current.page === page ? current : list.find((e) => e.page === page && e.upload_id !== currentUploadId);
+    return {
+      page,
+      uploadId: pick?.upload_id ?? null,
+      status: pick ? (meta.get(pick.upload_id)?.status ?? null) : null,
+      flagged: pick ? flaggedOf(pick) : 0,
+      current: Boolean(current && current.page === page),
+    };
+  });
+  return {scope, cells};
+}
