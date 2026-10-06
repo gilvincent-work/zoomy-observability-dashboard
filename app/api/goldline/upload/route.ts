@@ -136,6 +136,15 @@ export async function POST(req: Request): Promise<Response> {
   const page = 1; // v1 extracts page 1 (only page 1 has an enumerated manifest yet).
   try {
     const extracted = await extractInventoryPage(pdfBase64, page);
+    // Page 1's manifest forces one row per printed item code, so a real page 1 always
+    // comes back with rows. Zero rows means this isn't page 1 (v1 only reads page 1 —
+    // e.g. a later page of the form). Fail loud instead of a misleading empty review.
+    if (extracted.rows.length === 0) {
+      const reason =
+        'This doesn’t look like page 1 of the Nichido inventory form. Automatic reading currently supports page 1 only — upload page 1, or review this file manually. (Pages 2–6 are coming soon.)';
+      await setUploadStatus(uploadId, 'failed', {rejectReason: reason});
+      return json({uploadId, status: 'failed', error: reason}, 422);
+    }
     // Same store-scope fence for the scanned form's store.
     const outPdf = outOfScopeStores(ctx.storeScope, [extracted.store_code]);
     if (outPdf.length) {
