@@ -71,9 +71,11 @@ export async function detectPage(pdfBase64: string): Promise<number> {
     output_config: {format: {type: 'json_schema', schema: PAGE_DETECT_SCHEMA}},
     messages: [{role: 'user', content: [pdfDoc(pdfBase64)]}],
   };
+  // Short timeout: detect runs BEFORE extract in the same request, so their timeouts
+  // must sum under the route's maxDuration. 20s (detect) + 85s (extract) = 105s < 120s.
   const res = (await client.messages.create(
     params as unknown as Parameters<typeof client.messages.create>[0],
-    {timeout: 60_000},
+    {timeout: 20_000},
   )) as {content?: Array<{type: string; text?: string}>};
   const parsed = parseJsonContent(res) as {page?: unknown};
   const n = typeof parsed.page === 'number' ? Math.trunc(parsed.page) : 0;
@@ -106,11 +108,11 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
 
   // Cast through unknown: output_config/thinking are newer params and the exact SDK
   // type surface varies by version; the wire shape above follows the current docs.
-  // Per-request timeout sits UNDER the route's maxDuration (120s) so a hung call
-  // throws here and the route's catch marks the upload failed — never left 'processing'.
+  // 85s + the detect call's 20s = 105s, under the route's 160s maxDuration, so a hung
+  // call throws here and the route's catch marks the upload failed — never 'processing'.
   const res = (await client.messages.create(
     params as unknown as Parameters<typeof client.messages.create>[0],
-    {timeout: 100_000},
+    {timeout: 85_000},
   )) as {content?: Array<{type: string; text?: string}>};
 
   const parsed = parseJsonContent(res);

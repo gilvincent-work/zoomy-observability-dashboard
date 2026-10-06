@@ -91,13 +91,13 @@ describe('page detection', () => {
 });
 
 describe('humanizeExtractError', () => {
-  it('explains the page 2–6 manifest gap without jargon', () => {
-    const m = humanizeExtractError(new Error('No extraction manifest for page 2 (generate it from the blank template first)'));
-    expect(m).toMatch(/page 1/i);
+  it('explains an unmatched page without jargon', () => {
+    const m = humanizeExtractError(new Error('No extraction manifest for page 9 (generate it from the blank template first)'));
+    expect(m).toMatch(/inventory page/i);
     expect(m).not.toMatch(/manifest/i);
   });
   it('maps page_mismatch, unreadable JSON, and busy/rate cases', () => {
-    expect(humanizeExtractError(new Error('Extraction declined: page_mismatch'))).toMatch(/page 1/i);
+    expect(humanizeExtractError(new Error('Extraction declined: page_mismatch'))).toMatch(/inventory page/i);
     expect(humanizeExtractError(new Error('Extraction did not return valid JSON'))).toMatch(/clearer/i);
     expect(humanizeExtractError(new Error('Overloaded'))).toMatch(/busy/i);
   });

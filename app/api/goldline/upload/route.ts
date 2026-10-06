@@ -16,13 +16,16 @@ import {humanizeExtractError, INVENTORY_PAGES} from '@/src/goldline-extract';
 // Goldline upload endpoint. Accepts ONE file (multipart/form-data, field `file`)
 // scoped to the active company (?company=<slug>):
 //   • .csv  → parse → idempotent upsert into gl_sales (needs period_start/_end)
-//   • .pdf  → store → Claude Vision reads page 1 → staged in gl_extractions for review
+//   • .pdf  → store → Claude Vision detects the page → extracts that page's items →
+//             staged in gl_extractions for review (page 6 / non-form → out of scope)
 // Tenant isolation is enforced here (getDataContext + canEditData); the data-blind
 // Coop Admin and read-only analysts are refused. File-type gating is the first check.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+// PDF path runs two sequential Vision calls (detect 20s + extract 85s = 105s); 160s
+// gives headroom so a slow call throws in-code (catch → failed) rather than a hard kill.
+export const maxDuration = 160;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

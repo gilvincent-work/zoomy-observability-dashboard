@@ -45,7 +45,7 @@ export function UploadReview({
   canEdit: boolean;
   upload: UploadRow;
   extraction: ExtractionRecord | null;
-  /** Short-lived signed URL to the stored scan (private bucket), or null. */
+  /** Same-origin proxy path to the stored scan (streams the private file), or null. */
   scanUrl?: string | null;
 }) {
   const router = useRouter();

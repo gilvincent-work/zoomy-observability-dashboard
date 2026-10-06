@@ -261,10 +261,10 @@ export const PAGE_DETECT_SCHEMA = {
 export function humanizeExtractError(raw: unknown): string {
   const s = (raw instanceof Error ? raw.message : String(raw ?? '')).toLowerCase();
   if (s.includes('manifest for page')) {
-    return 'Automatic reading currently supports page 1 of the Nichido inventory form. This looks like a later page — upload page 1, or review this file manually. (Pages 2–6 are coming soon.)';
+    return 'We couldn’t match this to a known Nichido inventory page (1–5). Please upload a clear scan of an inventory page, or review this file manually.';
   }
   if (s.includes('page_mismatch')) {
-    return "The form's page number didn't match what we expected. Please upload page 1 of the inventory form.";
+    return "The form's page number didn't match what we expected. Please upload a clear scan of an inventory page (1–5).";
   }
   if (s.includes('anthropic_api_key') || s.includes('not configured')) {
     return 'Automatic reading isn’t set up for this environment yet — the file was saved for manual review.';
