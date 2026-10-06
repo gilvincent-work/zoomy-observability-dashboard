@@ -206,13 +206,16 @@ export function DashboardShell({
   const storesTab: NavItem = {href: '/stores', label: 'Stores', icon: Store};
   const stockTab: NavItem = {href: '/stock', label: 'Inventory', icon: Package};
   const usersTab: NavItem = {href: '/admin/users', label: 'Users & Roles', icon: Users};
+  // Settings for non-Zoomy views only matters to multi-role users (Starting view).
+  const multiView = Boolean(nav && nav.views.length > 1);
+  const settingsTab: NavItem = {href: '/settings', label: 'Settings', icon: Settings};
 
   const overviewChildren = isZoomy ? OVERVIEW_CHILDREN : [];
   const flatTabs = isZoomy
     ? FLAT_TABS
     : isCoopAdminView
-      ? [usersTab]
-      : [overviewTab, storesTab, stockTab, uploadsTab];
+      ? [usersTab, ...(multiView ? [settingsTab] : [])]
+      : [overviewTab, storesTab, stockTab, uploadsTab, ...(multiView ? [settingsTab] : [])];
 
   // ── Mobile nav model (below md only) ──────────────────────────────────────
   // The left rail is hidden under md; these drive a bottom tab bar + a "More" sheet.
@@ -245,7 +248,9 @@ export function DashboardShell({
         {href: '/repricer', label: 'Repricer', icon: Tag},
         {href: '/settings', label: 'Settings', icon: Settings},
       ]
-    : [];
+    : multiView
+      ? [settingsTab]
+      : [];
   const moreActive = moreItems.some((i) => leafActive(i.href, pathname, channel));
 
   return (
