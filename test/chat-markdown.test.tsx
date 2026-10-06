@@ -1,6 +1,6 @@
 import {renderToStaticMarkup} from 'react-dom/server';
 import {describe, expect, it} from 'vitest';
-import {ChatMarkdown, KNOWN_LINK_HOSTS, safeLinkUrl} from '../components/analyst/chat-markdown';
+import {ChatMarkdown, KNOWN_LINK_HOSTS, collapseBr, safeLinkUrl} from '../components/analyst/chat-markdown';
 
 const html = (text: string): string => renderToStaticMarkup(<ChatMarkdown text={text} />);
 
@@ -84,5 +84,23 @@ describe('assistant markdown: Explore answers link only to known hosts', () => {
   });
   it('without the flag the existing behaviour is unchanged', () => {
     expect(safeLinkUrl('https://example.com/a')).toBe('https://example.com/a');
+  });
+});
+
+describe('assistant markdown: degenerate <br> runs', () => {
+  it('collapses a run of 50 <br> into one line break', () => {
+    expect(collapseBr('a' + '<br> '.repeat(50) + 'b')).toBe('a\nb');
+    expect(html('a' + '<br> '.repeat(50) + 'b')).not.toMatch(/&lt;br/i);
+  });
+  it('drops a tool call typed as text (tools off in the wrap-up step)', () => {
+    expect(collapseBr('done\n\n<render_chart> </render_chart>\n\nnext')).toBe('done\n\n \n\nnext');
+    expect(html('a <render_kpi/> b')).not.toMatch(/render_kpi/);
+  });
+  it('handles <br/>, <br />, any case', () => {
+    expect(collapseBr('a<BR/><Br />\n<br>b')).toBe('a\nb');
+  });
+  it('leaves normal text and fenced code alone', () => {
+    expect(collapseBr('plain **text**')).toBe('plain **text**');
+    expect(collapseBr('x<br>y\n```\n<br>\n```\n')).toBe('x\ny\n```\n<br>\n```\n');
   });
 });

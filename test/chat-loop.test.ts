@@ -1,9 +1,9 @@
 import {describe, expect, it, vi} from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import {readFileSync} from 'node:fs';
-import {runChatLoop, CHAT_DEADLINE_MS, TOOL_DEADLINE_MS, WRAP_UP_TEXT, CUT_OFF_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
+import {runChatLoop, CHAT_DEADLINE_MS, TOOL_DEADLINE_MS, WRAP_UP_TEXT, CUT_OFF_TEXT, DEGENERATE_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
 import {assertRequestShape} from '../src/chat/request-shape';
-import {CHAT_TOOLS} from '../src/chat/tool-defs';
+import {CHAT_TOOLS, exploreTools} from '../src/chat/tool-defs';
 import type {ChatStreamEvent} from '../src/chat/stream-types';
 import type {ToolExecutors} from '../src/chat/tools';
 
@@ -15,6 +15,7 @@ type Scripted = {text?: string[]; content?: Block[]; stop_reason?: string; usage
 class FakeClient implements MessagesClient {
   requests: string[] = []; // JSON snapshots taken at call time
   onCall?: (n: number) => void;
+  aborts = 0;
   constructor(private script: (call: number) => Scripted) {}
   messages = {
     stream: (params: unknown) => {
@@ -27,6 +28,7 @@ class FakeClient implements MessagesClient {
           if (s instanceof Error) throw s;
           for (const d of s.text ?? []) yield {type: 'content_block_delta', index: 0, delta: {type: 'text_delta', text: d}} as Anthropic.MessageStreamEvent;
         },
+        abort: () => { this.aborts += 1; },
         finalMessage: async () => {
           if (s instanceof Error) throw s;
           const u = s.usage ?? {};
@@ -70,6 +72,41 @@ const turnLines = (s: ReturnType<typeof sink>) => s.info.mock.calls.map((c) => J
 const guardTrips = (s: ReturnType<typeof sink>) => s.error.mock.calls.map((c) => JSON.parse(c[0] as string)).filter((l) => l.event === 'chat_guard_trip');
 
 describe('runChatLoop', () => {
+  it('degenerate loop: a repeated unit stops the stream, trims the tail, says so honestly and ends with done', async () => {
+    const client = new FakeClient(() => ({text: ['Last week you sold 12 bags.', ...Array.from({length: 1000}, () => '<br> ')], stop_reason: 'max_tokens'}));
+    const {events, opts} = setup(client);
+    const r = await runChatLoop(opts);
+    const text = events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('');
+    expect(r.stopReason).toBe('degenerate');
+    expect(client.aborts).toBe(1);
+    expect(text).toContain('Last week you sold 12 bags.');
+    expect(text.split('<br>').length - 1).toBeLessThan(20);
+    expect(text.endsWith(DEGENERATE_TEXT)).toBe(true);
+    expect(events[events.length - 1].t).toBe('done');
+    expect(events.filter((e) => e.t === 'text' && (e as {d: string}).d === CUT_OFF_TEXT)).toHaveLength(0);
+  });
+
+  it('degenerate loop in a held (explore) turn: the held text is trimmed before release', async () => {
+    const client = new FakeClient(() => ({text: ['Sales were fine.', ...Array.from({length: 1000}, () => '<br> ')], stop_reason: 'max_tokens'}));
+    const {events, opts} = setup(client, {tools: exploreTools()});
+    const r = await runChatLoop(opts);
+    const text = events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('');
+    expect(r.stopReason).toBe('degenerate');
+    expect(text.split('<br>').length - 1).toBeLessThan(3);
+    expect(text).toContain('Sales were fine.');
+    expect(text.endsWith(DEGENERATE_TEXT)).toBe(true);
+  });
+
+  it('a legitimately repeated short phrase (under 20 reps) does not trip', async () => {
+    const row = '| - |'.repeat(15);
+    const client = new FakeClient(() => ({text: ['Table:\n', row, '\nDone.']}));
+    const {events, opts} = setup(client);
+    const r = await runChatLoop(opts);
+    expect(r.stopReason).toBe('end_turn');
+    expect(client.aborts).toBe(0);
+    expect(events.map((e) => (e.t === 'text' ? e.d : '')).join('')).toContain(row);
+  });
+
   it('degraded mode: with no tools the request omits tools and tool_choice, still passes the layer-1 check, and answers', async () => {
     const client = new FakeClient(() => ({text: ['Live POS data is not available right now.']}));
     const {events, opts} = setup(client, {tools: [], executors: {}});
