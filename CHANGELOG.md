@@ -10,6 +10,18 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Scan review extras: form grid, flag navigator, page strip, totals check
+- **Two views of the rows.**
+  - "Needs review" lists only the flagged rows; it's the default when anything is flagged.
+  - "All · form grid" mirrors the paper: rows grouped under the printed family headings with their price (from the new catalog), and flagged rows still highlighted.
+  - Search by item or code. Column headers carry the form's Tagalog column names as tooltips.
+- **Flag navigator.** "Flag ‹ 1 / N ›" walks the flagged rows (wrapping) and focuses the row's first input, with "k of N resolved" next to it.
+- **Resolving flags.** A flag is resolved by editing its row or clicking **Looks right**, which then jumps to the next open flag. The confidence card's "Review N flagged rows" now lands on the first open flag.
+- **Commit is held until every flag is resolved** (plan §07d), with a "Resolve N flagged rows to commit" shortcut. The button reads "Confirm & commit".
+- **Totals check.** Shows this page's ending value (on hand × printed price, with the same on-hand rule as Inventory) beside an optional "Total written on the form" field. Result: ✓ Reconciled within ₱1, or "Off by ₱X", saying which way.
+- **Page strip.** Pages 1–5 under the file name: the current page, the latest scan of each other page (links), a red dot when that scan has flags, a ✓ when it's committed, and a dashed chip when a page has no scan yet.
+- Pure logic in `src/review-workbench.ts` (tested). New reads `catalogForCodes` and `formPageStrip`, both company-scoped and bounded. typecheck + full suite (2503) + pagination guard pass; impeccable detector: no findings.
+
 ## 2026-10-06 — Scan review: confidence front and center
 - The review page's Document card now leads with how sure the OCR was, said three ways:
   - **A large score** in the dashboard's metric face, colored by band: high ≥ 85%, medium 60–85%, low < 60%, which is the existing flag threshold.

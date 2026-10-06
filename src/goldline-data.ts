@@ -389,3 +389,70 @@ export async function listUploads(companyId: string): Promise<UploadRow[]> {
   );
   return rows as unknown as UploadRow[];
 }
+
+/** Catalog line + printed price for the given item codes (the review page's family
+ *  grouping and totals check). Company-scoped. */
+export async function catalogForCodes(
+  companyId: string,
+  codes: string[],
+): Promise<Record<string, {productLine: string | null; unitPrice: number | null}>> {
+  if (!goldlineConfigured() || !codes.length) return {};
+  const res = await db()
+    .from('gl_products')
+    .select('item_code,product_line,unit_price')
+    .eq('company_id', companyId)
+    .in('item_code', codes.slice(0, 500)); // pagination-ok: one form page's codes (≤ ~70)
+  if (res.error) throw new Error(`gl_products read failed: ${res.error.message}`);
+  const out: Record<string, {productLine: string | null; unitPrice: number | null}> = {};
+  for (const p of (res.data ?? []) as Array<{item_code: string; product_line: string | null; unit_price: string | number | null}>) {
+    out[p.item_code] = {productLine: p.product_line, unitPrice: p.unit_price == null ? null : Number(p.unit_price)};
+  }
+  return out;
+}
+
+export type FormPageCell = {page: number; uploadId: string | null; status: UploadStatus | null; flagged: number; current: boolean};
+
+/**
+ * The review page's "form pages 1–5" strip: for each page, the scan being reviewed if
+ * it's that page, otherwise the company's most recent scan of that page (so a reviewer
+ * working through a store's form can hop page to page). `flagged` = rows under the
+ * review threshold. Company-scoped; reads only the latest extractions.
+ */
+export async function formPageStrip(companyId: string, currentUploadId: string, flagBelow = 0.6): Promise<FormPageCell[]> {
+  if (!goldlineConfigured()) return [];
+  const supa = db();
+  const ext = await supa
+    .from('gl_extractions')
+    .select('upload_id,page,rows,created_at')
+    .eq('company_id', companyId)
+    .order('created_at', {ascending: false})
+    .limit(60); // pagination-ok: the most recent scans only, by design
+  if (ext.error) throw new Error(`gl_extractions read failed: ${ext.error.message}`);
+  const list = (ext.data ?? []) as Array<{upload_id: string; page: number; rows: {rows?: Array<{confidence?: unknown}>} | null}>;
+  const ids = [...new Set(list.map((e) => e.upload_id))];
+  const ups = ids.length
+    ? await supa.from('gl_uploads').select('id,status').eq('company_id', companyId).in('id', ids) // pagination-ok: ≤ 60 ids
+    : {data: [], error: null};
+  if (ups.error) throw new Error(`gl_uploads read failed: ${ups.error.message}`);
+  const statusOf = new Map(((ups.data ?? []) as Array<{id: string; status: UploadStatus}>).map((u) => [u.id, u.status]));
+  const flaggedOf = (e: (typeof list)[number]) =>
+    (e.rows?.rows ?? []).filter((r) => {
+      const c = typeof r.confidence === 'number' && Number.isFinite(r.confidence) ? r.confidence : 1;
+      return c < flagBelow;
+    }).length;
+
+  const current = list.find((e) => e.upload_id === currentUploadId);
+  return [1, 2, 3, 4, 5].map((page) => {
+    const pick =
+      current && current.page === page
+        ? current
+        : list.find((e) => e.page === page && e.upload_id !== currentUploadId && statusOf.has(e.upload_id));
+    return {
+      page,
+      uploadId: pick?.upload_id ?? null,
+      status: pick ? (statusOf.get(pick.upload_id) ?? null) : null,
+      flagged: pick ? flaggedOf(pick) : 0,
+      current: Boolean(current && current.page === page),
+    };
+  });
+}

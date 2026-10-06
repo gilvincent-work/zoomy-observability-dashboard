@@ -1,7 +1,7 @@
 import {notFound} from 'next/navigation';
 import {getDataContext} from '@/src/active-context';
 import {canEditData} from '@/src/company';
-import {getExtraction, getUpload} from '@/src/goldline-data';
+import {catalogForCodes, formPageStrip, getExtraction, getUpload} from '@/src/goldline-data';
 import {MANIFESTS} from '@/src/goldline-extract';
 import {committedSnapshotFor} from '@/src/goldline-inventory-data';
 import {UploadReview} from '@/components/analyst/upload-review';
@@ -38,6 +38,12 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
   const inventoryHref = snap
     ? `/stock?store=${encodeURIComponent(snap.store_code)}&period=${snap.period_start}_${snap.period_end}`
     : null;
+  // Catalog line + price for this page's items (form grid, totals check) and the
+  // latest scan of each form page (page strip). Only for a scan with an extraction.
+  const codes = extraction?.data?.rows?.map((r) => r.item_code) ?? [];
+  const [catalog, pageStrip] = extraction
+    ? await Promise.all([catalogForCodes(ctx.companyId, codes), formPageStrip(ctx.companyId, upload.id)])
+    : [{}, []];
   return (
     <UploadReview
       company={ctx.companyId}
@@ -47,6 +53,8 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
       scanUrl={scanUrl}
       productNames={productNames}
       inventoryHref={inventoryHref}
+      catalog={catalog}
+      pageStrip={pageStrip}
     />
   );
 }
