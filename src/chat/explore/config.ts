@@ -20,13 +20,13 @@ export function loadExploreLimits(env: ExploreEnv): ExploreLimits {
   return out;
 }
 
-type ParsedUrl = {ok: true; username: string; hostPart: string; hostname: string} | {ok: false; reason: ExploreOffReason};
+export type ParsedUrl = {ok: true; username: string; hostPart: string; hostname: string} | {ok: false; reason: ExploreOffReason};
 
 /**
  * Parse the way the driver does: the host is the text after the FIRST '@' of the authority (postgres.js), the user comes from the
  * WHATWG parse. The two must agree on the host, a host list is refused, and so is a query that sets the host.
  */
-function parseUrl(url: string): ParsedUrl {
+export function parseUrl(url: string): ParsedUrl {
   let u: URL;
   try {
     u = new URL(url);
@@ -47,7 +47,7 @@ function parseUrl(url: string): ParsedUrl {
   return {ok: true, username, hostPart, hostname: u.hostname.toLowerCase()};
 }
 
-const csv = (s: string | undefined): string[] =>
+export const csv = (s: string | undefined): string[] =>
   (s ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
 
 export function resolveExploreAccess(env: ExploreEnv, email: string | null): ExploreAccess {
