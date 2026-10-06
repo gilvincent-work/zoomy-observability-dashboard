@@ -10,6 +10,9 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Fix: Goldline PDF extraction 400 (invalid thinking param)
+- `src/goldline-extract-run.ts`: removed `thinking: {type: "disabled"}` from the Claude Vision call — `claude-sonnet-5-5` rejects it with a 400 ("send {type: between_tools} instead"). For a pure, no-tools extraction we omit the param and let the model default, so a scanned PDF upload reaches the review workbench instead of failing. (The upload/auth/storage/key path was already working; only this param was wrong.)
+
 ## 2026-10-06 — Multi-role access: regression-review fixes (session freshness, atomic-ish audit, admin index)
 - **CRITICAL**: revoke/suspend now takes effect in real time. Admin actions (`app/admin/actions.ts`) re-read the actor's roles from the DB — not the session token — before any write; the JWT refreshes memberships every ~5 min and session `maxAge` is 8h (`auth.ts`). A revoked/suspended membership stops working within minutes instead of living in the JWT until it expires.
 - MED: audit writes are best-effort (`src/admin-data.ts`) — a committed role change is never reported "failed" because the audit insert hiccuped; failures are logged instead.
