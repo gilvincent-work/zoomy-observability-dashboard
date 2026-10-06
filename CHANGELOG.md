@@ -40,6 +40,13 @@ Dates are local working dates (GMT+8). Newest first.
   - (LOW) A `?period=` without `?store=` now narrows the pick.
 - Tests: `goldline-inventory.test.ts`, `upload-progress.test.ts`. typecheck + full suite (2485) + pagination guard pass; impeccable detector: no findings.
 
+## 2026-10-06 — Removed the "Your access" tab; the header switcher is the one place to switch views
+- Dropped the "Your access" nav item (desktop rail and mobile bar) and deleted the `/account` page and `account-view.tsx`, which nothing else linked to. The header view switcher already does the same job.
+- Decision: the header switcher was hidden on phones (`max-sm:hidden`), so "Your access" was the only way to switch views there. The switcher now shows at every width, with the name truncated tighter on phones so the header fits.
+- Single-view users see a plain label instead of a pill with a ▾ chevron that opened nothing.
+- The mobile "More" sheet hides its empty link grid for Goldline and Coop Admin (it still holds Sign out).
+- typecheck + full suite (2467) + pagination guard pass.
+
 ## 2026-10-06 — View switcher revamp: Coop Admin set apart, companies A–Z, color badges
 - The top-bar view switcher (same `ViewSwitcher` component) now pins **Coop Admin** at the top with a shield badge and the caption "People & roles · no business data", then a divider, then **companies A–Z** under a "Companies" label (the label only shows when there's a Coop section to separate from). Each company has a stable color monogram badge ("GC", "Z") so views are told apart at a glance; the active one is marked with a check.
 - The trigger shows the active view's badge and name only. The role moved into the menu's second line, which fixes the "Goldline Cosmetics · Compa…" truncation.
