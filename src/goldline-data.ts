@@ -93,14 +93,33 @@ export async function createUpload(input: {
 export async function setUploadStatus(
   id: string,
   status: UploadStatus,
-  extra?: {rejectReason?: string; pageCount?: number},
+  extra?: {rejectReason?: string; pageCount?: number; errorDetail?: string | null},
 ): Promise<void> {
   const supa = db();
   const patch: Record<string, unknown> = {status};
   if (extra?.rejectReason !== undefined) patch.reject_reason = extra.rejectReason;
   if (extra?.pageCount !== undefined) patch.page_count = extra.pageCount;
+  // Scrubbed technical detail for diagnosis (never shown prominently in the UI).
+  if (extra?.errorDetail !== undefined) patch.error_detail = extra.errorDetail?.slice(0, 500) ?? null;
   const res = await supa.from('gl_uploads').update(patch).eq('id', id);
   if (res.error) throw new Error(`gl_uploads update failed: ${res.error.message}`);
+}
+
+/** Delete an upload (and its staged extraction + stored file), scoped to a company. */
+export async function deleteUpload(companyId: string, id: string): Promise<boolean> {
+  if (!goldlineConfigured()) return false;
+  const supa = db();
+  const upload = await getUpload(companyId, id); // company-scoped ownership check
+  if (!upload) return false;
+  // Best-effort file + extraction cleanup, then the row (the one scoped by company).
+  if (upload.storage_path) {
+    const rm = await supa.storage.from(GOLDLINE_BUCKET).remove([upload.storage_path]);
+    if (rm.error) console.error('deleteUpload: storage remove failed', rm.error.message);
+  }
+  await supa.from('gl_extractions').delete().eq('company_id', companyId).eq('upload_id', id);
+  const res = await supa.from('gl_uploads').delete().eq('company_id', companyId).eq('id', id);
+  if (res.error) throw new Error(`gl_uploads delete failed: ${res.error.message}`);
+  return true;
 }
 
 /** Idempotent upsert of POS sale rows for one company + period (keyed on the natural key). */

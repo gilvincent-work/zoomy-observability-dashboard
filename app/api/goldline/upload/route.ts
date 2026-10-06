@@ -164,10 +164,11 @@ export async function POST(req: Request): Promise<Response> {
     await setUploadStatus(uploadId, 'needs_review', {pageCount: page});
     return json({uploadId, status: 'needs_review', page, rows: extracted.rows.length, docConfidence: avgConfidence(extracted)});
   } catch (e) {
-    // Log the raw error server-side; show the reviewer a human-readable reason.
+    // Log the raw error server-side; show the reviewer a human-readable reason; keep a
+    // scrubbed copy in error_detail for diagnosis (never shown prominently in the UI).
     console.error('goldline upload: extraction failed', msg(e));
     const friendly = humanizeExtractError(e);
-    await setUploadStatus(uploadId, 'failed', {rejectReason: friendly});
+    await setUploadStatus(uploadId, 'failed', {rejectReason: friendly, errorDetail: msg(e)});
     return json({uploadId, status: 'failed', error: friendly}, 422);
   }
 }
