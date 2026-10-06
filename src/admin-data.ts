@@ -110,24 +110,46 @@ async function audit(input: {
   }
 }
 
-/** Grant a new membership, or change the role of an existing one. Audited. A brand-new
- *  email (no other membership) lands as `invited`; a known user is `active` at once. */
-export async function grantRole(input: {actor: string; email: string; companyId: string | null; role: CompanyRole}): Promise<void> {
+/**
+ * Add one or more memberships for one email. Audited per grant.
+ * - Access the person already holds is SKIPPED, never altered: a grant can't
+ *   silently change a role or reactivate a suspended membership (Suspend/Reactivate
+ *   are their own explicit actions).
+ * - Every new row gets the same status, decided once up front: `active` if the
+ *   person already has an active membership (they've signed in), else `invited`
+ *   (flipped to active on their first Google sign-in).
+ * - New rows go in one insert statement, so it's all-or-nothing.
+ */
+export async function grantRoles(input: {
+  actor: string;
+  email: string;
+  grants: Array<{companyId: string | null; role: CompanyRole}>;
+}): Promise<{granted: number; skipped: number}> {
   const supa = db();
-  const existing = await findMembership(supa, input.email, input.companyId);
-  if (existing) {
-    const up = supa.from('company_users').update({role: input.role, status: 'active'}).eq('user_email', input.email);
-    const res = await (input.companyId === null ? up.is('company_id', null) : up.eq('company_id', input.companyId));
-    if (res.error) throw new Error(`role update failed: ${res.error.message}`);
-    await audit({...input, action: 'change_role', oldRole: existing.role, newRole: input.role});
-    return;
+  // pagination-ok: one person's memberships, bounded by the number of companies.
+  const cur = await supa.from('company_users').select('company_id,status').eq('user_email', input.email);
+  if (cur.error) throw new Error(`user lookup failed: ${cur.error.message}`);
+  const rows = (cur.data ?? []) as Array<{company_id: string | null; status: MembershipStatus | null}>;
+  const held = new Set(rows.map((r) => r.company_id ?? ''));
+  const status: MembershipStatus = rows.some((r) => (r.status ?? 'active') === 'active') ? 'active' : 'invited';
+
+  const fresh: Array<{companyId: string | null; role: CompanyRole}> = [];
+  for (const g of input.grants) {
+    const k = g.companyId ?? '';
+    if (held.has(k)) continue;
+    held.add(k); // also dedupes repeats within this call
+    fresh.push(g);
   }
-  const known = await supa.from('company_users').select('id', {count: 'exact', head: true}).eq('user_email', input.email); // pagination-ok: count-only head request, returns no rows
-  if (known.error) throw new Error(`user lookup failed: ${known.error.message}`);
-  const status: MembershipStatus = (known.count ?? 0) > 0 ? 'active' : 'invited';
-  const ins = await supa.from('company_users').insert({company_id: input.companyId, user_email: input.email, role: input.role, status});
-  if (ins.error) throw new Error(`grant failed: ${ins.error.message}`);
-  await audit({...input, action: 'grant', oldRole: null, newRole: input.role});
+  if (fresh.length) {
+    const ins = await supa
+      .from('company_users')
+      .insert(fresh.map((g) => ({company_id: g.companyId, user_email: input.email, role: g.role, status})));
+    if (ins.error) throw new Error(`grant failed: ${ins.error.message}`);
+    for (const g of fresh) {
+      await audit({actor: input.actor, email: input.email, companyId: g.companyId, action: 'grant', oldRole: null, newRole: g.role});
+    }
+  }
+  return {granted: fresh.length, skipped: input.grants.length - fresh.length};
 }
 
 /** Suspend or reactivate a membership. Audited. */

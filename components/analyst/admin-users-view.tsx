@@ -77,6 +77,14 @@ export function AdminUsersView({users, companies, me}: {users: AdminUser[]; comp
     return () => clearTimeout(t);
   }, [notice]);
 
+  // After a refresh, drop a pending "Remove…?" whose access no longer exists
+  // (e.g. another admin removed it in the meantime).
+  useEffect(() => {
+    if (!confirm) return;
+    const still = users.find((u) => u.email === confirm.email)?.memberships.some((m) => keyOf(m) === keyOf(confirm.m));
+    if (!still) setConfirm(null);
+  }, [users, confirm]);
+
   const options: AccessOption[] = useMemo(
     () => [
       ...companies.map((c) => ({companyKey: c.id, role: 'company_admin' as CompanyRole, company: c.name, label: `${c.name} · Company User`})),
@@ -86,6 +94,7 @@ export function AdminUsersView({users, companies, me}: {users: AdminUser[]; comp
   );
 
   function run(email: string, fn: () => Promise<{ok: boolean; error?: string}>, okText: string, after?: () => void) {
+    if (pending) return; // one write at a time; triggers stay focusable so keyboard focus isn't dropped
     setNotice(null);
     setBusyEmail(email);
     startTransition(async () => {
@@ -336,7 +345,6 @@ function PersonRow({
             <AccessChip
               key={keyOf(m)}
               m={m}
-              disabled={disabled}
               selfAdmin={isMe && m.companyId === null}
               onStatus={(s) => onStatus(m, s)}
               onAskRemove={() => onAskRemove(m)}
@@ -345,7 +353,7 @@ function PersonRow({
 
           <Menu.Root>
             <Menu.Trigger
-              disabled={disabled || addable.length === 0}
+              disabled={addable.length === 0}
               title={addable.length === 0 ? 'Already has every role' : undefined}
               className="inline-flex h-7 items-center gap-1 rounded-full border border-dashed border-border px-2.5 text-xs font-medium text-muted-foreground outline-none transition-[color,border-color,transform] duration-150 ease-out hover:border-foreground/30 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40"
             >
@@ -367,12 +375,17 @@ function PersonRow({
             </Menu.Portal>
           </Menu.Root>
 
-          {busy && <Loader2 aria-label="Saving" className="size-4 animate-spin text-muted-foreground" />}
+          {busy && (
+            <span role="status" className="inline-flex items-center">
+              <Loader2 aria-hidden className="size-4 animate-spin text-muted-foreground" />
+              <span className="sr-only">Saving…</span>
+            </span>
+          )}
         </div>
 
         {confirming && (
           <div
-            role="alertdialog"
+            role="group"
             aria-label="Confirm removing access"
             className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
           >
@@ -396,13 +409,11 @@ function PersonRow({
 
 function AccessChip({
   m,
-  disabled,
   selfAdmin,
   onStatus,
   onAskRemove,
 }: {
   m: AdminMembership;
-  disabled: boolean;
   selfAdmin: boolean;
   onStatus: (s: 'active' | 'suspended') => void;
   onAskRemove: () => void;
@@ -411,7 +422,6 @@ function AccessChip({
   return (
     <Menu.Root>
       <Menu.Trigger
-        disabled={disabled}
         aria-label={`${accessLabel(m)}, ${m.status}. Manage`}
         className={cn(
           'inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-border bg-background pr-2 pl-2.5 text-xs outline-none transition-[background-color,border-color,transform] duration-150 ease-out hover:border-foreground/30 focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[0.97] data-[popup-open]:border-foreground/30 data-[popup-open]:bg-muted disabled:opacity-60',

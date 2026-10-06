@@ -3,7 +3,7 @@
 import {revalidatePath} from 'next/cache';
 import {auth} from '@/auth';
 import {COOP_VIEW_KEY, fetchMemberships, type CompanyRole} from '@/src/company';
-import {countCoopAdmins, grantRole, revoke, setStatus} from '@/src/admin-data';
+import {countCoopAdmins, grantRoles, revoke, setStatus} from '@/src/admin-data';
 
 // Role-management actions — the ONLY write surface for access. Every action
 // re-derives the active view server-side and requires it to be the Coop Admin view
@@ -48,7 +48,9 @@ export async function grantRoleAction(input: {email: string; companyKey: string;
   if (companyId !== null && input.role === 'coop_admin') return {ok: false, error: 'Coop Admin is cross-tenant — leave the company blank.'};
 
   try {
-    await grantRole({actor: gate.actor, email, companyId, role: input.role});
+    const {granted} = await grantRoles({actor: gate.actor, email, grants: [{companyId, role: input.role}]});
+    // Existing access is never altered here (no silent role change or reactivation).
+    if (!granted) return {ok: false, error: 'They already have this access.'};
     revalidatePath('/admin/users');
     return {ok: true};
   } catch (e) {
@@ -59,7 +61,8 @@ export async function grantRoleAction(input: {email: string; companyKey: string;
 
 /** Grant several roles to one email in one call (the console's "Invite person" with
  *  multiple roles ticked). Same gate and per-grant validation as grantRoleAction;
- *  every grant is validated before any is written, so a bad entry writes nothing. */
+ *  every grant is validated before any is written, and the new rows go in one
+ *  insert, so a bad entry or a failed write changes nothing. */
 export async function grantRolesAction(input: {
   email: string;
   grants: Array<{companyKey: string; role: CompanyRole}>;
@@ -74,6 +77,7 @@ export async function grantRolesAction(input: {
 
   const parsed: Array<{companyId: string | null; role: CompanyRole}> = [];
   for (const g of grants) {
+    if (!g || typeof g !== 'object' || typeof g.companyKey !== 'string') return {ok: false, error: 'Unknown company.'};
     if (!GRANTABLE.includes(g.role)) return {ok: false, error: 'Unknown role.'};
     const companyId = parseCompany(g.companyKey);
     if (companyId === undefined) return {ok: false, error: 'Unknown company.'};
@@ -83,12 +87,14 @@ export async function grantRolesAction(input: {
   }
 
   try {
-    for (const p of parsed) await grantRole({actor: gate.actor, email, companyId: p.companyId, role: p.role});
+    // One insert for all new rows (all-or-nothing); access they already hold is skipped.
+    const {granted} = await grantRoles({actor: gate.actor, email, grants: parsed});
+    if (!granted) return {ok: false, error: 'They already have every role you picked.'};
     revalidatePath('/admin/users');
     return {ok: true};
   } catch (e) {
     console.error('grantRolesAction', e);
-    return {ok: false, error: 'Could not grant every role — please check this person and try again.'};
+    return {ok: false, error: 'Could not grant these roles — nothing was changed. Please try again.'};
   }
 }
 
