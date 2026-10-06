@@ -14,6 +14,7 @@ Dates are local working dates (GMT+8). Newest first.
 - Access chips now carry their company's color, the same hue as its badge in the header view switcher (`companyHue`): Goldline gold, Zoomy green, any other company its own stable hue. A company reads the same everywhere. Coop Admin chips are a neutral tint with a shield icon.
 - The same colors appear in the "+ Add access" menu (color dot per company, shield for Coop Admin) and on the Invite panel's role tiles.
 - Status is shown only when it's the exception: an amber dot plus "(invited)" for invited, dashed and faded with "(suspended)" for suspended. "Active" is the unmarked default, so a green status dot no longer competes with Zoomy's green. The legend now reads: chip color = company · Coop Admin · Invited · Suspended.
+- Review (code-reviewer): no critical, high or medium issues. Applied the lows: hover and open states step up the chip's own tint and border (a brightness filter was nearly invisible on light), `disabled:opacity-60` is restored, and suspended chips fade to 75% so their text stays readable.
 - Chip text contrast is about 7–8:1 on light and about 6:1 on dark. typecheck + full suite (2518) pass; impeccable detector: no findings.
 
 ## 2026-10-07 — Switching views takes you to that view's home

@@ -54,8 +54,13 @@ const MENU_ITEM =
 const hueVars = (companyId: string) => ({['--hue' as string]: companyHue(companyId)});
 const COMPANY_TONE =
   'border-[oklch(0.62_0.12_var(--hue)/0.4)] bg-[oklch(0.62_0.12_var(--hue)/0.12)] text-[oklch(0.42_0.11_var(--hue))] ' +
-  'dark:border-[oklch(0.75_0.12_var(--hue)/0.38)] dark:bg-[oklch(0.75_0.12_var(--hue)/0.13)] dark:text-[oklch(0.86_0.09_var(--hue))]';
-const COOP_TONE = 'border-foreground/25 bg-foreground/[0.06] text-foreground';
+  'hover:border-[oklch(0.62_0.12_var(--hue)/0.7)] hover:bg-[oklch(0.62_0.12_var(--hue)/0.2)] ' +
+  'data-[popup-open]:border-[oklch(0.62_0.12_var(--hue)/0.7)] data-[popup-open]:bg-[oklch(0.62_0.12_var(--hue)/0.2)] ' +
+  'dark:border-[oklch(0.75_0.12_var(--hue)/0.38)] dark:bg-[oklch(0.75_0.12_var(--hue)/0.13)] dark:text-[oklch(0.86_0.09_var(--hue))] ' +
+  'dark:hover:border-[oklch(0.75_0.12_var(--hue)/0.65)] dark:hover:bg-[oklch(0.75_0.12_var(--hue)/0.2)] ' +
+  'dark:data-[popup-open]:border-[oklch(0.75_0.12_var(--hue)/0.65)] dark:data-[popup-open]:bg-[oklch(0.75_0.12_var(--hue)/0.2)]';
+const COOP_TONE =
+  'border-foreground/25 bg-foreground/[0.06] text-foreground hover:border-foreground/45 hover:bg-foreground/10 data-[popup-open]:border-foreground/45 data-[popup-open]:bg-foreground/10';
 
 /** A small company color dot (menus, invite tiles); a shield for Coop Admin. */
 function ToneDot({companyId}: {companyId: string | null}) {
@@ -449,9 +454,9 @@ function AccessChip({
         aria-label={`${accessLabel(m)}, ${m.status}. Manage`}
         style={m.companyId ? hueVars(m.companyId) : undefined}
         className={cn(
-          'inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border pr-2 pl-2.5 text-xs outline-none transition-[filter,transform,opacity] duration-150 ease-out hover:brightness-110 focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[0.97] data-[popup-open]:brightness-110 dark:hover:brightness-125',
+          'inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border pr-2 pl-2.5 text-xs outline-none transition-[background-color,border-color,transform,opacity] duration-150 ease-out focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[0.97] disabled:opacity-60',
           m.companyId ? COMPANY_TONE : COOP_TONE,
-          suspended && 'border-dashed opacity-60',
+          suspended && 'border-dashed opacity-75',
         )}
       >
         {!m.companyId && <ShieldCheck aria-hidden className="size-3.5 shrink-0" />}
