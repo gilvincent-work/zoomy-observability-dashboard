@@ -3,7 +3,7 @@
 import {describeData} from './coverage';
 import {lookupProduct, shapeDigest} from './digest-lookup';
 import {METRICS} from './metrics-registry';
-import {createRenderExecutors} from './render-executors';
+import {createRenderExecutors, type RenderExecutors} from './render-executors';
 import {createReportSession} from './report-session';
 import {createReportExecutors} from './report-tools';
 import {runMetric} from './query-metric';
@@ -13,7 +13,10 @@ import type {ChatToolContext} from './stream-types';
 
 export const MAX_PAYLOAD_ROWS = 100;
 
-export function createExecutors(ctx: ChatToolContext): ToolExecutors {
+/** The tool executors plus the app-side Explore backstop (never reachable by the model: it is not a tool). */
+export type ChatExecutors = ToolExecutors & Pick<RenderExecutors, 'autoRender'>;
+
+export function createExecutors(ctx: ChatToolContext): ChatExecutors {
   let loaded: ReturnType<ChatToolContext['data']> | null = null;
   const data = () => (loaded ??= ctx.data());
   let counter = 0;
@@ -23,6 +26,7 @@ export function createExecutors(ctx: ChatToolContext): ToolExecutors {
   return {
     ...createRenderExecutors(ctx, session),
     ...createReportExecutors(ctx, session, data),
+    ...(ctx.explore ? {run_query: ctx.explore} : {}),
     describe_data: async (input) => describeData(input as {metric: string}, await data(), ctx.now),
     query_metric: async (input) => {
       const result = runMetric(input, await data(), ctx.now);
@@ -95,6 +99,7 @@ export function statusFor(name: string, input: unknown): string {
       return `Looking at ${def.label.toLowerCase()}${dim ? ` by ${dim.label.toLowerCase().replace(/^by /, '').replace(/\s*\(.*\)/, '')}` : ''}`;
     }
   }
+  if (name === 'run_query') return 'Running an exploratory query'; // constant: never echoes the SQL
   if (name === 'get_digest') return 'Reading the weekly digest';
   if (name === 'lookup_product') return 'Looking up a product';
   if (name === 'render_kpi') return 'Adding a tile';

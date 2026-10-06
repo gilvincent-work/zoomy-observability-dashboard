@@ -1,7 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import {readFileSync} from 'node:fs';
-import {runChatLoop, CHAT_DEADLINE_MS, CUT_OFF_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
+import {runChatLoop, CHAT_DEADLINE_MS, TOOL_DEADLINE_MS, WRAP_UP_TEXT, CUT_OFF_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
 import {assertRequestShape} from '../src/chat/request-shape';
 import {CHAT_TOOLS} from '../src/chat/tool-defs';
 import type {ChatStreamEvent} from '../src/chat/stream-types';
@@ -145,6 +145,71 @@ describe('runChatLoop', () => {
     expect(events.at(-2)).toEqual({t: 'text', d: MAX_STEPS_TEXT});
     expect(events.at(-1)).toMatchObject({t: 'done', steps: 8});
     expect(turnLines(s)[0]).toMatchObject({steps: 8, stopReason: 'max_steps'});
+  });
+
+
+  it('chat_turn logs the duration of each model step and each tool batch', async () => {
+    let t = 0;
+    const client = new FakeClient((n) => (n === 1 ? toolTurn(toolUse('t1', 'query_metric', QUERY)) : {text: ['Done.']}));
+    client.onCall = () => void (t += 7_000);
+    const {opts, s} = setup(client, {clock: () => t, executors: {query_metric: async () => ((t += 300), {rows: []})}});
+    await runChatLoop(opts);
+    expect(turnLines(s)[0].step_ms).toEqual([7_000, 7_000]);
+    expect(turnLines(s)[0].tool_ms).toEqual([300]);
+  });
+
+  describe('compose reserve (soft tool deadline)', () => {
+    const turn = (stepMs: number, over: Partial<ChatLoopOptions> = {}, answer = 'Revenue was ₱100.') => {
+      let t = 0;
+      const client: FakeClient = new FakeClient((n): Scripted => (client.req(n - 1).tool_choice && (client.req(n - 1).tool_choice as {type: string}).type === 'none' ? {text: [answer]} : toolTurn(toolUse(`t${n}`, 'query_metric', QUERY))));
+      client.onCall = () => void (t += stepMs);
+      return {client, ...setup(client, {clock: () => t, ...over})};
+    };
+
+    it('pins the soft deadline at 30 s', () => {
+      expect(TOOL_DEADLINE_MS).toBe(30_000);
+      expect(WRAP_UP_TEXT).toMatch(/answer now from the results above/);
+    });
+
+    it('past the soft deadline with tool results, exactly ONE tool-less composing step runs, with the nudge after the results', async () => {
+      const {client, opts, events, s} = turn(20_000); // step1 ends t=20, step2 ends t=40 (> 30 soft, < 50 hard)
+      const summary = await runChatLoop(opts);
+      expect(client.requests).toHaveLength(3);
+      expect(summary).toMatchObject({steps: 3, stopReason: 'wrapped_up'});
+      const third = client.req(2);
+      expect(third.tool_choice).toEqual({type: 'none'});
+      expect(third.tools).toBeDefined(); // the API needs tools while tool_use blocks are in the history
+      const last = third.messages.at(-1)!;
+      expect(last.role).toBe('user');
+      const blocks = last.content as {type: string; text?: string}[];
+      expect(blocks.map((b) => b.type)).toEqual(['tool_result', 'text']); // results first, nudge last
+      expect(blocks[1].text).toBe(WRAP_UP_TEXT);
+      expect(client.req(0).tool_choice).toEqual({type: 'auto'});
+      expect(events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('')).toBe('Revenue was ₱100.');
+      expect(turnLines(s)[0]).toMatchObject({steps: 3, stopReason: 'wrapped_up'});
+    });
+
+    it('a turn before the soft deadline is untouched (normal tool loop, no wrap-up)', async () => {
+      const {client, opts} = turn(10_000, {maxSteps: 3});
+      const summary = await runChatLoop(opts);
+      expect(client.requests).toHaveLength(3); // t=0,10,20 all start under 30 s; max_steps ends it
+      expect(summary.stopReason).toBe('max_steps');
+    });
+
+    it('past the HARD deadline the old graceful stop still wins (no composing step)', async () => {
+      const {client, opts} = turn(26_000); // step2 ends t=52 > 50
+      const summary = await runChatLoop(opts);
+      expect(client.requests).toHaveLength(2);
+      expect(summary.stopReason).toBe('deadline');
+    });
+  });
+
+  it('a tool-less turn that is slow is not wrapped: only tool results earn a compose reserve', async () => {
+    let t = 0;
+    const client = new FakeClient((n) => (n === 1 ? {text: ['Hello.'], stop_reason: 'end_turn'} : {text: ['x']}));
+    client.onCall = () => void (t += 45_000);
+    const summary = await runChatLoop(setup(client, {clock: () => t}).opts);
+    expect(summary.stopReason).toBe('end_turn');
   });
 
   describe('wall-clock deadline', () => {

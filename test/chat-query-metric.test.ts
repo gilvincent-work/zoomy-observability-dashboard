@@ -299,8 +299,8 @@ describe('event_rollup', () => {
   it('rolls up events with orders, attributes untagged sales by date, and reconciles with walk-ins', () => {
     const r = res(req({metric: 'event_rollup'}));
     expect(r.rows).toEqual([
-      {event: 'Pet Fair', revenue: 850, orders: 3, share: 85},
-      {event: 'Bazaar', revenue: 150, orders: 1, share: 15},
+      {event: 'Pet Fair', revenue: 850, orders: 3, share: 85, tagged_orders: 2, date_orders: 1},
+      {event: 'Bazaar', revenue: 150, orders: 1, share: 15, tagged_orders: 1, date_orders: 0},
     ]);
     expect(check(r, 'reconciles')?.status).toBe('ok');
     expect(r.meta.caveats.join(' ')).toMatch(/Walk-in sales with no event are not in these rows: ₱780/);
@@ -634,5 +634,80 @@ describe('purity', () => {
     const b = runMetric(req({metric: 'event_rollup'}), d, NOW);
     expect(JSON.stringify(d)).toBe(before);
     expect(a).toEqual(b);
+  });
+});
+
+describe('event attribution basis', () => {
+  it('event filter counts tagged plus date-window orders and the caveat states the split', () => {
+    const A = ev('A', 'Fair A', '2026-09-12', '2026-09-14');
+    const B = ev('B', 'Fair B', '2026-09-19', '2026-09-21');
+    const mk = (p: string, ev: string | null, at: string, status = 'completed') =>
+      ord(p, at, 100, [line('P1', 'Chicken Jerky', 1, 100)], {ev, pet: 'dog', status});
+    const orders = [
+      mk('a1', 'A', '2026-09-12T10:00:00+08:00'), mk('a2', 'A', '2026-09-13T10:00:00+08:00'),
+      mk('a3', null, '2026-09-14T10:00:00+08:00'), mk('a4', null, '2026-09-16T10:00:00+08:00'),
+      mk('a5', 'A', '2026-09-13T12:00:00+08:00', 'voided'),
+      mk('b1', 'B', '2026-09-19T10:00:00+08:00'), mk('b2', 'B', '2026-09-20T10:00:00+08:00'),
+      mk('b3', null, '2026-09-21T10:00:00+08:00'), mk('b4', null, '2026-09-23T10:00:00+08:00'),
+      mk('b5', 'B', '2026-09-20T12:00:00+08:00', 'voided'),
+    ];
+    const r = res(req({metric: 'pet_mix', measure: 'orders', event: 'A'}), data({orders, events: [A, B]}));
+    expect(sum(r.rows, 'value')).toBe(3);
+    const caveats = r.meta.caveats.join(' ');
+    expect(caveats).toContain('2 tagged');
+    expect(caveats).toMatch(/1 untagged sale[^.]*by date/);
+    expect(caveats).toContain('3 total');
+  });
+});
+
+describe('event_rollup tagged/date split per event (R01: the registry caveat was applied to single events)', () => {
+  const A = ev('A', 'Fair A', '2026-09-12', '2026-09-14');
+  const B = ev('B', 'Fair B', '2026-09-19', '2026-09-21');
+  const mk = (id: string, event: string | null, at: string, status = 'completed') => ord(id, at, 100, [line('P1', 'Chicken Jerky', 1, 100)], {ev: event, pet: 'dog', status});
+  const orders = [
+    mk('a1', 'A', '2026-09-12T10:00:00+08:00'), mk('a2', 'A', '2026-09-13T10:00:00+08:00'), mk('a6', 'A', '2026-09-16T10:00:00+08:00'), // tagged, one off the event dates
+    mk('a3', null, '2026-09-14T10:00:00+08:00'), // untagged on the dates: by date
+    mk('a4', null, '2026-09-16T11:00:00+08:00'), // untagged off the dates: walk-in, in no event row
+    mk('a5', 'A', '2026-09-13T12:00:00+08:00', 'voided'), // voided: counted nowhere
+    mk('b1', 'B', '2026-09-19T10:00:00+08:00'), mk('b2', 'B', '2026-09-20T10:00:00+08:00'),
+    mk('b3', null, '2026-09-21T10:00:00+08:00'), mk('b6', null, '2026-09-19T15:00:00+08:00'), // two by date
+    mk('b4', null, '2026-09-23T10:00:00+08:00'), mk('b5', 'B', '2026-09-20T12:00:00+08:00', 'voided'),
+  ];
+  const d = data({orders, events: [A, B]});
+  const row = (r: MetricResult, name: string) => r.rows.find((x) => x.event === name);
+
+  it('each event row carries its own tagged and by-date counts, and they add up to orders', () => {
+    const r = res(req({metric: 'event_rollup'}), d);
+    expect(row(r, 'Fair A')).toMatchObject({orders: 4, tagged_orders: 3, date_orders: 1, revenue: 400});
+    expect(row(r, 'Fair B')).toMatchObject({orders: 4, tagged_orders: 2, date_orders: 2, revenue: 400});
+    for (const x of r.rows) expect(Number(x.tagged_orders) + Number(x.date_orders)).toBe(Number(x.orders));
+    expect(r.columns.map((c) => c.key)).toEqual(['event', 'revenue', 'orders', 'share', 'tagged_orders', 'date_orders']);
+    expect(check(r, 'reconciles')?.status).toBe('ok');
+    expect(r.meta.checks.filter((c) => c.code === 'reconciles').map((c) => c.values?.label)).toContain('Event orders: tagged plus by date');
+    expect(r.meta.reliable).toBe(true);
+  });
+
+  it('the existing columns and numbers are unchanged by the measure choice', () => {
+    const r = res(req({metric: 'event_rollup', measure: 'orders'}), d);
+    expect(r.rows.map((x) => [x.event, x.orders, x.share])).toEqual([['Fair A', 4, 50], ['Fair B', 4, 50]]);
+  });
+
+  it('with the filter "all" the caveat says it is a combined figure and the split is in the rows, per event', () => {
+    const r = res(req({metric: 'event_rollup'}), d);
+    const c = r.meta.caveats.join(' ');
+    expect(c).toMatch(/All events combined: 5 tagged .* 3 untagged .*8 total/);
+    expect(c).toMatch(/per event .*tagged_orders.*date_orders/i);
+    expect(c).not.toMatch(/Event orders = /);
+  });
+
+  it('a filter on one event keeps its own tagged/date caveat and the row split', () => {
+    const r = res(req({metric: 'event_rollup', event: 'Fair A'}), d);
+    expect(row(r, 'Fair A')).toMatchObject({tagged_orders: 3, date_orders: 1});
+    expect(r.meta.caveats.join(' ')).toContain('3 tagged to the event in the POS');
+  });
+
+  it('describe_data-facing text declares the split columns', () => {
+    expect(METRICS.event_rollup.description).toMatch(/tagged_orders/);
+    expect(METRICS.event_rollup.description).toMatch(/date_orders/);
   });
 });

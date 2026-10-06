@@ -120,7 +120,7 @@ export function ariaSummary(block: ChatBlock, top = 3): string {
     .sort((a, b) => b.v - a.v)
     .slice(0, top);
   const tops = ranked.map((r) => `${r.label} ${formatValue(r.v, first.unit)}`).join(', ');
-  const more = chart.series.length > 1 ? ` across ${chart.series.length} series (${chart.series.map((s) => s.label).join(', ')})` : '';
+  const more = chart.series.length > 1 ? ` across ${chart.series.length} series (${[...chart.series.slice(0, 3).map((s) => s.label), ...(chart.series.length > 3 ? [`and ${chart.series.length - 3} more`] : [])].join(', ')})` : '';
   return `${head}${more}.${tops ? ` Largest ${first.label}: ${tops}.` : ''} The full figures are in the table view.`;
 }
 

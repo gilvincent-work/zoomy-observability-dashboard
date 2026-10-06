@@ -179,7 +179,9 @@ export function runMetric(input: unknown, data: MetricData, now: Date): MetricRe
   const measure = req.measure === 'default' ? def.defaultMeasure : req.measure;
 
   // Completed orders only (the existing voided rule), with the event each order effectively belongs to.
-  const resolved = resolveOrderEvents(data.orders.filter((o) => o.status !== 'voided'), data.events);
+  const completed = data.orders.filter((o) => o.status !== 'voided');
+  const taggedIds = new Set(completed.filter((o) => o.event_id !== null).map((o) => o.id)); // explicit POS tag, before date attribution
+  const resolved = resolveOrderEvents(completed, data.events);
   const dated: DatedOrder[] = [];
   for (const order of resolved) {
     if (Number.isNaN(Date.parse(order.created_at))) continue;
@@ -208,13 +210,26 @@ export function runMetric(input: unknown, data: MetricData, now: Date): MetricRe
   const cov = coverageOf(range.from, range.to, dataFrom, dataTo);
   const orders = slice(range.from, range.to);
   const base = {events: data.events, history, dimension: req.dimension, measure};
-  const ctx = {...base, orders, range: {from: range.from, to: range.to, label: range.label}, covered: {from: cov.coveredFrom, to: cov.coveredTo}};
+  const ctx = {...base, orders, range: {from: range.from, to: range.to, label: range.label}, covered: {from: cov.coveredFrom, to: cov.coveredTo}, taggedIds};
   const out = def.compute(ctx);
 
   const caveats: string[] = [...out.notes];
   const dim = def.dimensions.find((d) => d.key === req.dimension);
   if (req.channel === 'all') caveats.unshift('Only the offline POS is connected; online and marketplace channels are not included.');
   if (eventNames.length > 0) caveats.push(`Filtered to ${eventNames.length === 1 ? 'event' : 'events'}: ${eventNames.join(', ')}.`);
+  if (eventIds !== null || req.metric === 'event_rollup') {
+    const inEvent = orders.filter((o) => o.event_id !== null);
+    const tagged = inEvent.filter((o) => taggedIds.has(o.id)).length;
+    const byDate = inEvent.length - tagged;
+    const parts = [`${tagged.toLocaleString('en-US')} tagged to the event${eventIds === null ? 's' : ''} in the POS`];
+    if (byDate > 0) parts.push(`${byDate.toLocaleString('en-US')} untagged ${byDate === 1 ? 'sale' : 'sales'} on the event dates (attributed by date)`);
+    // With every event in play these are combined figures: never a claim about one event. Each event's own split is in its row.
+    caveats.push(
+      eventIds === null
+        ? `All events combined: ${parts.join(' plus ')}; ${inEvent.length.toLocaleString('en-US')} total. The split per event is in the rows (tagged_orders, date_orders); do not apply these combined counts to a single event.`
+        : `Event orders = ${parts.join(' plus ')}; ${inEvent.length.toLocaleString('en-US')} total.`,
+    );
+  }
   if (req.pet !== 'all') caveats.push(`Filtered to orders tagged ${req.pet}.`);
 
   // compare_to: the same metric over the period of equal length just before.

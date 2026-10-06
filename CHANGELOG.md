@@ -10,6 +10,203 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-05 — Local dummy pet data for trying Ask Coop Explore by hand
+- Test (local DB only): `scripts/local-supabase/dummy-pets.sh apply | remove | status` loads a fictional, deterministic layer into the local Docker Supabase: 6 `[DUMMY] ` events (Aug to Oct 2026, one a lowercase / trailing-space respelling of another), 254 orders (about 30 percent with no `pet_type`, 35 on event dates with no event id, 5 voided, products P1 to P4 and bundles B1/B2 only) with 436 order items, and 122 `spin_wheel_leads` (campaign `dummy-*`, `example.com` emails, fake handles) whose free-text `pet` column mixes "Name / Breed", no slash, name only, breed only, odd case, extra spaces, "Aspin mix", empty, null and two hostile values. Pet-type mix differs by event (SM Aura dog-heavy, Circuit Makati cat-heavy, Trinoma "both"-heavy), so rankings are not ties. Markers: event ids `D-*`, order ids 100000 to 199999, campaigns `dummy-*`; `remove` deletes exactly those and restores the plain fixture.
+- Expected answers: `dummy-pets-expected.sql` (SELECT-only) and its saved output `dummy-pets-expected.txt` (pet type per event, breeds per event, leads with no breed, tagged vs date-attributed orders, weekday sales). The header of `dummy-pets.sh` has the how-to and 8 sample questions (Taglish and English). Decision: run `dummy-pets.sh remove` before `npm test`: with the data applied the golden test EXP-03 R01 fails by design (its name search also matches the dummy "Circuit Makati Weekend"); the RO proof exits 0 either way.
+
+## 2026-10-05 — Ask Coop: fixes from the seventh live run (G08b, G14, G15)
+- Fix (J1, G08b/G15): the Explore backstop now also draws registry results. A turn on the Explore tool set that ends (end_turn, wrap-up, deadline, max steps) with a successful `query_metric` result of at least two rows that no block was drawn from gets it drawn by the app, exactly as `render_chart` with auto selection would (the registry's own `recommendView`: kpi, chart or table; the result's own checks and caveats), at most two results per turn. A one-row result stays text (THINK-06), an error result draws nothing, a result the model rendered is not drawn twice. Typed markdown tables are now stripped on registry turns too, but only when a block was drawn (by the model or the app); a turn where nothing was drawn keeps its table. Turns without the Explore tool are unchanged (their text streams live and cannot be stripped). Decision: a table-only answer is a defect (owner rule), so the guarantee is in code, not the prompt. Code: `autoRender` in `render-executors.ts`, `registryUsed` and `releaseHeld` in `loop.ts`; tests `test/chat-registry-autorender.test.ts`.
+- Fix (J2, G14): an Explore result with ONE category column and several measures (weekday, orders, revenue, share; 7 rows) was drawn as one stacked bar with 7 weekday series titled "Orders by Weekday". Root cause in `recommend-view.ts`: `rowsAreWhole` treated any share column summing to ~100 as "the rows are the parts of the plotted measure", so the 7 categories became series of one stacked bar, and the primary measure was just the first one (orders). Now, for Explore results only: several measures never count as a whole (the share belongs to one of them); the plotted measure is the one the title names, else the first peso measure, else the first count (never the share); and a short list (up to 7 rows) keeps the SQL row order instead of re-sorting by value. Result: kind bar, x weekday, one series, "Revenue (PHP) by Weekday". The Explore guide gets a calendar-order line (order by isodow / month number / hour unless a ranking was asked, and still return the ranking figure as a column).
+
+## 2026-10-05 — Ask Coop Explore: fixes from the fifth live run (G01)
+- Fix (H1): the display label of a merged group must be the group key. The model grouped by `lower(btrim(e.name))` but labelled with `min(btrim(e.name))`, which returns a different spelling per pet sub-group, so one event was drawn as two categories. The Explore guide (EXP-06) and example E02 now select `lower(btrim(e.name)) as event`. Backstop in code (`spellingSplitCaveats`, `explore/result.ts`): when two labels of a category column are equal after `lower(btrim())` but spelled differently, the result carries "Labels X and Y differ only in capitalisation or spacing; they were not merged: group by lower(btrim(...)) in the SQL to merge them." on every block drawn from it (auto-render or model-rendered). Decision: code flags, never merges (merging would change numbers).
+- Fix (H2): on an Explore turn where a block was drawn (model render call or the app's backstop), GFM markdown tables are removed from the answer text before it is shown (`stripMarkdownTables`, `src/chat/strip-tables.ts`; prose around them stays, blank lines collapse, fenced code is untouched). The app already draws the chart + table twin, and the model had typed a second copy. Turns with no drawn block and non-Explore turns keep their tables.
+- Fix (H3): on Explore enforce turns the number-check context no longer includes earlier ASSISTANT turns, only the user's own messages, the preamble and the selected-period block (plus this turn's result cells). A stale model-typed "6 orders" from a previous reply let a typed "Correction: ... 6 orders" through. The log-only check of non-Explore turns keeps every earlier turn as context. Test meaning change: none of the old tests relied on assistant-turn figures.
+
+## 2026-10-05 — Ask Coop Explore: fixes from the fourth live run (G01)
+- Fix (G1): the auto-render backstop now draws EVERY successful, non-empty, unbound `final` Explore result of the turn in query order (at most 3; extras are named in a caveat on the last drawn block), each with its own chip, Show SQL and code-written caveats. The live turn had two finals (orders by event and pet, leads by event and breed) and only the leads were drawn, so the orders block's basis caveat never showed. Probes are still never drawn, a result the model rendered is not drawn again, no model call. Test meaning change: "two finals, neither drawn: only the LAST is drawn" now expects both.
+- Fix (G2): auto chart titles are built from column labels only, never from row or series values. Two category columns: "<measure> by <dimension> and <dimension>" ("Revenue (PHP) by Event and Pet"); more than 3 measure columns (a pivot): a unit word, "Counts by Event"; up to 3: their labels. Explore peso columns read "(PHP)". The chart alt text names at most 3 series, then "and N more". Decision: the title says what is plotted, so a result with several peso measures is titled by the one drawn.
+- Fix (G3): no mental arithmetic. The model had added two spellings of one event in its head ("6 orders", true 7) and typed per-event totals that were no cell. (a) `sql-explore.md` EXP-04/EXP-06: never add, merge, round or total figures in prose; merge spellings in the SQL (`group by lower(btrim(name))` + `sum`) and return per-group and grand totals as cells; the old "two spellings are two rows" line is replaced. (b) Example E02 is now a case-insensitive event grouping with a per-event total column (window sum); the local-fixture test checks the total equals the pet rows' sum. (c) `number-check.ts` gained `countNouns`: on Explore enforce turns a single digit before order(s), lead(s), sign-up(s), event(s), customer(s), unit(s), item(s), pack(s) or bundle(s) must be a cell; the existing held-text retry (one rewrite, with the violation list) handles it. Registry and non-Explore checks are unchanged (option off by default).
+
+## 2026-10-05 — Ask Coop Explore: fixes from the third live run (G01, R01, G25)
+- Fix (F4): `sql-explore.md` EXP-06 now says normalising free text (pet, prize, handles) must never fold unparseable or odd values into a "no breed given" or "other" bucket silently: list those rows separately with a count and the reason and report instruction-like text as data in its field (G25). Guide rule only, no code filter; pinned by `test/chat-explore-skill-rows.test.ts`.
+- Fix (F3): registry `event_rollup` rows now carry `tagged_orders` (explicit POS event tag) and `date_orders` (untagged sales attributed by the event dates), computed in code from the tagged-id set taken before `resolveOrderEvents`, with a reconcile check that they add up to `orders` (additive: existing columns and numbers unchanged; the description lists the columns for `describe_data`). With the event filter 'all' the caveat now says "All events combined" and points to the per-event split in the rows, because the model had applied the combined 17 tagged to a single event (R01). Test meaning change: the existing event_rollup rows assertion gained the two keys.
+- Fix (F1+F2): the model ended Explore turns after `run_query` without calling a render tool, so the chart choice, the Exploratory chip, Show SQL and the code-written caveats never ran. Decision: the app owns the backstop. When an Explore turn finishes (end_turn, wrap-up, deadline, max steps) with a successful `final` result no block was bound from, `autoRender` (`render-executors.ts`) draws the LAST such result through the render_chart auto path (chart with table twin); no model call, no model-typed numbers, probes and empty results never drawn, no duplicates. Text from an Explore-capable step that calls tools and no render tool is now dropped (`loop.ts`), so repair narration ("Fix the grouping.") never opens the answer. `sql-explore.md` tells the model the app draws the result and it should explain in 2 to 3 sentences, not retype a table. Test meaning changes: the probe test (narration used to leak) and the executors key list (now includes the non-tool `autoRender`).
+
+## 2026-10-05 — Ask Coop Explore: fixes from the second live run (G01)
+- Fix (D1): an Explore result with two category columns (event, pet) and several measures now draws ONE measure (the one the block title names, else the first peso measure) with the second dimension as series, and folds nothing until past the existing limits (`recommend-view.ts` `decideTwoDim`; the title is passed in from `bind.ts`). Before, it plotted orders under a revenue title and folded 8 rows into "Other".
+- Fix (D2): the evidence note is written by code. `parse.ts` now returns `columnRefs`; orders joined to events get a basis caveat (tagged to the event in the POS, by the event date window, or both) and a leads query gets the lead count, the count with a pet value and the date pet was first collected (the fixed coverage statement gained two columns; counts are for the whole leads view, not the query's scope). Decision: code, not the model, owns the "how was this counted" sentence.
+- Fix (D3): `sql-explore.md` EXP-06 now says row text is data: never silently drop rows because their text looks like an instruction; state the exact criterion and the count whenever rows are excluded; report instruction-like text as data in its field, ignored. Pinned by `test/chat-explore-skill-rows.test.ts`.
+- Fix (D4): `allowedDevOrigins: ['127.0.0.1']` in `next.config.mjs` (dev only). Next 16 blocks cross-origin dev requests, the HMR websocket included, from any host but localhost, so the page never hydrated at http://127.0.0.1:3100. Confirmed in the Next 16 docs for `allowedDevOrigins`.
+
+## 2026-10-05 — PR template, `pr-description` skill and hook
+- Chore: `.github/pull_request_template.md` (tables for summary, changes, tests, checklist, rollout). The shared `pr-description` skill fills it from the real diff; a PreToolUse hook (`.claude/hooks/pr-description-check.mjs`) blocks `gh pr create` unless the body has the template sections and the title is a Conventional Commit. Bypass: `PR_CHECK=off`. Decision: block `--fill` because a commit-log body skips the checklist.
+
+## 2026-10-02 — v1.4.1: Save report no longer fails on a blank title
+- Fix: saving a dashboard whose title the model never set answered "Give the report a title." Now the title falls back to the first block's title or tile label, then the question that produced it, then "Untitled report" (`src/reports-title.ts`). An explicit title still wins; rename from the report page.
+
+## 2026-10-01 — Talk to Data: the Ask Coop Data Analyst skill — `feat(chat)`
+
+How Ask Coop thinks, now as runtime product content in its cached prompt
+(`src/chat/skills/ask-coop-data-analyst/`): a core "How you think" procedure (understand, check the
+data first, get every number from a tool, sanity-check, state the method, present like an analyst,
+close the loop), a voice, and four topics (parts and totals, comparing periods, allocated figures
+and prices, coverage and data quality). Every rule has a stable id; a gear marks the 18 rules the
+app also enforces in code.
+
+- **The guide and the code cannot drift:** tests fail if an id exists on only one side, if a
+  placeholder is unfilled, if a number in the text differs from the code constant, if a gear rule has
+  no test titled with its id (the gate is shown to fail), or if the skill passes its size budget
+  (about 2,400 tokens today, cap 4,500, estimate).
+- **Scope decision:** the chart-form and dashboard-layout topics describe things that do not exist
+  until the chart tools (F7), so they ship with F7. Today's skill says only what the app can do.
+- Replaces the two stopgap guardrail lines from the previous step with rules BI-08 (rank claims
+  only about the rows shown) and ANL-04 (no number words).
+- **Kept out of the prompt on purpose** (tests guard it): production-derived figures (a prompt gets
+  parroted and the data changes), and any promise to "log" or "save" something Coop cannot do.
+- Vercel: a real `next build` shows the skill files are traced into the chat route, so no config was
+  needed.
+- **Live skill evals** (12 cases, real model, synthetic data, mechanical scoring): 11 of 12 pass.
+  Reading the failures led to three changes: a narrow question must not get an unrequested comparison
+  (THINK-06 and a scorer check), the small-sample rule now says "say small sample before any figure
+  and lead with counts" instead of banning a share the owner asked for, and a scorer false negative
+  was fixed. The remaining failure was a 4th sentence, so the cap became 4 (a method line and a next
+  question already make 3).
+- **No regression** on the 14 base questions with the skill loaded (real data, read-only): median
+  5.4 s, p95 11.3 s, median cost $0.015 and max $0.033 (estimates); cached prefix 12k to 15k tokens.
+
+---
+
+## 2026-10-01 — Talk to Data: Ask Coop answers from live POS data — `feat(chat)`
+
+The first real answer. A question in the Ask Coop drawer is answered from live offline POS
+data through the metrics registry, streamed, with the data check first. Verified in a real
+browser against the real (read-only) data: the dog/cat bundle split reproduces the plan's
+figures with the caveats first.
+
+- **Data check:** `describe_data` and a short coverage note on every question (today's date
+  in Philippine time, the date range, how much is untagged, what is not available), so the
+  model learns the limits before it queries. This fixes the wrong-year date seen in the spike.
+- **Tool loop** (`src/chat/loop.ts`): a manual, streamed Messages-API loop on Sonnet 5.5 with
+  two strict tools, up to 8 steps, the model's thinking blocks passed back unchanged, every
+  request through the layer-1 shape check. NDJSON stream; the drawer shows a status line
+  ("Looking at bundle sales") while it works.
+- **Decision:** where the live-data path is not ready (production before the read-only
+  database role is applied, a missing secret, a failed load) the chat **degrades to
+  digest-only** (no tools, no POS reads, one `chat_degraded` log line) instead of returning
+  503, so today's working digest chat does not go down on staging or PROD. The plan had a hard
+  503. Safety is unchanged: no POS data is read without the guarded path.
+- A tool that refuses a request (unknown dimension, undeclared measure) now reaches the
+  model flagged as an error with the allowed values.
+- **Live measurements** (14 questions, real model, effort medium, estimates): median 6.3 s,
+  data questions 8.4 s, p95 12.8 s, cost median $0.014 and max $0.044, prompt cache hits on
+  every call after the first, 0 guard trips, 0 errors.
+- Reading the live answers found three defects, fixed before shipping: a rank claim from a cut
+  list ("sold the most units" when only the top 5 by revenue were shown), home-made number
+  words ("about half"), and a misleading "34% untagged" caveat on the SKU split (the share now
+  counts only orders that have pick detail). Two guardrail lines cover the first two until the
+  analyst skill lands.
+- The digest stays in the prompt for Shopee, Lazada and Website questions (the pinned legacy
+  import remains until `get_digest` exists).
+- Known, pre-existing and dev-only: `ask()` calls `send()` inside a React state updater, so
+  React Strict Mode sends the first question twice in development. Production runs it once.
+
+---
+
+## 2026-10-01 — Talk to Data: metrics registry, exact bundle allocation and checks — `feat(chat)`
+
+The semantic layer behind Ask Coop: every figure comes from one registry definition computed
+by code, never by the model. Nothing user-visible changes yet (`/api/chat` is not rewired;
+`describe_data`, the tool schemas and the model loop are the next features).
+
+- **Nine metrics** with declared measures and one-line methods: `offline_revenue`,
+  `offline_orders`, `offline_aov`, `top_products`, `payment_mix`, `event_rollup`, `pet_mix`,
+  `bundle_sales`, `bundle_picks`. A pure `runMetric(request, data, now)` rejects anything off
+  the closed shape (free-form keys, undeclared measures, bad dates) with the allowed values.
+- **Decision:** a bundle's pick lines carry ₱0, but peso values per SKU are derivable. Each
+  bundle's paid price is split across its picks by list-price weight **on the sale date**
+  (`src/pos-price-history.ts`, `src/pos-bundle-compute.ts`), in whole centavos with the
+  largest-remainder rule, so SKU totals add back to the paid total exactly (₱0 tolerance).
+- Checks and insights are code (`src/chat/checks.ts`, `insights.ts`): reconciles, round
+  row count, ₱0 lines, price changes, small sample, untagged share, partial coverage, sudden
+  change, mock source. A failed check marks the result unreliable.
+- Checked against the real PROD data (read-only, nothing committed): bundle revenue ₱147,300
+  (equals the existing `bundleSalesSummary`), named ₱106,950, dog 66.4% of tagged, Buy Any 4
+  92.8% of named, 582 picks allocating exactly ₱106,950 against ₱139,360 list value.
+- Found in that run: the SKU breakdown covers only ₱106,950 of the ₱147,300, because 68 older
+  bundle orders have no pick detail. The result now says so. Also fixed before shipping:
+  SKU rows were grouped by name, which would merge two products that share a name.
+- Dates are Philippine time, weeks run Monday to Sunday; a range outside the data is valid
+  and reports coverage partial or none (a wrong-year range returns "no data in that range").
+- SQL: three more dashboard-owned views for the role (`coop_chat_prices`,
+  `_price_changes`, `_events`; no cash or staff columns). Still not applied to any hosted
+  project. Local proof: 69 checks pass, and all nine metrics return identical results in
+  `ro_role` and `guarded_service` mode.
+
+---
+
+## 2026-10-01 — Talk to Data: database read-only role for Ask Coop — `feat(chat)`
+
+Layer 5 of the read-only enforcement: even if every code layer failed, the database
+refuses a write. **Nothing is applied to any hosted project yet**: the SQL is applied by
+hand (staging first, PROD by the co-worker) and gates the PROD release.
+
+- `supabase/coop_chat_readonly.sql` creates role `coop_chat_ro` (no login) and four
+  dashboard-owned definer views (`coop_chat_orders`, `_order_items`, `_products`,
+  `_bundles`) with no customer columns, SELECT only. It does not touch any `pos_*` DDL.
+- **Decision:** the earlier plan to revoke EXECUTE-from-PUBLIC on every `public` function
+  is NOT applied blindly: zoomy-pos owns those functions and may rely on that grant.
+  Instead a `db_pre_request` hook makes every request as `coop_chat_ro` run in a read-only
+  transaction (a callable write function then fails), and a read-only audit query lists
+  what the role can execute. The revoke/grant sweep is a separate optional file that needs
+  zoomy-pos sign-off.
+- Known limit: the hook stops writes, not reads through a callable read function. Layer 4
+  (the HTTP guard) blocks `/rpc` in the app; the sweep closes it in the database.
+- `src/chat/read/mint-jwt.ts` mints a 5-minute HS256 token (`node:crypto`, no new
+  dependency) from `CHAT_RO_JWT_SECRET`; `ro_role` mode fails closed (503) without it and
+  never reads the service-role key. Optional `CHAT_RO_APIKEY` is sent as the `apikey`
+  header (untested against the hosted gateway).
+- Proved on a throwaway local Supabase in Docker (`scripts/coop-chat-ro-proof.mjs`, 53
+  checks, idempotent, refuses non-local URLs), including: a SECURITY DEFINER write
+  function was callable by the role until the hook, and fails with "read-only
+  transaction" after it; service_role, anon and authenticated are unaffected.
+  `test/chat-ro-local.integration.test.ts` (skipped unless pointed at a local stack)
+  shows `ro_role` answers equal `guarded_service` answers and no customer value returns.
+- Architecture scanner: the `.update(` ban gets one pinned exception for `createHmac().update()`
+  in `mint-jwt.ts` only; the same call anywhere else still fails the build.
+
+---
+
+## 2026-10-01 — Talk to Data: read-only foundation for Ask Coop — `feat(chat)`
+
+Ask Coop is being upgraded to answer from live POS data (design:
+`../knowledge/architecture/2026-10-01-talk-to-data-design.md`). Before any data tool
+exists, this lands the layers that make sure it can only **read**. Nothing changes for
+users yet: `/api/chat` is not rewired, and the existing digest chat behaves as before.
+
+- **Decision:** "no write tool exists" is one layer of nine, not the guarantee. The model
+  reads text other people wrote (product names, notes), so each layer fails closed with
+  its own test. This is a release gate for every Talk to Data deploy.
+- `src/chat/tools.ts` frozen tool allowlist, `request-shape.ts` (no web, code or MCP
+  tools, no forced tool choice), `audit.ts` (`chat_tool` / `chat_guard_trip` log lines).
+- `src/chat/read/`: a typed read client (`select` only), an HTTP guard (GET/HEAD only,
+  allowlisted relations, no `select=*`, no customer columns) and a fail-closed read mode
+  (production returns 503 unless `CHAT_READ_MODE=ro_role`).
+- `src/pos-orders-read.ts`: `readPosOrders(client)` extracted from `src/pos-sales.ts` so
+  chat and the pages share one paged read with an **injected** client. Page behaviour is
+  unchanged (fixture regression test, 1,352 items across two pages).
+- `test/chat-architecture.test.ts` fails the build if chat code imports a write path or
+  a full-power client. One documented legacy exception: the route's `getDigests` import,
+  removed when the route is rewritten.
+- Found while testing: the guard judged the raw path but took the host from the parsed
+  URL, so `https://host\@evil/...` slipped past. Fixed by requiring both to agree; tests
+  cover it.
+- Spike findings behind this: `scripts/spikes/` (strict tools + thinking on Sonnet 5.5,
+  and a SELECT-only database role through PostgREST). Layer 5, the database role, is the
+  next feature and gates production.
+
+---
+
 ## 2026-10-05 — UX: sign-out confirmation
 - Signing out now opens a confirmation dialog ("Sign out of Coop?") instead of firing immediately — it was a one-click destructive action with no guard. Shared by both entry points (desktop account menu + mobile sheet); dismiss via Cancel, overlay click, or Escape; the confirm action uses the destructive token. No behaviour change beyond the extra confirm step.
 

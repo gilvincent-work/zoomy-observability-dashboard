@@ -50,10 +50,14 @@ describe('assertRequestShape', () => {
     expect(JSON.parse(s.error.mock.calls[0][0]).event).toBe('chat_guard_trip');
   });
 
-  it.each([{type: 'any'}, {type: 'tool', name: 'query_metric'}, {type: 'auto', disable_parallel_tool_use: true}, {type: 'none'}, null])(
+  it.each([{type: 'any'}, {type: 'tool', name: 'query_metric'}, {type: 'auto', disable_parallel_tool_use: true}, {type: 'none', extra: 1}, null])(
     'fails tool_choice %j',
     (tc) => expect(() => assertRequestShape(req({tool_choice: tc}), sink())).toThrow(/tool_choice/),
   );
+
+  it('allows exactly {type:"none"} (the compose-only wrap-up step)', () => {
+    expect(() => assertRequestShape(req({tool_choice: {type: 'none'}}), sink())).not.toThrow();
+  });
 
   it('fails a tool named update_price', () => {
     expect(() => assertRequestShape(req({tools: [tool({name: 'update_price'})]}), sink())).toThrow(/allowlist/);

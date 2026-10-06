@@ -2,3 +2,5 @@
 export const LOCAL_HOSTS: string[];
 export function isLocalSupabaseUrl(url: string | undefined | null): boolean;
 export function assertLocalSupabase(url: string | undefined | null): void;
+export function isLocalPostgresUrl(url: string | undefined | null): boolean;
+export function assertLocalPostgres(url: string | undefined | null): void;

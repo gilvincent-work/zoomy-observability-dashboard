@@ -37,6 +37,8 @@ export interface ComputeContext {
   range: {from: string; to: string; label: string};
   /** The part of the range the data covers (null/null when none): series only list days inside it. */
   covered: {from: string | null; to: string | null};
+  /** Ids of the orders that carry an explicit POS event tag (before date attribution); the rest of the orders with an event were attributed by date. */
+  taggedIds: ReadonlySet<string>;
 }
 
 export interface InsightSet {
@@ -287,8 +289,14 @@ function computeEventRollup(ctx: ComputeContext): ComputeOutput {
     }
   }
   const labels = uniqueLabels(rolls.map((r) => ({label: r.event.name ?? r.event.event_id, id: r.event.event_id})));
-  const entries = rolls.map((r, i) => ({event: labels[i], revenue: r2(r.revenue), orders: r.orders}));
-  if (unknownOrders > 0) entries.push({event: 'Unknown event', revenue: r2(unknownRevenue), orders: unknownOrders});
+  // Per event: how many of its orders carry the explicit POS tag, the rest were attributed by the event dates (code, never the model).
+  const taggedBy = new Map<string, number>();
+  for (const o of ctx.orders) if (o.event_id && ctx.taggedIds.has(o.id)) taggedBy.set(o.event_id, (taggedBy.get(o.event_id) ?? 0) + 1);
+  const entries = rolls.map((r, i) => ({event: labels[i], revenue: r2(r.revenue), orders: r.orders, tagged: taggedBy.get(r.event.event_id) ?? 0}));
+  if (unknownOrders > 0) {
+    const unknownTagged = ctx.orders.filter((o) => o.event_id && !known.has(o.event_id) && ctx.taggedIds.has(o.id)).length;
+    entries.push({event: 'Unknown event', revenue: r2(unknownRevenue), orders: unknownOrders, tagged: unknownTagged});
+  }
   const values = entries.map((e) => (byOrders ? e.orders : e.revenue));
   const shares = sharesOf(values);
   out.columns = [
@@ -296,8 +304,10 @@ function computeEventRollup(ctx: ComputeContext): ComputeOutput {
     col('revenue', 'Revenue', 'PHP', 'measure'),
     col('orders', 'Orders', 'count', 'measure'),
     col('share', byOrders ? 'Share of event orders' : 'Share of event revenue', 'percent', 'share'),
+    col('tagged_orders', 'Tagged orders', 'count', 'measure'),
+    col('date_orders', 'Orders by date', 'count', 'measure'),
   ];
-  out.rows = entries.map((e, i) => ({event: e.event, revenue: e.revenue, orders: e.orders, share: shares[i]}));
+  out.rows = entries.map((e, i) => ({event: e.event, revenue: e.revenue, orders: e.orders, share: shares[i], tagged_orders: e.tagged, date_orders: e.orders - e.tagged}));
   out.sortKey = ctx.measure;
   out.defaultSort = 'value_desc';
   out.limitable = true;
@@ -309,6 +319,11 @@ function computeEventRollup(ctx: ComputeContext): ComputeOutput {
     parts: [...values, byOrders ? walkInOrders : r2(walkInRevenue)],
     whole: byOrders ? kpis.orders : r2(kpis.revenue),
     format: byOrders ? 'count' : 'peso',
+  }, {
+    label: 'Event orders: tagged plus by date',
+    parts: [entries.reduce((n, e) => n + e.tagged, 0), entries.reduce((n, e) => n + (e.orders - e.tagged), 0)],
+    whole: entries.reduce((n, e) => n + e.orders, 0),
+    format: 'count',
   }];
   if (walkInOrders > 0) {
     out.notes.push(`Walk-in sales with no event are not in these rows: ${money(r2(walkInRevenue))} across ${walkInOrders.toLocaleString('en-US')} orders.`);
@@ -678,7 +693,7 @@ const DEFS: MetricDef[] = [
   {
     id: 'event_rollup',
     label: 'Event rollup',
-    description: 'Sales per event (bazaar, market) that had orders in the range; walk-in sales are excluded.',
+    description: 'Sales per event (bazaar, market) that had orders in the range; walk-in sales are excluded. Each row also splits its orders: tagged_orders (explicit POS event tag) and date_orders (untagged sales attributed by the event dates); they add up to orders.',
     dimensions: NONE_ONLY,
     measures: [REVENUE, ORDERS],
     defaultMeasure: 'revenue',
