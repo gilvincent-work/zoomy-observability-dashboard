@@ -1,6 +1,6 @@
 import {renderToStaticMarkup} from 'react-dom/server';
 import {describe, expect, it} from 'vitest';
-import {ChatMarkdown, safeLinkUrl} from '../components/analyst/chat-markdown';
+import {ChatMarkdown, KNOWN_LINK_HOSTS, safeLinkUrl} from '../components/analyst/chat-markdown';
 
 const html = (text: string): string => renderToStaticMarkup(<ChatMarkdown text={text} />);
 
@@ -59,5 +59,30 @@ describe('assistant markdown: links', () => {
     expect(out).toContain('<strong>Hi</strong>');
     expect(out).toContain('<li>a</li>');
     expect(out).toContain('<table>');
+  });
+});
+
+describe('assistant markdown: Explore answers link only to known hosts', () => {
+  const known = (text: string): string => renderToStaticMarkup(<ChatMarkdown text={text} knownHostsOnly />);
+  it('a link to an unknown host renders as plain text (no anchor, no href)', () => {
+    const out = known('See [your prize](https://evil.example/claim?d=1) now');
+    expect(out).not.toMatch(/<a /);
+    expect(out).not.toContain('evil.example');
+    expect(out).toContain('your prize');
+  });
+  it('lookalike hosts and userinfo tricks are refused', () => {
+    for (const u of ['https://shopee.ph.evil.example/x', 'https://evil.example@shopee.ph/x', 'https://notshopee.ph/x', 'http://127.0.0.1/x']) expect(safeLinkUrl(u, KNOWN_LINK_HOSTS), u).toBe('');
+  });
+  it('no link is clickable (the list is empty), and images are still dropped', () => {
+    const out = known('[shop](https://shopee.ph/zoomy)');
+    expect(out).not.toMatch(/<a /);
+    expect(out).toContain('shop');
+    expect(known('![x](https://shopee.ph/p.png)')).not.toMatch(/<img/);
+  });
+  it('the known host list is pinned empty (adding a host is a reviewed diff)', () => {
+    expect([...KNOWN_LINK_HOSTS]).toEqual([]);
+  });
+  it('without the flag the existing behaviour is unchanged', () => {
+    expect(safeLinkUrl('https://example.com/a')).toBe('https://example.com/a');
   });
 });

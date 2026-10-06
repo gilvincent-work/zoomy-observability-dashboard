@@ -1,7 +1,9 @@
 import 'server-only';
 import type {DigestArchiveRow} from '../types';
 import {pickIndex, fmtRange} from '../week';
-import {COOP_CHAT} from './config';
+import {COOP_CHAT, buildGuardrails} from './config';
+import {buildExploreCatalogText} from './explore/catalog';
+import {buildExamplesText} from './explore/examples';
 import {buildStaticCatalog} from './preamble';
 import {COOP_KNOWLEDGE} from './knowledge';
 import {READ_ONLY_STATEMENT} from './read-only-statement';
@@ -58,24 +60,27 @@ const NO_TOOLS_NOTICE =
  * The STATIC, cached part of the system prompt: persona, guardrails, output format, brand knowledge and the metric
  * catalog. Byte-identical on every call (no dates, no digest, no counts) so the prompt cache holds.
  */
-export function buildStaticSystem(opts: {tools?: boolean} = {}): string {
+export function buildStaticSystem(opts: {tools?: boolean; explore?: boolean} = {}): string {
   const withTools = opts.tools !== false;
+  const explore = withTools && opts.explore === true; // Explore needs the tools path: it is never sent in digest-only mode
   return [
     `You are ${COOP_CHAT.agentName}, ${COOP_CHAT.persona}`,
     '',
     '## Guardrails',
-    COOP_CHAT.guardrails,
+    buildGuardrails({explore}),
     READ_ONLY_STATEMENT,
     `If a request is out of scope, reply exactly: "${COOP_CHAT.refusal}"`,
     '',
     '## Analyst skill',
-    renderSkill(),
+    renderSkill({explore}),
     '',
     '## Output format',
     COOP_CHAT.output,
     KNOWLEDGE_BLOCK,
     '',
     withTools ? buildStaticCatalog() : NO_TOOLS_NOTICE,
+    // Explore adds its catalog and worked examples INSIDE this (already cached) block: the request is at the 4-breakpoint limit.
+    ...(explore ? ['', '## Exploratory views (run_query)', buildExploreCatalogText(), '', '## Worked exploratory queries', buildExamplesText()] : []),
   ].join('\n');
 }
 
@@ -107,10 +112,12 @@ export function buildDigestBlock(rows: DigestArchiveRow[], week?: string, opts?:
  * Live mode (tools available): NO period is pre-selected and no digest is loaded. The owner defines the dates; weekly digests
  * are reachable only through get_digest, and only for the weeks that exist. Static text, so it is cache-friendly.
  */
-export function buildLiveContextBlock(): string {
+export function buildLiveContextBlock(opts: {explore?: boolean} = {}): string {
   return [
     '## Period',
-    'No reporting period is selected for you: the owner chooses the dates. If a question has no period, ask which dates before using any tool.',
+    opts.explore
+      ? 'No reporting period is selected for you: the owner chooses the dates. If a question asks for a figure for a period and names none, ask which dates before using any tool. Exception: a ranking, profile or "most/least" question with no period means all available data; run it over the whole range, say so in the answer, and offer a narrower period.'
+      : 'No reporting period is selected for you: the owner chooses the dates. If a question has no period, ask which dates before using any tool.',
     'Offline POS figures come from query_metric for any dates the data covers. Shopee, Lazada and Website figures come from get_digest and exist only for the weeks that have a stored weekly digest: say which weeks are missing instead of guessing.',
     'On the home screen, if asked what you can do, list what you can answer (offline POS metrics for any dates, weekly channel digests, dashboards and charts) and ask what they want to see and for which dates.',
   ].join('\n');

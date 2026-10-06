@@ -5,7 +5,7 @@
 // categories folded into "Other"), and a block whose source failed a check shows a "Not reliable" badge (icon + words).
 import {useState} from 'react';
 import dynamic from 'next/dynamic';
-import {ChevronRight, TriangleAlert} from 'lucide-react';
+import {ChevronRight, FlaskConical, TriangleAlert} from 'lucide-react';
 import type {ChartBlock, ChatBlock, KpiBlock, TableBlock} from '@/src/chat/block-types';
 import type {MetricRow, ResultColumn} from '@/src/chat/result-types';
 import {cn} from '@/lib/utils';
@@ -25,6 +25,27 @@ export function ReliabilityBadge() {
       <TriangleAlert className="size-3" style={{color: 'var(--status-warn)'}} aria-hidden />
       Not reliable
     </span>
+  );
+}
+
+/** Explore only: the "Exploratory" chip and a collapsed "Show SQL" disclosure. The SQL is shown exactly as it ran; it is text, never HTML. */
+export function ExploratoryBar({sql}: {sql: string | null | undefined}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="inline-flex w-fit shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
+        <FlaskConical className="size-3" aria-hidden />
+        Exploratory, not a registered metric
+      </span>
+      {sql && (
+        <details className="group text-[11px] text-muted-foreground">
+          <summary className={cn('inline-flex cursor-pointer list-none items-center gap-1 rounded-md py-0.5 hover:text-foreground [&::-webkit-details-marker]:hidden', FOCUS)}>
+            <ChevronRight className="size-3 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
+            Show SQL
+          </summary>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/60 p-2 font-mono text-[11px] leading-snug text-foreground">{sql}</pre>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -49,8 +70,10 @@ function Notes({notes}: {notes: string[]}) {
 function KpiRow({blocks}: {blocks: KpiBlock[]}) {
   const unreliable = blocks.some((b) => !b.reliable);
   const notes = [...new Set(blocks.flatMap((b) => b.caveats))];
+  const explore = blocks.find((b) => b.exploratory);
   return (
     <div className="flex w-full flex-col gap-1.5">
+      {explore && <ExploratoryBar sql={explore.sql} />}
       {unreliable && (
         <div>
           <ReliabilityBadge />
@@ -149,6 +172,7 @@ function BlockCard({block, toggle, children}: {block: TableBlock | ChartBlock; t
         </div>
         {toggle}
       </header>
+      {block.exploratory && <ExploratoryBar sql={block.sql} />}
       {!block.reliable && (
         <div>
           <ReliabilityBadge />

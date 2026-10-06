@@ -1,4 +1,4 @@
-// F5 + F7 + F8 + F10: the ten strict tool definitions sent to the Messages API, built from the registry. Frozen.
+// F5 + F7 + F8 + F10: the strict tool definitions (ten, plus run_query for Explore users) sent to the Messages API, built from the registry. Frozen.
 // Strict-mode limits honoured: 10 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
 import {DIGEST_SECTIONS, DIGEST_WINDOWS, PRODUCT_SHOWS} from './digest-lookup';
 import {METRICS, METRIC_IDS} from './metrics-registry';
@@ -55,6 +55,27 @@ const queryMetric: ToolDefinition = {
       limit: {type: 'integer', enum: [3, 5, 10, 25], description: 'Maximum rows for ranked lists.'},
     },
     required: ['metric', 'dimension', 'measure', 'range', 'from', 'to', 'channel', 'event', 'pet', 'compare_to', 'sort', 'limit'],
+    additionalProperties: false,
+  },
+};
+
+// Explore (spec 3.1). Strict, no optional parameters, no maxLength/pattern (lengths are enforced in code by the validator).
+const runQuery: ToolDefinition = {
+  name: 'run_query',
+  description:
+    'EXPLORATORY. Run ONE read-only SQL SELECT on the coop_explore_* views listed in the catalog, only when query_metric, lookup_product and get_digest cannot answer ' +
+    '(the registry has no measure or filter for the ask). Name every column (no select *). Aggregate in SQL; never return raw rows to count or add them yourself. ' +
+    'step "probe" = a quick look (row count, null share, distinct values), not stored; step "final" = the query whose result you will explain or draw, stored with an id x1, x2... for render_chart / render_table / render_kpi. ' +
+    'On an error code, fix the SQL and call again. At most 5 calls per question.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      purpose: {type: 'string', description: 'One plain sentence: what this query answers. No customer names or contact details.'},
+      sql: {type: 'string', description: 'One SELECT (a WITH ... SELECT is fine). At most 2000 characters. Name columns; end numeric columns with _php, _pct, _count, _units or _ratio.'},
+      step: {type: 'string', enum: ['probe', 'final'], description: '"probe" for a look, "final" for the query you will present.'},
+    },
+    required: ['purpose', 'sql', 'step'],
     additionalProperties: false,
   },
 };
@@ -213,3 +234,13 @@ const setReportTitle: ToolDefinition = {
 };
 
 export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, getDigest, lookupProduct, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);
+
+const EXPLORE_TOOLS: readonly ToolDefinition[] = (() => {
+  const at = CHAT_TOOLS.findIndex((t) => t.name === 'query_metric') + 1;
+  return deepFreeze([...CHAT_TOOLS.slice(0, at), runQuery, ...CHAT_TOOLS.slice(at)]);
+})();
+
+/** The tool list for a user who may use Explore: CHAT_TOOLS with run_query spliced in after query_metric, so set_report_title stays last and keeps the cache breakpoint. */
+export function exploreTools(): readonly ToolDefinition[] {
+  return EXPLORE_TOOLS;
+}

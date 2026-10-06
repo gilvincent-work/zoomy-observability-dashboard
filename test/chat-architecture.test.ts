@@ -224,8 +224,8 @@ describe('scanner rules fire on planted violations', () => {
     expect(writeCallsIn(files)).toEqual([]);
   });
 
-  it('the crypto update exception covers exactly one file and one method', () => {
-    expect(WRITE_CALL_EXCEPTIONS.map((e) => `${e.file}:${e.method}`)).toEqual(['src/chat/read/mint-jwt.ts:update']);
+  it('the crypto update exceptions cover exactly two files and one method', () => {
+    expect(WRITE_CALL_EXCEPTIONS.map((e) => `${e.file}:${e.method}`)).toEqual(['src/chat/read/mint-jwt.ts:update', 'src/chat/explore/fingerprint.ts:update']);
     // same call, allowed file: ignored
     expect(writeCallsIn({'src/chat/read/mint-jwt.ts': "const sig = createHmac('sha256', k).update(data).digest();"})).toEqual([]);
     // same call, any other file: still flagged
@@ -246,5 +246,38 @@ describe('scanner rules fire on planted violations', () => {
   it('extractImports and strip basics', () => {
     expect(extractImports("import a from 'x';\nimport 'y';\nexport * from './z';\nimport type {T} from 't';")).toEqual(['x', 'y', './z']);
     expect(strip("a('//x') // c", true)).not.toContain('c');
+  });
+});
+
+// Explore (spec 9.1): the two heavy dependencies are walled into src/chat/explore/, and the pure modules there stay importable by vitest.
+describe('Explore dependency walls, real tree', () => {
+  const all = loadDirs(process.cwd(), ['src', 'app', 'components', 'lib']);
+  const importsOf = (pkg: string) =>
+    Object.keys(all)
+      .filter((f) => !/\.(test|spec)\./.test(f))
+      .filter((f) => new RegExp(`(from\\s+|import\\s*\\(\\s*|import\\s+)['"]${pkg}['"]`).test(all[f]))
+      .sort();
+
+  it('only src/chat/explore/parse.ts imports libpg-query', () => {
+    expect(importsOf('libpg-query')).toEqual(['src/chat/explore/parse.ts']);
+  });
+
+  it('only src/chat/explore/client.ts imports the postgres driver', () => {
+    expect(importsOf('postgres')).toEqual(['src/chat/explore/client.ts']);
+  });
+
+  it('src/chat/explore/ has no server-only import except client.ts (the pure modules stay importable by vitest)', () => {
+    const withServerOnly = Object.keys(all).filter((f) => f.startsWith('src/chat/explore/') && /import\s+['"]server-only['"]/.test(all[f]));
+    expect(withServerOnly).toEqual(['src/chat/explore/client.ts']);
+  });
+
+  it('client.ts is reached only through src/chat/explore-setup.ts', () => {
+    expect(importersOf('src/chat/explore/client.ts', all).filter((f) => !f.startsWith('test/'))).toEqual(['src/chat/explore-setup.ts']);
+  });
+
+  it('the pinned .update( exception covers exactly the two files and one method each; the same call elsewhere is still flagged', () => {
+    expect(WRITE_CALL_EXCEPTIONS.map((e) => `${e.file}:${e.method}`)).toEqual(['src/chat/read/mint-jwt.ts:update', 'src/chat/explore/fingerprint.ts:update']);
+    const planted: FileMap = {'src/chat/explore/other.ts': 'export const h = (c: {update(s: string): void}) => c.update("x");', 'src/chat/explore/fingerprint.ts': 'const d = c.update("x"); const e = db.delete("y");'};
+    expect(writeCallsIn(planted)).toEqual(['src/chat/explore/other.ts: .update(', 'src/chat/explore/fingerprint.ts: .delete(']);
   });
 });

@@ -70,9 +70,19 @@ export const RULES: readonly {id: string; enforcedBy: RuleEnforcement; where: st
   {id: 'DASH-09', enforcedBy: 'guide', where: 'guide'},
   {id: 'DASH-10', enforcedBy: 'guide', where: 'guide'},
   {id: 'DASH-11', enforcedBy: 'guide', where: 'guide'},
+  // Explore mode (run_query). These tags appear only in the explore variant of the skill (topics/sql-explore.md).
+  {id: 'EXP-01', enforcedBy: 'code', where: 'src/chat/explore/parse.ts E_SELECT_STAR: name every column'},
+  {id: 'EXP-02', enforcedBy: 'code', where: 'src/chat/explore/parse.ts + role coop_explore_ro: one read-only SELECT on allowlisted views and functions'},
+  {id: 'EXP-03', enforcedBy: 'code', where: 'src/chat/explore/executor.ts result caveat and block label: Exploratory, not a registered metric, SQL shown'},
+  {id: 'EXP-04', enforcedBy: 'code', where: 'src/chat/loop.ts number check in enforce mode for Explore turns'},
+  {id: 'EXP-05', enforcedBy: 'code', where: 'src/chat/explore/parse.ts lint W_NO_STATUS_FILTER + src/chat/explore/client.ts SET LOCAL timezone Asia/Manila'},
+  {id: 'EXP-06', enforcedBy: 'guide', where: 'guide'},
 ];
 
 /** Numbers the skill text uses as `{{NAME}}` placeholders, taken from code so the text cannot drift. */
 export const SKILL_CONSTANTS: Record<string, number> = {SMALL_SAMPLE_N, KPI_MAX, PIE_MAX_SEGMENTS, TABLE_MIN_CLASSES, SERIES_FOLD_AT};
 
 export const SKILL_TOPICS = ['bi-reconciliation', 'period-comparison', 'allocation-and-prices', 'data-quality', 'viz-forms', 'dashboard-composition'] as const;
+
+/** Topics appended after SKILL_TOPICS, only in the explore variant. */
+export const EXPLORE_TOPICS = ['sql-explore'] as const;

@@ -2,6 +2,7 @@
 
 import {revalidatePath} from 'next/cache';
 import {plainText} from './chat/bind';
+import {fallbackTitle} from './reports-title';
 import {getChatMetricData} from './chat/server';
 import {validateSpec} from './chat/report-spec';
 import {REPORT_MAX_BYTES} from './chat/report-types';
@@ -212,8 +213,7 @@ export async function saveReport(input: SaveReportInput): Promise<ReportsActionR
     const visibility = input.visibility ?? 'team';
     if (!isVisibility(visibility)) return fail('Visibility must be team or private.');
     const draft = isRecord(input.spec) ? input.spec : null;
-    const title = plainText(input.title ?? draft?.title);
-    if (title === '') return fail('Give the report a title.');
+    const title = plainText(input.title ?? draft?.title) || fallbackTitle(draft, input.prompt);
     const prepared = await prepareSpec(input.spec, input.pinDates === true, title);
     if (!prepared.ok) return prepared;
 
