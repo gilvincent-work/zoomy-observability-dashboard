@@ -53,6 +53,7 @@ export type UploadRow = {
   reject_reason: string | null;
   uploaded_by: string | null;
   created_at: string;
+  storage_path: string | null;
 };
 
 /** Store the raw file, then open a gl_uploads row. Returns the new upload id. */
@@ -160,12 +161,31 @@ export async function getUpload(companyId: string, id: string): Promise<UploadRo
   const supa = db();
   const res = await supa
     .from('gl_uploads')
-    .select('id,company_id,kind,filename,status,page_count,reject_reason,uploaded_by,created_at')
+    .select('id,company_id,kind,filename,status,page_count,reject_reason,uploaded_by,created_at,storage_path')
     .eq('company_id', companyId)
     .eq('id', id)
     .maybeSingle();
   if (res.error) throw new Error(`gl_uploads read failed: ${res.error.message}`);
   return (res.data as UploadRow | null) ?? null;
+}
+
+/**
+ * A short-lived signed URL to view the stored file for an upload, scoped to the
+ * company (so one tenant can't fetch another's scan by guessing an id). The bucket
+ * is private, so a signed URL is the only way the browser can load it. Returns null
+ * if the upload isn't this company's, has no stored file, or signing fails.
+ */
+export async function signedUploadUrl(companyId: string, uploadId: string, expiresInSec = 600): Promise<string | null> {
+  if (!goldlineConfigured()) return null;
+  const upload = await getUpload(companyId, uploadId); // company-scoped ownership check
+  if (!upload?.storage_path) return null;
+  const supa = db();
+  const res = await supa.storage.from(GOLDLINE_BUCKET).createSignedUrl(upload.storage_path, expiresInSec);
+  if (res.error) {
+    console.error('signedUploadUrl failed', res.error.message);
+    return null;
+  }
+  return res.data?.signedUrl ?? null;
 }
 
 export type ExtractionRecord = {
@@ -261,7 +281,7 @@ export async function listUploads(companyId: string): Promise<UploadRow[]> {
   const rows = await fetchAllRows('gl_uploads', (from, to) =>
     supa
       .from('gl_uploads')
-      .select('id,company_id,kind,filename,status,page_count,reject_reason,uploaded_by,created_at')
+      .select('id,company_id,kind,filename,status,page_count,reject_reason,uploaded_by,created_at,storage_path')
       .eq('company_id', companyId)
       .order('created_at', {ascending: false})
       .order('id', {ascending: true})
