@@ -5,6 +5,7 @@ import {
   EXTRACTION_SCHEMA,
   MANIFESTS,
   COLUMN_KEYS,
+  humanizeExtractError,
 } from './goldline-extract';
 
 describe('buildSystemPrompt', () => {
@@ -48,5 +49,25 @@ describe('EXTRACTION_SCHEMA', () => {
 
   it('page-1 manifest covers all 43 coded rows (Final Powder has no item code)', () => {
     expect(MANIFESTS[1].length).toBe(43);
+  });
+});
+
+describe('humanizeExtractError', () => {
+  it('explains the page 2–6 manifest gap without jargon', () => {
+    const m = humanizeExtractError(new Error('No extraction manifest for page 2 (generate it from the blank template first)'));
+    expect(m).toMatch(/page 1/i);
+    expect(m).not.toMatch(/manifest/i);
+  });
+  it('maps page_mismatch, unreadable JSON, and busy/rate cases', () => {
+    expect(humanizeExtractError(new Error('Extraction declined: page_mismatch'))).toMatch(/page 1/i);
+    expect(humanizeExtractError(new Error('Extraction did not return valid JSON'))).toMatch(/clearer/i);
+    expect(humanizeExtractError(new Error('Overloaded'))).toMatch(/busy/i);
+  });
+  it('never leaks a raw 400 / JSON blob — falls back to a safe generic', () => {
+    const raw = '400 {"type":"error","error":{"type":"invalid_request_error","message":"..."}}';
+    const m = humanizeExtractError(new Error(raw));
+    expect(m).not.toContain('invalid_request_error');
+    expect(m).not.toContain('{');
+    expect(m).toMatch(/couldn.t process/i);
   });
 });

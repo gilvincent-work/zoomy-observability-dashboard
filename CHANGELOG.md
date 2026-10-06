@@ -10,6 +10,10 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — UX: human-readable upload extraction errors
+- `src/goldline-extract.ts` `humanizeExtractError` (+tests): maps raw extraction / Claude API errors to short, plain-language messages — the page 2–6 manifest gap ("supports page 1… pages 2–6 coming soon"), page_mismatch, unreadable scan, busy/rate/timeout — and a safe generic for anything else (400s, invalid_request_error) so a raw JSON blob never reaches the UI.
+- `app/api/goldline/upload/route.ts`: the PDF extraction catch now logs the raw error server-side and shows/stores the friendly message (both the inline error and the file row's reject reason). typecheck + full suite (2405) + pagination guard pass.
+
 ## 2026-10-06 — Fix: Goldline PDF extraction 400 (invalid thinking param)
 - `src/goldline-extract-run.ts`: removed `thinking: {type: "disabled"}` from the Claude Vision call — `claude-sonnet-5-5` rejects it with a 400 ("send {type: between_tools} instead"). For a pure, no-tools extraction we omit the param and let the model default, so a scanned PDF upload reaches the review workbench instead of failing. (The upload/auth/storage/key path was already working; only this param was wrong.)
 

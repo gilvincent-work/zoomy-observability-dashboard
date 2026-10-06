@@ -11,6 +11,7 @@ import {
   upsertSales,
 } from '@/src/goldline-data';
 import {extractInventoryPage, extractionConfigured, type ExtractedPage} from '@/src/goldline-extract-run';
+import {humanizeExtractError} from '@/src/goldline-extract';
 
 // Goldline upload endpoint. Accepts ONE file (multipart/form-data, field `file`)
 // scoped to the active company (?company=<slug>):
@@ -146,7 +147,10 @@ export async function POST(req: Request): Promise<Response> {
     await setUploadStatus(uploadId, 'needs_review', {pageCount: 1});
     return json({uploadId, status: 'needs_review', page, rows: extracted.rows.length, docConfidence: avgConfidence(extracted)});
   } catch (e) {
-    await setUploadStatus(uploadId, 'failed', {rejectReason: msg(e)});
-    return json({uploadId, status: 'failed', error: msg(e)}, 422);
+    // Log the raw error server-side; show the reviewer a human-readable reason.
+    console.error('goldline upload: extraction failed', msg(e));
+    const friendly = humanizeExtractError(e);
+    await setUploadStatus(uploadId, 'failed', {rejectReason: friendly});
+    return json({uploadId, status: 'failed', error: friendly}, 422);
   }
 }

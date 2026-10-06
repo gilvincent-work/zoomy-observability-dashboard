@@ -98,6 +98,44 @@ export function buildManifestPrompt(page: number): string {
   ].join('\n');
 }
 
+/**
+ * Turn a raw extraction/API error into a short, human-readable message for the
+ * reviewer. The raw error is still logged server-side; this only shapes what the
+ * UI shows (never a JSON blob or SDK stack). Pure + unit-tested.
+ */
+export function humanizeExtractError(raw: unknown): string {
+  const s = (raw instanceof Error ? raw.message : String(raw ?? '')).toLowerCase();
+  if (s.includes('manifest for page')) {
+    return 'Automatic reading currently supports page 1 of the Nichido inventory form. This looks like a later page — upload page 1, or review this file manually. (Pages 2–6 are coming soon.)';
+  }
+  if (s.includes('page_mismatch')) {
+    return "The form's page number didn't match what we expected. Please upload page 1 of the inventory form.";
+  }
+  if (s.includes('anthropic_api_key') || s.includes('not configured')) {
+    return 'Automatic reading isn’t set up for this environment yet — the file was saved for manual review.';
+  }
+  if (s.includes('overloaded') || s.includes('529')) {
+    return 'The reader is busy right now. Please try uploading again in a moment.';
+  }
+  if (s.includes('rate') || s.includes('429')) {
+    return 'Too many requests right now. Please try again shortly.';
+  }
+  if (s.includes('timeout') || s.includes('timed out') || s.includes('aborted')) {
+    return 'Reading this scan took too long and was stopped. Please try again, or review it manually.';
+  }
+  if (
+    s.includes('valid json') ||
+    s.includes('no text content') ||
+    s.includes('expected page shape') ||
+    s.includes('declined') ||
+    s.includes('unreadable')
+  ) {
+    return 'We couldn’t read this scan reliably. Try a clearer, flat, full-page scan — or review it manually.';
+  }
+  // 400s, invalid_request_error, and anything else: a safe generic (raw is logged).
+  return 'We couldn’t process this scan. It’s been saved — please try again, or review it manually.';
+}
+
 /** The JSON schema the model must return (header + one object per item). */
 export const EXTRACTION_SCHEMA = {
   type: 'object',
