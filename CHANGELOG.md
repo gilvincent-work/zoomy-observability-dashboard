@@ -10,6 +10,12 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Multi-role access: regression-review fixes (session freshness, atomic-ish audit, admin index)
+- **CRITICAL**: revoke/suspend now takes effect in real time. Admin actions (`app/admin/actions.ts`) re-read the actor's roles from the DB — not the session token — before any write; the JWT refreshes memberships every ~5 min and session `maxAge` is 8h (`auth.ts`). A revoked/suspended membership stops working within minutes instead of living in the JWT until it expires.
+- MED: audit writes are best-effort (`src/admin-data.ts`) — a committed role change is never reported "failed" because the audit insert hiccuped; failures are logged instead.
+- LOW: partial unique index `company_users_one_coop_admin_per_email` (NULL company) backstops duplicate coop_admin rows (applied to Staging + `supabase/multi_role.sql`).
+- Reviewer confirmed: no cookie/param privilege escalation, role-write authz, lockout guards (incl. no grant-bypass of the last admin), membership-only gate (suspended excluded, invited activated), coop_admin NULL-company handling, tenant isolation, client/server boundary, Zoomy legacy unchanged. typecheck + full suite (1844) + pagination guard pass.
+
 ## 2026-10-06 — Multi-role access P2: Users & Roles console + membership-only gate
 - `src/admin-data.ts`: Coop-Admin role-management data layer — `listUsers` (grouped by email), `listCompanies`, `grantRole`/`setStatus`/`revoke`, `countCoopAdmins`; every write logged to `company_user_audit`; bounded count/single reads marked `pagination-ok`.
 - `app/admin/actions.ts`: coop_admin-gated server actions (re-checked server-side, never trusting the client) with lockout guards — can't remove/suspend the last active Coop Admin, can't suspend/revoke your own Coop Admin; email/role/company validated.

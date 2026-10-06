@@ -84,6 +84,9 @@ async function findMembership(
   return (res.data as {role: CompanyRole; status: MembershipStatus} | null) ?? null;
 }
 
+// Best-effort: the mutation has already committed by the time we audit, so an audit
+// hiccup must NOT make the caller report a failure (and retry an applied change). We
+// log loudly instead — the gap is a missing audit row, not a wrong-status report.
 async function audit(input: {
   actor: string;
   email: string;
@@ -92,15 +95,19 @@ async function audit(input: {
   oldRole?: CompanyRole | null;
   newRole?: CompanyRole | null;
 }): Promise<void> {
-  const res = await db().from('company_user_audit').insert({
-    actor_email: input.actor,
-    target_email: input.email,
-    company_id: input.companyId,
-    action: input.action,
-    old_role: input.oldRole ?? null,
-    new_role: input.newRole ?? null,
-  });
-  if (res.error) throw new Error(`audit write failed: ${res.error.message}`);
+  try {
+    const res = await db().from('company_user_audit').insert({
+      actor_email: input.actor,
+      target_email: input.email,
+      company_id: input.companyId,
+      action: input.action,
+      old_role: input.oldRole ?? null,
+      new_role: input.newRole ?? null,
+    });
+    if (res.error) console.error('company_user_audit write failed', input.action, input.email, res.error.message);
+  } catch (e) {
+    console.error('company_user_audit write threw', input.action, input.email, e);
+  }
 }
 
 /** Grant a new membership, or change the role of an existing one. Audited. A brand-new

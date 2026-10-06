@@ -2,8 +2,7 @@
 
 import {revalidatePath} from 'next/cache';
 import {auth} from '@/auth';
-import {getActiveContext} from '@/src/active-context';
-import {canManageRoles, COOP_VIEW_KEY, type CompanyRole} from '@/src/company';
+import {COOP_VIEW_KEY, fetchMemberships, type CompanyRole} from '@/src/company';
 import {countCoopAdmins, grantRole, revoke, setStatus} from '@/src/admin-data';
 
 // Role-management actions — the ONLY write surface for access. Every action
@@ -17,11 +16,15 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const GRANTABLE: CompanyRole[] = ['company_admin', 'coop_admin']; // v1 roles
 
 async function requireCoopAdmin(): Promise<{actor: string} | {error: string}> {
-  const ctx = await getActiveContext();
-  if (!ctx || !canManageRoles(ctx.role)) return {error: 'Not authorized — switch to your Coop Admin view.'};
   const session = await auth();
   const actor = session?.user?.email?.toLowerCase();
   if (!actor) return {error: 'Not authorized.'};
+  // Authoritative: re-read the actor's roles from the DB, NOT the (possibly stale)
+  // session token — so a just-revoked/suspended admin can't keep managing roles.
+  // fetchMemberships drops suspended rows.
+  const memberships = await fetchMemberships(actor);
+  const stillCoopAdmin = memberships.some((m) => m.companyId === null && m.role === 'coop_admin');
+  if (!stillCoopAdmin) return {error: 'Not authorized — you need an active Coop Admin role.'};
   return {actor};
 }
 

@@ -56,6 +56,9 @@ async function recordSignIn(email?: string | null) {
 export const {handlers, auth, signIn, signOut} = NextAuth({
   providers: [Google],
   pages: {signIn: '/signin'},
+  // Shorter-lived JWT sessions bound how long a stale membership snapshot can live;
+  // updateAge rolls the token (and triggers the jwt refresh) ~every 5 min of activity.
+  session: {strategy: 'jwt', maxAge: 8 * 60 * 60, updateAge: 5 * 60},
   callbacks: {
     // Gate who may sign in: membership-driven only. A user needs a non-suspended
     // role in company_users (granted by a Coop Admin). No email allowlist.
@@ -70,9 +73,15 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
     // resolve the active company without a per-request DB hit. `user` is only
     // present at sign-in; normal requests skip the fetch (edge-safe).
     async jwt({token, user, profile}) {
-      if (user) {
-        const email = (profile?.email ?? user.email ?? token.email ?? '').toLowerCase();
-        (token as {memberships?: Membership[]}).memberships = await fetchMemberships(email);
+      const t = token as {memberships?: Membership[]; mAt?: number; email?: string | null};
+      const email = (profile?.email ?? user?.email ?? t.email ?? '').toLowerCase();
+      // Refresh memberships at sign-in AND periodically (every ~5 min) so a revoked
+      // or role-changed membership stops taking effect quickly, rather than living in
+      // the JWT until it expires. Suspended rows are dropped by fetchMemberships.
+      const stale = typeof t.mAt !== 'number' || Date.now() - t.mAt > 5 * 60 * 1000;
+      if (email && (user || stale)) {
+        t.memberships = await fetchMemberships(email);
+        t.mAt = Date.now();
       }
       return token;
     },

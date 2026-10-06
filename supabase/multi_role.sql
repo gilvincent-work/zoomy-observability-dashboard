@@ -22,3 +22,11 @@ create table if not exists public.company_user_audit (
   created_at   timestamptz not null default now()
 );
 alter table public.company_user_audit enable row level security;
+
+-- Backstop: at most one coop_admin (NULL company) row per email. The base
+-- unique(user_email, company_id) can't enforce this because Postgres treats NULLs
+-- as distinct, so a race / manual insert could otherwise create duplicate coop_admin
+-- rows (which would also skew the last-admin lockout count).
+create unique index if not exists company_users_one_coop_admin_per_email
+  on public.company_users (user_email)
+  where company_id is null;
