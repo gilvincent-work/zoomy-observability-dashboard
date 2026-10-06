@@ -142,14 +142,13 @@ export function UploadReview({
           </CardHeader>
           {scanOpen && (
             <CardContent>
-              <object data={scanUrl} type="application/pdf" className="h-[480px] w-full rounded-md border border-border bg-muted">
-                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-                  Can’t preview the file inline.
-                  <a href={scanUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">
-                    Open the scan in a new tab
-                  </a>
-                </div>
-              </object>
+              {/* iframe (not <object>): the app CSP sets object-src 'none'. The src is a
+                  same-origin proxy that streams the private file as application/pdf. */}
+              <iframe
+                src={scanUrl}
+                title="Scanned inventory form"
+                className="h-[480px] w-full rounded-md border border-border bg-muted"
+              />
             </CardContent>
           )}
         </Card>

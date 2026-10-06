@@ -10,6 +10,11 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Uploads: inline scan preview (CSP-safe) + honest non-page-1 handling
+- **Preview**: the review page embedded the PDF with `<object>`, which the app CSP (`object-src 'none'`) blocks → "Can't preview inline". New same-origin proxy `GET /api/goldline/uploads/[id]/file` (company-scoped, streams the private file as application/pdf) + an `<iframe>` (frame-src is open) so the scan renders inline; signed URL stays server-side.
+- **Non-page-1 PDFs**: the route reads every upload against page 1's manifest, so a later page (2.pdf/3.pdf) returned 0 rows and showed a misleading empty-but-committable review. Since a real page 1 always yields one row per printed item, 0 rows now fails loud with a clear "this doesn't look like page 1 — page 1 only in v1" message. (Full multi-page support still needs the blank page 2–6 templates.)
+- typecheck + full suite (2405) + pagination guard pass.
+
 ## 2026-10-06 — Uploads review: scanned-file preview (planned in §07d)
 - `src/goldline-data.ts`: `signedUploadUrl(companyId, uploadId)` — a short-lived (10 min) signed URL to the stored scan, company-scoped (ownership re-checked, so one tenant can't fetch another's file); `UploadRow` + the reads now carry `storage_path`.
 - `app/uploads/[id]/page.tsx` + `components/analyst/upload-review.tsx`: the review page shows the scanned PDF inline (collapsible `<object>` + "Open" in a new tab) above the extracted rows, so the reviewer can compare the source against the numbers. The bucket is private; the browser loads it via the signed URL. typecheck + full suite (2405) + pagination guard pass.
