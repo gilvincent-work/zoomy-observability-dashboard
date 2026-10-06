@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Goldline Overview rebuilt to the planned design (§07a)
+- `/overview` for a non-Zoomy company now follows the plan mockup: a time-of-day greeting in Manila time ("Good morning, Goldline"), the sales window from the latest POS period, an "N stores live" pill (active `gl_stores`), three KPI tiles (Net sales, Units sold, Gross sales) using the house `Metric` tile with a change vs the previous period, and "Top categories" (net sales by `gl_products.product_line`, top 5 with "View all").
+- Decision: the POS export is periodic, so "this window" = the latest `period_start/period_end` in `gl_sales` and the delta compares it to the period before. With one period there's no delta ("First period on record"), never a fake 0%.
+- Empty handling: with no sales the frame stays (greeting, pill, "—" tiles) and the categories card becomes an upload prompt linking to `/uploads` (Company Users) or a note to ask one (read-only roles). SKUs without a product line roll into a muted "Uncategorized" row that always sorts last, with a footnote counting them. 0 active stores → "No stores live yet".
+- Pure rollups live in `src/goldline-overview.ts` (tested: empty, window/prior selection, deltas, category mapping, greeting); `getGoldlineOverviewData` in `goldline-analytics.ts` does the company-scoped, paginated reads. Inventory / Health / Chat in the mockup's nav are still unbuilt (see `docs/goldline-onboarding-plan.md`).
+- typecheck + full suite (2452) + pagination guard pass.
+
 ## 2026-10-06 — Goldline uploads: the real cause of "couldn't process this scan"
 - Read from the new `gl_uploads.error_detail`: every PDF failed with `400 output_config.format.schema: For 'integer' type, properties maximum, minimum are not supported`. The page-detect schema (`PAGE_DETECT_SCHEMA`) put `minimum: 0, maximum: 6` on the page integer, which structured outputs reject. Removed the bounds; `detectPage` already clamps to 0–6. The earlier "document-only message" diagnosis (below) was wrong; that change is harmless and stays. Tests now assert neither schema carries numeric bounds.
 - Not a credits problem. `humanizeExtractError` now names an out-of-credits account plainly ("Automatic reading is paused…") instead of falling to the generic message.

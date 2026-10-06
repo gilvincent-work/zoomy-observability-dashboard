@@ -1,6 +1,7 @@
 import 'server-only';
 import {createClient, type SupabaseClient} from '@supabase/supabase-js';
 import {fetchAllRows} from './pos-fetch-paginate';
+import {buildOverview, type GoldlineOverview, type OverviewSaleRow} from './goldline-overview';
 
 // Read-only analytics for a Goldline-style tenant: store + SKU rollups derived
 // from gl_sales, joined to gl_stores for names. Company-scoped on every read (the
@@ -167,5 +168,63 @@ export async function getGoldlineAnalytics(companyId: string): Promise<GoldlineA
       periodStart,
       periodEnd,
     },
+  };
+}
+
+export type GoldlineOverviewData = {
+  companyName: string;
+  storesLive: number; // gl_stores with status 'active'
+  overview: GoldlineOverview;
+};
+
+/** Everything the Overview page needs for one company: name, live-store count,
+ *  and the window/delta/category rollups (see goldline-overview.ts). */
+export async function getGoldlineOverviewData(companyId: string): Promise<GoldlineOverviewData> {
+  const empty = buildOverview([], new Map());
+  if (!configured()) return {companyName: companyId, storesLive: 0, overview: empty};
+  const supa = db();
+
+  // pagination-ok: single row by primary key.
+  const company = await supa.from('companies').select('name').eq('id', companyId).maybeSingle();
+  const companyName = (company.data?.name as string | undefined) ?? companyId;
+
+  const stores = (await fetchAllRows('gl_stores', (from, to) =>
+    supa.from('gl_stores').select('store_code,status').eq('company_id', companyId).order('store_code').range(from, to),
+  )) as unknown as Array<{store_code: string; status: string}>;
+
+  const products = (await fetchAllRows('gl_products', (from, to) =>
+    supa
+      .from('gl_products')
+      .select('item_code,sku_code,product_line')
+      .eq('company_id', companyId)
+      .order('item_code')
+      .range(from, to),
+  )) as unknown as Array<{sku_code: string | null; product_line: string | null}>;
+
+  const sales = (await fetchAllRows('gl_sales', (from, to) =>
+    supa
+      .from('gl_sales')
+      .select('sku_code,gross_retail,units,net_of_vat,period_start,period_end')
+      .eq('company_id', companyId)
+      .order('id', {ascending: true})
+      .range(from, to),
+  )) as unknown as Array<Record<string, unknown>>;
+
+  const lineBySku = new Map<string, string>();
+  for (const p of products) if (p.sku_code && p.product_line) lineBySku.set(p.sku_code, p.product_line);
+
+  const rows: OverviewSaleRow[] = sales.map((r) => ({
+    sku_code: String(r.sku_code ?? ''),
+    gross: num(r.gross_retail),
+    units: num(r.units),
+    net: num(r.net_of_vat),
+    period_start: (r.period_start as string | null) ?? null,
+    period_end: (r.period_end as string | null) ?? null,
+  }));
+
+  return {
+    companyName,
+    storesLive: stores.filter((s) => s.status === 'active').length,
+    overview: buildOverview(rows, lineBySku),
   };
 }
