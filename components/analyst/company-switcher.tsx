@@ -1,6 +1,7 @@
 'use client';
 
-import {useTransition} from 'react';
+import {useEffect, useState, useTransition} from 'react';
+import {createPortal} from 'react-dom';
 import {useRouter} from 'next/navigation';
 import {Menu} from '@base-ui/react/menu';
 import {Check, ChevronDown, Loader2, ShieldCheck} from 'lucide-react';
@@ -8,6 +9,7 @@ import {setActiveView} from '@/app/actions/company';
 import {companyHue, groupViews, monogram, type SwitcherView} from '@/src/view-switcher';
 import {cn} from '@/lib/utils';
 import {brandFor} from '@/src/brands';
+import {homeFor} from '@/src/company-nav';
 import {BrandMark} from '@/components/analyst/brand-mark';
 
 // Multi-role view switcher in the top bar. Only rendered (by the shell) when the
@@ -82,19 +84,65 @@ function ViewItem({view}: {view: SwitcherView}) {
 export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeKey: string}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // Switch overlay: 'in' while the new view loads, 'out' for the exit fade, then gone.
+  const [switching, setSwitching] = useState<{view: SwitcherView; phase: 'in' | 'out'; started: boolean} | null>(null);
+  useEffect(() => {
+    if (!switching || switching.phase === 'out') return;
+    // Wait until the switch has actually been pending, so the veil can't vanish before
+    // the transition registers; then fade out once the new view has rendered.
+    if (pending) {
+      if (!switching.started) setSwitching({...switching, started: true});
+      return;
+    }
+    if (switching.started) setSwitching({...switching, phase: 'out'});
+  }, [pending, switching]);
+  // Remove the overlay after its exit fade. Separate effect keyed on the phase, so
+  // the state change above can't cancel this timer.
+  // If the switch never registers as pending (e.g. pushing to the URL we're already
+  // on), don't wait for the 8 s net — start the exit after a short beat.
+  const waiting = switching?.phase === 'in' && !switching.started;
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => setSwitching((s) => (s && !s.started ? {...s, phase: 'out'} : s)), 1500);
+    return () => clearTimeout(t);
+  }, [waiting]);
+  // Safety net: never leave the veil up if a switch stalls.
+  const showing = Boolean(switching);
+  useEffect(() => {
+    if (!showing) return;
+    const t = setTimeout(() => setSwitching(null), 8000);
+    return () => clearTimeout(t);
+  }, [showing]);
+  const leaving = switching?.phase === 'out';
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => setSwitching(null), 180);
+    return () => clearTimeout(t);
+  }, [leaving]);
   const active = views.find((v) => v.key === activeKey) ?? views[0];
   const {coop, companies} = groupViews(views);
   const activeBrand = brandFor(active?.companyId);
 
   function choose(key: string) {
-    if (key === activeKey) return;
+    const next = views.find((v) => v.key === key);
+    if (key === activeKey || !next) return;
+    setSwitching({view: next, phase: 'in', started: false});
     startTransition(async () => {
-      await setActiveView(key);
-      router.refresh();
+      await setActiveView(key); // sets the cookie + revalidates the layout (fresh RSC on push)
+      // Land on the new view's home — the current page belongs to the previous view
+      // (e.g. Goldline's /uploads isn't part of Zoomy). Kept inside the transition so
+      // the switcher stays pending until the new page starts rendering.
+      startTransition(() => router.push(homeFor({isCoopAdmin: next.companyId === null, companyId: next.companyId})));
     });
   }
 
   return (
+    <>
+    {switching && typeof document !== 'undefined' && createPortal(<SwitchOverlay view={switching.view} leaving={switching.phase === 'out'} />, document.body)}
+    {/* Always-present live region: announced reliably (an inserted role=status often isn't). */}
+    <span className="sr-only" role="status" aria-live="polite">
+      {switching?.phase === 'in' ? `Switching to ${switching.view.companyId ? switching.view.name : 'Coop Admin'}` : ''}
+    </span>
     <Menu.Root>
       <Menu.Trigger
         disabled={pending}
@@ -143,5 +191,33 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
+    </>
+  );
+}
+
+/**
+ * The view-switch moment: the page veils and the destination's mark eases in while
+ * the new view loads, then the veil fades out over it — a quick crossfade between
+ * tenants. Enter 200 ms / exit 160 ms, strong ease-out (exit faster than enter);
+ * reduced motion keeps only a short fade. Visual only (aria-hidden); the switcher's
+ * persistent live region announces the switch.
+ */
+function SwitchOverlay({view, leaving}: {view: SwitcherView; leaving: boolean}) {
+  const brand = brandFor(view.companyId);
+  const name = view.companyId ? view.name : 'Coop Admin';
+  return (
+    <div
+      aria-hidden
+      data-leaving={leaving || undefined}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-[3px] transition-opacity duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] starting:opacity-0 data-[leaving]:opacity-0 data-[leaving]:duration-[170ms] motion-reduce:backdrop-blur-none"
+    >
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-popover px-8 py-6 shadow-xl transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] starting:scale-[0.96] starting:opacity-0 motion-reduce:transition-opacity motion-reduce:starting:scale-100">
+        {brand ? <BrandMark brand={brand} size={brand.style === 'thin' ? 18 : 24} /> : <ViewBadge view={view} />}
+        <span className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+          Switching to {name}…
+        </span>
+      </div>
+    </div>
   );
 }
