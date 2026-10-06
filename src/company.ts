@@ -214,25 +214,32 @@ export function viewFromCookie(raw: string | null | undefined, sid: string | nul
   return raw.slice(0, i) === sid ? raw.slice(i + 1) || null : null;
 }
 
-/** Read a user's view preferences (edge-safe REST, like fetchMemberships). Errors
- *  read as "no preferences" so sign-in never fails on them. */
-export async function fetchViewPrefs(email?: string | null): Promise<ViewPrefs | null> {
+/** Read a user's view preferences (edge-safe REST, like fetchMemberships). Tells
+ *  "no preferences saved" ({ok:true, prefs:null}) apart from "couldn't read them"
+ *  ({ok:false}) so sign-in can retry instead of silently ignoring a pinned view. */
+export async function fetchViewPrefsResult(email?: string | null): Promise<{ok: true; prefs: ViewPrefs | null} | {ok: false}> {
   const addr = email?.toLowerCase();
   const url = process.env.SUPABASE_URL_ARCHIVE;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE;
-  if (!addr || !url || !key) return null;
+  if (!addr || !url || !key) return {ok: true, prefs: null};
   try {
     const res = await fetch(
       // pagination-ok: single row by primary key.
       `${url}/rest/v1/company_user_prefs?select=default_view,last_view&user_email=eq.${encodeURIComponent(addr)}&limit=1`,
       {headers: {apikey: key, authorization: `Bearer ${key}`}},
     );
-    if (!res.ok) return null;
+    if (!res.ok) return {ok: false};
     const rows = (await res.json()) as Array<{default_view: string | null; last_view: string | null}>;
-    return rows[0] ? {defaultView: rows[0].default_view, lastView: rows[0].last_view} : null;
+    return {ok: true, prefs: rows[0] ? {defaultView: rows[0].default_view, lastView: rows[0].last_view} : null};
   } catch {
-    return null;
+    return {ok: false};
   }
+}
+
+/** Convenience for display: preferences, or null when none / unreadable. */
+export async function fetchViewPrefs(email?: string | null): Promise<ViewPrefs | null> {
+  const r = await fetchViewPrefsResult(email);
+  return r.ok ? r.prefs : null;
 }
 
 /** Upsert part of a user's view preferences (only the fields given change).

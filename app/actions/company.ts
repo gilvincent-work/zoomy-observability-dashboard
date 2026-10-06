@@ -2,6 +2,7 @@
 
 import {cookies} from 'next/headers';
 import {revalidatePath} from 'next/cache';
+import {after} from 'next/server';
 import {auth} from '@/auth';
 import {VIEW_COOKIE} from '@/src/active-context';
 import {membershipViews, saveViewPrefs, viewCookieValue, type Membership} from '@/src/company';
@@ -29,8 +30,13 @@ export async function setActiveView(viewKey: string): Promise<void> {
       path: '/',
       secure: process.env.NODE_ENV === 'production',
     });
+    // Remember it as "where I left off" without making the switch wait on it.
     const email = session?.user?.email;
-    if (email) await saveViewPrefs(email, {last_view: clean});
+    if (email) {
+      after(async () => {
+        if (!(await saveViewPrefs(email, {last_view: clean}))) console.error('setActiveView: last_view not saved', email);
+      });
+    }
   }
   revalidatePath('/', 'layout');
 }

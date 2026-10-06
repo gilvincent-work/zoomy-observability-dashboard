@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
-import {fetchMemberships, fetchViewPrefs, startViewKey, type Membership} from '@/src/company';
+import {fetchMemberships, fetchViewPrefsResult, startViewKey, type Membership} from '@/src/company';
 
 // Access is membership-driven (v2): a user may sign in only if a Coop Admin has
 // granted them a role in company_users. No email allowlist — the first Coop Admin is
@@ -77,7 +77,14 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
     // resolve the active company without a per-request DB hit. `user` is only
     // present at sign-in; normal requests skip the fetch (edge-safe).
     async jwt({token, user, profile}) {
-      const t = token as {memberships?: Membership[]; mAt?: number; email?: string | null; viewSid?: string; startView?: string | null};
+      const t = token as {
+        memberships?: Membership[];
+        mAt?: number;
+        email?: string | null;
+        viewSid?: string;
+        startView?: string | null;
+        svRetryAt?: number; // set while the starting view still needs its preferences
+      };
       const email = (profile?.email ?? user?.email ?? t.email ?? '').toLowerCase();
       // Refresh memberships at sign-in AND periodically (every ~5 min) so a revoked
       // or role-changed membership stops taking effect quickly, rather than living in
@@ -90,9 +97,21 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
       // Each sign-in gets a fresh view session id + its starting view (pinned default
       // → most recent → first). The switcher's cookie is bound to viewSid, so a cookie
       // left from an earlier sign-in is ignored and the user lands in this view.
-      if (email && user) {
-        t.viewSid = crypto.randomUUID();
-        t.startView = startViewKey(t.memberships ?? [], await fetchViewPrefs(email));
+      if (email && user) t.viewSid = crypto.randomUUID();
+      // Resolve the starting view at sign-in; if the preferences couldn't be read
+      // (a blip), don't freeze a wrong landing for the whole session — leave it
+      // unset (first view) and retry at most once a minute until it resolves.
+      const retryDue = typeof t.svRetryAt === 'number' && Date.now() >= t.svRetryAt;
+      if (email && (user || retryDue)) {
+        const prefs = await fetchViewPrefsResult(email);
+        if (prefs.ok) {
+          t.startView = startViewKey(t.memberships ?? [], prefs.prefs);
+          delete t.svRetryAt;
+        } else {
+          console.error('auth: view prefs unavailable at sign-in; will retry', email);
+          if (user) t.startView = null;
+          t.svRetryAt = Date.now() + 60_000;
+        }
       }
       return token;
     },

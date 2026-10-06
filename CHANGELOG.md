@@ -16,6 +16,13 @@ Dates are local working dates (GMT+8). Newest first.
 - Decision: the switcher's `active_view` cookie is now bound to one sign-in (`${viewSid}:${key}`). The sign-in id and starting view are minted in the JWT callback at sign-in and carried on the session. A cookie left from an earlier sign-in no longer overrides the starting view; within a session, switching works as before. Sessions from before this change keep the old cookie behavior until their next sign-in (`pickCookieView`), so nobody signed in at deploy loses switching.
 - **Settings** is no longer Zoomy-only. `/settings` shows "Starting view" to anyone with more than one view (any view: Zoomy, Goldline, Coop Admin). Zoomy's digest preferences still show only in the Zoomy view. Settings appears in the Goldline and Coop Admin nav (and the mobile More sheet) only for multi-role users; a single-role non-Zoomy user is sent home from `/settings`.
 - The Starting view card matches the header switcher (same badges, Coop Admin then companies A–Z), with "Where I left off" (showing what that currently is) on top. It saves on change, with a live "Saved" status; the server re-validates the choice against the person's roles (`setDefaultViewAction`).
+- **Regression review (code-reviewer) + fixes:**
+  - No critical or high issues.
+  - (MEDIUM) A failed preferences read at sign-in would have silently pinned the first view for the whole 8-hour session. `fetchViewPrefsResult` now tells "none saved" apart from "unreadable", and on an error the JWT retries at most once a minute until it resolves.
+  - (MEDIUM) The settings layout now notes that new routes under `app/settings/` aren't Zoomy-guarded.
+  - (LOW) The `last_view` write runs in `after()`, so switching doesn't wait on it, and failures are logged.
+  - (LOW) The Starting view options are disabled while a save is in flight, so there are no out-of-order reverts.
+  - Reviewer confirmed: no input can grant a view, a user can't write another's prefs, the cookie stays bound across token refreshes, and pre-change sessions keep switching.
 - typecheck + full suite (2493) + pagination guard pass; impeccable detector: no findings.
 
 ## 2026-10-06 — Goldline Inventory page, tied to the scan uploads; Uploads revamp

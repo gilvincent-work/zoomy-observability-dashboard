@@ -27,6 +27,7 @@ const LAST = '';
 function Option({
   id,
   value,
+  disabled,
   onChoose,
   label,
   caption,
@@ -34,6 +35,7 @@ function Option({
 }: {
   id: string;
   value: string;
+  disabled: boolean;
   onChoose: (id: string) => void;
   label: string;
   caption: string;
@@ -45,9 +47,18 @@ function Option({
       className={cn(
         'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/40',
         on ? 'border-primary/50 bg-primary/5' : 'border-border hover:border-foreground/25',
+        disabled && !on && 'cursor-wait opacity-60',
       )}
     >
-      <input type="radio" name="start-view" value={id} checked={on} onChange={() => onChoose(id)} className="sr-only" />
+      <input
+        type="radio"
+        name="start-view"
+        value={id}
+        checked={on}
+        disabled={disabled && !on}
+        onChange={() => onChoose(id)}
+        className="sr-only"
+      />
       {badge}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{label}</span>
@@ -78,13 +89,13 @@ export function StartViewSettings({
   const held = (k: string | null) => Boolean(k) && views.some((v) => v.key === k);
   const [value, setValue] = useState<string>(held(defaultView) ? (defaultView as string) : LAST);
   const [status, setStatus] = useState<{kind: 'saving' | 'saved' | 'err'; text: string} | null>(null);
-  const [, startTransition] = useTransition();
+  const [saving, startTransition] = useTransition();
   const {coop, companies} = groupViews(views);
   const lastName = held(lastView) ? views.find((v) => v.key === lastView)?.name : null;
   const title = (v: SwitcherView) => (v.companyId ? v.name : 'Coop Admin');
 
   function choose(next: string) {
-    if (next === value) return;
+    if (next === value || saving) return; // one save at a time — no out-of-order reverts
     const prev = value;
     setValue(next);
     setStatus({kind: 'saving', text: 'Saving…'});
@@ -113,6 +124,7 @@ export function StartViewSettings({
             <Option
               id={LAST}
               value={value}
+              disabled={saving}
               onChoose={choose}
               label="Where I left off"
               caption={lastName ? `The last view you used — right now that’s ${lastName}` : 'The last view you used'}
@@ -128,10 +140,10 @@ export function StartViewSettings({
               <span className="h-px flex-1 bg-border" aria-hidden />
             </div>
             {coop && (
-              <Option id={coop.key} value={value} onChoose={choose} label="Coop Admin" caption="People & roles · no business data" badge={<ViewBadge view={coop} />} />
+              <Option id={coop.key} value={value} disabled={saving} onChoose={choose} label="Coop Admin" caption="People & roles · no business data" badge={<ViewBadge view={coop} />} />
             )}
             {companies.map((v) => (
-              <Option key={v.key} id={v.key} value={value} onChoose={choose} label={title(v)} caption={ROLE_LABEL[v.role] ?? v.role} badge={<ViewBadge view={v} />} />
+              <Option key={v.key} id={v.key} value={value} disabled={saving} onChoose={choose} label={title(v)} caption={ROLE_LABEL[v.role] ?? v.role} badge={<ViewBadge view={v} />} />
             ))}
           </div>
 
