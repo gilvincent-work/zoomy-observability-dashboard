@@ -10,19 +10,22 @@ import {
   setUploadStatus,
   upsertSales,
 } from '@/src/goldline-data';
-import {extractInventoryPage, extractionConfigured, type ExtractedPage} from '@/src/goldline-extract-run';
-import {humanizeExtractError} from '@/src/goldline-extract';
+import {detectPage, extractInventoryPage, extractionConfigured, type ExtractedPage} from '@/src/goldline-extract-run';
+import {humanizeExtractError, INVENTORY_PAGES} from '@/src/goldline-extract';
 
 // Goldline upload endpoint. Accepts ONE file (multipart/form-data, field `file`)
 // scoped to the active company (?company=<slug>):
 //   • .csv  → parse → idempotent upsert into gl_sales (needs period_start/_end)
-//   • .pdf  → store → Claude Vision reads page 1 → staged in gl_extractions for review
+//   • .pdf  → store → Claude Vision detects the page → extracts that page's items →
+//             staged in gl_extractions for review (page 6 / non-form → out of scope)
 // Tenant isolation is enforced here (getDataContext + canEditData); the data-blind
 // Coop Admin and read-only analysts are refused. File-type gating is the first check.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+// PDF path runs two sequential Vision calls (detect 20s + extract 85s = 105s); 160s
+// gives headroom so a slow call throws in-code (catch → failed) rather than a hard kill.
+export const maxDuration = 160;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -133,18 +136,23 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const pdfBase64 = Buffer.from(bytes).toString('base64');
-  const page = 1; // v1 extracts page 1 (only page 1 has an enumerated manifest yet).
   try {
-    const extracted = await extractInventoryPage(pdfBase64, page);
-    // Page 1's manifest forces one row per printed item code, so a real page 1 always
-    // comes back with rows. Zero rows means this isn't page 1 (v1 only reads page 1 —
-    // e.g. a later page of the form). Fail loud instead of a misleading empty review.
-    if (extracted.rows.length === 0) {
-      const reason =
-        'This doesn’t look like page 1 of the Nichido inventory form. Automatic reading currently supports page 1 only — upload page 1, or review this file manually. (Pages 2–6 are coming soon.)';
+    // Auto-detect which page this scan is (from the footer), then extract with that
+    // page's manifest. Page 6 is the daily Sales Report (not inventory); 0 = not a
+    // recognizable form page. Both are a clean, out-of-scope stop, not a failure.
+    const page = await detectPage(pdfBase64);
+    if (page === 0) {
+      const reason = 'This doesn’t look like a Nichido inventory form page. Please upload a clear scan of an inventory page (1–5).';
       await setUploadStatus(uploadId, 'failed', {rejectReason: reason});
       return json({uploadId, status: 'failed', error: reason}, 422);
     }
+    if (!INVENTORY_PAGES.includes(page)) {
+      const reason = 'This is page 6, the daily Sales Report — not an inventory page. Only inventory pages (1–5) are read here.';
+      await setUploadStatus(uploadId, 'rejected', {rejectReason: reason, pageCount: page});
+      return json({uploadId, status: 'rejected', error: reason}, 422);
+    }
+
+    const extracted = await extractInventoryPage(pdfBase64, page);
     // Same store-scope fence for the scanned form's store.
     const outPdf = outOfScopeStores(ctx.storeScope, [extracted.store_code]);
     if (outPdf.length) {
@@ -153,7 +161,7 @@ export async function POST(req: Request): Promise<Response> {
       return json({uploadId, status: 'rejected', error: reason}, 403);
     }
     await saveExtraction({companyId, uploadId, page, extracted, docConfidence: avgConfidence(extracted)});
-    await setUploadStatus(uploadId, 'needs_review', {pageCount: 1});
+    await setUploadStatus(uploadId, 'needs_review', {pageCount: page});
     return json({uploadId, status: 'needs_review', page, rows: extracted.rows.length, docConfidence: avgConfidence(extracted)});
   } catch (e) {
     // Log the raw error server-side; show the reviewer a human-readable reason.
