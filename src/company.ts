@@ -183,3 +183,101 @@ export async function fetchMemberships(email?: string | null): Promise<Membershi
     return [];
   }
 }
+
+/** A user's saved view preferences (company_user_prefs). Keys are hints only. */
+export type ViewPrefs = {defaultView: string | null; lastView: string | null};
+
+/**
+ * The view a multi-role user starts in at sign-in: their pinned default (Settings →
+ * Starting view) if they still hold it, else the view they most recently used, else
+ * the first view. Null when they hold no views at all.
+ */
+export function startViewKey(memberships: Membership[], prefs: ViewPrefs | null | undefined): string | null {
+  const views = membershipViews(memberships);
+  if (!views.length) return null;
+  const held = (k: string | null | undefined): k is string => Boolean(k) && views.some((v) => v.key === k);
+  if (held(prefs?.defaultView)) return prefs.defaultView;
+  if (held(prefs?.lastView)) return prefs.lastView;
+  return views[0].key;
+}
+
+// The switcher's cookie is bound to ONE sign-in: `${sid}:${viewKey}`, where sid is
+// minted per sign-in and carried on the session. A cookie from an earlier sign-in
+// (or the old bare format) no longer matches, so each new sign-in starts in the
+// user's starting view instead of wherever an old cookie pointed.
+export const viewCookieValue = (sid: string, viewKey: string) => `${sid}:${viewKey}`;
+
+export function viewFromCookie(raw: string | null | undefined, sid: string | null | undefined): string | null {
+  if (!raw || !sid) return null;
+  const i = raw.indexOf(':');
+  if (i < 0) return null;
+  return raw.slice(0, i) === sid ? raw.slice(i + 1) || null : null;
+}
+
+/** Read a user's view preferences (edge-safe REST, like fetchMemberships). Tells
+ *  "no preferences saved" ({ok:true, prefs:null}) apart from "couldn't read them"
+ *  ({ok:false}) so sign-in can retry instead of silently ignoring a pinned view. */
+export async function fetchViewPrefsResult(email?: string | null): Promise<{ok: true; prefs: ViewPrefs | null} | {ok: false}> {
+  const addr = email?.toLowerCase();
+  const url = process.env.SUPABASE_URL_ARCHIVE;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE;
+  if (!addr || !url || !key) return {ok: true, prefs: null};
+  try {
+    const res = await fetch(
+      // pagination-ok: single row by primary key.
+      `${url}/rest/v1/company_user_prefs?select=default_view,last_view&user_email=eq.${encodeURIComponent(addr)}&limit=1`,
+      {headers: {apikey: key, authorization: `Bearer ${key}`}},
+    );
+    if (!res.ok) return {ok: false};
+    const rows = (await res.json()) as Array<{default_view: string | null; last_view: string | null}>;
+    return {ok: true, prefs: rows[0] ? {defaultView: rows[0].default_view, lastView: rows[0].last_view} : null};
+  } catch {
+    return {ok: false};
+  }
+}
+
+/** Convenience for display: preferences, or null when none / unreadable. */
+export async function fetchViewPrefs(email?: string | null): Promise<ViewPrefs | null> {
+  const r = await fetchViewPrefsResult(email);
+  return r.ok ? r.prefs : null;
+}
+
+/** Upsert part of a user's view preferences (only the fields given change).
+ *  Returns false on failure; callers decide whether that matters. */
+export async function saveViewPrefs(
+  email: string,
+  patch: {default_view?: string | null; last_view?: string | null},
+): Promise<boolean> {
+  const url = process.env.SUPABASE_URL_ARCHIVE;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE;
+  if (!url || !key) return false;
+  try {
+    const res = await fetch(`${url}/rest/v1/company_user_prefs?on_conflict=user_email`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        authorization: `Bearer ${key}`,
+        'content-type': 'application/json',
+        prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({user_email: email.toLowerCase(), ...patch, updated_at: new Date().toISOString()}),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The view hint for a request. With a sign-in id (sessions created after starting
+ * views shipped): the switcher's choice from THIS sign-in, else the sign-in's
+ * starting view. Without one (a session from before): the old behaviour — whatever
+ * the cookie holds (bare key, or the key part of a bound value) — so nobody signed
+ * in at deploy time loses the ability to switch until they sign in again.
+ */
+export function pickCookieView(raw: string | null | undefined, sid: string | null | undefined, startView: string | null | undefined): string | null {
+  if (sid) return viewFromCookie(raw, sid) ?? startView ?? null;
+  if (!raw) return null;
+  const i = raw.indexOf(':');
+  return (i < 0 ? raw : raw.slice(i + 1)) || null;
+}
