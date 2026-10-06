@@ -10,6 +10,10 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Switching views takes you to that view's home
+- Bug: changing the view in the header switcher kept you on the current page. Switching from Goldline to Zoomy while on `/uploads` showed Zoomy's (empty) uploads inside the Zoomy nav. The switcher now navigates to the new view's home: Zoomy → `/`, Goldline (and other companies) → `/overview`, Coop Admin → `/admin/users`.
+- `homeFor` now knows Zoomy's home too. Before, a Zoomy user bounced off a Coop-Admin-only page landed on the company `/overview`; it now goes to `/`. Tested.
+
 ## 2026-10-07 — One shell, two brands: company wordmarks in the switcher
 - Plan §07i: the only per-company difference a user sees is the logo and the data behind it.
   - The header view switcher shows the active company's wordmark: Zoomy's red **Zoomy!** over "TREATS", Goldline's light, wide-tracked **NICHIDO**. The company name stays in the accessible label.

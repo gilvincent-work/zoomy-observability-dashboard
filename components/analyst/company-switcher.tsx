@@ -8,6 +8,7 @@ import {setActiveView} from '@/app/actions/company';
 import {companyHue, groupViews, monogram, type SwitcherView} from '@/src/view-switcher';
 import {cn} from '@/lib/utils';
 import {brandFor} from '@/src/brands';
+import {homeFor} from '@/src/company-nav';
 import {BrandMark} from '@/components/analyst/brand-mark';
 
 // Multi-role view switcher in the top bar. Only rendered (by the shell) when the
@@ -88,8 +89,12 @@ export function ViewSwitcher({views, activeKey}: {views: SwitcherView[]; activeK
 
   function choose(key: string) {
     if (key === activeKey) return;
+    const next = views.find((v) => v.key === key);
     startTransition(async () => {
       await setActiveView(key);
+      // Land on the new view's home — the current page belongs to the previous view
+      // (e.g. Goldline's /uploads isn't part of Zoomy).
+      router.push(homeFor({isCoopAdmin: !next?.companyId, companyId: next?.companyId ?? null}));
       router.refresh();
     });
   }

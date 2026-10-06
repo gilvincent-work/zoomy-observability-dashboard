@@ -19,5 +19,7 @@ describe('homeFor', () => {
     expect(homeFor({isCoopAdmin: true})).toBe('/admin/users');
     expect(homeFor({isCoopAdmin: false})).toBe('/overview');
     expect(homeFor(null)).toBe('/overview');
+    expect(homeFor({isCoopAdmin: false, companyId: 'zoomy'})).toBe('/');
+    expect(homeFor({isCoopAdmin: false, companyId: 'goldline'})).toBe('/overview');
   });
 });
