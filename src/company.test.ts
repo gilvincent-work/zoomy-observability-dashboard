@@ -1,11 +1,14 @@
 import {describe, it, expect} from 'vitest';
 import {
   resolveActive,
+  membershipViews,
+  viewKey,
   switchableCompanies,
   isCoopAdmin,
   canEditData,
-  canManageTeam,
+  canManageRoles,
   outOfScopeStores,
+  COOP_VIEW_KEY,
   type Membership,
 } from './company';
 
@@ -15,42 +18,64 @@ const goldlineAdmin: Membership = {companyId: 'goldline', role: 'company_admin'}
 const goldlineAnalyst: Membership = {companyId: 'goldline', role: 'analyst'};
 const storeMgr: Membership = {companyId: 'goldline', role: 'store_manager', storeScope: ['GL-013']};
 
-describe('resolveActive', () => {
+describe('viewKey + membershipViews', () => {
+  it('keys a company by id and the cross-tenant row by the sentinel', () => {
+    expect(viewKey(zoomyAdmin)).toBe('zoomy');
+    expect(viewKey(coop)).toBe(COOP_VIEW_KEY);
+  });
+  it('orders company views (alphabetical) before the Coop Admin view', () => {
+    expect(membershipViews([coop, zoomyAdmin, goldlineAdmin]).map((v) => v.key)).toEqual([
+      'goldline',
+      'zoomy',
+      'coop_admin',
+    ]);
+  });
+});
+
+describe('resolveActive (multi-role, view-based)', () => {
   it('returns null when the user has no memberships', () => {
     expect(resolveActive([])).toBeNull();
   });
 
-  it('Coop Admin is data-blind and cross-tenant', () => {
-    const ctx = resolveActive([coop]);
-    expect(ctx).toEqual({companyId: null, role: 'coop_admin', isCoopAdmin: true, canSeeData: false});
+  it('the Coop Admin view is data-blind and cross-tenant', () => {
+    expect(resolveActive([coop])).toMatchObject({
+      companyId: null,
+      role: 'coop_admin',
+      isCoopAdmin: true,
+      canSeeData: false,
+    });
   });
 
-  it('Coop Admin stays data-blind even with a company membership too', () => {
+  it('multi-role defaults to a company (data) view, NOT coop_admin', () => {
     const ctx = resolveActive([zoomyAdmin, coop]);
-    expect(ctx?.isCoopAdmin).toBe(true);
-    expect(ctx?.canSeeData).toBe(false);
-    expect(ctx?.companyId).toBeNull();
+    expect(ctx).toMatchObject({companyId: 'zoomy', isCoopAdmin: false, canSeeData: true});
+  });
+
+  it('multi-role: selecting the coop_admin view resolves to data-blind', () => {
+    const ctx = resolveActive([zoomyAdmin, coop], 'coop_admin');
+    expect(ctx).toMatchObject({companyId: null, isCoopAdmin: true, canSeeData: false});
   });
 
   it('a single company member resolves to that company, with data access', () => {
-    const ctx = resolveActive([goldlineAdmin]);
-    expect(ctx).toMatchObject({companyId: 'goldline', role: 'company_admin', canSeeData: true});
+    expect(resolveActive([goldlineAdmin])).toMatchObject({
+      companyId: 'goldline',
+      role: 'company_admin',
+      canSeeData: true,
+    });
   });
 
-  it('honors the requested company when the user is a member of it', () => {
+  it('honors the requested view when the user holds it', () => {
     const ctx = resolveActive([zoomyAdmin, goldlineAnalyst], 'goldline');
-    expect(ctx?.companyId).toBe('goldline');
-    expect(ctx?.role).toBe('analyst');
+    expect(ctx).toMatchObject({companyId: 'goldline', role: 'analyst'});
   });
 
-  it('falls back to the first company when the requested one is not a membership', () => {
+  it('falls back to the first view (alphabetical) when the requested one is not held', () => {
     const ctx = resolveActive([zoomyAdmin, goldlineAnalyst], 'nope');
-    expect(ctx?.companyId).toBe('zoomy');
+    expect(ctx?.companyId).toBe('goldline');
   });
 
   it('carries store scope for a store manager', () => {
-    const ctx = resolveActive([storeMgr]);
-    expect(ctx?.storeScope).toEqual(['GL-013']);
+    expect(resolveActive([storeMgr])?.storeScope).toEqual(['GL-013']);
   });
 });
 
@@ -73,11 +98,11 @@ describe('role capabilities', () => {
     expect(canEditData('coop_admin')).toBe(false);
   });
 
-  it('canManageTeam: only company_admin', () => {
-    expect(canManageTeam('company_admin')).toBe(true);
-    expect(canManageTeam('analyst')).toBe(false);
-    expect(canManageTeam('store_manager')).toBe(false);
-    expect(canManageTeam('coop_admin')).toBe(false);
+  it('canManageRoles: only coop_admin', () => {
+    expect(canManageRoles('coop_admin')).toBe(true);
+    expect(canManageRoles('company_admin')).toBe(false);
+    expect(canManageRoles('analyst')).toBe(false);
+    expect(canManageRoles('store_manager')).toBe(false);
   });
 });
 

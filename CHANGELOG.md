@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Multi-role access P1: active-view model + "Your access" switcher
+- `src/company.ts`: `resolveActive` is now VIEW-based — the user picks the active view (a company id, or the `coop_admin` sentinel) instead of coop_admin always winning. `membershipViews`/`viewKey` expose the selectable views; `canManageRoles` (coop_admin-only) replaces `canManageTeam`; `fetchMemberships` reads `status` and drops suspended rows. Membership gains optional `status`.
+- `src/active-context.ts`: `active_view` cookie (was `active_company`); `getNavContext` returns every view (+ names) and the active key; `requireZoomyData` redirects a non-Zoomy view to `homeFor()` (Coop Admin → /admin/users, company → /overview).
+- `app/actions/company.ts`: `setActiveView`. `company-switcher.tsx` → `ViewSwitcher` (shows `Company · Role` / `Coop Admin`). `app/account` + `account-view`: shared "Your access" page (not Zoomy-guarded) to switch views.
+- `dashboard-shell`: per-view nav — Zoomy legacy unchanged; Coop Admin view → Users & Roles + Your access; a company view → Overview/Uploads/Stores/Your access; header view-switcher when >1 view.
+- `supabase/multi_role.sql`: additive `company_users.status` + `company_user_audit` (applied to Staging). Tests updated/added (viewKey, membershipViews, resolveActive-by-view, canManageRoles, homeFor). typecheck + full suite (1844) + pagination guard pass.
+
 ## 2026-10-05 — UX: sign-out confirmation
 - Signing out now opens a confirmation dialog ("Sign out of Coop?") instead of firing immediately — it was a one-click destructive action with no guard. Shared by both entry points (desktop account menu + mobile sheet); dismiss via Cancel, overlay click, or Escape; the confirm action uses the destructive token. No behaviour change beyond the extra confirm step.
 
