@@ -1,7 +1,7 @@
 'use client';
 
 import {ArrowDown, Info} from 'lucide-react';
-import {summarizeConfidence, type Band} from '@/src/review-confidence';
+import {summarizeConfidence, toneText, type Band} from '@/src/review-confidence';
 import {metricValueClass} from '@/components/analyst/metric';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
@@ -49,7 +49,7 @@ export function DocumentConfidence({
         <div className="flex min-w-[14rem] flex-1 flex-col gap-1">
           <span
             className="inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
-            style={tone ? {color: tone, background: `color-mix(in oklab, ${tone} 16%, transparent)`} : undefined}
+            style={tone ? {color: toneText(tone), background: `color-mix(in oklab, ${tone} 16%, transparent)`} : undefined}
           >
             {s.verdict}
           </span>

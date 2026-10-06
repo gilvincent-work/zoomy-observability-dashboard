@@ -11,7 +11,7 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {DocumentConfidence} from '@/components/analyst/document-confidence';
-import {bandOf, LOW_BELOW, type Band} from '@/src/review-confidence';
+import {bandOf, LOW_BELOW, rowConfidence, toneText, type Band} from '@/src/review-confidence';
 
 const BAND_TONE: Record<Band, string> = {high: 'var(--status-good)', medium: 'var(--status-warn)', low: 'var(--status-crit)'};
 
@@ -72,10 +72,10 @@ export function UploadReview({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{kind: 'ok' | 'err'; text: string} | null>(null);
 
-  const flaggedCount = useMemo(() => rows.filter((r) => (r.confidence ?? 1) < LOW).length, [rows]);
+  const flaggedCount = useMemo(() => rows.filter((r) => rowConfidence(r.confidence) < LOW).length, [rows]);
   const docConfidence = extraction?.docConfidence ?? null;
   const visible = useMemo(
-    () => rows.map((r, i) => ({r, i})).filter(({r}) => showAll || (r.confidence ?? 1) < LOW),
+    () => rows.map((r, i) => ({r, i})).filter(({r}) => showAll || rowConfidence(r.confidence) < LOW),
     [rows, showAll],
   );
 
@@ -322,7 +322,7 @@ export function UploadReview({
                     </thead>
                     <tbody>
                       {visible.map(({r, i}) => {
-                        const low = (r.confidence ?? 1) < LOW;
+                        const low = rowConfidence(r.confidence) < LOW;
                         return (
                           <tr key={`${r.item_code}-${i}`} className={cn('border-b border-border/60', low && 'bg-amber-500/5')}>
                             <td className="py-1.5 pr-3">
@@ -351,12 +351,12 @@ export function UploadReview({
                             <td className="py-1.5 pl-3 text-right text-xs tabular-nums">
                               {(() => {
                                 // Same three bands + colors as the confidence summary above.
-                                const c = r.confidence ?? 1;
+                                const c = rowConfidence(r.confidence);
                                 const tone = BAND_TONE[bandOf(c)];
                                 return (
                                   <span
                                     className="inline-flex min-w-11 justify-center rounded-full px-1.5 py-0.5 font-medium"
-                                    style={{color: tone, background: `color-mix(in oklab, ${tone} 14%, transparent)`}}
+                                    style={{color: toneText(tone), background: `color-mix(in oklab, ${tone} 14%, transparent)`}}
                                   >
                                     {Math.round(c * 100)}%
                                   </span>

@@ -26,6 +26,9 @@ describe('summarizeConfidence', () => {
     expect(summarizeConfidence(0.7, [0.7]).guidance).toMatch(/Review carefully/);
     expect(summarizeConfidence(0.4, [0.4]).guidance).toMatch(/every row/);
   });
+  it('treats malformed row values as 1 (same as the table)', () => {
+    expect(summarizeConfidence(0.9, [Number.NaN, 2, -1]).counts).toEqual({high: 2, medium: 0, low: 1});
+  });
   it('handles no score and clamps out-of-range', () => {
     expect(summarizeConfidence(null, []).band).toBeNull();
     expect(summarizeConfidence(1.4, [1]).score).toBe(1);
