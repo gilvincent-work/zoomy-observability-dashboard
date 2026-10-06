@@ -10,6 +10,14 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Users & Roles console redesigned (people-first, no re-typing emails)
+- Pain point: giving an existing person a second role meant re-typing their email in the top "Grant a role" form. The console is now people-first: one row per person (initials, email, "You" marker, role count) with their access as chips. "+ Add access" on the row lists only roles they don't hold yet; one click grants it.
+- Each access chip shows a status dot (active / invited / suspended) and opens a menu: Suspend or Reactivate, and Remove access…, which asks for an inline confirmation on the row (no modal). Your own Coop Admin chip explains that it can't be suspended or removed; the server still enforces the self and last-admin guards.
+- "Invite person" opens an inline panel: email + pick one or more roles at once (checkbox tiles with what each role means). Typing an existing person's email switches it to "Add access" and greys out roles they already have. New server action `grantRolesAction` validates every grant before writing any (tested in `test/admin-actions.test.ts`).
+- Search by email, filter by access (company / Coop Admin) and status, count, empty states for "no one yet" and "no matches" (with Clear filters), and a status legend. Menus use Base UI Menu (portal, origin-aware 150 ms ease-out entry).
+- New shared `components/ui/native-select.tsx`: hides the browser arrow and draws an inset chevron, fixing the cramped right-edge chevron. Applied to the new console and the Goldline Uploads filters. Several Zoomy pages still use plain selects with the same issue.
+- Design skills: impeccable (Operate mode, craft floor, detector: no findings) and emil-design-eng. typecheck + full suite (2450) + pagination guard pass.
+
 ## 2026-10-06 — Goldline uploads: the real cause of "couldn't process this scan"
 - Read from the new `gl_uploads.error_detail`: every PDF failed with `400 output_config.format.schema: For 'integer' type, properties maximum, minimum are not supported`. The page-detect schema (`PAGE_DETECT_SCHEMA`) put `minimum: 0, maximum: 6` on the page integer, which structured outputs reject. Removed the bounds; `detectPage` already clamps to 0–6. The earlier "document-only message" diagnosis (below) was wrong; that change is harmless and stays. Tests now assert neither schema carries numeric bounds.
 - Not a credits problem. `humanizeExtractError` now names an out-of-credits account plainly ("Automatic reading is paused…") instead of falling to the generic message.

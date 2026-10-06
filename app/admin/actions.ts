@@ -57,6 +57,41 @@ export async function grantRoleAction(input: {email: string; companyKey: string;
   }
 }
 
+/** Grant several roles to one email in one call (the console's "Invite person" with
+ *  multiple roles ticked). Same gate and per-grant validation as grantRoleAction;
+ *  every grant is validated before any is written, so a bad entry writes nothing. */
+export async function grantRolesAction(input: {
+  email: string;
+  grants: Array<{companyKey: string; role: CompanyRole}>;
+}): Promise<AdminResult> {
+  const gate = await requireCoopAdmin();
+  if ('error' in gate) return {ok: false, error: gate.error};
+
+  const email = (input.email ?? '').trim().toLowerCase();
+  if (!EMAIL.test(email)) return {ok: false, error: 'Enter a valid email address.'};
+  const grants = Array.isArray(input.grants) ? input.grants.slice(0, 50) : [];
+  if (!grants.length) return {ok: false, error: 'Pick at least one role.'};
+
+  const parsed: Array<{companyId: string | null; role: CompanyRole}> = [];
+  for (const g of grants) {
+    if (!GRANTABLE.includes(g.role)) return {ok: false, error: 'Unknown role.'};
+    const companyId = parseCompany(g.companyKey);
+    if (companyId === undefined) return {ok: false, error: 'Unknown company.'};
+    if (companyId === null && g.role !== 'coop_admin') return {ok: false, error: 'A company role needs a company.'};
+    if (companyId !== null && g.role === 'coop_admin') return {ok: false, error: 'Coop Admin is cross-tenant — leave the company blank.'};
+    parsed.push({companyId, role: g.role});
+  }
+
+  try {
+    for (const p of parsed) await grantRole({actor: gate.actor, email, companyId: p.companyId, role: p.role});
+    revalidatePath('/admin/users');
+    return {ok: true};
+  } catch (e) {
+    console.error('grantRolesAction', e);
+    return {ok: false, error: 'Could not grant every role — please check this person and try again.'};
+  }
+}
+
 export async function setStatusAction(input: {email: string; companyKey: string; status: 'active' | 'suspended'}): Promise<AdminResult> {
   const gate = await requireCoopAdmin();
   if ('error' in gate) return {ok: false, error: gate.error};
