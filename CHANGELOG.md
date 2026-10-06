@@ -10,6 +10,9 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-06 — Docs: Goldline onboarding plan & implementation record
+- `docs/goldline-onboarding-plan.md`: a durable, version-controlled reconciliation of the Goldline onboarding plan (the ask, locked decisions, tenancy/RBAC, `gl_*` data model, ingestion + Claude Vision, scope, scale/cost, rollout, risks) against what's actually shipped to staging — plus an explicit "what's left" (unbuilt gaps: Business Health, Inventory view, Goldline Chat; the pages 2–5 manifest live-validation caveat; deferred roles; pending env/ops). The visual artifact (`…/artifact/f5686e30…`) stays the mockup companion; this md is the source of truth if they diverge.
+
 ## 2026-10-06 — Goldline: inventory pages 2–5 extraction + page auto-detect + 2-column review
 - **Manifests pages 2–5** (`src/goldline-extract.ts`): enumerated every printed item from the blank Nichido templates (page 2 ~67, page 3 ~60, page 4 ~68 incl. accessories, page 5 ~25). Page 4's accessories share a printed ITEM# (ACCS 288/150/125…) so codes are synthesized from the brush number to keep each row unique. Page 6 is the daily Sales Report (not inventory) — intentionally no manifest. Added `INVENTORY_PAGES`.
 - **Page auto-detect** (`buildPageDetectPrompt` + `PAGE_DETECT_SCHEMA`; `detectPage` in `goldline-extract-run.ts`): a cheap Vision call reads the footer "PAGE # N", then the upload route extracts with that page's manifest — upload any single page and it just works. Page 6 / unrecognized pages get a clear out-of-scope message (no empty review). Removed the hardcoded page=1.
