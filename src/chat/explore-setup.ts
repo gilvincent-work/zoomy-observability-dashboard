@@ -6,6 +6,8 @@ import {createRunQuery} from './explore/client';
 import {loadCoverageLine, loadLeadFacts} from './explore/coverage';
 import {createExploreExecutor, type ExploreExecutor, type RunQuery} from './explore/executor';
 import {resolveExploreAccess} from './explore/config';
+import {describeExploreEnv} from './health';
+import {probeExplore, type ExploreProbe} from './explore/probe';
 import {validateExploreSql} from './explore/parse';
 import {exploreDayCounter} from './explore/rate';
 import type {ExploreEnv} from './explore/types';
@@ -39,5 +41,27 @@ export function setupExplore(args: {env: ExploreEnv; email: string | null; now: 
     return {executor, coverageLine: () => loadCoverageLine({runQuery, validate: validateExploreSql, limits, sink: args.sink})};
   } catch {
     return null; // fail closed
+  }
+}
+
+/**
+ * The `explore` object of /api/chat/health for the signed-in person: whether Explore is on for THEM (reason code if not), flags without
+ * values, and, only when enabled, one fixed probe through the real read-only envelope. Never throws; never echoes a URL, list or driver text.
+ */
+export async function exploreHealth(env: ExploreEnv, email: string | null, deps: {runQuery?: RunQuery} = {}): Promise<{enabled: boolean; reason?: string; probe?: ExploreProbe} & ReturnType<typeof describeExploreEnv>> {
+  const flags = describeExploreEnv(env);
+  try {
+    const access = resolveExploreAccess(env, email);
+    if (!access.enabled) return {enabled: false, reason: access.reason, ...flags};
+    let probe: ExploreProbe;
+    try {
+      const runQuery = deps.runQuery ?? createRunQuery(access);
+      probe = await probeExplore(runQuery);
+    } catch {
+      probe = {ok: false, code: 'other'};
+    }
+    return {enabled: true, ...flags, probe};
+  } catch {
+    return {enabled: false, reason: 'url_invalid', ...flags};
   }
 }

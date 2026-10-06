@@ -67,7 +67,8 @@ export async function runInEnvelope(sql: ExploreSql, sent: string, opts: {timeou
   } catch (e) {
     if (e instanceof Rollback) return e.value;
     if (e instanceof ExploreDbError) throw e;
-    throw new ExploreDbError(mapDbError((e as {code?: unknown})?.code)); // SQLSTATE only: the raw message is dropped here
+    const raw = (e as {code?: unknown})?.code;
+    throw new ExploreDbError(mapDbError(raw), typeof raw === 'string' ? raw : undefined); // code only: the raw message is dropped here
   }
   throw new ExploreDbError('E_DB_OTHER');
 }

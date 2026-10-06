@@ -5,10 +5,13 @@ import type {ExploreErrorCode} from './types';
 /** Thrown by client.ts (and fakes). Carries a code only. */
 export class ExploreDbError extends Error {
   readonly code: ExploreErrorCode;
-  constructor(code: ExploreErrorCode) {
+  /** The driver/SQLSTATE code the error came from (e.g. 28P01), kept ONLY so the health probe can tell auth from network. Never text. */
+  readonly sqlstate?: string;
+  constructor(code: ExploreErrorCode, sqlstate?: string) {
     super(code);
     this.name = 'ExploreDbError';
     this.code = code;
+    if (typeof sqlstate === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(sqlstate)) this.sqlstate = sqlstate;
   }
 }
 
