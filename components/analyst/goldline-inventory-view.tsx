@@ -13,6 +13,7 @@ import {Card, CardContent} from '@/components/ui/card';
 import {buttonVariants} from '@/components/ui/button';
 import {NativeSelect} from '@/components/ui/native-select';
 import {cn} from '@/lib/utils';
+import {InventoryTabs} from '@/components/analyst/goldline-ops-shared';
 
 // Goldline Inventory (plan §07f): the semi-monthly handwritten form, digitized. One
 // store × form period at a time — the three physical counts straight from the form,
@@ -155,7 +156,10 @@ export function GoldlineInventoryView({data, canEdit}: {data: InventoryPageData;
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-2">
-            <h1 className="font-heading text-2xl font-semibold tracking-tight">Inventory</h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="font-heading text-2xl font-semibold tracking-tight">Inventory</h1>
+              <InventoryTabs store={selected.store_code} />
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <NativeSelect aria-label="Store" value={selected.store_code} onChange={(e) => go(e.target.value)}>
                 {storeCodes.map((c) => (

@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import Link from 'next/link';
 import {usePathname, useSearchParams} from 'next/navigation';
 import {signOut} from 'next-auth/react';
-import {Activity, BarChart3, CalendarDays, Contact, ChevronDown, ChevronLeft, ChevronRight, FileBarChart, Gauge, Home, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Store, Tag, Upload, Users} from 'lucide-react';
+import {Activity, BarChart3, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Contact, FileBarChart, Gauge, HeartPulse, Home, ListChecks, LogOut, Mail, Menu, Package, Receipt, ReceiptText, Settings, Store, Tag, Upload, Users} from 'lucide-react';
 import type {DigestArchiveRow} from '../../src/types';
 import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
@@ -205,6 +205,8 @@ export function DashboardShell({
   const overviewTab: NavItem = {href: '/overview', label: 'Overview', icon: BarChart3};
   const storesTab: NavItem = {href: '/stores', label: 'Stores', icon: Store};
   const stockTab: NavItem = {href: '/stock', label: 'Inventory', icon: Package};
+  const actionsTab: NavItem = {href: '/action-feed', label: 'Actions', icon: ListChecks};
+  const healthTab: NavItem = {href: '/store-health', label: 'Health', icon: HeartPulse};
   const usersTab: NavItem = {href: '/admin/users', label: 'Users & Roles', icon: Users};
   // Settings for non-Zoomy views only matters to multi-role users (Starting view).
   const multiView = Boolean(nav && nav.views.length > 1);
@@ -215,7 +217,7 @@ export function DashboardShell({
     ? FLAT_TABS
     : isCoopAdminView
       ? [usersTab, ...(multiView ? [settingsTab] : [])]
-      : [overviewTab, storesTab, stockTab, uploadsTab, ...(multiView ? [settingsTab] : [])];
+      : [overviewTab, storesTab, stockTab, actionsTab, healthTab, uploadsTab, ...(multiView ? [settingsTab] : [])];
 
   // ── Mobile nav model (below md only) ──────────────────────────────────────
   // The left rail is hidden under md; these drive a bottom tab bar + a "More" sheet.
@@ -233,8 +235,8 @@ export function DashboardShell({
         ]
       : [
           {href: '/overview', label: 'Overview', icon: BarChart3, active: leafActive('/overview', pathname, channel)},
-          {href: '/stores', label: 'Stores', icon: Store, active: leafActive('/stores', pathname, channel)},
           {href: '/stock', label: 'Inventory', icon: Package, active: leafActive('/stock', pathname, channel)},
+          {href: '/action-feed', label: 'Actions', icon: ListChecks, active: leafActive('/action-feed', pathname, channel)},
           {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
         ];
   const moreItems: NavItem[] = isZoomy
@@ -248,9 +250,11 @@ export function DashboardShell({
         {href: '/repricer', label: 'Repricer', icon: Tag},
         {href: '/settings', label: 'Settings', icon: Settings},
       ]
-    : multiView
-      ? [settingsTab]
-      : [];
+    : isCoopAdminView
+      ? multiView
+        ? [settingsTab]
+        : []
+      : [storesTab, healthTab, ...(multiView ? [settingsTab] : [])];
   const moreActive = moreItems.some((i) => leafActive(i.href, pathname, channel));
 
   return (
