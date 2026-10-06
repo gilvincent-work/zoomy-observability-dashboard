@@ -3,6 +3,7 @@ import {getDataContext} from '@/src/active-context';
 import {canEditData} from '@/src/company';
 import {getExtraction, getUpload} from '@/src/goldline-data';
 import {MANIFESTS} from '@/src/goldline-extract';
+import {committedSnapshotFor} from '@/src/goldline-inventory-data';
 import {UploadReview} from '@/components/analyst/upload-review';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,11 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
   // so the reviewer sees names next to the codes.
   const productNames: Record<string, string> = {};
   for (const item of MANIFESTS[extraction?.page ?? 0] ?? []) productNames[item.code] = item.product;
+  // Once committed, link straight to the store + period this scan fed in Inventory.
+  const snap = upload.status === 'committed' ? await committedSnapshotFor(ctx.companyId, upload.id) : null;
+  const inventoryHref = snap
+    ? `/stock?store=${encodeURIComponent(snap.store_code)}&period=${snap.period_start}_${snap.period_end}`
+    : null;
   return (
     <UploadReview
       company={ctx.companyId}
@@ -40,6 +46,7 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
       extraction={extraction}
       scanUrl={scanUrl}
       productNames={productNames}
+      inventoryHref={inventoryHref}
     />
   );
 }

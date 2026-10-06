@@ -204,15 +204,15 @@ export function DashboardShell({
   const uploadsTab: NavItem = {href: '/uploads', label: 'Uploads', icon: Upload};
   const overviewTab: NavItem = {href: '/overview', label: 'Overview', icon: BarChart3};
   const storesTab: NavItem = {href: '/stores', label: 'Stores', icon: Store};
-  const accountTab: NavItem = {href: '/account', label: 'Your access', icon: Settings};
+  const stockTab: NavItem = {href: '/stock', label: 'Inventory', icon: Package};
   const usersTab: NavItem = {href: '/admin/users', label: 'Users & Roles', icon: Users};
 
   const overviewChildren = isZoomy ? OVERVIEW_CHILDREN : [];
   const flatTabs = isZoomy
     ? FLAT_TABS
     : isCoopAdminView
-      ? [usersTab, accountTab]
-      : [overviewTab, uploadsTab, storesTab, accountTab];
+      ? [usersTab]
+      : [overviewTab, storesTab, stockTab, uploadsTab];
 
   // ── Mobile nav model (below md only) ──────────────────────────────────────
   // The left rail is hidden under md; these drive a bottom tab bar + a "More" sheet.
@@ -227,12 +227,12 @@ export function DashboardShell({
     : isCoopAdminView
       ? [
           {href: '/admin/users', label: 'Users', icon: Users, active: leafActive('/admin/users', pathname, channel)},
-          {href: '/account', label: 'Access', icon: Settings, active: leafActive('/account', pathname, channel)},
         ]
       : [
           {href: '/overview', label: 'Overview', icon: BarChart3, active: leafActive('/overview', pathname, channel)},
-          {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
           {href: '/stores', label: 'Stores', icon: Store, active: leafActive('/stores', pathname, channel)},
+          {href: '/stock', label: 'Inventory', icon: Package, active: leafActive('/stock', pathname, channel)},
+          {href: '/uploads', label: 'Uploads', icon: Upload, active: leafActive('/uploads', pathname, channel)},
         ];
   const moreItems: NavItem[] = isZoomy
     ? [
@@ -245,9 +245,7 @@ export function DashboardShell({
         {href: '/repricer', label: 'Repricer', icon: Tag},
         {href: '/settings', label: 'Settings', icon: Settings},
       ]
-    : isCoopAdminView
-      ? []
-      : [accountTab];
+    : [];
   const moreActive = moreItems.some((i) => leafActive(i.href, pathname, channel));
 
   return (
@@ -266,22 +264,18 @@ export function DashboardShell({
           </span>
         </Link>
 
-        {/* View switcher. A real switcher when the user holds >1 view (company role(s)
-            and/or Coop Admin); otherwise a static pill showing the active view. Hidden
-            on the narrowest screens so the mobile header doesn't overflow. */}
+        {/* View switcher. The only place to switch views (company role(s) and/or Coop
+            Admin), so it shows at every width, phones included. A single-view user gets
+            a plain label: no chevron, since there's nothing to open. */}
         {nav && nav.views.length > 1 ? (
-          <div className="ml-1 max-sm:hidden">
+          <div className="ml-1 min-w-0">
             <ViewSwitcher views={nav.views} activeKey={nav.activeKey} />
           </div>
         ) : (
-          <button
-            type="button"
-            className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted max-sm:hidden"
-          >
+          <span className="ml-1 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm font-medium max-sm:hidden">
             <span className="size-1.5 rounded-full" style={{backgroundColor: 'var(--primary)'}} />
             {activeName}
-            <ChevronDown className="size-3.5 text-muted-foreground" />
-          </button>
+          </span>
         )}
 
         {/* Source switcher — the Customers hub's three contact lists */}
@@ -678,6 +672,7 @@ export function DashboardShell({
           )}
         >
           <div className="mx-auto mt-2.5 h-1 w-9 rounded-full bg-border" aria-hidden />
+          {moreItems.length > 0 && (
           <div className="grid grid-cols-3 gap-1 p-3">
             {moreItems.map((item) => {
               const active = leafActive(item.href, pathname, channel);
@@ -698,7 +693,8 @@ export function DashboardShell({
               );
             })}
           </div>
-          <div className="border-t border-border px-3 py-3">
+          )}
+          <div className={cn('px-3 py-3', moreItems.length > 0 && 'border-t border-border')}>
             <div className="mb-2 px-1">
               <div className="truncate text-[13px] font-medium text-foreground">{user?.name || 'Signed in'}</div>
               {user?.email && <div className="truncate text-[11px] text-muted-foreground">{user.email}</div>}
