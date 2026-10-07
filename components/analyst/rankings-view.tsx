@@ -8,18 +8,25 @@
 // lifted into this component, so switching tabs preserves each tab's sort,
 // search, and page. Only `?tab=` lives in the URL (so the two "View all" links
 // can deep-link a tab); the rest is client state.
+//
+// Event scope: with `?event=` (an event tile's "View all") the server hands in
+// that event's lists plus a `scope`; the header names the event, the back link
+// returns to Events, and Day pills (multi-day events) soft-navigate `?day=`.
+// `initialSort` / `initialDir` seed the Products tab from the tile's toggles.
 
 import {useMemo, useState} from 'react';
 import Link from 'next/link';
-import {usePathname, useSearchParams} from 'next/navigation';
-import {ArrowLeft, ArrowUpDown, ChevronDown, ChevronUp, Package2, Search, Trophy, X} from 'lucide-react';
+import {useSearchParams} from 'next/navigation';
+import {ArrowLeft, ArrowUpDown, CalendarDays, ChevronDown, ChevronUp, Package2, Search, Trophy, X} from 'lucide-react';
 import type {TopBundle, TopProduct} from '@/src/pos-sales-types';
 import {paginate} from '@/src/pos-sales-compute';
 import {
   filterByName,
   RANKINGS_DEFAULT_PAGE_SIZE,
   RANKINGS_PAGE_SIZES,
+  rankingsHref,
   sortRows,
+  type RankingsSort,
   type SortDir,
 } from '@/src/pos-rankings';
 import {formatPeso} from '@/src/pos-format';
@@ -57,6 +64,19 @@ const DIRECTION_OPTIONS = [
   {value: 'bottom', label: 'Bottom'},
 ] as const;
 
+/** The event a rankings view is scoped to (absent = all offline sales). */
+export type RankingsEventScope = {
+  eventId: string;
+  name: string;
+  days: string[]; // the event's own days (YYYY-MM-DD)
+  day: string | null; // the selected day, or null = every day
+};
+
+/** "2026-09-15" → "Sep 15", matching the event tile's day toggle. */
+function dayShort(key: string): string {
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+}
+
 type Column<T> = {
   key: keyof T & string;
   label: string;
@@ -68,22 +88,36 @@ export function RankingsView({
   products,
   bundles,
   liveProductIds,
+  scope = null,
+  initialSort = 'revenue',
+  initialDir = 'top',
   usingMock,
   fetchedAt,
 }: {
   products: TopProduct[];
   bundles: TopBundle[];
   liveProductIds: string[]; // product_ids still in the catalog → row links to detail
+  scope?: RankingsEventScope | null;
+  initialSort?: RankingsSort;
+  initialDir?: SortDir;
   usingMock: boolean;
   fetchedAt: string;
 }) {
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const tab: Tab = searchParams?.get('tab') === 'bundles' ? 'bundles' : 'products';
 
-  // Independent, lifted per-tab state — preserved across tab switches.
-  const [productCfg, setProductCfg] = useState<Cfg<ProductKey>>(PRODUCT_DEFAULT);
-  const [bundleCfg, setBundleCfg] = useState<Cfg<BundleKey>>(BUNDLE_DEFAULT);
+  // Independent, lifted per-tab state — preserved across tab switches (and
+  // across Day pill navigation, which re-renders this same mounted view).
+  // Products seeds from the URL so an event tile's toggles carry over; Bundles
+  // has no Units metric, so it only takes the direction.
+  const [productCfg, setProductCfg] = useState<Cfg<ProductKey>>(() => ({...PRODUCT_DEFAULT, key: initialSort, dir: initialDir}));
+  const [bundleCfg, setBundleCfg] = useState<Cfg<BundleKey>>(() => ({...BUNDLE_DEFAULT, dir: initialDir}));
+
+  const noSalesText = scope ? (scope.day ? `No sales on ${dayShort(scope.day)}.` : 'No sales tagged to this event yet.') : 'No sales yet.';
+
+  // Tab and day links keep the event scope; sort lives in client state.
+  const href = (p: {tab?: Tab; day?: string | null}) =>
+    rankingsHref({tab: p.tab ?? tab, event: scope?.eventId, day: p.day === undefined ? scope?.day : p.day});
 
   const liveIds = useMemo(() => new Set(liveProductIds), [liveProductIds]);
 
@@ -132,16 +166,46 @@ export function RankingsView({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10 max-md:px-4 max-md:py-6">
-      <Link href="/offline-sales" className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-3.5" /> Offline Sales
+      <Link
+        href={scope ? '/offline-sales/events' : '/offline-sales'}
+        className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-3.5" /> {scope ? 'Events' : 'Offline Sales'}
       </Link>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <Eyebrow icon={Trophy}>Product rankings</Eyebrow>
-          <p className="text-sm text-muted-foreground">Every product and bundle sold, ranked. Sort a column, search a name, page through.</p>
+          {scope ? (
+            <>
+              <h1 className="mb-1 text-lg font-semibold tracking-tight">{scope.name}</h1>
+              <p className="text-sm text-muted-foreground">
+                Every product and bundle sold at this event{scope.day ? ` on ${dayShort(scope.day)}` : ''}, ranked. Sort a column, search a name, page
+                through.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Every product and bundle sold, ranked. Sort a column, search a name, page through.</p>
+          )}
         </div>
         <RefreshControl fetchedAt={fetchedAt} />
       </div>
+
+      {/* Day scope for a multi-day event: same pills as the event tile, as links. */}
+      {scope && scope.days.length > 1 && (
+        <nav aria-label="Event day" className="mb-4 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <CalendarDays className="size-3.5" /> Day
+          </span>
+          <DayLink href={href({day: null})} active={scope.day === null}>
+            All days
+          </DayLink>
+          {scope.days.map((d) => (
+            <DayLink key={d} href={href({day: d})} active={scope.day === d}>
+              {dayShort(d)}
+            </DayLink>
+          ))}
+        </nav>
+      )}
 
       {usingMock && (
         <div className="mb-4">
@@ -154,8 +218,8 @@ export function RankingsView({
 
       {/* Tabs — soft-navigate `?tab=`; lifted state keeps each tab's view. */}
       <div className="mb-5 flex items-center gap-1 border-b border-border" role="tablist" aria-label="Rankings">
-        <TabLink href={pathname} active={tab === 'products'} icon={Trophy} label="Products" count={products.length} />
-        <TabLink href={`${pathname}?tab=bundles`} active={tab === 'bundles'} icon={Package2} label="Bundles" count={bundles.length} />
+        <TabLink href={href({tab: 'products'})} active={tab === 'products'} icon={Trophy} label="Products" count={products.length} />
+        <TabLink href={href({tab: 'bundles'})} active={tab === 'bundles'} icon={Package2} label="Bundles" count={bundles.length} />
       </div>
 
       {tab === 'products' ? (
@@ -167,6 +231,7 @@ export function RankingsView({
           setCfg={setProductCfg}
           searchPlaceholder="Search products…"
           noun="product"
+          noSalesText={noSalesText}
         />
       ) : (
         <RankingPanel
@@ -177,9 +242,26 @@ export function RankingsView({
           setCfg={setBundleCfg}
           searchPlaceholder="Search bundles…"
           noun="bundle"
+          noSalesText={noSalesText}
         />
       )}
     </div>
+  );
+}
+
+function DayLink({href, active, children}: {href: string; active: boolean; children: React.ReactNode}) {
+  return (
+    <Link
+      href={href}
+      scroll={false}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+        active ? 'border-transparent bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+    >
+      {children}
+    </Link>
   );
 }
 
@@ -226,6 +308,7 @@ function RankingPanel<T extends {name: string}, K extends keyof T & string>({
   setCfg,
   searchPlaceholder,
   noun,
+  noSalesText,
 }: {
   rows: T[];
   columns: Column<T>[];
@@ -234,6 +317,7 @@ function RankingPanel<T extends {name: string}, K extends keyof T & string>({
   setCfg: React.Dispatch<React.SetStateAction<Cfg<K>>>;
   searchPlaceholder: string;
   noun: string;
+  noSalesText: string;
 }) {
   // Any change to the result set (sort/search/size) returns to page 1; only the
   // pager moves `page` on its own.
@@ -303,7 +387,7 @@ function RankingPanel<T extends {name: string}, K extends keyof T & string>({
 
         {empty ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            {searching ? `No ${noun}s match “${cfg.q.trim()}”.` : `No sales yet.`}
+            {searching ? `No ${noun}s match “${cfg.q.trim()}”.` : noSalesText}
           </p>
         ) : (
           <>
@@ -357,7 +441,7 @@ function RankingPanel<T extends {name: string}, K extends keyof T & string>({
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground tabular-nums">
-                {info.from + 1}–{Math.min(info.to + 1, filteredCount)} of {filteredCount}
+                {info.from + 1} to {Math.min(info.to + 1, filteredCount)} of {filteredCount}
                 {searching && ` matching`}
               </p>
               <Pagination page={info.page} pageCount={info.totalPages} onPage={(p) => patch({page: p}, true)} label={`${noun} rankings pagination`} />

@@ -2,9 +2,11 @@
 
 import {useMemo, useState, type ReactNode} from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import {Gift} from 'lucide-react';
 import type {BundleSalesSummary, PetMix, PosEvent, PosOrder, TopProduct} from '@/src/pos-sales-types';
 import {bundleSalesSummary, computeKpis, datesInRange, eventDayPacingSeries, eventRevenueSeries, manilaDayKey, paymentBreakdown, petMix, topProducts, type DayPacingSeries} from '@/src/pos-sales-compute';
+import {rankingsHref} from '@/src/pos-rankings';
 import {formatPeso, paymentMethodColor, paymentMethodLabel} from '@/src/pos-format';
 import {cn} from '@/lib/utils';
 import type {SpinLead} from '@/src/spin-leads-types';
@@ -122,6 +124,8 @@ export function EventAnalytics({event, orders, leads}: {event: PosEvent; orders:
           topsByRevenue={topsByRevenue}
           topsByUnits={topsByUnits}
           bundles={bundles}
+          eventId={event.event_id}
+          day={day}
         />
       )}
 
@@ -196,6 +200,8 @@ type AnalyticsBodyProps = {
   topsByRevenue: TopProduct[];
   topsByUnits: TopProduct[];
   bundles: BundleSalesSummary;
+  eventId: string; // for the Top sellers "View all" link
+  day: string | null; // the active Day pill, carried into "View all"
 };
 
 const METRIC_OPTIONS = [
@@ -208,7 +214,7 @@ const DIRECTION_OPTIONS = [
 ] as const;
 const SELLERS_LIMIT = 5;
 
-function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare, compare, onCompareChange, pay, payTotal, pets, petTotal, topsByRevenue, topsByUnits, bundles}: AnalyticsBodyProps) {
+function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare, compare, onCompareChange, pay, payTotal, pets, petTotal, topsByRevenue, topsByUnits, bundles, eventId, day}: AnalyticsBodyProps) {
   // Top sellers controls: metric (Revenue/Units) and direction (best vs lowest,
   // i.e. "kulelat"). State lives here so it survives day-scope changes above.
   const [metric, setMetric] = useState<'revenue' | 'units'>('revenue');
@@ -219,6 +225,9 @@ function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare
   // The bundle reconciliation is a whole-of-total note, so keep it with the
   // best-sellers view only, not the lowest.
   const showBundleReconcile = isTop && bundles.bundleRevenue > 0;
+  // "View all" opens the full, event-scoped rankings with this block's day,
+  // metric and direction carried over, so its first rows are this top 5.
+  const viewAllHref = rankingsHref({event: eventId, day, sort: metric, dir: direction});
   return (
     <div className="flex flex-col gap-7">
       {/* Headline KPIs */}
@@ -333,6 +342,14 @@ function AnalyticsBody({kpis, avgBasket, series, pacing, showCompare, canCompare
                 Itemized {formatPeso(bundles.itemizedRevenue)} plus bundles {formatPeso(bundles.bundleRevenue)} is{' '}
                 {formatPeso(bundles.totalRevenue)}, matching Revenue above.
               </p>
+            </div>
+          )}
+
+          {topsByRevenue.length > 0 && (
+            <div className="mt-3 border-t pt-3 text-right">
+              <Link href={viewAllHref} className="text-xs font-medium text-primary hover:underline">
+                View all products →
+              </Link>
             </div>
           )}
         </div>
