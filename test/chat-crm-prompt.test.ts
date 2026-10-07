@@ -123,7 +123,7 @@ describe('three CRM states across every prompt text', () => {
   it('NOT_STORED no longer says Website is unanswerable', async () => {
     const {shapeDigest} = await import('../src/chat/digest-lookup');
     const r = shapeDigest({window: 'latest', section: 'figures'}, null, NOW) as {error: string};
-    expect(r.error).toMatch(/Shopee and Lazada figures cannot be answered without it; Website totals come from get_channel_report \(and the CRM tools when available\)/);
+    expect(r.error).toMatch(/Shopee and Lazada figures cannot be answered without it; Website totals come from get_channel_report only when the website CRM is connected/);
     expect(r.error).not.toMatch(/Shopee, Lazada and Website figures cannot/);
   });
 });
@@ -151,5 +151,39 @@ describe('website routing text (text pins, no model)', () => {
     expect(d(tool)).toMatch(about);
     expect(d('get_digest')).toMatch(/use get_channel_report or the CRM tools/);
     expect(topic).toMatch(/list_crm_\* for website-only questions/);
+  });
+});
+
+describe('fix round 2: texts true in all three states, state A (no CRM env) included', () => {
+  const GD = /Use get_digest for the website only when the owner asks for the published digest or its top products, or when the website CRM is not connected \(then the digest is the only website source\)/;
+  const NS = /Shopee and Lazada figures cannot be answered without it; Website totals come from get_channel_report only when the website CRM is connected \(and from the CRM tools when available\); otherwise Website figures cannot be answered either/;
+  const desc = (crm: boolean, n: string) => chatTools({explore: false, crm}).find((t) => t.name === n)?.description ?? '';
+
+  it('get_digest says the digest is the only website source when the CRM is not connected (static, all states)', () => {
+    expect(desc(false, 'get_digest')).toMatch(GD);
+    expect(desc(true, 'get_digest')).toMatch(GD);
+    expect(desc(false, 'get_digest')).toMatch(/when they are available/);
+  });
+  it('NOT_STORED is conditional on the CRM being connected', async () => {
+    const {shapeDigest} = await import('../src/chat/digest-lookup');
+    expect((shapeDigest({window: 'latest', section: 'figures'}, null, NOW) as {error: string}).error).toMatch(NS);
+  });
+  it('state A: website revenue last week is answerable from the digest, and no text sends it to a source "not connected"', () => {
+    const A = {tools: true};
+    const texts = [
+      buildStaticSystem(A), buildLiveContextBlock(), buildPreamble(data(), NOW),
+      JSON.stringify(describeData({metric: 'all'}, data(), NOW)),
+      ...chatTools({explore: false, crm: false}).map((t) => t.description),
+    ].join('\n');
+    expect(texts.replace(GD, '')).not.toMatch(/Website[^.]*(not connected|not available)/i);
+    expect(texts).not.toMatch(/list_crm_(orders|customers|checkouts)/);
+    expect(texts).toMatch(/Shopee, Lazada and Website figures come (only )?from the (stored )?digest/);
+    expect(buildPreamble(data(), NOW)).toMatch(/Shopee\/Lazada\/Website sales \(stored digests only\)/);
+    expect(desc(false, 'get_digest')).toMatch(GD);
+  });
+  it('the skill splits website routing: list_crm_orders and get_channel_report are equivalent for one channel', () => {
+    const topic = renderSkill({crm: true});
+    expect(topic).toMatch(/website revenue last week[^.]*website orders in September[^.]*list_crm_orders and get_channel_report use the same orders and the same basis, so either is fine/);
+    expect(topic).toMatch(/get_channel_report is the choice for comparing channels/);
   });
 });
