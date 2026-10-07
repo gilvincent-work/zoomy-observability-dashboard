@@ -118,7 +118,7 @@ export function GoldlineHealthView({rows, period, canEdit}: {rows: HealthRow[]; 
                 />
               </div>
               {/* Phones: one card per store (the table is too wide to read). */}
-              <ul className="flex flex-col divide-y divide-border border-t border-border md:hidden">
+              <ul role="list" className="flex flex-col divide-y divide-border border-t border-border md:hidden">
                 {ordered.map(({storeCode, storeName, health: h}) => (
                   <li key={storeCode} className="relative flex flex-col gap-2 px-4 py-3">
                     <div className="flex items-start justify-between gap-2">

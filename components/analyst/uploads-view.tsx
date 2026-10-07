@@ -177,7 +177,7 @@ export function UploadsView({
           ) : (
             <>
             {/* Phones: one card per file — name, type · when, status, delete. */}
-            <ul className="-mx-4 flex flex-col divide-y divide-border border-t border-border md:hidden">
+            <ul role="list" className="-mx-4 flex flex-col divide-y divide-border border-t border-border md:hidden">
               {pageRows.map((u) => (
                 <li key={u.id} className="relative flex items-center gap-3 px-4 py-3">
                   <FileTypeBadge filename={u.filename} />
@@ -192,9 +192,9 @@ export function UploadsView({
                     <span className="truncate text-xs text-muted-foreground">
                       {u.kind === 'pos_csv' ? 'Sales export' : 'Inventory scan'} · {fmtWhen(u.created_at)}
                     </span>
-                    <span title={u.reject_reason ?? undefined}>
-                      <StatusPill status={u.status} />
-                    </span>
+                    <StatusPill status={u.status} />
+                    {/* Touch screens never show a tooltip: say why it was rejected / failed. */}
+                    {u.reject_reason && <span className="text-xs text-muted-foreground">{u.reject_reason}</span>}
                   </div>
                   {canEdit && (
                     <Button

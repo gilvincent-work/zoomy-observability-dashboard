@@ -18,6 +18,7 @@ Dates are local working dates (GMT+8). Newest first.
   - **Uploads:** a card per file (name, type · time, status, delete).
   - **Inventory:** the status filter is one swipeable row instead of two-line labels.
   - **Summary tiles** are tighter across Overview, Stores, Inventory, product page and Store health. The Overview's three tiles sit two per row.
+- **Review fixes:** the Inventory filter wrapper disappears from layout on desktop (`md:contents`), so the desktop filter row is pixel-identical. The phone lists carry `role="list"` for screen readers. Upload cards show a rejected file's reason as text, since touch screens never show tooltips.
 - **No em/en dashes in UI copy.** About 60 user-facing strings were rewritten: error messages, page copy, date ranges ("Oct 6 to Oct 7"), "Showing 1 to 25 of 263", and split-file names ("cubao (page 2 of 5).pdf"). The rule is now in the workspace `CLAUDE.md` ("UI Copy"). The scan reader's own instructions are unchanged, since they aren't user-facing.
 - **Local dev:** `DEV_AUTH_AS="goldline:company_admin,coop_admin"` gives the dev-bypass session memberships so tenant pages render locally. It has the same double gate as `DEV_AUTH_BYPASS`, so it's inert on any deployment. The layout's "Zoomy viewer" check now follows the session's view like a real one (unchanged without `DEV_AUTH_AS`).
 

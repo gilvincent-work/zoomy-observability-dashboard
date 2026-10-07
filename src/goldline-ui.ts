@@ -7,4 +7,4 @@ export const GL_TILES_MOBILE =
 
 /** A filter/segmented row that scrolls sideways on phones instead of wrapping labels. */
 export const GL_SCROLL_ROW_MOBILE =
-  'max-md:-mx-4 max-md:w-[calc(100%+2rem)] max-md:flex max-md:overflow-x-auto max-md:px-4 max-md:pb-1 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&_button]:whitespace-nowrap max-md:[&_[role=group]]:shrink-0';
+  'md:contents max-md:-mx-4 max-md:w-[calc(100%+2rem)] max-md:flex max-md:overflow-x-auto max-md:px-4 max-md:pb-1 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&_button]:whitespace-nowrap max-md:[&_[role=group]]:shrink-0';

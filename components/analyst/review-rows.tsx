@@ -284,7 +284,7 @@ export function ReviewRows({
           </p>
         ) : (
           <>
-          <ul className="-mx-4 flex flex-col divide-y divide-border border-y border-border md:hidden" aria-label="Rows">
+          <ul role="list" className="-mx-4 flex flex-col divide-y divide-border border-y border-border md:hidden" aria-label="Rows">
             {groups
               ? groups.map((g) => (
                   <li key={`${g.family}-${g.items[0].i}`}>
@@ -292,7 +292,7 @@ export function ReviewRows({
                       {g.family}
                       {g.price != null && <span className="ml-1.5 font-mono font-normal text-muted-foreground">· ₱{g.price.toLocaleString('en-US')}</span>}
                     </div>
-                    <ul className="flex flex-col divide-y divide-border">{g.items.map(card)}</ul>
+                    <ul role="list" className="flex flex-col divide-y divide-border">{g.items.map(card)}</ul>
                   </li>
                 ))
               : visible.map(card)}

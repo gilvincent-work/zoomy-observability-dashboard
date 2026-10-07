@@ -51,7 +51,7 @@ export function batchReadiness(input: {
   return {ready: true};
 }
 
-/** "store-a.pdf" → "store-a — page 2 of 5.pdf" for pages split out of a multi-page PDF. */
+/** "store-a.pdf" → "store-a (page 2 of 5).pdf" for pages split out of a multi-page PDF. */
 export function splitName(original: string, index: number, total: number): string {
   const dot = original.toLowerCase().endsWith('.pdf') ? original.length - 4 : original.length;
   return `${original.slice(0, dot)} (page ${index + 1} of ${total}).pdf`;
