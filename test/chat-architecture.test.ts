@@ -40,6 +40,20 @@ describe('real tree', () => {
     expect(closure.files.has('src/data.ts')).toBe(false);
     expect(closure.files.has('src/crm-data.ts')).toBe(false);
   });
+
+  // The exception is two names, not the module: a chat file that reached getCrmCustomers or the PII-bearing readers would pass the test above.
+  it('the CRM exception is exactly {crmConfigured, getCrmOrders}, imported by name', () => {
+    const all = loadDirs(process.cwd(), ['src/chat', 'app/api/chat']);
+    const names = new Set<string>();
+    for (const [f, src] of Object.entries(all)) {
+      if (/\.(test|spec)\./.test(f)) continue;
+      for (const m of strip(src, false).matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"][^'"]*crm-data['"]/g)) {
+        for (const n of m[1].split(',')) if (n.trim()) names.add(n.trim().split(/\s+as\s+/)[0]);
+      }
+      expect(/import\s+(?!type\b)(?!\{)[^;]*['"][^'"]*crm-data['"]|import\s*\*[^;]*crm-data|import\(['"][^'"]*crm-data/.test(strip(src, false)), `${f} imports crm-data other than by name`).toBe(false);
+    }
+    expect([...names].sort()).toEqual(['crmConfigured', 'getCrmOrders']);
+  });
 });
 
 // Layer 7 (F9): the reports write path is unreachable from chat, and the module that renders a saved report stays pure.
