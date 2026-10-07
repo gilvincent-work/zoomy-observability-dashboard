@@ -23,6 +23,7 @@ Dates are local working dates (GMT+8). Newest first.
   - **Channel reports draw themselves.** In live A8 the model typed a table and no chart appeared; the loop's backstop now auto-draws a `get_channel_report` result (chart first, table twin) when no render tool ran.
   - **Coverage notes name their sources.** Every Shopee or Lazada row now says which digests supplied the days ("per-day sales from digests Sep 1 to Sep 27, 2026; ... (every day covered)") so the model no longer says it did not check.
   - **CRM exception narrowed.** The architecture test pins the chat's `@/src/crm-data` imports to exactly `crmConfigured` and `getCrmOrders` (Train 4 replaces them with GET-only tools).
+  - **Explicit x still pivots.** Live A7: the model called `render_chart` with kind `grouped_bar`, x `event`, y `revenue_php`; an explicit x skipped the two-dimension pivot and drew one plain bar chart. With a non-auto kind, an x naming a category column now picks the groups.
   - **`get_digest` covering** rejects impossible dates (2026-02-30), sharing `isRealDay` with `get_channel_report`.
 
 ## 2026-10-07 — Ask Coop fast path (Train 1)

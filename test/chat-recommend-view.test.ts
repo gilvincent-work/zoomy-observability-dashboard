@@ -421,6 +421,16 @@ describe('EXP-07: two categories and one measure (PROD shape: venue, event, pet)
     'locallymade ph: 100% of revenue has no pet tag.',
   ];
 
+  // Final review (live A7): the model called render_chart with x "event" and y ["revenue_php"]; an explicit x skipped the pivot and drew one bar chart.
+  it('EXP-07: an explicit x naming a category column still pivots (the other category is the series); the other way round swaps them', () => {
+    const d = chartOf(first(prod, {kind: 'grouped_bar', orientation: 'auto'}, {x: 'event', y: ['revenue_php'], title: 'Revenue'}));
+    expect(d.chart.form).toBe('grouped_bar');
+    expect(d.chart.x.key).toBe('event');
+    expect(d.chart.series.map((s) => s.label)).toEqual(['untagged', 'dog', 'cat', 'both']);
+    const swapped = chartOf(first(prod, {kind: 'grouped_bar', orientation: 'auto'}, {x: 'pet', y: ['revenue_php'], title: 'Revenue'}));
+    expect(swapped.chart.x.key).toBe('pet');
+  });
+
   it('EXP-07: auto is grouped bars, one group per event, one color per pet, the venue set aside', () => {
     const d = chartOf(first(prod, AUTO, {title: 'Revenue by event and pet'}));
     expect(d.chart.form).toBe('grouped_bar');
