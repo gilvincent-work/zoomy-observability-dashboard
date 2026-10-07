@@ -40,3 +40,49 @@ export function sortRows<T extends {name: string}>(rows: T[], key: keyof T & str
   });
   return out;
 }
+
+// ── Event scope ─────────────────────────────────────────────────────────────
+// The rankings page doubles as the "View all" for an event tile's Top sellers:
+// `?event=<id>` scopes it to that event's sales, `&day=YYYY-MM-DD` to one of the
+// event's days, and `sort` / `dir` seed the Products tab with the tile's
+// Revenue/Units + Top/Bottom toggles so the full list opens the way it was left.
+
+export type RankingsSort = 'revenue' | 'units';
+
+export type RankingsParams = {
+  tab?: 'products' | 'bundles';
+  event?: string | null;
+  day?: string | null;
+  sort?: RankingsSort;
+  dir?: SortDir;
+};
+
+/** Parse `?sort=`; anything but 'units' falls back to the default 'revenue'. */
+export function parseRankingsSort(v: string | null | undefined): RankingsSort {
+  return v === 'units' ? 'units' : 'revenue';
+}
+
+/** Parse `?dir=`; anything but 'bottom' falls back to the default 'top'. */
+export function parseRankingsDir(v: string | null | undefined): SortDir {
+  return v === 'bottom' ? 'bottom' : 'top';
+}
+
+/** A `?day=` only counts when it is one of the event's own days; else whole event. */
+export function pickEventDay(day: string | null | undefined, eventDays: string[]): string | null {
+  return day && eventDays.includes(day) ? day : null;
+}
+
+/**
+ * Build a /offline-sales/rankings URL. Defaults are omitted (products tab,
+ * revenue, top) so links stay short and the plain overview link is unchanged.
+ */
+export function rankingsHref(p: RankingsParams = {}): string {
+  const qs = new URLSearchParams();
+  if (p.tab === 'bundles') qs.set('tab', 'bundles');
+  if (p.event) qs.set('event', p.event);
+  if (p.event && p.day) qs.set('day', p.day);
+  if (p.sort === 'units') qs.set('sort', 'units');
+  if (p.dir === 'bottom') qs.set('dir', 'bottom');
+  const s = qs.toString();
+  return s ? `/offline-sales/rankings?${s}` : '/offline-sales/rankings';
+}

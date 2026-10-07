@@ -10,6 +10,14 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Event tiles get "View all products" (event-scoped rankings)
+- **Each event tile's Top sellers block now ends with "View all products →".** It opens Product rankings scoped to that event (`/offline-sales/rankings?event=<id>`), with the Products and Bundles tabs, sort, search and paging the overview's View all already has.
+  - *Why:* the existing View all ranks every offline sale together; the team wanted the full list (including the "kulelat" bottom sellers) for one event.
+  - **Carries the tile's state:** the active Day pill (`&day=`) and the Revenue/Units + Top/Bottom toggles (`&sort=`, `&dir=`), so the full list's first rows match the tile's top 5. Multi-day events show the same Day pills on the rankings page.
+  - Same order set as the tile: read-time resolved event attribution (`resolveOrderEvents`), then the optional day filter. An unknown event id is a 404; a `day` outside the event's dates falls back to all days.
+  - Header names the event and the back link returns to Events. No schema change.
+- Rankings range label reads "1 to 10 of 42" instead of using an en dash (UI copy rule).
+
 ## 2026-10-06 — Explore status and a live probe in /api/chat/health
 - Feature: `GET /api/chat/health` gains an additive `explore` object so a hosted deployment shows why Explore is on or off. `enabled` and `reason` come from `resolveExploreAccess` for the signed-in person (reason codes only, never the URL or list); flags `EXPLORE_MODE` (`on`), `EXPLORE_DATABASE_URL` (`set`, `length`, `roleOk`, hostname-only `host`, `kind` pooler/direct/loopback/other), `EXPLORE_ALLOWED_EMAILS` and `ALLOWED_EMAILS` (`set`, `count`). When enabled, `probe` runs one fixed statement (`current_user`, `transaction_read_only`, a count of `coop_explore_orders`) through the same read-only cursor envelope as the chat, capped at 5 s, and reports `{ok, role, readOnly, ms}` or a short code (`connection_refused`, `auth_failed`, `timeout`, `undefined_table`, `permission_denied`, ...), never driver text. No probe for non-allowed users; nothing cached or logged.
 - Decision: the probe lives in `src/chat/explore/probe.ts` (pure, injected runner) and the real driver is reached only through `explore-setup.ts` (`exploreHealth`), so the architecture rule that only `client.ts` imports `postgres` and only `explore-setup.ts` imports `client.ts` still holds. `ExploreDbError` now carries the driver code (`sqlstate`, never text) so the probe can tell a wrong password from a closed port. Runbook: "Explore status in /api/chat/health".
