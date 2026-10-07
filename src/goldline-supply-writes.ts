@@ -14,7 +14,7 @@ function db(): SupabaseClient {
 }
 
 export class SupplyError extends Error {
-  constructor(public code: 'not_enough_stock' | 'not_in_transit' | 'item_not_found', public detail?: number) {
+  constructor(public code: 'not_enough_stock' | 'not_in_transit' | 'already_arrived' | 'item_not_found', public detail?: number) {
     super(code);
   }
 }
@@ -31,10 +31,11 @@ export async function recordShipment(companyId: string, store: string, item: str
   return data as string;
 }
 
-export async function cancelShipment(companyId: string, id: string, by: string | null): Promise<void> {
-  const {error} = await db().rpc('gl_cancel_shipment', {p_company: companyId, p_id: id, p_by: by});
+export async function cancelShipment(companyId: string, id: string, by: string | null, today: string): Promise<void> {
+  const {error} = await db().rpc('gl_cancel_shipment', {p_company: companyId, p_id: id, p_by: by, p_today: today});
   if (error) {
     if ((error.message ?? '').includes('not_in_transit')) throw new SupplyError('not_in_transit');
+    if ((error.message ?? '').includes('already_arrived')) throw new SupplyError('already_arrived');
     throw new Error(`gl_cancel_shipment failed: ${error.message}`);
   }
 }
@@ -45,6 +46,33 @@ export async function shipmentStore(companyId: string, id: string): Promise<stri
   const {data, error} = await db().from('gl_shipments').select('store_code').eq('company_id', companyId).eq('id', id).maybeSingle();
   if (error) throw new Error(`gl_shipments read failed: ${error.message}`);
   return (data as {store_code: string} | null)?.store_code ?? null;
+}
+
+/** Which of `items` are this company's catalog items. */
+export async function existingItems(companyId: string, items: string[]): Promise<Set<string>> {
+  if (!items.length) return new Set();
+  // pagination-ok: bounded by the (≤ 500) codes asked about.
+  const {data, error} = await db().from('gl_products').select('item_code').eq('company_id', companyId).in('item_code', items.slice(0, 500));
+  if (error) throw new Error(`gl_products read failed: ${error.message}`);
+  return new Set(((data ?? []) as Array<{item_code: string}>).map((r) => r.item_code));
+}
+
+/** Which of `stores` are this company's stores. */
+export async function existingStores(companyId: string, stores: string[]): Promise<Set<string>> {
+  if (!stores.length) return new Set();
+  // pagination-ok: bounded by the (≤ 1000) codes asked about.
+  const {data, error} = await db().from('gl_stores').select('store_code').eq('company_id', companyId).in('store_code', stores.slice(0, 1000));
+  if (error) throw new Error(`gl_stores read failed: ${error.message}`);
+  return new Set(((data ?? []) as Array<{store_code: string}>).map((r) => r.store_code));
+}
+
+/** Which of `lines` are product lines in this company's catalog. */
+export async function existingLines(companyId: string, lines: string[]): Promise<Set<string>> {
+  if (!lines.length) return new Set();
+  // pagination-ok: bounded by the (≤ 500) lines asked about.
+  const {data, error} = await db().from('gl_products').select('product_line').eq('company_id', companyId).in('product_line', lines.slice(0, 500));
+  if (error) throw new Error(`gl_products read failed: ${error.message}`);
+  return new Set(((data ?? []) as Array<{product_line: string}>).map((r) => r.product_line));
 }
 
 export async function setWarehouseStock(companyId: string, item: string, onHand: number, by: string | null): Promise<void> {

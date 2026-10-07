@@ -105,7 +105,8 @@ export function ShipmentDialog({
   today: string;
 }) {
   const router = useRouter();
-  const [store, setStore] = useState(initial.store ?? stores[0]?.code ?? '');
+  // From "All stores" the store must be picked — never silently the first one.
+  const [store, setStore] = useState(initial.store ?? (stores.length === 1 ? stores[0].code : ''));
   const [item, setItem] = useState(initial.item ?? '');
   const [qty, setQty] = useState(initial.need ? String(initial.need) : '');
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +136,7 @@ export function ShipmentDialog({
           <span className="text-xs font-medium">To store</span>
           <SearchableSelect
             ariaLabel="Store"
+            placeholder="Choose a store…"
             value={store}
             onChange={setStore}
             options={stores.map((s) => ({value: s.code, label: s.name ? `${s.code} · ${s.name}` : `Store ${s.code}`}))}
@@ -270,7 +272,10 @@ export function SupplySettingsDialog({
   const shownLines = useMemo(() => productLines.filter((l) => l.toLowerCase().includes(lineQuery.trim().toLowerCase())), [productLines, lineQuery]);
   const int = (s: string) => (s.trim() === '' ? null : Number(s));
 
+  const defaultsValid = storeScoped || (prod.trim() !== '' && transit.trim() !== '' && Number.isInteger(Number(prod)) && Number.isInteger(Number(transit)));
+
   function save() {
+    if (!defaultsValid) return setError('Fill in both default lead times (whole days).');
     const defaults = storeScoped ? null : {productionDays: Number(prod), transitDays: Number(transit)};
     // Only rows that changed (so untouched sample values stay marked as samples).
     const stChanged = stores

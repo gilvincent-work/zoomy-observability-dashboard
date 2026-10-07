@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import type {ItemMovement} from './goldline-movement';
-import {boardSummary, buildBoard, inTransitFor, lastsLabel, productionDaysFor, transitDaysFor, type StoreBlock, type SupplyConfig} from './goldline-supply';
+import {boardSummary, buildBoard, inTransitFor, lastsLabel, manilaDate, productionDaysFor, transitDaysFor, type StoreBlock, type SupplyConfig} from './goldline-supply';
 
 const TODAY = '2026-10-20';
 const cfg: SupplyConfig = {
@@ -152,5 +152,29 @@ describe('lastsLabel', () => {
     expect(lastsLabel(Infinity)).toBe('not selling');
     expect(lastsLabel(0)).toBe('runs out');
     expect(lastsLabel(null)).toBeNull();
+  });
+});
+
+describe('review fixes', () => {
+  it('a shipment that covers the whole need clears "ship by" (nothing left to send)', () => {
+    const ship = {id: 's1', storeCode: '1', itemCode: 'LIP', qty: 60, shippedOn: '2026-10-19', arrivesOn: '2026-10-21'};
+    const rows = buildBoard({
+      stores: [block('1', [item('LIP', {onHand: 0, status: 'out', suggestedOrder: 60, stockOutDate: null, coverDays: 0})])],
+      catalog,
+      warehouse: {LIP: 200},
+      config: cfg,
+      shipments: [ship],
+      currentMonth: '2026-10',
+      today: TODAY,
+      store: '1',
+    });
+    expect(rows[0].need).toBe(0);
+    expect(rows[0].shipBy).toBeNull();
+    expect(boardSummary(rows, TODAY).shipNow).toBe(0);
+  });
+  it('"today" is the Philippine date, not UTC', () => {
+    // 2026-10-20 18:30 UTC = 2026-10-21 02:30 in Manila.
+    expect(manilaDate(new Date('2026-10-20T18:30:00Z'))).toBe('2026-10-21');
+    expect(manilaDate(new Date('2026-10-20T15:30:00Z'))).toBe('2026-10-20');
   });
 });

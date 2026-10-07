@@ -4,7 +4,7 @@ import {fetchAllRows} from './pos-fetch-paginate';
 import type {InventoryRowIn} from './goldline-inventory';
 import {addDays, storeMovement, type Count} from './goldline-movement';
 import {countedSoldByMonth, type ItemCount} from './goldline-product';
-import type {CatalogItem, Shipment, StoreBlock, SupplyConfig} from './goldline-supply';
+import {manilaDate, type CatalogItem, type Shipment, type StoreBlock, type SupplyConfig} from './goldline-supply';
 
 // Server-only reads behind the combined Goldline Inventory board: every store's recent
 // counts (enough for this month, last month, the month before, and the movement
@@ -38,7 +38,7 @@ export type BoardData = {
 type Row = ItemCount & {store_code: string};
 
 export async function getBoardData(companyId: string, storeScope?: string[] | null, now = new Date()): Promise<BoardData> {
-  const today = now.toISOString().slice(0, 10);
+  const today = manilaDate(now);
   const empty: BoardData = {
     stores: [],
     storeList: [],
@@ -104,18 +104,27 @@ export async function getBoardData(companyId: string, storeScope?: string[] | nu
 
   // Linked sales (POS SKU → item) for the same window — fills those months like the product page.
   const itemBySku = new Map(products.filter((p) => p.sku_code?.trim()).map((p) => [p.sku_code!.trim(), p.item_code]));
-  const sales = itemBySku.size
-    ? ((await fetchAllRows('gl_sales', (from, to) => {
-        let q = supa
-          .from('gl_sales') // pagination-ok: paged by fetchAllRows (.range below)
-          .select('store_code,sku_code,period_end,units')
-          .eq('company_id', companyId)
-          .in('sku_code', [...itemBySku.keys()])
-          .gte('period_end', since);
-        if (storeScope) q = q.in('store_code', storeScope);
-        return q.order('id').range(from, to);
-      })) as unknown as Array<{store_code: string; sku_code: string; period_end: string; units: number}>)
-    : [];
+  // Chunked so a big catalog doesn't overflow the request URL.
+  const skus = [...itemBySku.keys()];
+  const chunks: string[][] = [];
+  for (let i = 0; i < skus.length; i += 100) chunks.push(skus.slice(i, i + 100));
+  const sales = (
+    await Promise.all(
+      chunks.map(
+        (chunk) =>
+          fetchAllRows('gl_sales', (from, to) => {
+            let q = supa
+              .from('gl_sales') // pagination-ok: paged by fetchAllRows (.range below)
+              .select('store_code,sku_code,period_end,units')
+              .eq('company_id', companyId)
+              .in('sku_code', chunk)
+              .gte('period_end', since);
+            if (storeScope) q = q.in('store_code', storeScope);
+            return q.order('id').range(from, to);
+          }) as unknown as Promise<Array<{store_code: string; sku_code: string; period_end: string; units: number}>>,
+      ),
+    )
+  ).flat();
 
   const catalog: Record<string, CatalogItem> = {};
   for (const p of products) {
@@ -132,7 +141,9 @@ export async function getBoardData(companyId: string, storeScope?: string[] | nu
   const byStore = new Map<string, Row[]>();
   for (const r of counts) {
     if (scope && !scope.has(r.store_code)) continue;
-    byStore.set(r.store_code, [...(byStore.get(r.store_code) ?? []), r]);
+    const list = byStore.get(r.store_code);
+    if (list) list.push(r);
+    else byStore.set(r.store_code, [r]);
   }
   const salesBy = new Map<string, Map<string, number>>(); // store|item → month → units
   for (const s of sales) {
@@ -157,7 +168,9 @@ export async function getBoardData(companyId: string, storeScope?: string[] | nu
         const c = periods.get(k) ?? {period_start: r.period_start, period_end: r.period_end, rows: []};
         c.rows.push(r as InventoryRowIn);
         periods.set(k, c);
-        byItem.set(r.item_code, [...(byItem.get(r.item_code) ?? []), r]);
+        const list = byItem.get(r.item_code);
+        if (list) list.push(r);
+        else byItem.set(r.item_code, [r]);
       }
       const mv = storeMovement([...periods.values()]);
       const latestRows = new Map((mv.latest?.rows ?? []).map((r) => [r.item_code, r]));

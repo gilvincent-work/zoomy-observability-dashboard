@@ -23,6 +23,9 @@ import type {InventoryRowIn} from './goldline-inventory';
 
 export const DAYS_PER_MONTH = 30.4;
 
+/** Today's date in the Philippines (the business's day), not the server's UTC date. */
+export const manilaDate = (d: Date = new Date()) => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Manila'}).format(d);
+
 export type SupplyConfig = {
   defaultProductionDays: number;
   defaultTransitDays: number;
@@ -155,8 +158,11 @@ export function buildBoard(input: {
       const inTransit = inTransitFor(shipments, st.storeCode, it.itemCode, st.latestEnd);
       const need = Math.max(0, it.movement.suggestedOrder - (inTransit?.qty ?? 0));
       const transit = transitDaysFor(config, st.storeCode);
-      const shipBy: DateOrNow =
-        it.movement.status === 'out'
+      // Nothing left to send once what's on the way covers the need.
+      const covered = inTransit != null && need === 0;
+      const shipBy: DateOrNow = covered
+        ? null
+        : it.movement.status === 'out'
           ? {kind: 'now'}
           : it.movement.stockOutDate && it.movement.status !== 'not_counted'
             ? dateOrNow(addDays(it.movement.stockOutDate, -transit), today)

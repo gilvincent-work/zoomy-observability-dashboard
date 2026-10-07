@@ -4,8 +4,12 @@ import {revalidatePath} from 'next/cache';
 import {auth} from '@/auth';
 import {getDataContext} from '@/src/active-context';
 import {canEditData, outOfScopeStores} from '@/src/company';
+import {manilaDate} from '@/src/goldline-supply';
 import {
   cancelShipment,
+  existingItems,
+  existingLines,
+  existingStores,
   recordShipment,
   saveSupplySettings,
   setHidden,
@@ -29,6 +33,8 @@ async function editorContext(company: string | null) {
   const ctx = await getDataContext(company);
   if (!ctx || !ctx.companyId) return {error: 'Not authorized for this company.'} as const;
   if (!canEditData(ctx.role)) return {error: 'Your role can’t change inventory.'} as const;
+  // A store-scoped role with no stores assigned can touch nothing (never "unrestricted").
+  if (Array.isArray(ctx.storeScope) && ctx.storeScope.length === 0) return {error: 'No stores are assigned to your role.'} as const;
   const session = await auth();
   return {ctx, companyId: ctx.companyId, by: session?.user?.email ?? null} as const;
 }
@@ -48,7 +54,9 @@ export async function recordShipmentAction(input: {company: string | null; store
   if (!input.store || !ITEM.test(input.item ?? '')) return {ok: false, error: 'Pick a store and a product.'};
   if (outOfScopeStores(e.ctx.storeScope, [input.store]).length) return {ok: false, error: `Store ${input.store} is outside your access.`};
   try {
-    await recordShipment(e.companyId, input.store, input.item, qty, e.by, new Date().toISOString().slice(0, 10));
+    const [items, stores] = await Promise.all([existingItems(e.companyId, [input.item]), existingStores(e.companyId, [input.store])]);
+    if (!items.has(input.item) || !stores.has(input.store)) return {ok: false, error: 'That store or product isn’t in this company.'};
+    await recordShipment(e.companyId, input.store, input.item, qty, e.by, manilaDate());
     refresh();
     return {ok: true, arrivesOn: null};
   } catch (err) {
@@ -68,11 +76,14 @@ export async function cancelShipmentAction(input: {company: string | null; id: s
     const store = await shipmentStore(e.companyId, input.id);
     if (!store) return {ok: false, error: 'Shipment not found.'};
     if (outOfScopeStores(e.ctx.storeScope, [store]).length) return {ok: false, error: `Store ${store} is outside your access.`};
-    await cancelShipment(e.companyId, input.id, e.by);
+    await cancelShipment(e.companyId, input.id, e.by, manilaDate());
     refresh();
     return {ok: true};
   } catch (err) {
     if (err instanceof SupplyError && err.code === 'not_in_transit') return {ok: false, error: 'That shipment was already cancelled.'};
+    if (err instanceof SupplyError && err.code === 'already_arrived') {
+      return {ok: false, error: 'That shipment is due to have arrived — the store’s next count records it, so it can’t be cancelled.'};
+    }
     console.error('cancelShipmentAction', err);
     return {ok: false, error: 'Could not cancel the shipment. Please try again.'};
   }
@@ -86,6 +97,7 @@ export async function setWarehouseStockAction(input: {company: string | null; it
   if (onHand == null) return {ok: false, error: 'Enter a whole number, 0 or more.'};
   if (!ITEM.test(input.item ?? '')) return {ok: false, error: 'Product not found.'};
   try {
+    if (!(await existingItems(e.companyId, [input.item])).has(input.item)) return {ok: false, error: 'Product not found.'};
     await setWarehouseStock(e.companyId, input.item, onHand, e.by);
     refresh();
     return {ok: true};
@@ -149,6 +161,10 @@ export async function saveSupplySettingsAction(input: {
   const out = outOfScopeStores(e.ctx.storeScope, stores.map((s) => s.store));
   if (out.length) return {ok: false, error: `Store ${out[0]} is outside your access.`};
   try {
+    const [knownStores, knownLines] = await Promise.all([existingStores(e.companyId, stores.map((s) => s.store)), existingLines(e.companyId, lines.map((l) => l.line))]);
+    if (stores.some((s) => !knownStores.has(s.store)) || lines.some((l) => !knownLines.has(l.line))) {
+      return {ok: false, error: 'A store or product line isn’t in this company. Reload and try again.'};
+    }
     await saveSupplySettings(e.companyId, {defaults: input.defaults, lines, stores}, e.by);
     refresh();
     return {ok: true};

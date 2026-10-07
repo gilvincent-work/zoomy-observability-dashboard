@@ -81,7 +81,9 @@ export async function getProductData(companyId: string, itemCode: string, storeS
   const countsBy = new Map<string, ItemCount[]>();
   for (const r of counts) {
     if (scope && !scope.has(r.store_code)) continue;
-    countsBy.set(r.store_code, [...(countsBy.get(r.store_code) ?? []), r]);
+    const list = countsBy.get(r.store_code);
+    if (list) list.push(r);
+    else countsBy.set(r.store_code, [r]);
   }
   const salesBy = new Map<string, SalesRow[]>();
   for (const r of sales) {

@@ -39,8 +39,18 @@ Dates are local working dates (GMT+8). Newest first.
 - **Data (additive, applied to Staging):**
   - New tables `gl_supply_settings`, `gl_line_lead_times`, `gl_store_transit`, `gl_warehouse_stock`, `gl_shipments` and `gl_price_changes`; plus `gl_products.hidden`.
   - New RPCs `gl_record_shipment`, `gl_cancel_shipment` and `gl_set_price`, which are service-role only.
+- **Regression-review fixes:**
+  - **Dates:** they use Philippine time (the server's UTC date was a day behind before 8am Manila).
+  - **Cancelling a shipment:** a shipment due to have arrived can't be cancelled, which would put stock back that's at the store; it shows "due · awaiting count".
+  - **Writes check their targets:** they verify the product, store and product line exist in the company, and a store-scoped role with no stores is denied rather than treated as unrestricted.
+  - **"Ship by":** it clears once what's on the way covers the need, so the "Needs action" filter matches the Ship now tile.
+  - **Store-scoped roles:** they don't see warehouse-wide flags, which would be computed from their stores only.
+  - **Shipping from "All stores":** it requires picking a store.
+  - **Price changes:** an unchanged price isn't logged.
+  - **Loader:** it appends instead of copying arrays, and linked-sales lookups are chunked.
+  - **Verified in a browser:** the store and product pickers work inside the dialogs.
 - **Shared logic and tests:**
-  - Pure, tested `src/goldline-supply.ts` (11 tests). It builds on `storeMovement`, so statuses match the Action Feed and the product page.
+  - Pure, tested `src/goldline-supply.ts` (13 tests). It builds on `storeMovement`, so statuses match the Action Feed and the product page.
   - The "sold per month from counts" logic is now `countedSoldByMonth`, shared with the product page.
   - Dev-only preview at `/dev/goldline-inventory` (404 in production).
 

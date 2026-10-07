@@ -67,7 +67,8 @@ const monthName = (key: string, d = 0) => {
   const [y, m] = key.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1 + d, 1)).toLocaleDateString('en-US', {month: 'short', timeZone: 'UTC'});
 };
-const needsAction = (r: BoardRow) => r.status === 'out' || r.status === 'reorder' || r.shipBy?.kind === 'now' || r.warehouseShort || r.produceBy?.kind === 'now';
+const needsAction = (r: BoardRow, warehouse: boolean) =>
+  r.status === 'out' || r.status === 'reorder' || (r.shipBy?.kind === 'now' && r.need > 0) || (warehouse && (r.warehouseShort || r.produceBy?.kind === 'now'));
 const shipRank = (r: BoardRow) => (r.shipBy == null ? '9999' : r.shipBy.kind === 'now' ? '0000' : r.shipBy.date);
 
 function sortRows(rows: BoardRow[], key: SortKey, dir: 1 | -1): BoardRow[] {
@@ -121,13 +122,16 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
   const [, startHide] = useTransition();
   const [notice, setNotice] = useState<string | null>(null);
   const companyWide = data.canEdit && !data.storeScoped;
+  // The warehouse serves every store; a store-scoped role only sees its own stores' needs,
+  // so warehouse-wide flags (short, produce by) would be wrong for it — not shown.
+  const showWarehouse = !data.storeScoped;
   const transitDays = store ? (config.storeTransitDays[store] ?? config.defaultTransitDays) : 0;
 
   const hiddenCount = rows.filter((r) => r.hidden).length;
   const visible = useMemo(() => rows.filter((r) => showHidden || !r.hidden), [rows, showHidden]);
   const counts = {
     all: visible.length,
-    action: visible.filter(needsAction).length,
+    action: visible.filter((r) => needsAction(r, showWarehouse)).length,
     out: visible.filter((r) => r.status === 'out').length,
     healthy: visible.filter((r) => r.status === 'healthy').length,
     not_counted: visible.filter((r) => r.status === 'not_counted' || r.status === 'no_history').length,
@@ -138,7 +142,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
       visible.filter(
         (r) =>
           (filter === 'all' ||
-            (filter === 'action' && needsAction(r)) ||
+            (filter === 'action' && needsAction(r, showWarehouse)) ||
             (filter === 'out' && r.status === 'out') ||
             (filter === 'healthy' && r.status === 'healthy') ||
             (filter === 'not_counted' && (r.status === 'not_counted' || r.status === 'no_history'))) &&
@@ -148,7 +152,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
       sort.key,
       sort.dir,
     );
-  }, [visible, filter, line, query, sort]);
+  }, [visible, filter, line, query, sort, showWarehouse]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -259,8 +263,17 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
           <section aria-label="Summary" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Metric label="Reorder now" value={String(summary.reorder)} sub={`${summary.out} out · rest under ~10 days`} valueClassName={summary.reorder ? 'text-[var(--status-warn)]' : undefined} />
             <Metric label="Ship now" value={String(summary.shipNow)} sub="won't arrive in time if sent later" valueClassName={summary.shipNow ? 'text-[var(--status-crit)]' : undefined} />
-            <Metric label="Warehouse short" value={String(summary.warehouseShort)} sub="stores need more than it holds" valueClassName={summary.warehouseShort ? 'text-[var(--status-crit)]' : undefined} />
-            <Metric label="Produce soon" value={String(summary.produceSoon)} sub="start within 2 weeks to keep up" valueClassName={summary.produceSoon ? 'text-[var(--status-warn)]' : undefined} />
+            {showWarehouse ? (
+              <>
+                <Metric label="Warehouse short" value={String(summary.warehouseShort)} sub="stores need more than it holds" valueClassName={summary.warehouseShort ? 'text-[var(--status-crit)]' : undefined} />
+                <Metric label="Produce soon" value={String(summary.produceSoon)} sub="start within 2 weeks to keep up" valueClassName={summary.produceSoon ? 'text-[var(--status-warn)]' : undefined} />
+              </>
+            ) : (
+              <>
+                <Metric label="Out of stock" value={String(summary.out)} sub="deliver first" valueClassName={summary.out ? 'text-[var(--status-crit)]' : undefined} />
+                <Metric label="On the way" value={String(data.shipments.length)} sub="shipments not yet counted" />
+              </>
+            )}
           </section>
 
           {data.count && (data.count.sources.length > 0 || data.count.missingPages.length > 0) && (
@@ -369,7 +382,11 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
                           <Th k="threeMonths" sort={sort} onSort={setSortKey} right>3 mo</Th>
                           <Th k="lasts" sort={sort} onSort={setSortKey}>Lasts</Th>
                           <Th k="need" sort={sort} onSort={setSortKey} right title={store ? "Top-up to two cycles of cover, less what's on the way" : "Every store's top-up, added up"}>Need</Th>
-                          <Th k="warehouse" sort={sort} onSort={setSortKey} right title="Units in the warehouse · when to start producing">Warehouse</Th>
+                          {showWarehouse && (
+                            <Th k="warehouse" sort={sort} onSort={setSortKey} right title="Units in the warehouse · when to start producing">
+                              Warehouse
+                            </Th>
+                          )}
                           <Th k="shipBy" sort={sort} onSort={setSortKey} title="Latest day to send so it arrives before running out">Ship by</Th>
                           <th className="w-10 py-2 pr-3" aria-label="Actions" />
                         </tr>
@@ -429,9 +446,11 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
                                 </span>
                               )}
                             </td>
-                            <td className="py-2 pr-3 text-right whitespace-nowrap">
-                              <WarehouseCell r={r} />
-                            </td>
+                            {showWarehouse && (
+                              <td className="py-2 pr-3 text-right whitespace-nowrap">
+                                <WarehouseCell r={r} />
+                              </td>
+                            )}
                             <td className="py-2 pr-3 whitespace-nowrap">
                               <ShipByCell r={r} />
                             </td>
@@ -487,7 +506,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
                           <Stat k="3 mo" v={num(r.threeMonths)} />
                           <Stat k="Lasts" v={lastsLabel(r.coverDays) ?? '—'} />
                           <Stat k="Need" v={r.need ? String(r.need) : '—'} />
-                          <Stat k="Warehouse" v={num(r.warehouse)} warn={r.warehouseShort} />
+                          {showWarehouse ? <Stat k="Warehouse" v={num(r.warehouse)} warn={r.warehouseShort} /> : <Stat k="Last mo" v={num(r.lastMonth)} />}
                           <Stat k="Ship by" v={r.shipBy == null ? '—' : r.shipBy.kind === 'now' ? 'Now' : fmtDay(r.shipBy.date)} warn={r.shipBy?.kind === 'now'} />
                           <Stat k="Price" v={r.price == null ? '—' : peso(r.price)} />
                         </dl>
@@ -505,14 +524,14 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
             </CardContent>
           </Card>
 
-          {data.shipments.length > 0 && <OnTheWay shipments={data.shipments} rows={rows} storeName={storeName} company={data.company} canEdit={data.canEdit} />}
+          {data.shipments.length > 0 && <OnTheWay shipments={data.shipments} rows={rows} storeName={storeName} company={data.company} canEdit={data.canEdit} today={today} />}
 
           <p className="text-xs leading-relaxed text-muted-foreground">
             On hand is the latest count (back room = stockroom + drawer · on display). Sold per month is estimated from consecutive counts — or the sales
             report once a product&apos;s POS SKU is linked. <span className="font-medium text-foreground">Need</span> tops each store up to two cycles of
             cover, less anything on the way. <span className="font-medium text-foreground">Ship by</span> is the run-out date minus the store&apos;s delivery
             time. <span className="font-medium text-foreground">Warehouse</span> covers every store&apos;s need; the date under it is when to start producing
-            (the line&apos;s production time before the warehouse runs dry).
+            (the line&apos;s production time before the warehouse runs dry). Dates use Philippine time.
           </p>
         </>
       )}
@@ -681,7 +700,6 @@ function RowMenu({
   onPrice: () => void;
   onHide: () => void;
 }) {
-  const router = useRouter();
   return (
     <Menu.Root>
       <Menu.Trigger aria-label={`Actions for ${r.name}`} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted">
@@ -690,7 +708,7 @@ function RowMenu({
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="end" sideOffset={4}>
           <Menu.Popup className={MENU_POPUP}>
-            <Menu.Item className={MENU_ITEM} onClick={() => router.push(href)}>
+            <Menu.Item className={MENU_ITEM} render={<Link href={href} />}>
               <Eye className="size-4 text-muted-foreground" /> View product page
             </Menu.Item>
             {canEdit && (
@@ -720,7 +738,7 @@ function RowMenu({
   );
 }
 
-function OnTheWay({shipments, rows, storeName, company, canEdit}: {shipments: Shipment[]; rows: BoardRow[]; storeName: (c: string) => string | null; company: string | null; canEdit: boolean}) {
+function OnTheWay({shipments, rows, storeName, company, canEdit, today}: {shipments: Shipment[]; rows: BoardRow[]; storeName: (c: string) => string | null; company: string | null; canEdit: boolean; today: string}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -761,7 +779,9 @@ function OnTheWay({shipments, rows, storeName, company, canEdit}: {shipments: Sh
                   <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">{fmtDay(s.shippedOn)}</td>
                   <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">{fmtDay(s.arrivesOn)}</td>
                   <td className="py-2 pr-4 text-right whitespace-nowrap">
-                    {canEdit &&
+                    {s.arrivesOn <= today ? (
+                      <span className="text-xs text-muted-foreground">due · awaiting count</span>
+                    ) : canEdit &&
                       (confirm === s.id ? (
                         <span className="inline-flex items-center gap-1">
                           <Button
