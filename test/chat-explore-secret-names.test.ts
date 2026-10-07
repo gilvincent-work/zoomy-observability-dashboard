@@ -32,6 +32,11 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
     expect(SQL).toContain('when query_canceled then');
   });
 
+  it('keeps the round-2 guards: definer-function views closed, a swallowed cancel fails closed', () => {
+    expect(SQL).toMatch(/d\.refclassid = 'pg_catalog\.pg_proc'::regclass[\s\S]*?where p\.prosecdef/);
+    expect(SQL).toMatch(/when query_canceled then[\s\S]*?pg_event_trigger_ddl_commands\(\)[\s\S]*?revoke all on public\.%I from coop_explore_ro cascade/);
+  });
+
   it('matches whole word parts only', () => {
     for (const n of ['api_key', 'password_hash', 'refresh_token', 'marketplace_tokens', 'pin', 'PIN', 'client_secret', 'credentials', 'hashes', 'Api-Key']) {
       expect(isSecretName(n), n).toBe(true);

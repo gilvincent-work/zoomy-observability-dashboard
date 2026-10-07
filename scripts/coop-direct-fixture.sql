@@ -4,7 +4,8 @@
 -- committed (this repo is public).
 alter table public.pos_orders enable row level security; -- RLS on, no policy (like the hosted tables): proves BYPASSRLS
 
-drop view if exists public.explore_fixture_token_view, public.explore_fixture_alias_view, public.explore_fixture_row_view;
+drop view if exists public.explore_fixture_token_view, public.explore_fixture_alias_view, public.explore_fixture_row_view, public.explore_fixture_sd_view;
+drop function if exists public.explore_fixture_sd_rows();
 drop table if exists public.marketplace_tokens, public.explore_fixture_mixed, public.explore_fixture_notes, public.gl_fixture_stores;
 
 create table public.marketplace_tokens (marketplace text primary key, access_token text, refresh_token text, updated_at timestamptz default now());
@@ -25,6 +26,13 @@ create view public.explore_fixture_token_view as select m.marketplace, m.updated
 create view public.explore_fixture_alias_view as select x.id, x.api_key as label2 from public.explore_fixture_mixed x;
 -- Whole-row read (pg_depend records column 0, no per-column dependency): must NOT be granted either
 create view public.explore_fixture_row_view as select to_jsonb(x) as j from public.explore_fixture_mixed x;
+-- Whole row through a SECURITY DEFINER function: the view's pg_depend records only the function, never the table. Must NOT be granted.
+-- EXECUTE goes to the login only (PUBLIC would expose it to anon through PostgREST); zoomy-pos definer RPCs are PUBLIC on the hosted project.
+create function public.explore_fixture_sd_rows() returns setof public.explore_fixture_mixed
+  language sql stable security definer set search_path = '' as $$ select * from public.explore_fixture_mixed $$;
+revoke all on function public.explore_fixture_sd_rows() from public, anon, authenticated;
+grant execute on function public.explore_fixture_sd_rows() to coop_explore_ro;
+create view public.explore_fixture_sd_view as select to_jsonb(f) as j from public.explore_fixture_sd_rows() f;
 
 -- Tenant fence
 create table public.gl_fixture_stores (store_code text primary key, name text);

@@ -72,6 +72,8 @@ $$;
 -- relation that has a secret column. The last clause fails closed on whole-row reads (to_jsonb(x), row_to_json(x), x::text): Postgres
 -- records those as a column-0 dependency, so the per-column check alone would grant a view that returns the secret column.
 -- Trade-off: a view over only the safe columns of a mixed table is closed too (read the table's column grants instead).
+-- It is also closed when the view, or any view under it, calls a SECURITY DEFINER function: `select to_jsonb(f) from sd_fn() f` records
+-- only the function in pg_depend, never the table the function reads as its owner (and it would get around the parser's allowlist).
 create or replace function coop_explore_admin.reads_closed(rel oid) returns boolean language sql stable set search_path = '' as $$
   with recursive deps(oid, att) as (
     select d.refobjid, d.refobjsubid
@@ -97,6 +99,12 @@ create or replace function coop_explore_admin.reads_closed(rel oid) returns bool
        or exists (select 1 from pg_catalog.pg_attribute a2
                   where a2.attrelid = deps.oid and a2.attnum > 0 and not a2.attisdropped
                     and coop_explore_admin.is_secret_column(t.relname, a2.attname)))
+  or exists (
+    select 1
+    from pg_catalog.pg_rewrite rw
+    join pg_catalog.pg_depend d on d.classid = 'pg_catalog.pg_rewrite'::regclass and d.objid = rw.oid and d.refclassid = 'pg_catalog.pg_proc'::regclass
+    join pg_catalog.pg_proc p on p.oid = d.refobjid
+    where p.prosecdef and (rw.ev_class = rel or rw.ev_class in (select deps.oid from deps)))
 $$;
 
 -- 3. apply_grants: decide ONE relation. Never raises (a failure in the event trigger would abort someone else's DDL).
@@ -181,6 +189,8 @@ select coop_explore_admin.reapply_all() as relations_changed;
 
 -- 5. Event trigger (SECURITY INVOKER on purpose: a definer event-trigger function fires even for superusers, supautils issue #140)
 create or replace function coop_explore_admin.guard_ddl() returns event_trigger language plpgsql set search_path = '' as $$
+declare
+  r record;
 begin
   if coalesce(current_setting('coop_explore.in_guard', true), '') = 'on' then
     return; -- our own GRANT/REVOKE: never recurse
@@ -196,9 +206,37 @@ exception
   -- A statement_timeout (or a cancel) firing while this trigger runs would abort the user's DDL. `set local statement_timeout = 0`
   -- cannot prevent that: the timer is armed when the statement starts and a SET inside it does not disarm it (verified locally, PG 17),
   -- and WHEN OTHERS does not catch query_canceled. So catch it by name: the DDL completes, and the 5-minute cron job re-applies.
+  -- Fail closed: the DDL may have opened a secret on a relation the login can already read (add column api_key, a rename to token, a
+  -- GRANT). Revoke the login's privileges on every relation the commands touched and on every view over them, at any depth; GRANT,
+  -- REVOKE and ALTER DEFAULT PRIVILEGES carry no objid, so for those revoke on every public relation. The cron job re-grants the right
+  -- ones. The timer has already fired, so this runs to the end; a second cancel is caught too (warning, nothing more).
   when query_canceled then
-    perform set_config('coop_explore.in_guard', '', true);
-    raise warning 'coop_explore_guard_ddl: cancelled (statement timeout?), grants left to the coop_explore_reapply cron job';
+    begin
+      perform set_config('coop_explore.in_guard', 'on', true);
+      for r in
+        with recursive hit(oid) as (
+          select c.objid from pg_catalog.pg_event_trigger_ddl_commands() c
+          where c.classid = 'pg_catalog.pg_class'::regclass and c.schema_name = 'public'
+          union
+          select rw.ev_class
+          from hit
+          join pg_catalog.pg_depend d on d.refclassid = 'pg_catalog.pg_class'::regclass and d.refobjid = hit.oid
+                                     and d.classid = 'pg_catalog.pg_rewrite'::regclass
+          join pg_catalog.pg_rewrite rw on rw.oid = d.objid
+        )
+        select c.relname
+        from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
+          and (c.oid in (select hit.oid from hit) or tg_tag in ('GRANT', 'REVOKE', 'ALTER DEFAULT PRIVILEGES'))
+      loop
+        execute format('revoke all on public.%I from coop_explore_ro cascade', r.relname);
+      end loop;
+      perform set_config('coop_explore.in_guard', '', true);
+      raise warning 'coop_explore_guard_ddl: cancelled (statement timeout?): revoked the login on the touched relations; the coop_explore_reapply cron job re-grants';
+    exception when query_canceled or others then
+      perform set_config('coop_explore.in_guard', '', true);
+      raise warning 'coop_explore_guard_ddl: cancelled, and failing closed also failed: % (%)', sqlerrm, sqlstate;
+    end;
   when others then
     perform set_config('coop_explore.in_guard', '', true);
     raise warning 'coop_explore_guard_ddl: % (%)', sqlerrm, sqlstate;
