@@ -7,6 +7,7 @@ import {Check, ChevronDown, Loader2, Plus, Search, ShieldCheck, UserPlus, X} fro
 import type {AdminCompany, AdminMembership, AdminUser} from '@/src/admin-data';
 import type {CompanyRole} from '@/src/company';
 import {grantRoleAction, grantRolesAction, revokeAction, setStatusAction} from '@/app/admin/actions';
+import {PROD_CONFIRM_WORD} from '@/src/coop-env';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {NativeSelect} from '@/components/ui/native-select';
@@ -85,7 +86,7 @@ function StatusDot({status, className}: {status: Status; className?: string}) {
   );
 }
 
-export function AdminUsersView({users, companies, me}: {users: AdminUser[]; companies: AdminCompany[]; me: string | null}) {
+export function AdminUsersView({users, companies, me, env = 'staging'}: {users: AdminUser[]; companies: AdminCompany[]; me: string | null; env?: 'staging' | 'production'}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busyEmail, setBusyEmail] = useState<string | null>(null);
@@ -96,7 +97,10 @@ export function AdminUsersView({users, companies, me}: {users: AdminUser[]; comp
   const [statusFilter, setStatusFilter] = useState<'all' | Status>('all');
 
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [confirm, setConfirm] = useState<{email: string; m: AdminMembership} | null>(null);
+  // A pending risky change awaiting confirmation: removal always, and in Production also
+  // suspension — both then need the word typed (see PROD_CONFIRM_WORD).
+  const [confirm, setConfirm] = useState<{email: string; m: AdminMembership; action: 'remove' | 'suspend'} | null>(null);
+  const prod = env === 'production';
 
   // Clear a success message after a few seconds; errors stay until the next action.
   useEffect(() => {
@@ -273,26 +277,36 @@ export function AdminUsersView({users, companies, me}: {users: AdminUser[]; comp
                     options={options}
                     busy={pending && busyEmail === u.email}
                     disabled={pending}
-                    confirming={confirm?.email === u.email ? confirm.m : null}
+                    confirming={confirm?.email === u.email ? {m: confirm.m, action: confirm.action} : null}
+                    prod={prod}
                     onAdd={(o) =>
                       run(u.email, () => grantRoleAction({email: u.email, companyKey: o.companyKey, role: o.role}), `Gave ${u.email} ${o.label}.`)
                     }
                     onStatus={(m, status) =>
-                      run(
-                        u.email,
-                        () => setStatusAction({email: u.email, companyKey: keyOf(m), status}),
-                        status === 'suspended' ? `Suspended ${accessLabel(m)} for ${u.email}.` : `Reactivated ${accessLabel(m)} for ${u.email}.`,
-                      )
+                      status === 'suspended' && prod
+                        ? setConfirm({email: u.email, m, action: 'suspend'})
+                        : run(
+                            u.email,
+                            () => setStatusAction({email: u.email, companyKey: keyOf(m), status}),
+                            status === 'suspended' ? `Suspended ${accessLabel(m)} for ${u.email}.` : `Reactivated ${accessLabel(m)} for ${u.email}.`,
+                          )
                     }
-                    onAskRemove={(m) => setConfirm({email: u.email, m})}
+                    onAskRemove={(m) => setConfirm({email: u.email, m, action: 'remove'})}
                     onCancelRemove={() => setConfirm(null)}
-                    onRemove={(m) =>
-                      run(
-                        u.email,
-                        () => revokeAction({email: u.email, companyKey: keyOf(m)}),
-                        `Removed ${accessLabel(m)} from ${u.email}.`,
-                        () => setConfirm(null),
-                      )
+                    onConfirm={(m, action, typed) =>
+                      action === 'suspend'
+                        ? run(
+                            u.email,
+                            () => setStatusAction({email: u.email, companyKey: keyOf(m), status: 'suspended', confirm: typed}),
+                            `Suspended ${accessLabel(m)} for ${u.email}.`,
+                            () => setConfirm(null),
+                          )
+                        : run(
+                            u.email,
+                            () => revokeAction({email: u.email, companyKey: keyOf(m), confirm: typed}),
+                            `Removed ${accessLabel(m)} from ${u.email}.`,
+                            () => setConfirm(null),
+                          )
                     }
                   />
                 ))}
@@ -325,24 +339,32 @@ function PersonRow({
   busy,
   disabled,
   confirming,
+  prod,
   onAdd,
   onStatus,
   onAskRemove,
   onCancelRemove,
-  onRemove,
+  onConfirm,
 }: {
   user: AdminUser;
   isMe: boolean;
   options: AccessOption[];
   busy: boolean;
   disabled: boolean;
-  confirming: AdminMembership | null;
+  confirming: {m: AdminMembership; action: 'remove' | 'suspend'} | null;
+  prod: boolean;
   onAdd: (o: AccessOption) => void;
   onStatus: (m: AdminMembership, status: 'active' | 'suspended') => void;
   onAskRemove: (m: AdminMembership) => void;
   onCancelRemove: () => void;
-  onRemove: (m: AdminMembership) => void;
+  onConfirm: (m: AdminMembership, action: 'remove' | 'suspend', typed: string) => void;
 }) {
+  const [typed, setTyped] = useState('');
+  // A fresh confirmation never inherits a previously typed word.
+  const confirmKey = confirming ? `${confirming.action}:${keyOf(confirming.m)}` : '';
+  useEffect(() => setTyped(''), [confirmKey]);
+  const word = prod ? PROD_CONFIRM_WORD : '';
+  const confirmed = !prod || typed.trim() === PROD_CONFIRM_WORD;
   const held = new Set(user.memberships.map(keyOf));
   const addable = options.filter((o) => !held.has(o.companyKey));
 
@@ -413,23 +435,53 @@ function PersonRow({
         </div>
 
         {confirming && (
-          <div
+          <form
             role="group"
-            aria-label="Confirm removing access"
+            aria-label={confirming.action === 'remove' ? 'Confirm removing access' : 'Confirm suspending access'}
             className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (confirmed) onConfirm(confirming.m, confirming.action, word ? typed : '');
+            }}
           >
             <span className="min-w-0 flex-1">
-              Remove <span className="font-medium">{accessLabel(confirming)}</span>? They lose this access right away.
+              {confirming.action === 'remove' ? 'Remove' : 'Suspend'} <span className="font-medium">{accessLabel(confirming.m)}</span>?{' '}
+              {confirming.action === 'remove' ? 'They lose this access right away.' : 'They lose access until it’s reactivated.'}
+              {prod && (
+                <span className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                  <span>
+                    This is <span className="font-semibold">Production</span> — type <span className="font-mono font-semibold">{PROD_CONFIRM_WORD}</span> to confirm:
+                  </span>
+                  <input
+                    value={typed}
+                    onChange={(e) => setTyped(e.target.value)}
+                    aria-label={`Type ${PROD_CONFIRM_WORD} to confirm`}
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoFocus
+                    className="h-7 w-36 rounded-md border border-border bg-background px-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+                  />
+                </span>
+              )}
             </span>
             <span className="flex gap-1.5">
-              <Button size="sm" variant="ghost" onClick={onCancelRemove} disabled={disabled}>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setTyped('');
+                  onCancelRemove();
+                }}
+                disabled={disabled}
+              >
                 Cancel
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => onRemove(confirming)} disabled={disabled}>
-                Remove access
+              <Button type="submit" size="sm" variant="destructive" disabled={disabled || !confirmed}>
+                {confirming.action === 'remove' ? 'Remove access' : 'Suspend access'}
               </Button>
             </span>
-          </div>
+          </form>
         )}
       </div>
     </li>

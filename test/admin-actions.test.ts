@@ -2,6 +2,9 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const session = vi.hoisted(() => ({email: 'admin@x.com' as string | null}));
 const memberships = vi.hoisted(() => ({rows: [] as Array<{companyId: string | null; role: string}>}));
+const env = vi.hoisted(() => ({key: 'staging' as 'staging' | 'production'}));
+const revoke = vi.hoisted(() => vi.fn());
+const setStatus = vi.hoisted(() => vi.fn());
 const grantRoles = vi.hoisted(() =>
   vi.fn(async (input: {grants: unknown[]}) => ({granted: input.grants.length, skipped: 0})),
 );
@@ -16,11 +19,13 @@ vi.mock('@/src/company', () => ({
 vi.mock('@/src/admin-data', () => ({
   grantRoles,
   countCoopAdmins: async () => 2,
-  revoke: vi.fn(),
-  setStatus: vi.fn(),
+  revoke,
+  setStatus,
 }));
+vi.mock('@/src/coop-env-server', () => ({guardEnv: () => env.key, currentEnv: async () => ({key: env.key})}));
+vi.mock('@/src/coop-env', async () => await vi.importActual('../src/coop-env'));
 
-import {grantRoleAction, grantRolesAction} from '../app/admin/actions';
+import {grantRoleAction, grantRolesAction, revokeAction, setStatusAction} from '../app/admin/actions';
 
 describe('grantRolesAction', () => {
   beforeEach(() => {
@@ -101,5 +106,41 @@ describe('grantRoleAction', () => {
     grantRoles.mockResolvedValueOnce({granted: 0, skipped: 1});
     const res = await grantRoleAction({email: 'p@x.com', companyKey: 'zoomy', role: 'company_admin'});
     expect(res).toEqual({ok: false, error: 'They already have this access.'});
+  });
+});
+
+describe('Production guard on risky access changes', () => {
+  beforeEach(() => {
+    session.email = 'admin@x.com';
+    memberships.rows = [{companyId: null, role: 'coop_admin'}];
+    revoke.mockClear();
+    setStatus.mockClear();
+  });
+
+  it('in Staging, remove and suspend need no typed word', async () => {
+    env.key = 'staging';
+    expect((await revokeAction({email: 'p@x.com', companyKey: 'zoomy'})).ok).toBe(true);
+    expect((await setStatusAction({email: 'p@x.com', companyKey: 'zoomy', status: 'suspended'})).ok).toBe(true);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(setStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('in Production, refuses remove / suspend without PRODUCTION typed', async () => {
+    env.key = 'production';
+    const r = await revokeAction({email: 'p@x.com', companyKey: 'zoomy'});
+    const s = await setStatusAction({email: 'p@x.com', companyKey: 'zoomy', status: 'suspended', confirm: 'production'});
+    expect(r).toEqual({ok: false, error: 'Type PRODUCTION to confirm this change in Production.'});
+    expect(s.ok).toBe(false);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(setStatus).not.toHaveBeenCalled();
+  });
+
+  it('in Production, allows it with PRODUCTION typed; reactivating needs no word', async () => {
+    env.key = 'production';
+    expect((await revokeAction({email: 'p@x.com', companyKey: 'zoomy', confirm: 'PRODUCTION'})).ok).toBe(true);
+    expect((await setStatusAction({email: 'p@x.com', companyKey: 'zoomy', status: 'suspended', confirm: 'PRODUCTION'})).ok).toBe(true);
+    expect((await setStatusAction({email: 'p@x.com', companyKey: 'zoomy', status: 'active'})).ok).toBe(true);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(setStatus).toHaveBeenCalledTimes(2);
   });
 });

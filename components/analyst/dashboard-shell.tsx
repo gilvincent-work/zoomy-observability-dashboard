@@ -10,6 +10,7 @@ import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {ViewSwitcher} from './company-switcher';
+import {EnvStrip, EnvSwitcher} from './env-switcher';
 import {UploadQueueProvider} from './upload-queue';
 import {UploadQueueIndicator} from './upload-queue-indicator';
 import {BrandMark} from './brand-mark';
@@ -99,6 +100,8 @@ export function DashboardShell({
     companyId: string | null;
     isCoopAdmin: boolean;
     views: {key: string; companyId: string | null; role: string; name: string}[];
+    holdsCoopAdmin?: boolean;
+    env?: 'staging' | 'production';
   };
   children: React.ReactNode;
 }) {
@@ -276,6 +279,7 @@ export function DashboardShell({
           sticky rail (which pins at top-14 = this bar's height). z-30 keeps it
           over both the rail and the scrolling canvas. */}
       <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur-sm">
+        {nav?.holdsCoopAdmin && nav.env && <EnvStrip env={nav.env} />}
         <Link href="/" aria-label="Coop home" className="flex items-center gap-2 rounded-lg transition-opacity hover:opacity-70">
           <CoopMark />
           <span className="hidden text-[13px] font-medium tracking-tight text-muted-foreground sm:inline">
@@ -305,6 +309,10 @@ export function DashboardShell({
             )}
           </span>
         )}
+
+        {/* Environment switcher (Staging ↔ Production) — anyone holding a Coop Admin
+            role, whatever view is active. */}
+        {nav?.holdsCoopAdmin && nav.env && <EnvSwitcher env={nav.env} />}
 
         {/* Source switcher — the Customers hub's three contact lists */}
         {showSource && (
