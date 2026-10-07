@@ -4,6 +4,12 @@
 -- authenticated execute on its write RPCs (spec 5.3). Re-runnable. Afterwards run supabase/coop_chat_explore_direct_checks.sql.
 -- Rollback: supabase/coop_chat_explore_direct_rollback.sql, then re-run supabase/coop_chat_explore.sql.
 --
+-- RUNBOOK (after every apply, as postgres):
+--   select jobname from cron.job where jobname = 'coop_explore_reapply';   -- must return ONE row; none = only the trigger guards new objects
+--   select evtname, evtenabled from pg_event_trigger where evtname = 'coop_explore_guard_ddl';   -- expect coop_explore_guard_ddl|O
+-- Recover by hand (grants look wrong, the cron job is missing, or a guard warning mentions a cancel):
+--   select coop_explore_admin.reapply_all();   -- idempotent; returns how many relations it changed
+--
 -- WHAT THIS DOES
 --   1. coop_explore_ro (created by coop_chat_explore.sql) gets BYPASSRLS: every archive table has RLS on and no policies.
 --   2. One secret-name rule in the private schema coop_explore_admin (never public: PostgREST exposes public functions to anon).
@@ -72,8 +78,12 @@ $$;
 -- relation that has a secret column. The last clause fails closed on whole-row reads (to_jsonb(x), row_to_json(x), x::text): Postgres
 -- records those as a column-0 dependency, so the per-column check alone would grant a view that returns the secret column.
 -- Trade-off: a view over only the safe columns of a mixed table is closed too (read the table's column grants instead).
--- It is also closed when the view, or any view under it, calls a SECURITY DEFINER function: `select to_jsonb(f) from sd_fn() f` records
--- only the function in pg_depend, never the table the function reads as its owner (and it would get around the parser's allowlist).
+-- It is also closed when the view, or any view under it, calls a function that lives outside pg_catalog (directly, through an operator's
+-- oprcode, or through a cast's castfunc), or any SECURITY DEFINER function. pg_depend records only the function a view names, never what
+-- the function reads: `to_jsonb(f) from sd_fn() f`, an INVOKER wrapper around sd_fn() (the login has EXECUTE on definer RPCs), and an
+-- operator over sd_fn all returned the secret. The prosecdef clause is kept on purpose: only a superuser can put a function in
+-- pg_catalog, so it is redundant today, but it costs nothing and keeps the definer rule explicit.
+-- No coop_chat_* or coop_explore_* view calls a user function (checked locally), so there is no allowlist.
 create or replace function coop_explore_admin.reads_closed(rel oid) returns boolean language sql stable set search_path = '' as $$
   with recursive deps(oid, att) as (
     select d.refobjid, d.refobjsubid
@@ -102,9 +112,17 @@ create or replace function coop_explore_admin.reads_closed(rel oid) returns bool
   or exists (
     select 1
     from pg_catalog.pg_rewrite rw
-    join pg_catalog.pg_depend d on d.classid = 'pg_catalog.pg_rewrite'::regclass and d.objid = rw.oid and d.refclassid = 'pg_catalog.pg_proc'::regclass
-    join pg_catalog.pg_proc p on p.oid = d.refobjid
-    where p.prosecdef and (rw.ev_class = rel or rw.ev_class in (select deps.oid from deps)))
+    join pg_catalog.pg_depend d on d.classid = 'pg_catalog.pg_rewrite'::regclass and d.objid = rw.oid
+    left join pg_catalog.pg_operator o on d.refclassid = 'pg_catalog.pg_operator'::regclass and o.oid = d.refobjid
+    left join pg_catalog.pg_cast k on d.refclassid = 'pg_catalog.pg_cast'::regclass and k.oid = d.refobjid
+    join pg_catalog.pg_proc p on p.oid = case d.refclassid
+                                           when 'pg_catalog.pg_proc'::regclass then d.refobjid
+                                           when 'pg_catalog.pg_operator'::regclass then o.oprcode::oid
+                                           when 'pg_catalog.pg_cast'::regclass then k.castfunc
+                                         end
+    join pg_catalog.pg_namespace pn on pn.oid = p.pronamespace
+    where (rw.ev_class = rel or rw.ev_class in (select deps.oid from deps))
+      and (p.prosecdef or pn.nspname <> 'pg_catalog'))
 $$;
 
 -- 3. apply_grants: decide ONE relation. Never raises (a failure in the event trigger would abort someone else's DDL).
@@ -229,7 +247,11 @@ exception
         where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
           and (c.oid in (select hit.oid from hit) or tg_tag in ('GRANT', 'REVOKE', 'ALTER DEFAULT PRIVILEGES'))
       loop
-        execute format('revoke all on public.%I from coop_explore_ro cascade', r.relname);
+        begin -- one sub-block per relation: a failing revoke must not roll back the others (that would fail OPEN)
+          execute format('revoke all on public.%I from coop_explore_ro cascade', r.relname);
+        exception when query_canceled or others then
+          raise warning 'coop_explore_guard_ddl: could not revoke the login on public.%: % (%)', r.relname, sqlerrm, sqlstate;
+        end;
       end loop;
       perform set_config('coop_explore.in_guard', '', true);
       raise warning 'coop_explore_guard_ddl: cancelled (statement timeout?): revoked the login on the touched relations; the coop_explore_reapply cron job re-grants';

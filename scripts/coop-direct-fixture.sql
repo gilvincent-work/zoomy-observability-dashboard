@@ -5,6 +5,9 @@
 alter table public.pos_orders enable row level security; -- RLS on, no policy (like the hosted tables): proves BYPASSRLS
 
 drop view if exists public.explore_fixture_token_view, public.explore_fixture_alias_view, public.explore_fixture_row_view, public.explore_fixture_sd_view;
+drop view if exists public.explore_fixture_wrap_view, public.explore_fixture_op_view;
+drop operator if exists public.### (integer, integer);
+drop function if exists public.explore_fixture_wrap_rows(), public.explore_fixture_sd_secret(integer, integer);
 drop function if exists public.explore_fixture_sd_rows();
 drop table if exists public.marketplace_tokens, public.explore_fixture_mixed, public.explore_fixture_notes, public.gl_fixture_stores;
 
@@ -33,6 +36,19 @@ create function public.explore_fixture_sd_rows() returns setof public.explore_fi
 revoke all on function public.explore_fixture_sd_rows() from public, anon, authenticated;
 grant execute on function public.explore_fixture_sd_rows() to coop_explore_ro;
 create view public.explore_fixture_sd_view as select to_jsonb(f) as j from public.explore_fixture_sd_rows() f;
+-- The same definer function one step removed: pg_depend of these views records only the wrapper (an INVOKER plpgsql function) or the
+-- operator, never the definer function. Both must NOT be granted (reads_closed closes any view that calls a non-pg_catalog function).
+create function public.explore_fixture_wrap_rows() returns setof public.explore_fixture_mixed
+  language plpgsql stable set search_path = '' as $$ begin return query select * from public.explore_fixture_sd_rows(); end $$;
+revoke all on function public.explore_fixture_wrap_rows() from public, anon, authenticated;
+grant execute on function public.explore_fixture_wrap_rows() to coop_explore_ro;
+create view public.explore_fixture_wrap_view as select to_jsonb(w) as j from public.explore_fixture_wrap_rows() w;
+create function public.explore_fixture_sd_secret(a integer, b integer) returns text
+  language sql stable security definer set search_path = '' as $$ select m.api_key from public.explore_fixture_mixed m where m.id = a $$;
+revoke all on function public.explore_fixture_sd_secret(integer, integer) from public, anon, authenticated;
+grant execute on function public.explore_fixture_sd_secret(integer, integer) to coop_explore_ro;
+create operator public.### (leftarg = integer, rightarg = integer, function = public.explore_fixture_sd_secret);
+create view public.explore_fixture_op_view as select 1 ### 1 as j;
 
 -- Tenant fence
 create table public.gl_fixture_stores (store_code text primary key, name text);

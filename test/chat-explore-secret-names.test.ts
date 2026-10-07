@@ -33,8 +33,18 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
   });
 
   it('keeps the round-2 guards: definer-function views closed, a swallowed cancel fails closed', () => {
-    expect(SQL).toMatch(/d\.refclassid = 'pg_catalog\.pg_proc'::regclass[\s\S]*?where p\.prosecdef/);
+    // round 3 folded the definer rule into the non-pg_catalog function rule; prosecdef stays explicit
+    expect(SQL).toMatch(/when 'pg_catalog\.pg_proc'::regclass then d\.refobjid[\s\S]*?p\.prosecdef or/);
     expect(SQL).toMatch(/when query_canceled then[\s\S]*?pg_event_trigger_ddl_commands\(\)[\s\S]*?revoke all on public\.%I from coop_explore_ro cascade/);
+  });
+
+  it('keeps the round-3 guards: any non-pg_catalog function (direct, operator, cast) closes a view; one revoke failing keeps the rest', () => {
+    expect(SQL).toContain("when 'pg_catalog.pg_operator'::regclass then o.oprcode::oid");
+    expect(SQL).toContain("when 'pg_catalog.pg_cast'::regclass then k.castfunc");
+    expect(SQL).toContain("and (p.prosecdef or pn.nspname <> 'pg_catalog'))");
+    expect(SQL).toMatch(/loop\s+begin -- one sub-block per relation[\s\S]*?revoke all on public\.%I from coop_explore_ro cascade[\s\S]*?exception when query_canceled or others then[\s\S]*?end;\s+end loop;/);
+    expect(SQL).toContain("select jobname from cron.job where jobname = 'coop_explore_reapply'");
+    expect(SQL).toContain('select coop_explore_admin.reapply_all();');
   });
 
   it('matches whole word parts only', () => {
