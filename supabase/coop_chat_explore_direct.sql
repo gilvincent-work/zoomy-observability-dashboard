@@ -22,6 +22,9 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'coop_explore_ro') then
     raise exception 'apply supabase/coop_chat_explore.sql first (it creates the login coop_explore_ro)';
   end if;
+  if current_setting('server_version_num')::int < 160000 then
+    raise exception 'coop_chat_explore_direct.sql needs PostgreSQL 16 or newer (this server is %): before 16 only a superuser may ALTER ROLE ... BYPASSRLS. Hosted: check `show server_version_num`.', current_setting('server_version');
+  end if;
   if not (select rolbypassrls from pg_roles where rolname = current_user) then
     raise exception 'run this as a role that has BYPASSRLS (postgres in the SQL editor): only such a role may grant it';
   end if;
@@ -65,7 +68,10 @@ create or replace function coop_explore_admin.is_secret_column(tbl text, col tex
   select coop_explore_admin.is_secret_name(col) and not ((lower(tbl) || '.' || lower(col)) = any (coop_explore_admin.column_exceptions()))
 $$;
 
--- A view (or materialized view) is closed when it reads, at ANY depth, a closed relation, a secret column, or another schema.
+-- A view (or materialized view) is closed when it reads, at ANY depth, a closed relation, a secret column, another schema, or ANY
+-- relation that has a secret column. The last clause fails closed on whole-row reads (to_jsonb(x), row_to_json(x), x::text): Postgres
+-- records those as a column-0 dependency, so the per-column check alone would grant a view that returns the secret column.
+-- Trade-off: a view over only the safe columns of a mixed table is closed too (read the table's column grants instead).
 create or replace function coop_explore_admin.reads_closed(rel oid) returns boolean language sql stable set search_path = '' as $$
   with recursive deps(oid, att) as (
     select d.refobjid, d.refobjsubid
@@ -87,7 +93,10 @@ create or replace function coop_explore_admin.reads_closed(rel oid) returns bool
     left join pg_catalog.pg_attribute a on a.attrelid = deps.oid and a.attnum = deps.att and deps.att > 0
     where n.nspname <> 'public'
        or coop_explore_admin.is_closed_table(t.relname)
-       or (a.attname is not null and coop_explore_admin.is_secret_column(t.relname, a.attname)))
+       or (a.attname is not null and coop_explore_admin.is_secret_column(t.relname, a.attname))
+       or exists (select 1 from pg_catalog.pg_attribute a2
+                  where a2.attrelid = deps.oid and a2.attnum > 0 and not a2.attisdropped
+                    and coop_explore_admin.is_secret_column(t.relname, a2.attname)))
 $$;
 
 -- 3. apply_grants: decide ONE relation. Never raises (a failure in the event trigger would abort someone else's DDL).
@@ -115,11 +124,14 @@ begin
     into safe_cols, mixed
   from pg_catalog.pg_attribute a
   where a.attrelid = rel and a.attnum > 0 and not a.attisdropped;
-  select coalesce(array_agg(distinct x.privilege_type order by x.privilege_type), '{}') into have_tab
+  -- a WITH GRANT OPTION privilege is encoded as 'SELECT*', so it never equals the wanted ACL and is always reset
+  select coalesce(array_agg(distinct x.privilege_type || case when x.is_grantable then '*' else '' end
+                            order by x.privilege_type || case when x.is_grantable then '*' else '' end), '{}') into have_tab
   from pg_catalog.pg_class c, pg_catalog.aclexplode(c.relacl) x
   where c.oid = rel and x.grantee = ro;
   -- column ACLs compared as 'column:PRIVILEGE', so a hand-made `grant update (label)` is a difference, not 'ok'
-  select coalesce(array_agg(distinct a.attname::text || ':' || x.privilege_type order by a.attname::text || ':' || x.privilege_type), '{}') into have_cols
+  select coalesce(array_agg(distinct a.attname::text || ':' || x.privilege_type || case when x.is_grantable then '*' else '' end
+                            order by a.attname::text || ':' || x.privilege_type || case when x.is_grantable then '*' else '' end), '{}') into have_cols
   from pg_catalog.pg_attribute a, pg_catalog.aclexplode(a.attacl) x
   where a.attrelid = rel and a.attnum > 0 and not a.attisdropped and x.grantee = ro;
   want_tab := case when closed or mixed then '{}'::text[] else array['SELECT'] end;
@@ -128,7 +140,8 @@ begin
      and have_cols = (select coalesce(array_agg(c || ':SELECT' order by c || ':SELECT'), '{}') from unnest(want_cols) as c) then
     return 'ok';
   end if;
-  execute format('revoke all on public.%I from coop_explore_ro', r.relname); -- also revokes every column privilege
+  -- also revokes every column privilege and grant option; cascade drops anything the role re-granted with a grant option
+  execute format('revoke all on public.%I from coop_explore_ro cascade', r.relname);
   if want_tab <> '{}'::text[] then
     execute format('grant select on public.%I to coop_explore_ro', r.relname);
     return 'granted';
@@ -179,9 +192,16 @@ begin
                 where c.classid = 'pg_catalog.pg_class'::regclass and c.schema_name = 'public') then
     perform coop_explore_admin.reapply_all(); -- sets and restores the in_guard flag itself
   end if;
-exception when others then
-  perform set_config('coop_explore.in_guard', '', true);
-  raise warning 'coop_explore_guard_ddl: % (%)', sqlerrm, sqlstate;
+exception
+  -- A statement_timeout (or a cancel) firing while this trigger runs would abort the user's DDL. `set local statement_timeout = 0`
+  -- cannot prevent that: the timer is armed when the statement starts and a SET inside it does not disarm it (verified locally, PG 17),
+  -- and WHEN OTHERS does not catch query_canceled. So catch it by name: the DDL completes, and the 5-minute cron job re-applies.
+  when query_canceled then
+    perform set_config('coop_explore.in_guard', '', true);
+    raise warning 'coop_explore_guard_ddl: cancelled (statement timeout?), grants left to the coop_explore_reapply cron job';
+  when others then
+    perform set_config('coop_explore.in_guard', '', true);
+    raise warning 'coop_explore_guard_ddl: % (%)', sqlerrm, sqlstate;
 end $$;
 
 revoke execute on all functions in schema coop_explore_admin from public; -- defence in depth: the schema is already private

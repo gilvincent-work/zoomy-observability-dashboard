@@ -25,6 +25,13 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
     expect(SQL).toContain("w.word in (p.part, p.part || 's', p.part || 'es')");
   });
 
+  it('keeps the security-review guards (fix round 1): whole-row views, PG 16+, grant option, trigger timeout', () => {
+    expect(SQL).toMatch(/where a2\.attrelid = deps\.oid[\s\S]*?is_secret_column\(t\.relname, a2\.attname\)/);
+    expect(SQL).toContain("current_setting('server_version_num')::int < 160000");
+    expect(SQL.match(/case when x\.is_grantable then '\*' else '' end/g)?.length).toBe(4);
+    expect(SQL).toContain('when query_canceled then');
+  });
+
   it('matches whole word parts only', () => {
     for (const n of ['api_key', 'password_hash', 'refresh_token', 'marketplace_tokens', 'pin', 'PIN', 'client_secret', 'credentials', 'hashes', 'Api-Key']) {
       expect(isSecretName(n), n).toBe(true);

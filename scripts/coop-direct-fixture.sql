@@ -4,7 +4,7 @@
 -- committed (this repo is public).
 alter table public.pos_orders enable row level security; -- RLS on, no policy (like the hosted tables): proves BYPASSRLS
 
-drop view if exists public.explore_fixture_token_view, public.explore_fixture_alias_view;
+drop view if exists public.explore_fixture_token_view, public.explore_fixture_alias_view, public.explore_fixture_row_view;
 drop table if exists public.marketplace_tokens, public.explore_fixture_mixed, public.explore_fixture_notes, public.gl_fixture_stores;
 
 create table public.marketplace_tokens (marketplace text primary key, access_token text, refresh_token text, updated_at timestamptz default now());
@@ -23,6 +23,8 @@ insert into public.explore_fixture_notes values
 -- Innocent names over a closed table and over a secret column: must NOT be granted (Review Focus 1)
 create view public.explore_fixture_token_view as select m.marketplace, m.updated_at from public.marketplace_tokens m;
 create view public.explore_fixture_alias_view as select x.id, x.api_key as label2 from public.explore_fixture_mixed x;
+-- Whole-row read (pg_depend records column 0, no per-column dependency): must NOT be granted either
+create view public.explore_fixture_row_view as select to_jsonb(x) as j from public.explore_fixture_mixed x;
 
 -- Tenant fence
 create table public.gl_fixture_stores (store_code text primary key, name text);
