@@ -10,6 +10,13 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Upload review shows only this batch's pages; dark-mode date icons
+- **"Pages uploaded with this one" no longer pulls in other uploads.**
+  - *Why:* the strip predates batch uploads. For a scan not yet committed, it guessed the form's pages as "anything the same person uploaded within 12 hours". A batch of pages 2 and 3 therefore showed pages 1, 4 and 5 from earlier test uploads, which was confusing.
+  - **Now a scan in an upload batch shows exactly that batch's pages,** labelled "Pages in this batch". Pages with no readable scan in the batch show as empty ("No readable scan of this page in this batch"), and a **Review the batch** link opens the batch review.
+  - Committed scans still show the pages committed into the same store and period. The 12-hour guess remains only for older uploads that have no batch.
+- **Calendar icons in dark mode:** native controls now follow the app theme (`color-scheme` on `:root` / `.dark`). The date pickers' calendar icon is visible on dark fields, and scrollbars and native select popups match too.
+
 ## 2026-10-07 — Goldline works on phones (desktop unchanged)
 - **Checked every Goldline page at phone width (390 px) against Staging data.** Nothing scrolled sideways, but several screens were hard to use. Every fix applies **below the tablet breakpoint only**; desktop renders exactly as before (checked).
   - **Row editor (scan review and batch review):** each row is now a card with all five counts as labelled, larger fields (Stockroom · Drawer · Selling · Delivery · Ending), the reader's hint and **Looks right**. Before, only two columns fit and the rest needed side-scrolling. "Go to next flag" finds whichever layout is showing.
