@@ -7,9 +7,12 @@
 -- RUNBOOK (after every apply, as postgres):
 --   select jobname from cron.job where jobname = 'coop_explore_reapply';   -- must return ONE row; none = only the trigger guards new objects
 --   select evtname, evtenabled from pg_event_trigger where evtname = 'coop_explore_guard_ddl';   -- expect coop_explore_guard_ddl|O
---   select * from coop_explore_admin.unlisted_views();   -- every public view the login can NOT read because it is not allowlisted
---   select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('v', 'm')
---     and has_table_privilege('coop_explore_ro', c.oid, 'select') and not c.relname = any (coop_explore_admin.view_allowlist());   -- expect 0 rows
+--   select * from coop_explore_admin.unlisted_views();   -- every public view not allowlisted; a STILL READABLE line is a finding
+--   select * from coop_explore_admin.readable_closed();   -- every closed relation the login can still read, with the reason: expect 0 rows
+--   -- the same by hand (has_any_column_privilege also catches column-only grants, e.g. to PUBLIC): expect 0 rows
+--   select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public'
+--     and has_any_column_privilege('coop_explore_ro', c.oid, 'select')
+--     and ((c.relkind in ('v', 'm', 'f') and not c.relname = any (coop_explore_admin.view_allowlist())) or coop_explore_admin.is_closed_table(c.relname));
 -- Recover by hand (grants look wrong, the cron job is missing, or a guard warning mentions a cancel):
 --   select coop_explore_admin.reapply_all();   -- idempotent; returns how many relations it changed
 -- ADD A VIEW for Ask Coop (views are DEFAULT-DENY; tables are not):
@@ -23,9 +26,10 @@
 --   2. One secret-name rule in the private schema coop_explore_admin (never public: PostgREST exposes public functions to anon).
 --      TS copy: src/chat/explore/secret-names.ts; test/chat-explore-secret-names.test.ts fails when they differ.
 --   3. apply_grants(rel): TABLES are open by default: SELECT on an open table; column grants on the safe columns of a table with a
---      secret column; nothing on a closed table (secret or tenant name). VIEWS (and materialized views) are DEFAULT-DENY: granted only
+--      secret column; nothing on a closed table (secret or tenant name). VIEWS (materialized views, foreign tables) are DEFAULT-DENY: granted only
 --      when named in view_allowlist(), and even then closed when reads_closed() trips (second layer). A view runs logic as the login
 --      (query_to_xml over a definer function, a domain CHECK, a wrapper function, ...): no blacklist of view shapes is complete.
+--      A closed relation (or secret column) the login can still read through PUBLIC loses PUBLIC's SELECT on it.
 --      Idempotent: no change when the ACL is right.
 --   4. Default privileges for relations postgres creates (only while the event trigger is installed: those privileges also cover
 --      views, and only the trigger takes a new view's grant back in the same transaction), then reapply_all() for the existing ones.
@@ -156,11 +160,49 @@ create or replace function coop_explore_admin.reads_closed(rel oid) returns bool
       and (p.prosecdef or pn.nspname <> 'pg_catalog'))
 $$;
 
--- For the drift check and the runbook: one line per public view the login can NOT read because it is not allowlisted.
+-- Why a relation must be CLOSED to the login (null = open). Views, materialized views and foreign tables are default-deny.
+create or replace function coop_explore_admin.closed_reason(rel oid) returns text language sql stable set search_path = '' as $$
+  select case
+    when coop_explore_admin.is_closed_table(c.relname) then 'secret or tenant name'
+    when c.relkind in ('v', 'm', 'f') and not (c.relname::text = any (coop_explore_admin.view_allowlist())) then 'view not allowlisted'
+    when coop_explore_admin.reads_closed(c.oid) then 'reads a closed relation, a secret column or a user function'
+  end
+  from pg_catalog.pg_class c where c.oid = rel
+$$;
+
+-- What the login can EFFECTIVELY read that it must not (null = nothing), whoever granted it: its own grants, PUBLIC, or a role it
+-- belongs to. has_any_column_privilege, not has_table_privilege: a column-only grant (`grant select (store_code) ... to public`)
+-- leaves has_table_privilege false but the column readable.
+create or replace function coop_explore_admin.login_leak(rel oid) returns text language sql stable set search_path = '' as $$
+  select case
+    when coop_explore_admin.closed_reason(rel) is not null
+         and pg_catalog.has_any_column_privilege('coop_explore_ro', rel, 'SELECT') then coop_explore_admin.closed_reason(rel)
+    else (select 'secret column ' || a.attname
+          from pg_catalog.pg_attribute a join pg_catalog.pg_class c on c.oid = a.attrelid
+          where a.attrelid = rel and a.attnum > 0 and not a.attisdropped
+            and coop_explore_admin.is_secret_column(c.relname, a.attname)
+            and pg_catalog.has_column_privilege('coop_explore_ro', rel, a.attnum, 'SELECT')
+          order by a.attnum limit 1)
+  end
+$$;
+
+-- For the drift check and the runbook: one line per public view (or foreign table) that is not allowlisted. Normally not readable;
+-- a line saying STILL READABLE means apply_grants could not close it (role membership): a finding.
 create or replace function coop_explore_admin.unlisted_views() returns setof text language sql stable set search_path = '' as $$
-  select format('view not allowlisted: %s (not readable until added)', c.relname)
+  select case when coop_explore_admin.login_leak(c.oid) is null
+              then format('view not allowlisted: %s (not readable until added)', c.relname)
+              else format('view not allowlisted but STILL READABLE by the login: %s (revoke failed: role membership?)', c.relname) end
   from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-  where n.nspname = 'public' and c.relkind in ('v', 'm') and not (c.relname::text = any (coop_explore_admin.view_allowlist()))
+  where n.nspname = 'public' and c.relkind in ('v', 'm', 'f') and not (c.relname::text = any (coop_explore_admin.view_allowlist()))
+  order by c.relname
+$$;
+
+-- For the drift check and the runbook: EVERY public relation the login can still read although it must not, with the reason.
+-- Expected: no rows.
+create or replace function coop_explore_admin.readable_closed() returns setof text language sql stable set search_path = '' as $$
+  select format('still readable by the login: %s (%s)', c.relname, coop_explore_admin.login_leak(c.oid))
+  from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f') and coop_explore_admin.login_leak(c.oid) is not null
   order by c.relname
 $$;
 
@@ -176,6 +218,8 @@ declare
   have_cols text[];
   want_tab text[];
   want_cols text[];
+  result text;
+  leak text;
 begin
   select c.oid, c.relname, c.relkind, n.nspname into r
   from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
@@ -184,9 +228,7 @@ begin
     return 'skipped';
   end if;
   -- views: default-deny (allowlist first), then the second layer; tables: open unless the name rule closes them
-  closed := coop_explore_admin.is_closed_table(r.relname)
-         or (r.relkind in ('v', 'm') and not (r.relname::text = any (coop_explore_admin.view_allowlist())))
-         or coop_explore_admin.reads_closed(rel);
+  closed := coop_explore_admin.closed_reason(rel) is not null;
   select coalesce(array_agg(a.attname::text order by a.attnum) filter (where not coop_explore_admin.is_secret_column(r.relname, a.attname)), '{}'),
          coalesce(bool_or(coop_explore_admin.is_secret_column(r.relname, a.attname)), false)
     into safe_cols, mixed
@@ -206,18 +248,33 @@ begin
   want_cols := case when not closed and mixed then safe_cols else '{}'::text[] end;
   if have_tab = want_tab
      and have_cols = (select coalesce(array_agg(c || ':SELECT' order by c || ':SELECT'), '{}') from unnest(want_cols) as c) then
-    return 'ok';
+    result := 'ok';
+  else
+    -- also revokes every column privilege and grant option; cascade drops anything the role re-granted with a grant option
+    execute format('revoke all on public.%I from coop_explore_ro cascade', r.relname);
+    if want_tab <> '{}'::text[] then
+      execute format('grant select on public.%I to coop_explore_ro', r.relname);
+      result := 'granted';
+    elsif want_cols <> '{}'::text[] then
+      execute format('grant select (%s) on public.%I to coop_explore_ro', (select string_agg(format('%I', c), ', ') from unnest(want_cols) as c), r.relname);
+      result := 'columns';
+    else
+      result := 'closed';
+    end if;
   end if;
-  -- also revokes every column privilege and grant option; cascade drops anything the role re-granted with a grant option
-  execute format('revoke all on public.%I from coop_explore_ro cascade', r.relname);
-  if want_tab <> '{}'::text[] then
-    execute format('grant select on public.%I to coop_explore_ro', r.relname);
-    return 'granted';
-  elsif want_cols <> '{}'::text[] then
-    execute format('grant select (%s) on public.%I to coop_explore_ro', (select string_agg(format('%I', c), ', ') from unnest(want_cols) as c), r.relname);
-    return 'columns';
+  -- The login also reads what is granted to PUBLIC (default privileges `to public`, `grant select ... to public`). If it can still
+  -- read a closed relation or a secret column, revoke SELECT from PUBLIC on that relation: a table-level REVOKE also revokes PUBLIC's
+  -- column grants. Safe on Supabase: anon, authenticated and service_role hold their own explicit grants, never PUBLIC's. Grants to
+  -- any other role are not touched; if the login still reads it (role membership), warn, and readable_closed() reports it.
+  if coop_explore_admin.login_leak(rel) is not null then
+    execute format('revoke select on public.%I from public', r.relname);
+    result := 'public-revoked';
+    leak := coop_explore_admin.login_leak(rel);
+    if leak is not null then
+      raise warning 'coop_explore_admin: % still readable by the login through role membership (%)', r.relname, leak;
+    end if;
   end if;
-  return 'closed';
+  return result;
 exception when others then
   raise warning 'coop_explore_admin.apply_grants(%): % (%)', rel, sqlerrm, sqlstate;
   return 'error';

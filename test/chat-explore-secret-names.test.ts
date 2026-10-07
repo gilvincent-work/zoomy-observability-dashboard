@@ -57,7 +57,8 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
     expect(allowlist).toHaveLength(25);
     expect(new Set(allowlist).size).toBe(allowlist.length);
     // the one decision: a view not on the list is closed, and a closed relation gets no table or column grant
-    expect(SQL).toContain("or (r.relkind in ('v', 'm') and not (r.relname::text = any (coop_explore_admin.view_allowlist())))");
+    expect(SQL).toContain("when c.relkind in ('v', 'm', 'f') and not (c.relname::text = any (coop_explore_admin.view_allowlist())) then 'view not allowlisted'");
+    expect(SQL).toContain('closed := coop_explore_admin.closed_reason(rel) is not null;');
     expect(SQL).toContain("want_tab := case when closed or mixed then '{}'::text[] else array['SELECT'] end;");
     expect(SQL).toContain("want_cols := case when not closed and mixed then safe_cols else '{}'::text[] end;");
     // no other grant path: the only SELECT grants are apply_grants' two and the trigger-guarded default privileges
@@ -70,10 +71,31 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
     ]);
     expect(code).toMatch(/create event trigger coop_explore_guard_ddl[\s\S]*?alter default privileges for role postgres in schema public grant select on tables to coop_explore_ro;[\s\S]*?exception when insufficient_privilege then\s+[\s\S]*?revoke select on tables from coop_explore_ro;/);
     // the second layer stays, and the drift helper names every view that is not allowlisted
-    expect(SQL).toContain('or coop_explore_admin.reads_closed(rel);');
+    expect(SQL).toContain("when coop_explore_admin.reads_closed(c.oid) then");
     expect(SQL).toContain("format('view not allowlisted: %s (not readable until added)', c.relname)");
     expect(SQL).toContain('ADD A VIEW');
     expect(SQL).not.toMatch(/pg_sleep/);
+  });
+
+  it('fix round 5: a closed relation or secret column the login reads through PUBLIC loses PUBLIC SELECT, else a warning', () => {
+    // effective access, column grants included (has_table_privilege is false for a column-only grant)
+    expect(SQL).toContain("pg_catalog.has_any_column_privilege('coop_explore_ro', rel, 'SELECT')");
+    expect(SQL).toContain("pg_catalog.has_column_privilege('coop_explore_ro', rel, a.attnum, 'SELECT')");
+    // apply_grants: re-check, revoke from PUBLIC only, re-check, warn
+    expect(SQL).toMatch(/if coop_explore_admin\.login_leak\(rel\) is not null then\s+execute format\('revoke select on public\.%I from public', r\.relname\);[\s\S]*?leak := coop_explore_admin\.login_leak\(rel\);\s+if leak is not null then\s+raise warning 'coop_explore_admin: % still readable by the login through role membership \(%\)'/);
+    // it runs after the own-grant comparison, so an 'ok' relation is still checked (no early return before it)
+    const body = /function coop_explore_admin\.apply_grants[\s\S]*?end \$\$;/.exec(SQL)?.[0] ?? '';
+    expect(body.match(/\breturn\b/g)).toHaveLength(3); // 'skipped', result, 'error'
+    expect(body.indexOf("revoke select on public.%I from public")).toBeGreaterThan(body.indexOf("result := 'ok';"));
+    // PUBLIC is the only other grantee ever revoked
+    const code = SQL.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n');
+    const revokes = [...code.matchAll(/\brevoke\b[^;']*\bfrom\s+(\w+)/gi)].map((m) => m[1].toLowerCase());
+    expect(new Set(revokes)).toEqual(new Set(['public', 'coop_explore_ro']));
+    expect(code).toMatch(/revoke all on schema coop_explore_admin from public/);
+    // drift helpers report what is still readable, with the reason
+    expect(SQL).toContain("format('still readable by the login: %s (%s)', c.relname, coop_explore_admin.login_leak(c.oid))");
+    expect(SQL).toContain('STILL READABLE by the login');
+    expect(SQL).toContain('select * from coop_explore_admin.readable_closed();');
   });
 
   it('matches whole word parts only', () => {
