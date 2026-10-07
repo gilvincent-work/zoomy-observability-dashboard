@@ -1,10 +1,11 @@
 'use server';
 
-import {revalidatePath} from 'next/cache';
+import {revalidatePath, revalidateTag} from 'next/cache';
 import {auth} from '@/auth';
 import {getDataContext} from '@/src/active-context';
 import {canEditData, outOfScopeStores} from '@/src/company';
 import {manilaDate} from '@/src/goldline-supply';
+import {glTags} from '@/src/goldline-ref-data';
 import {
   cancelShipment,
   existingItems,
@@ -41,7 +42,9 @@ async function editorContext(company: string | null) {
 
 const intIn = (v: unknown, min: number, max: number) => (Number.isInteger(v) && (v as number) >= min && (v as number) <= max ? (v as number) : null);
 
-function refresh() {
+/** Expire the cached reference data this write changed (next load is fresh), then the pages. */
+function refresh(companyId: string, changed: Array<'catalog' | 'supply'>) {
+  for (const c of changed) revalidateTag(glTags[c](companyId), {expire: 0});
   revalidatePath('/stock', 'layout');
   revalidatePath('/action-feed');
 }
@@ -57,7 +60,7 @@ export async function recordShipmentAction(input: {company: string | null; store
     const [items, stores] = await Promise.all([existingItems(e.companyId, [input.item]), existingStores(e.companyId, [input.store])]);
     if (!items.has(input.item) || !stores.has(input.store)) return {ok: false, error: 'That store or product isn’t in this company.'};
     await recordShipment(e.companyId, input.store, input.item, qty, e.by, manilaDate());
-    refresh();
+    refresh(e.companyId, ['supply']);
     return {ok: true, arrivesOn: null};
   } catch (err) {
     if (err instanceof SupplyError && err.code === 'not_enough_stock') {
@@ -77,7 +80,7 @@ export async function cancelShipmentAction(input: {company: string | null; id: s
     if (!store) return {ok: false, error: 'Shipment not found.'};
     if (outOfScopeStores(e.ctx.storeScope, [store]).length) return {ok: false, error: `Store ${store} is outside your access.`};
     await cancelShipment(e.companyId, input.id, e.by, manilaDate());
-    refresh();
+    refresh(e.companyId, ['supply']);
     return {ok: true};
   } catch (err) {
     if (err instanceof SupplyError && err.code === 'not_in_transit') return {ok: false, error: 'That shipment was already cancelled.'};
@@ -99,7 +102,7 @@ export async function setWarehouseStockAction(input: {company: string | null; it
   try {
     if (!(await existingItems(e.companyId, [input.item])).has(input.item)) return {ok: false, error: 'Product not found.'};
     await setWarehouseStock(e.companyId, input.item, onHand, e.by);
-    refresh();
+    refresh(e.companyId, ['supply']);
     return {ok: true};
   } catch (err) {
     console.error('setWarehouseStockAction', err);
@@ -116,7 +119,7 @@ export async function setPriceAction(input: {company: string | null; item: strin
   if (!ITEM.test(input.item ?? '')) return {ok: false, error: 'Product not found.'};
   try {
     await setPrice(e.companyId, input.item, price, e.by);
-    refresh();
+    refresh(e.companyId, ['catalog']);
     return {ok: true};
   } catch (err) {
     if (err instanceof SupplyError) return {ok: false, error: 'Product not found.'};
@@ -132,7 +135,7 @@ export async function setHiddenAction(input: {company: string | null; item: stri
   if (!ITEM.test(input.item ?? '')) return {ok: false, error: 'Product not found.'};
   try {
     await setHidden(e.companyId, input.item, Boolean(input.hidden));
-    refresh();
+    refresh(e.companyId, ['catalog']);
     return {ok: true};
   } catch (err) {
     if (err instanceof SupplyError) return {ok: false, error: 'Product not found.'};
@@ -166,9 +169,11 @@ export async function saveSupplySettingsAction(input: {
       return {ok: false, error: 'A store or product line isn’t in this company. Reload and try again.'};
     }
     await saveSupplySettings(e.companyId, {defaults: input.defaults, lines, stores}, e.by);
-    refresh();
+    refresh(e.companyId, ['supply']);
     return {ok: true};
   } catch (err) {
+    // Some tables may have saved before the failure — expire the cache so they show.
+    revalidateTag(glTags.supply(e.companyId), {expire: 0});
     console.error('saveSupplySettingsAction', err);
     return {ok: false, error: 'Could not save the settings. Please try again.'};
   }

@@ -1,6 +1,7 @@
 import 'server-only';
 import {createClient, type SupabaseClient} from '@supabase/supabase-js';
 import {fetchAllRows} from './pos-fetch-paginate';
+import {getGlCatalog, getGlStores} from './goldline-ref-data';
 import {addDays} from './goldline-movement';
 import type {ItemCount, ProductInfo, SalesRow, StoreInput} from './goldline-product';
 
@@ -28,17 +29,9 @@ export async function getProductData(companyId: string, itemCode: string, storeS
   const since = addDays(today.toISOString().slice(0, 10), -HISTORY_DAYS);
   const scope = storeScope ? new Set(storeScope) : null;
 
-  const [product, storesRows, counts, snaps] = await Promise.all([
-    // pagination-ok: one row by primary key (company_id, item_code).
-    supa
-      .from('gl_products')
-      .select('item_code,sku_code,product_line,variant,unit_price,is_bestseller')
-      .eq('company_id', companyId)
-      .eq('item_code', itemCode)
-      .maybeSingle(),
-    fetchAllRows('gl_stores', (from, to) =>
-      supa.from('gl_stores').select('store_code,name').eq('company_id', companyId).order('store_code').range(from, to),
-    ) as unknown as Promise<Array<{store_code: string; name: string}>>,
+  const [catalog, storesRows, counts, snaps] = await Promise.all([
+    getGlCatalog(companyId),
+    getGlStores(companyId),
     fetchAllRows('gl_inventory', (from, to) => {
       let q = supa
         .from('gl_inventory') // pagination-ok: paged by fetchAllRows (.range below)
@@ -60,8 +53,7 @@ export async function getProductData(companyId: string, itemCode: string, storeS
       return q.order('period_end', {ascending: false}).order('store_code').range(from, to);
     }) as unknown as Promise<Array<{store_code: string; period_end: string}>>,
   ]);
-  if (product.error) throw new Error(`gl_products read failed: ${product.error.message}`);
-  const p = product.data as {sku_code: string | null; product_line: string | null; variant: string | null; unit_price: string | number | null; is_bestseller: boolean | null} | null;
+  const p = catalog.find((x) => x.item_code === itemCode) ?? null;
   if (!p && !counts.length) return null; // not this company's item
 
   const sku = p?.sku_code?.trim() || null;

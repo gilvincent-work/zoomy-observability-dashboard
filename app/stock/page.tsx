@@ -1,7 +1,7 @@
 import {getDataContext} from '@/src/active-context';
 import {canEditData} from '@/src/company';
 import {getBoardData} from '@/src/goldline-board-data';
-import {getInventoryPage} from '@/src/goldline-inventory-data';
+import {getCountSources} from '@/src/goldline-inventory-data';
 import {boardSummary, buildBoard} from '@/src/goldline-supply';
 import {GoldlineInventoryBoard} from '@/components/analyst/goldline-inventory-board';
 
@@ -23,10 +23,11 @@ export default async function Page(props: {searchParams: Promise<{store?: string
   }
   const {store: requested} = await props.searchParams;
   const scope = ctx.storeScope ?? null;
-  const board = await getBoardData(ctx.companyId, scope);
+  // The board and the requested store's count details load in parallel.
+  const [board, requestedCounts] = await Promise.all([getBoardData(ctx.companyId, scope), getCountSources(ctx.companyId, requested ?? null, scope)]);
   // One store when asked for (and visible) or when it's the only one; else all stores.
   const store = board.storeList.some((s) => s.code === requested) ? (requested as string) : board.storeList.length === 1 ? board.storeList[0].code : null;
-  const counts = await getInventoryPage(ctx.companyId, store, null, scope);
+  const counts = store === (requested ?? null) ? requestedCounts : await getCountSources(ctx.companyId, store, scope);
 
   const rows = buildBoard({
     stores: board.stores,
@@ -59,13 +60,13 @@ export default async function Page(props: {searchParams: Promise<{store?: string
         today: board.today,
         currentMonth: board.currentMonth,
         count:
-          store && counts.selected?.store_code === store
+          store && counts.latest
             ? {
-                latestEnd: counts.selected.period_end,
-                consultant: counts.selected.consultant,
-                committedAt: counts.selected.last_committed_at,
+                latestEnd: counts.latest.period_end,
+                consultant: counts.latest.consultant,
+                committedAt: counts.latest.last_committed_at,
                 sources: counts.sources.map((s) => ({uploadId: s.uploadId, filename: s.filename, page: s.page})),
-                missingPages: counts.coverage.missing,
+                missingPages: counts.missingPages,
               }
             : null,
         pendingReview: counts.pendingReview,

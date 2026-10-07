@@ -13,6 +13,42 @@ Dates are local working dates (GMT+8). Newest first.
 ## 2026-10-07 — Ask Coop fast path (Train 1)
 - **Ask Coop fast path (Train 1).** The per-turn context no longer calls contacts, free-form questions or stock unavailable when Explore is on (it did on every turn in PROD). The chat now sends the open page, and dashboard links pasted in a question are described from a page map, so "this" means the page's data. Explore can read stock (5 views over 4 zoomy-pos sources; `coop_explore_stock_event` is the default) with sellable Event stock as the default basis, because two kinds of "stock" exist and the dashboard forecast uses Event. `pos_locations` was left out (it may not exist on staging or PROD), and `coop_chat_explore.sql` now stops in step 0 with a clear message if a stock source or `pos_inventory_by_location.location` is missing. Needs `supabase/coop_chat_explore.sql` re-applied on staging and PROD.
 
+## 2026-10-07 — Goldline pages load faster (and stay fast at 300 stores)
+- **Measured first** on Staging, from Manila, one run per request:
+
+  | Page | Before | After |
+  |---|---|---|
+  | Inventory board | ~800–900 ms | ~170–310 ms |
+  | Action Feed / Store health | ~240–290 ms | ~100–145 ms |
+  | Overview | ~400–450 ms | ~125–200 ms |
+  | Product page | ~140–200 ms | ~115–190 ms |
+  | Stores | ~110 ms | ~90–150 ms, now bounded at scale |
+
+  Every page also shows an **instant loading screen** on navigation.
+- **Why it was slow:**
+  - **Chains of sequential round trips.** The Overview made ~7 database reads one after another, and the Inventory board ran two loaders back to back.
+  - **The session and company list were re-read several times per request.**
+  - **Reads that grow with history:** the Stores page shipped every sales row ever uploaded to the app, and the old Counts loader read every count period.
+  - **Missing indexes:** every read filters counts by period *end*, but the indexes led with period start, so those reads scanned the company's full history.
+- **Database (additive; applied to Staging):** `supabase/goldline_perf_indexes.sql` adds:
+  - period-end indexes on `gl_inventory` (company, company+store, company+item), `gl_sales`, open `gl_shipments` and `gl_uploads(status)`
+  - **`gl_sales_rollup`**: the Stores page's per-store and per-SKU sums, computed in Postgres and verified against sample rows
+  - **`gl_count_sources`**: the board's latest-count header (scans, pages, review count) in one call instead of three
+- **App:**
+  - **Reads that don't depend on each other run in parallel** (Overview, Inventory board + count header, Action Feed counts alongside the period lookup).
+  - **Big reads (counts, sales) fetch pages in parallel.** `fetchAllRows` now takes `{concurrency}`, which requests several 1000-row pages at once and stops at the first short page. It returns the same rows in the same order (tested). At the 300-store ramp this turns hundreds of sequential page waits into a quarter as many.
+  - **Cached reference data:** the catalog, store list and supply side (settings, lead times, warehouse) are cached per company for up to 10 minutes (`src/goldline-ref-data.ts`). Every save that changes them (price, hide, warehouse, shipments, supply settings) expires the cache immediately, so edits show on the next load.
+  - **Per request:** the session and nav context are read once (React `cache`), and company names are cached for 5 minutes.
+  - **Loading screens** (`loading.tsx`) for Overview, Stores, Inventory, the product page, Action Feed, Store health and Uploads.
+  - Dev-only `/dev/perf` page that times each loader (timings only; 404 in production).
+- **Review fixes:**
+  - The Action Feed's early counts window is now ~25 days of lag (twice-monthly counts) instead of 60, so it doesn't over-read at scale.
+  - Supply settings clears the cache even if the save fails partway.
+  - Linked-sales lookups fetch 2 pages at a time.
+  - Upload review screens get their own loading screen.
+  - `/dev/perf` runs only in development.
+- **Note:** catalog or store changes made directly in SQL (seeds, onboarding new stores or products) take up to 10 minutes to show, because they bypass the app's cache expiry.
+
 ## 2026-10-07 — Goldline Inventory board: counts + forecast in one view, plus the warehouse
 - **Counts and Forecast are merged into one Inventory board** (`/stock`), built like Zoomy's Inventory page. The store picker includes **All stores (N)**. The old `/stock/forecast` redirects here and keeps its `?store=`.
 - **Columns:** Product · Status · Price · On hand (back room = stockroom + drawer · on display) · Trend · this month · last month · 3 months · **Lasts** (days, or months for slow movers) · **Need** · **Warehouse** · **Ship by** · ⋯.
