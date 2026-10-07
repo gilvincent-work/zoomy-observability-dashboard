@@ -10,6 +10,7 @@ import {Card, CardContent} from '@/components/ui/card';
 import {buttonVariants} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {compactPeso, fmtRange, ToneChip} from '@/components/analyst/goldline-ops-shared';
+import {GL_TILES_MOBILE} from '@/src/goldline-ui';
 
 // Goldline store & stock health (plan §04 "Business Health", redefined for data Goldline
 // actually has — no orders/CAC, so no QRR). One score per store for the current form
@@ -94,7 +95,7 @@ export function GoldlineHealthView({rows, period, canEdit}: {rows: HealthRow[]; 
                 </span>
               </CardContent>
             </Card>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={cn("grid grid-cols-2 gap-4", GL_TILES_MOBILE)}>
               <Metric label="In stock" value={pct(inStock)} sub="of counted items have stock" />
               <Metric label="Typical cover" value={days(cover)} sub={cover == null ? 'needs two counts' : 'median days of stock'} />
               <Metric label="Dead stock" value={compactPeso(deadValue)} sub={stockValue ? `${pct(deadValue / stockValue)} of stock value` : 'no movement data yet'} />
@@ -116,7 +117,39 @@ export function GoldlineHealthView({rows, period, canEdit}: {rows: HealthRow[]; 
                   ]}
                 />
               </div>
-              <div className="overflow-x-auto">
+              {/* Phones: one card per store (the table is too wide to read). */}
+              <ul className="flex flex-col divide-y divide-border border-t border-border md:hidden">
+                {ordered.map(({storeCode, storeName, health: h}) => (
+                  <li key={storeCode} className="relative flex flex-col gap-2 px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <Link
+                        href={`/stock?store=${encodeURIComponent(storeCode)}`}
+                        className="font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+                      >
+                        {storeName ? `${storeCode} · ${storeName}` : `Store ${storeCode}`}
+                      </Link>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {h.score == null ? <span className="text-xs text-muted-foreground">no count</span> : <ToneChip tone={scoreTone(h.score)}>{h.score}</ToneChip>}
+                        <ToneChip tone={FORM[h.form].tone}>{FORM[h.form].label}</ToneChip>
+                      </span>
+                    </div>
+                    <dl className="grid grid-cols-4 gap-x-3 text-xs">
+                      {[
+                        ['In stock', pct(h.inStockRate)],
+                        ['Cover', days(h.medianCoverDays)],
+                        ['Dead stock', h.deadStockValue ? compactPeso(h.deadStockValue) : '—'],
+                        ['Low · out', h.score == null ? '—' : `${h.low - h.out} · ${h.out}`],
+                      ].map(([k, v]) => (
+                        <div key={k} className="flex flex-col">
+                          <dt className="text-[10.5px] text-muted-foreground">{k}</dt>
+                          <dd className="font-mono tabular-nums">{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+              <div className="overflow-x-auto max-md:hidden">
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr className="border-y border-border bg-muted/40 text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase">

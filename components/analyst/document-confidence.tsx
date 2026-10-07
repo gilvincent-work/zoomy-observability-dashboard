@@ -85,7 +85,7 @@ export function DocumentConfidence({
             ))}
             <span className="ml-auto inline-flex items-center gap-1">
               <Info className="size-3" aria-hidden />
-              The reader&apos;s own estimate, not a guarantee — the scan is the source of truth.
+              The reader&apos;s own estimate, not a guarantee. The scan is the source of truth.
             </span>
           </div>
         </div>

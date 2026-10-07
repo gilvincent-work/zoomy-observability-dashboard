@@ -288,7 +288,7 @@ export function UploadQueueProvider({company, children}: {company: string | null
       }
       setItems((all) => {
         const room = Math.max(0, MAX_BATCH_FILES - all.filter((i) => i.state !== 'cancelled').length);
-        if (accepted.length > room) problems.push(`Up to ${MAX_BATCH_FILES} files per batch — ${accepted.length - room} left out.`);
+        if (accepted.length > room) problems.push(`Up to ${MAX_BATCH_FILES} files per batch, so ${accepted.length - room} were left out.`);
         const added: QueueItem[] = accepted.slice(0, room).map((file) => ({
           id: newId(),
           file,

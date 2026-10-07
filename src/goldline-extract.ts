@@ -263,16 +263,16 @@ export const PAGE_DETECT_SCHEMA = {
 export function humanizeExtractError(raw: unknown): string {
   const s = (raw instanceof Error ? raw.message : String(raw ?? '')).toLowerCase();
   if (s.includes('manifest for page')) {
-    return 'We couldn’t match this to a known Nichido inventory page (1–5). Please upload a clear scan of an inventory page, or review this file manually.';
+    return 'We couldn’t match this to a known Nichido inventory page (pages 1 to 5). Please upload a clear scan of an inventory page, or review this file manually.';
   }
   if (s.includes('page_mismatch')) {
-    return "The form's page number didn't match what we expected. Please upload a clear scan of an inventory page (1–5).";
+    return "The form's page number didn't match what we expected. Please upload a clear scan of an inventory page (pages 1 to 5).";
   }
   if (s.includes('anthropic_api_key') || s.includes('not configured')) {
-    return 'Automatic reading isn’t set up for this environment yet — the file was saved for manual review.';
+    return 'Automatic reading isn’t set up for this environment yet. The file was saved for manual review.';
   }
   if (s.includes('credit balance') || s.includes('billing')) {
-    return 'Automatic reading is paused (the AI account is out of credits). The file was saved — ask an admin to top up, then try again.';
+    return 'Automatic reading is paused (the AI account is out of credits). The file was saved. Ask an admin to top up, then try again.';
   }
   if (s.includes('overloaded') || s.includes('529')) {
     return 'The reader is busy right now. Please try uploading again in a moment.';
@@ -290,10 +290,10 @@ export function humanizeExtractError(raw: unknown): string {
     s.includes('declined') ||
     s.includes('unreadable')
   ) {
-    return 'We couldn’t read this scan reliably. Try a clearer, flat, full-page scan — or review it manually.';
+    return 'We couldn’t read this scan reliably. Try a clearer, flat, full-page scan, or review it manually.';
   }
   // 400s, invalid_request_error, and anything else: a safe generic (raw is logged).
-  return 'We couldn’t process this scan. It’s been saved — please try again, or review it manually.';
+  return 'We couldn’t process this scan. It’s been saved. Please try again, or review it manually.';
 }
 
 /** The JSON schema the model must return (header + one object per item). */

@@ -47,7 +47,7 @@ export function summarizeConfidence(docConfidence: number | null, rowConfidences
     verdict = 'Medium confidence';
     guidance = flagged
       ? `Review carefully: ${rowsWord(flagged)} flagged, and others may be off. Compare against the scan.`
-      : 'Review carefully against the scan — nothing is flagged, but the reading is less certain.';
+      : 'Review carefully against the scan. Nothing is flagged, but the reading is less certain.';
   } else if (band === 'low') {
     verdict = 'Low confidence';
     guidance = 'Check every row against the scan. A clearer, flat, full-page scan usually reads much better.';

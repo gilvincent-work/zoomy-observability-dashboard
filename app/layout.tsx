@@ -50,7 +50,9 @@ export default async function RootLayout({children}: {children: ReactNode}) {
   // (even /uploads), above the per-section guards. Local dev-auth bypass (null nav)
   // and legacy authed staff with no membership stay on Zoomy; a resolved non-Zoomy
   // company gets none.
-  const isZoomyViewer = authed && (devAuthEnabled() || !nav || nav.companyId === 'zoomy');
+  // (Dev bypass with no DEV_AUTH_AS has no nav → Zoomy, as before; with DEV_AUTH_AS it
+  // follows the stand-in membership like a real session.)
+  const isZoomyViewer = authed && (!nav || nav.companyId === 'zoomy');
   const digests = isZoomyViewer ? await getDigests() : [];
   return (
     <html lang="en" suppressHydrationWarning>

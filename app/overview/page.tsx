@@ -9,6 +9,7 @@ import {GoldlineCategories} from '@/components/analyst/goldline-categories';
 import {Card, CardContent} from '@/components/ui/card';
 import {buttonVariants} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
+import {GL_TILES_MOBILE} from '@/src/goldline-ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,7 @@ function fmtWindow(start: string | null, end: string | null): string | null {
   const d = (s: string) => new Date(`${s}T00:00:00Z`);
   const md = (s: string) => d(s).toLocaleDateString('en-US', {month: 'short', day: '2-digit', timeZone: 'UTC'});
   const year = d(end).getUTCFullYear();
-  return start && start !== end ? `${md(start)} – ${md(end)}, ${year}` : `${md(end)}, ${year}`;
+  return start && start !== end ? `${md(start)} to ${md(end)}, ${year}` : `${md(end)}, ${year}`;
 }
 
 /** Hour 0–23 in Manila, where Goldline's stores are. */
@@ -75,7 +76,7 @@ export default async function Page() {
         <div className="h-0.5 w-24 rounded-full bg-gradient-to-r from-primary to-transparent" aria-hidden />
       </header>
 
-      <section aria-label="Sales this window" className="grid gap-4 sm:grid-cols-3">
+      <section aria-label="Sales this window" className={`grid gap-4 sm:grid-cols-3 max-sm:grid-cols-2 max-sm:[&>*:last-child]:col-span-2 ${GL_TILES_MOBILE}`}>
         <Metric
           label="Net sales"
           value={o.hasSales ? peso(o.net.current) : '—'}

@@ -5,6 +5,7 @@ import {redirect} from 'next/navigation';
 import {auth} from '@/auth';
 import {homeFor, shouldRedirectFromZoomy} from '@/src/company-nav';
 import {currentEnv} from '@/src/coop-env-server';
+import {devSessionWithMemberships} from '@/src/dev-auth';
 import type {CoopEnvKey} from '@/src/coop-env';
 import {
   COOP_VIEW_KEY,
@@ -48,7 +49,8 @@ async function cookieView(session: ViewSession | null): Promise<string | null> {
  * doesn't hold and falls back to one they do, so it can never grant access.
  */
 // One session read per request (the layout, the page and the nav all ask for it).
-const sessionOnce = cache(() => auth());
+// (Local dev only: DEV_AUTH_AS can stand in a session with memberships — see dev-auth.)
+const sessionOnce = cache(async () => devSessionWithMemberships() ?? (await auth()));
 
 export async function getActiveContext(requested?: string | null): Promise<ActiveContext | null> {
   const session = await sessionOnce();

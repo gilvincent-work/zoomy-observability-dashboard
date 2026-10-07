@@ -10,6 +10,17 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Goldline works on phones (desktop unchanged)
+- **Checked every Goldline page at phone width (390 px) against Staging data.** Nothing scrolled sideways, but several screens were hard to use. Every fix applies **below the tablet breakpoint only**; desktop renders exactly as before (checked).
+  - **Row editor (scan review and batch review):** each row is now a card with all five counts as labelled, larger fields (Stockroom · Drawer · Selling · Delivery · Ending), the reader's hint and **Looks right**. Before, only two columns fit and the rest needed side-scrolling. "Go to next flag" finds whichever layout is showing.
+  - **Scan preview:** phones can't show a PDF inside a page (it rendered as a blank box), so it becomes a **View the scan** button that opens the phone's PDF viewer.
+  - **Store health:** a card per store (score, form status, in stock, cover, dead stock, low · out) instead of a squeezed table.
+  - **Uploads:** a card per file (name, type · time, status, delete).
+  - **Inventory:** the status filter is one swipeable row instead of two-line labels.
+  - **Summary tiles** are tighter across Overview, Stores, Inventory, product page and Store health. The Overview's three tiles sit two per row.
+- **No em/en dashes in UI copy.** About 60 user-facing strings were rewritten: error messages, page copy, date ranges ("Oct 6 to Oct 7"), "Showing 1 to 25 of 263", and split-file names ("cubao (page 2 of 5).pdf"). The rule is now in the workspace `CLAUDE.md` ("UI Copy"). The scan reader's own instructions are unchanged, since they aren't user-facing.
+- **Local dev:** `DEV_AUTH_AS="goldline:company_admin,coop_admin"` gives the dev-bypass session memberships so tenant pages render locally. It has the same double gate as `DEV_AUTH_BYPASS`, so it's inert on any deployment. The layout's "Zoomy viewer" check now follows the session's view like a real one (unchanged without `DEV_AUTH_AS`).
+
 ## 2026-10-07 — Environment switcher (Staging ↔ Production) for Coop Admins
 - **Who sees it:** anyone who **holds a Coop Admin role**, in whatever view they're using. A Coop Admin who's in the Goldline or Zoomy view still sees it. It's checked on the server from the person's memberships; people without that role never get it.
 - **Header pill** ("Staging" / "Production", colour-coded blue / purple), styled after the reference console:

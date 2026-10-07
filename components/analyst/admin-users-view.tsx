@@ -321,7 +321,7 @@ export function AdminUsersView({users, companies, me, env = 'staging'}: {users: 
             <ShieldCheck className="size-3.5" aria-hidden /> Coop Admin
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <StatusDot status="invited" /> Invited — gets access on first Google sign-in
+            <StatusDot status="invited" /> Invited (gets access on first Google sign-in)
           </span>
           <span className="inline-flex items-center gap-1.5">
             <StatusDot status="suspended" /> Suspended
@@ -450,7 +450,7 @@ function PersonRow({
               {prod && (
                 <span className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
                   <span>
-                    This is <span className="font-semibold">Production</span> — type <span className="font-mono font-semibold">{PROD_CONFIRM_WORD}</span> to confirm:
+                    This is <span className="font-semibold">Production</span>. Type <span className="font-mono font-semibold">{PROD_CONFIRM_WORD}</span> to confirm:
                   </span>
                   <input
                     value={typed}
@@ -618,7 +618,7 @@ function InvitePanel({
             />
             {existing && (
               <span className="text-xs text-muted-foreground">
-                {existing.email} already has access — the roles you pick are added to what they have.
+                {existing.email} already has access. The roles you pick are added to what they have.
               </span>
             )}
           </label>
@@ -651,7 +651,7 @@ function InvitePanel({
                         {o.company ?? 'Coop Admin'}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {has ? 'Already has this' : o.company ? 'Company User — sees and uploads this company’s data' : 'Manages people and roles; sees no business data'}
+                        {has ? 'Already has this' : o.company ? 'Company User: sees and uploads this company’s data' : 'Manages people and roles; sees no business data'}
                       </span>
                     </span>
                   </label>

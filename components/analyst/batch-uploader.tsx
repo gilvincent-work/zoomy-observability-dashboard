@@ -91,9 +91,9 @@ export function BatchUploader({canEdit, configured, stores}: {canEdit: boolean; 
             <p className="text-xs text-muted-foreground">
               {hasItems
                 ? busy
-                  ? `Reading ${s.done} of ${s.total} done${left ? ` · ${left}` : ''}. You can keep working — progress follows you.`
+                  ? `Reading ${s.done} of ${s.total} done${left ? ` · ${left}` : ''}. You can keep working; progress follows you.`
                   : `${s.done} of ${s.total} read${s.failed ? ` · ${s.failed} failed` : ''}.`
-                : `One store’s pages at a time — a PDF per page or one PDF with every page. Up to ${MAX_BATCH_FILES} files, 25 MB each.`}
+                : `One store’s pages at a time: a PDF per page or one PDF with every page. Up to ${MAX_BATCH_FILES} files, 25 MB each.`}
             </p>
           </div>
           {hasItems && !busy && (
@@ -150,7 +150,7 @@ export function BatchUploader({canEdit, configured, stores}: {canEdit: boolean; 
             </span>
             <span className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
-                <FileTypeBadge filename="x.pdf" /> Inventory form — pages or whole form
+                <FileTypeBadge filename="x.pdf" /> Inventory form (pages or whole form)
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <FileTypeBadge filename="x.csv" /> POS sales export
@@ -198,7 +198,7 @@ export function BatchUploader({canEdit, configured, stores}: {canEdit: boolean; 
                 </label>
                 {q.batch.prefilled && (
                   <span className="mb-2 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                    <Sparkles className="size-3" aria-hidden /> Read from page 1 — check it
+                    <Sparkles className="size-3" aria-hidden /> Read from page 1. Check it
                   </span>
                 )}
               </div>
@@ -231,11 +231,11 @@ export function BatchUploader({canEdit, configured, stores}: {canEdit: boolean; 
                   );
                 })}
                 {!busy && coverage.missing.length > 0 && coverage.missing.length < 5 && (
-                  <span className="ml-1 text-muted-foreground">Missing page {coverage.missing.join(', ')} — add it, or commit what&apos;s here.</span>
+                  <span className="ml-1 text-muted-foreground">Missing page {coverage.missing.join(', ')}. Add it, or commit what&apos;s here.</span>
                 )}
                 {coverage.duplicates.length > 0 && (
                   <span className="ml-1" style={{color: 'color-mix(in oklab, var(--status-warn) 72%, var(--foreground))'}}>
-                    Page {coverage.duplicates.join(', ')} uploaded twice — remove one.
+                    Page {coverage.duplicates.join(', ')} uploaded twice. Remove one.
                   </span>
                 )}
               </div>

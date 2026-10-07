@@ -42,7 +42,7 @@ export function batchReadiness(input: {
   if (!reviewable.length) return {ready: false, reason: 'No pages are ready to commit yet.'};
   if (pages.some((p) => p.status === 'processing')) return {ready: false, reason: 'Wait for every page to finish reading.'};
   const dup = batchCoverage(reviewable).duplicates;
-  if (dup.length) return {ready: false, reason: `Page ${dup.join(', ')} was uploaded twice — remove the extra copy.`};
+  if (dup.length) return {ready: false, reason: `Page ${dup.join(', ')} was uploaded twice. Remove the extra copy.`};
   if (!input.storeCode.trim()) return {ready: false, reason: 'Enter the store code.'};
   if (!ISO.test(input.periodStart) || !ISO.test(input.periodEnd)) return {ready: false, reason: 'Enter the period this count covers.'};
   if (input.periodStart > input.periodEnd) return {ready: false, reason: 'The period end must be on or after its start.'};
@@ -54,5 +54,5 @@ export function batchReadiness(input: {
 /** "store-a.pdf" → "store-a — page 2 of 5.pdf" for pages split out of a multi-page PDF. */
 export function splitName(original: string, index: number, total: number): string {
   const dot = original.toLowerCase().endsWith('.pdf') ? original.length - 4 : original.length;
-  return `${original.slice(0, dot)} — page ${index + 1} of ${total}.pdf`;
+  return `${original.slice(0, dot)} (page ${index + 1} of ${total}).pdf`;
 }

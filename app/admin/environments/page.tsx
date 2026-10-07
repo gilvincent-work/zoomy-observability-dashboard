@@ -52,7 +52,7 @@ export default async function Page() {
         </span>
         <h1 className="font-heading text-2xl font-semibold tracking-tight">Environments</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Each environment is its own site with its own database and sign-in. Switching opens the same page on the other site — no environment
+          Each environment is its own site with its own database and sign-in. Switching opens the same page on the other site, and no environment
           ever holds another&apos;s keys. Settings live in each site&apos;s Vercel project.
         </p>
         <div className="h-0.5 w-24 rounded-full bg-gradient-to-r from-primary to-transparent" aria-hidden />
@@ -111,7 +111,7 @@ export default async function Page() {
           <h2 className="font-heading text-base font-semibold">Who sees the switcher</h2>
           <p className="text-muted-foreground">
             Anyone holding a Coop Admin role, in whatever view they&apos;re using. On the other site you sign in again, and that site checks your
-            roles in its own database — so you need the Coop Admin role there too. Risky access changes in Production (suspending or removing
+            roles in its own database, so you need the Coop Admin role there too. Risky access changes in Production (suspending or removing
             access) ask you to type <span className="font-mono text-foreground">PRODUCTION</span> first, and every access change records which
             environment it happened in.
           </p>

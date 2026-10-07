@@ -6,6 +6,7 @@ import type {SalesSummary, StoreRollup} from '@/src/goldline-analytics';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Pagination} from '@/components/analyst/pagination';
 import {cn} from '@/lib/utils';
+import {GL_TILES_MOBILE} from '@/src/goldline-ui';
 
 // Store leaderboard for the active company: sales rolled up per store (from gl_sales),
 // searchable and sortable. Derived entirely from props the server already scoped by
@@ -70,7 +71,7 @@ export function GoldlineStoresView({stores, summary}: {stores: StoreRollup[]; su
         </p>
       </header>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className={cn("grid grid-cols-2 gap-4 sm:grid-cols-4", GL_TILES_MOBILE)}>
         <Stat label="Stores" value={stores.length.toLocaleString()} />
         <Stat label="Gross sales" value={peso(summary.gross)} />
         <Stat label="Units" value={summary.units.toLocaleString()} />
@@ -98,7 +99,7 @@ export function GoldlineStoresView({stores, summary}: {stores: StoreRollup[]; su
         <CardContent className="flex flex-col gap-3">
           {pageRows.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No stores yet — upload a POS sales CSV to populate this.
+              No stores yet. Upload a POS sales CSV to populate this.
             </p>
           ) : (
             <div className="overflow-x-auto">
