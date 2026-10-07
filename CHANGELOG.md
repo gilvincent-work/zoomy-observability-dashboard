@@ -10,6 +10,14 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Event tiles get "View all products" (event-scoped rankings)
+- **Each event tile's Top sellers block now ends with "View all products →".** It opens Product rankings scoped to that event (`/offline-sales/rankings?event=<id>`), with the Products and Bundles tabs, sort, search and paging the overview's View all already has.
+  - *Why:* the existing View all ranks every offline sale together; the team wanted the full list (including the "kulelat" bottom sellers) for one event.
+  - **Carries the tile's state:** the active Day pill (`&day=`) and the Revenue/Units + Top/Bottom toggles (`&sort=`, `&dir=`), so the full list's first rows match the tile's top 5. Multi-day events show the same Day pills on the rankings page.
+  - Same order set as the tile: read-time resolved event attribution (`resolveOrderEvents`), then the optional day filter. An unknown event id is a 404; a `day` outside the event's dates falls back to all days.
+  - Header names the event and the back link returns to Events. No schema change.
+- Rankings range label reads "1 to 10 of 42" instead of using an en dash (UI copy rule).
+
 ## 2026-10-07 — Upload review shows only this batch's pages; dark-mode date icons
 - **"Pages uploaded with this one" no longer pulls in other uploads.**
   - *Why:* the strip predates batch uploads. For a scan not yet committed, it guessed the form's pages as "anything the same person uploaded within 12 hours". A batch of pages 2 and 3 therefore showed pages 1, 4 and 5 from earlier test uploads, which was confusing.
