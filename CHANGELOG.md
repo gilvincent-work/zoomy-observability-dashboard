@@ -38,6 +38,13 @@ Dates are local working dates (GMT+8). Newest first.
   - **Per request:** the session and nav context are read once (React `cache`), and company names are cached for 5 minutes.
   - **Loading screens** (`loading.tsx`) for Overview, Stores, Inventory, the product page, Action Feed, Store health and Uploads.
   - Dev-only `/dev/perf` page that times each loader (timings only; 404 in production).
+- **Review fixes:**
+  - The Action Feed's early counts window is now ~25 days of lag (twice-monthly counts) instead of 60, so it doesn't over-read at scale.
+  - Supply settings clears the cache even if the save fails partway.
+  - Linked-sales lookups fetch 2 pages at a time.
+  - Upload review screens get their own loading screen.
+  - `/dev/perf` runs only in development.
+- **Note:** catalog or store changes made directly in SQL (seeds, onboarding new stores or products) take up to 10 minutes to show, because they bypass the app's cache expiry.
 
 ## 2026-10-07 — Goldline Inventory board: counts + forecast in one view, plus the warehouse
 - **Counts and Forecast are merged into one Inventory board** (`/stock`), built like Zoomy's Inventory page. The store picker includes **All stores (N)**. The old `/stock/forecast` redirects here and keeps its `?store=`.

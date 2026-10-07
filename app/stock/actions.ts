@@ -172,6 +172,8 @@ export async function saveSupplySettingsAction(input: {
     refresh(e.companyId, ['supply']);
     return {ok: true};
   } catch (err) {
+    // Some tables may have saved before the failure — expire the cache so they show.
+    revalidateTag(glTags.supply(e.companyId), {expire: 0});
     console.error('saveSupplySettingsAction', err);
     return {ok: false, error: 'Could not save the settings. Please try again.'};
   }

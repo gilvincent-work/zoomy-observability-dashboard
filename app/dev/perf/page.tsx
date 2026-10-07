@@ -20,7 +20,7 @@ async function time(fn: () => Promise<unknown>) {
 }
 
 export default async function Page() {
-  if (process.env.NODE_ENV === 'production') notFound();
+  if (process.env.NODE_ENV !== 'development') notFound();
   const C = 'goldline';
   const rows: Array<[string, number[]]> = [
     ['Inventory board (board + count sources, parallel)', await time(() => Promise.all([getBoardData(C, null), getCountSources(C, '1', null)]))],

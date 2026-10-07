@@ -17,8 +17,10 @@ import {addDays, formTimeliness, isCurrentCount, pickCurrentPeriod, storeHealth,
 const url = process.env.SUPABASE_URL_ARCHIVE;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY_ARCHIVE;
 const HISTORY_DAYS = 70;
-const SNAPSHOT_WINDOW_DAYS = 180;
-const EARLY_LAG_DAYS = 60; // usual gap between today and the latest count // pickers / current period only need recent periods
+const SNAPSHOT_WINDOW_DAYS = 180; // pickers / current period only need recent periods
+// Typical gap between today and the latest count (forms are semi-monthly, committed
+// within days). A store counted longer ago than this is re-read with its own window.
+const EARLY_LAG_DAYS = 25;
 
 function db(): SupabaseClient {
   return createClient(url as string, key as string, {auth: {persistSession: false}});

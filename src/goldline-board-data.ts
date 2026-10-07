@@ -209,7 +209,7 @@ async function linkedSales(
             return q.order('id').range(from, to);
           },
           undefined,
-          {concurrency: 4},
+          {concurrency: 2} // several chunks already run in parallel,
         ) as unknown as Promise<Array<{store_code: string; sku_code: string; period_end: string; units: number}>>,
     ),
   );
