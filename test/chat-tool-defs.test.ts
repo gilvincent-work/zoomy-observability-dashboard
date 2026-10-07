@@ -69,7 +69,7 @@ describe('CHAT_TOOLS', () => {
     expect(Object.keys(props(render_kpi)).sort()).toEqual(['block', 'format', 'label', 'source', 'value']);
     expect(props(render_kpi).format.enum).toEqual(['peso', 'count', 'percent']);
     expect(Object.keys(props(render_chart)).sort()).toEqual(['block', 'kind', 'orientation', 'source', 'title', 'x', 'y']);
-    expect(props(render_chart).kind.enum).toEqual(['auto', 'line', 'area', 'bar', 'grouped_bar', 'stacked_bar', 'stacked_bar_100', 'pie', 'diverging_bar']);
+    expect(props(render_chart).kind.enum).toEqual(['auto', 'line', 'area', 'bar', 'grouped_bar', 'stacked_bar', 'stacked_bar_100', 'pie', 'diverging_bar', 'small_multiples']);
     expect(props(render_chart).orientation.enum).toEqual(['auto', 'vertical', 'horizontal']);
     expect(props(render_chart).y).toMatchObject({type: 'array', items: {type: 'string'}});
     expect(Object.keys(props(render_table)).sort()).toEqual(['block', 'columns', 'source', 'title']);

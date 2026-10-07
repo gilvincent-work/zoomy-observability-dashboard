@@ -95,6 +95,7 @@ const FORM_WORD: Record<ChartBlock['chart']['form'], string> = {
   grouped_bar: 'grouped bar chart',
   stacked_bar: 'stacked bar chart',
   stacked_bar_100: '100% stacked bar chart',
+  small_multiples: 'small multiples (one small bar chart per group)',
   line: 'line chart',
   area: 'area chart',
   pie: 'pie chart',

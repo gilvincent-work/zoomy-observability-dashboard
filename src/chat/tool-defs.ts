@@ -156,7 +156,7 @@ const renderChart: ToolDefinition = {
     properties: {
       block: BLOCK_FIELD,
       source: SOURCE_FIELD,
-      kind: {type: 'string', enum: ['auto', 'line', 'area', 'bar', 'grouped_bar', 'stacked_bar', 'stacked_bar_100', 'pie', 'diverging_bar'], description: '"auto" unless the owner named a chart form.'},
+      kind: {type: 'string', enum: ['auto', 'line', 'area', 'bar', 'grouped_bar', 'stacked_bar', 'stacked_bar_100', 'pie', 'diverging_bar', 'small_multiples'], description: '"auto" unless the owner named a chart form.'},
       orientation: {type: 'string', enum: ['auto', 'vertical', 'horizontal'], description: '"auto" unless the owner asked for vertical or horizontal bars.'},
       x: {type: 'string', description: 'The category or time field, or "auto".'},
       y: {type: 'array', items: {type: 'string'}, description: 'The measure fields to plot, or ["auto"].'},
