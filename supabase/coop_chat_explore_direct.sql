@@ -2,7 +2,9 @@
 -- Owner: zoomy-observability-dashboard (Ask Coop direct reads, Train 3). Best practice: knowledge/best-practices/chat-direct-read-access.md
 -- Applied BY HAND in the archive project's SQL editor, as postgres: staging first. PROD only after zoomy-pos revokes PUBLIC/anon/
 -- authenticated execute on its write RPCs (spec 5.3). Re-runnable. Afterwards run supabase/coop_chat_explore_direct_checks.sql.
--- Rollback: supabase/coop_chat_explore_direct_rollback.sql, then (REQUIRED) re-run supabase/coop_chat_explore.sql and
+-- From here on, check with coop_chat_explore_direct_checks.sql; coop_chat_explore_checks.sql is for the Train 1 state only.
+-- Rollback: unset EXPLORE_MODE first (the Train 3 app names base tables the rolled-back login cannot read), then
+-- supabase/coop_chat_explore_direct_rollback.sql, then (REQUIRED) re-run supabase/coop_chat_explore.sql and
 -- supabase/coop_chat_explore_checks.sql: the rollback's self-check proves the grants, the Train 1 checks prove the rest.
 --
 -- PRE-APPLY SNAPSHOT (ONCE per environment, BEFORE the first apply; keep the output with the environment notes, see

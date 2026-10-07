@@ -6,7 +6,8 @@
 #   scripts/local-supabase/up.sh --explore  (alone or with --reapply) ALSO build the Ask Coop Explore data layer: the booth-lead tables,
 #                                           scripts/coop-explore-fixture.sql (fictional rows with deliberate traps), supabase/coop_chat_explore.sql
 #                                           (role coop_explore_ro + fifteen views), supabase/coop_chat_explore_direct.sql
-#                                           (direct reads: grants, trigger, cron) and scripts/coop-direct-fixture.sql (secret and tenant traps), its password, and print supabase/coop_chat_explore_checks.sql
+#                                           (direct reads: grants, trigger, cron) and scripts/coop-direct-fixture.sql (secret and tenant traps), its password, and print supabase/coop_chat_explore_direct_checks.sql
+#                                           (the direct-read state; coop_chat_explore_checks.sql is for the Train 1 state only)
 # Uses only the cached images (nothing is pulled), its own network `coop-local`, containers `coop-local-db` (127.0.0.1:54421)
 # and `coop-local-rest` (127.0.0.1:54423), and the proxy on 127.0.0.1:54420. No volume: scripts/local-supabase/down.sh = clean slate.
 # Secrets are generated on first run into the gitignored scripts/local-supabase/.local-env and never printed.
@@ -111,8 +112,9 @@ apply_explore() {
   done
   # the password is a hex string from .local-env: safe to inline, never printed
   psql_pg -o /dev/null -c "alter role coop_explore_ro with password '${EXPLORE_PG_PASSWORD}'" || die 'could not set the coop_explore_ro password'
-  echo '--- supabase/coop_chat_explore_checks.sql (read the output: see the expected result above each query) ---'
-  psql_pg -P pager=off < "$ROOT/supabase/coop_chat_explore_checks.sql" || die 'the checks failed to run'
+  # the direct-read state: coop_chat_explore_checks.sql describes the Train 1 state only and would read BAD here by design
+  echo '--- supabase/coop_chat_explore_direct_checks.sql (read the output: see the expected result above each query) ---'
+  psql_pg -P pager=off < "$ROOT/supabase/coop_chat_explore_direct_checks.sql" || die 'the checks failed to run'
 }
 
 REAPPLY=0

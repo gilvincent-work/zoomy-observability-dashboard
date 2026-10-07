@@ -2,9 +2,13 @@
 -- coop_explore_ro reads ONLY the fifteen coop_explore_* views of supabase/coop_chat_explore.sql, without BYPASSRLS.
 -- Hand-applied in the SQL editor, as postgres. Re-runnable. ONE transaction: it ends with a self-check that raises on any miss, and
 -- then nothing at all is changed. Owner: zoomy-observability-dashboard (Ask Coop, Train 3).
--- The app needs no change (the coop_explore_* aliases still work); the fastest stop, before or instead of this, is unsetting
--- EXPLORE_MODE. REQUIRED afterwards: re-run supabase/coop_chat_explore.sql, then supabase/coop_chat_explore_checks.sql and read every
--- result against its expectation. The self-check below proves the grants; the Train 1 checks prove the role settings and the views.
+-- THE APP MUST CHANGE TOO: the Train 3 prompt, worked examples and list_tables name base tables (pos_orders_completed, pos_events,
+-- spin_wheel_leads, ...) that the rolled-back login cannot read, so almost every Explore query would fail with E_RELATION (fails
+-- closed, no leak, but useless). Before or with this rollback, unset EXPLORE_MODE (the fastest stop; redeploy on Vercel) or deploy an
+-- app version from before Train 3. REQUIRED afterwards: re-run supabase/coop_chat_explore.sql, then supabase/coop_chat_explore_checks.sql
+-- (the Train 1 state checks: every BAD line there is a real finding) and read every result against its expectation. Do NOT run
+-- coop_chat_explore_direct_checks.sql after a rollback. The self-check below proves the grants; the Train 1 checks prove the role
+-- settings, the attributes (NOBYPASSRLS) and the views.
 -- Tested locally by a round trip (apply, roll back, apply again; scripts/coop-explore-ro-proof.mjs at each point).
 --
 -- NOT restored: SELECT that apply_grants revoked from PUBLIC on a closed relation (a secret- or tenant-named table, an unlisted view)
