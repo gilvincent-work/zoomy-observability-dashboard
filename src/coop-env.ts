@@ -1,14 +1,19 @@
 // Coop environments (pure, unit-tested). Just two: Staging and Production — the
 // develop branch deploys to Staging too, so there is no separate Development/QA.
 // The list lives in code (public URLs, nothing secret), so no deployment needs extra
-// settings: each one recognises itself from its own host. Anything that isn't the
-// production host — localhost, Vercel previews, the staging alias — is Staging (they
-// all read the Staging database).
+// settings.
+//
+// A deployment knows which environment it is from the DATABASE it's connected to
+// (the Supabase project ref in its own server config) — not from the address it was
+// reached on, since a site can be served from several hosts (deployment URLs, branch
+// aliases, custom domains). The safety guard fails closed: an unrecognised database
+// is treated as Production, so risky changes still need confirming.
 
 export type CoopEnvKey = 'staging' | 'production';
 
 export type CoopEnv = {
   key: CoopEnvKey;
+  dbRef: string; // the Supabase project ref this environment's database has
   label: string;
   url: string; // canonical origin
   host: string;
@@ -22,6 +27,7 @@ export const COOP_ENVS: readonly CoopEnv[] = [
     label: 'Staging',
     url: 'https://coop-brand-os-staging.vercel.app',
     host: 'coop-brand-os-staging.vercel.app',
+    dbRef: 'syxwixxzmytvhwhkwdvw',
     tone: 'oklch(0.62 0.15 250)', // blue
     dbLabel: 'Staging Supabase (syxw…wdvw)',
   },
@@ -30,6 +36,7 @@ export const COOP_ENVS: readonly CoopEnv[] = [
     label: 'Production',
     url: 'https://coop-brand-os.vercel.app',
     host: 'coop-brand-os.vercel.app',
+    dbRef: 'qkxbwzdxhwcbwgriwipi',
     tone: 'oklch(0.6 0.2 305)', // purple
     dbLabel: 'Coop production Supabase (qkxb…wipi)',
   },
@@ -37,9 +44,35 @@ export const COOP_ENVS: readonly CoopEnv[] = [
 
 export const envByKey = (key: CoopEnvKey): CoopEnv => COOP_ENVS.find((e) => e.key === key) as CoopEnv;
 
-/** Which environment a request is on, from its host (port and case ignored). */
+/** The Supabase project ref from a project URL (https://<ref>.supabase.co), or null. */
+export function dbRefOf(url: string | null | undefined): string | null {
+  try {
+    return url ? (new URL(url).hostname.split('.')[0] || null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The environment a database belongs to, or null if it's neither known database. */
+export const envForDbRef = (ref: string | null | undefined): CoopEnv | null => COOP_ENVS.find((e) => e.dbRef === ref) ?? null;
+
+/**
+ * Which environment this deployment is — from its database. For the label only, an
+ * unknown database falls back to the request host (first value of a forwarded list,
+ * port and case ignored); for safety checks use `guardEnvKey`, which fails closed.
+ */
+export function resolveEnv(dbUrl: string | null | undefined, host: string | null | undefined): CoopEnv {
+  const byDb = envForDbRef(dbRefOf(dbUrl));
+  if (byDb) return byDb;
+  return envForHost(host);
+}
+
+/** For safety checks: Staging only when the database is positively the Staging one. */
+export const guardEnvKey = (dbUrl: string | null | undefined): CoopEnvKey => (envForDbRef(dbRefOf(dbUrl))?.key === 'staging' ? 'staging' : 'production');
+
+/** Environment from a host alone (fallback label only). */
 export function envForHost(host: string | null | undefined): CoopEnv {
-  const h = (host ?? '').trim().toLowerCase().replace(/:\d+$/, '');
+  const h = (host ?? '').split(',')[0].trim().toLowerCase().replace(/:\d+$/, '');
   return h === envByKey('production').host ? envByKey('production') : envByKey('staging');
 }
 

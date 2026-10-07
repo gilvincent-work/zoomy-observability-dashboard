@@ -18,9 +18,10 @@ Dates are local working dates (GMT+8). Newest first.
   - A thin colour strip along the top of the header (thicker in Production) shows Coop Admins where they are.
 - **Only two environments:** the develop branch also deploys to Staging.
 - **Decided: link between deployments, not switch the data source.** Each environment keeps its own database keys and sign-in, so the Staging site never holds a production key and Staging stays prod-free. That also works with prod and Staging being on different Supabase accounts.
-- **No settings needed on either Vercel project.** The environment list lives in code (`src/coop-env.ts`) and each site recognises itself from its own address:
-  - `coop-brand-os.vercel.app` is Production.
-  - Everything else is Staging: the staging site, localhost and previews, which all read the Staging database.
+- **No settings needed on either Vercel project.** The environment list lives in code (`src/coop-env.ts`).
+- **Each site knows which environment it is from the database it's connected to,** not from the address it was reached on (a site can be served from deployment URLs, branch aliases or custom domains).
+  - The **Production confirm fails closed:** only the Staging database counts as Staging, so anything else, including an unrecognised database, still asks for PRODUCTION.
+  - *Why:* the regression review caught that an address-based check would treat the prod deployment as Staging when opened through a non-canonical URL, which would skip the confirm and mislabel the audit entry.
 - **Manage environments (`/admin/environments`),** read-only, for Coop Admin role holders in any view. For each site it shows the address, whether it's up and connected to its database, the deployed branch and commit, and the database (ID partly hidden). It reads each site's new public **`/api/health`**, which returns only those facts; no data, no secrets.
 - **Production safeguards:**
   - In Users & Roles on Production, **Suspend** and **Remove access** require typing **PRODUCTION**. This is checked in the server actions too, not only in the UI. Reactivating is unaffected.
@@ -28,7 +29,11 @@ Dates are local working dates (GMT+8). Newest first.
 - **To use it on Production:**
   - The prod site needs this code deployed; until then Manage environments shows prod as "running an older version".
   - You need a Coop Admin role in prod's own `company_users` (reviewed SQL), because each site checks its own database.
-- **Tests:** host detection, links and the confirm rule (`src/coop-env.test.ts`), plus the server-side Production guard (`test/admin-actions.test.ts`). Dev-only preview at `/dev/env-switcher`.
+- **Other review fixes:**
+  - `/api/health` reuses its database check for 20 s, so repeated hits can't load the database.
+  - Manage environments distinguishes "behind Vercel protection" and "unexpected response" from "not reachable".
+  - The switcher keeps the current #anchor (read at click time), and the Active row is readable by screen readers.
+- **Tests:** database-based environment detection, the fail-closed guard, links and the confirm rule (`src/coop-env.test.ts`), plus the server-side Production guard (`test/admin-actions.test.ts`). Dev-only preview at `/dev/env-switcher`.
 
 ## 2026-10-07 — Goldline pages load faster (and stay fast at 300 stores)
 - **Measured first** on Staging, from Manila, one run per request:

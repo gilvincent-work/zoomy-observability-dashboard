@@ -22,7 +22,7 @@ vi.mock('@/src/admin-data', () => ({
   revoke,
   setStatus,
 }));
-vi.mock('@/src/coop-env-server', () => ({currentEnv: async () => ({key: env.key})}));
+vi.mock('@/src/coop-env-server', () => ({guardEnv: () => env.key, currentEnv: async () => ({key: env.key})}));
 vi.mock('@/src/coop-env', async () => await vi.importActual('../src/coop-env'));
 
 import {grantRoleAction, grantRolesAction, revokeAction, setStatusAction} from '../app/admin/actions';

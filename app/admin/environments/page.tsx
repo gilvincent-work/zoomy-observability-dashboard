@@ -14,14 +14,16 @@ export const dynamic = 'force-dynamic';
 
 type Health =
   | {state: 'up' | 'db_down'; commit: string | null; branch: string | null; db: string | null; checkedAt: string}
-  | {state: 'no_probe' | 'unreachable'};
+  | {state: 'no_probe' | 'protected' | 'unexpected' | 'unreachable'};
 
 async function probe(e: CoopEnv): Promise<Health> {
   try {
-    const res = await fetch(`${e.url}/api/health`, {cache: 'no-store', signal: AbortSignal.timeout(4000)});
+    const res = await fetch(`${e.url}/api/health`, {cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(4000)});
     if (res.status === 404) return {state: 'no_probe'}; // site is up, but running a version without the probe
-    if (!res.ok) return {state: 'unreachable'};
-    const j = (await res.json()) as {dbOk?: boolean; commit?: string | null; branch?: string | null; db?: string | null; checkedAt?: string};
+    if (res.status === 401 || res.status === 403) return {state: 'protected'}; // e.g. Vercel Deployment Protection
+    if (!res.ok) return {state: res.status >= 300 && res.status < 400 ? 'unexpected' : 'unreachable'};
+    const j = (await res.json().catch(() => null)) as {dbOk?: boolean; commit?: string | null; branch?: string | null; db?: string | null; checkedAt?: string} | null;
+    if (!j) return {state: 'unexpected'};
     return {state: j.dbOk ? 'up' : 'db_down', commit: j.commit ?? null, branch: j.branch ?? null, db: j.db ?? null, checkedAt: j.checkedAt ?? new Date().toISOString()};
   } catch {
     return {state: 'unreachable'};
@@ -32,6 +34,8 @@ const STATUS = {
   up: {label: 'Up · database connected', tone: 'var(--status-good)', Icon: CheckCircle2},
   db_down: {label: 'Up · database not answering', tone: 'var(--status-crit)', Icon: CircleAlert},
   no_probe: {label: 'Up · running an older version (no health check yet)', tone: 'var(--status-warn)', Icon: CircleHelp},
+  protected: {label: 'Up · behind Vercel protection (health check blocked)', tone: 'var(--status-warn)', Icon: CircleHelp},
+  unexpected: {label: 'Unexpected response from the health check', tone: 'var(--status-warn)', Icon: CircleHelp},
   unreachable: {label: 'Not reachable', tone: 'var(--status-crit)', Icon: CircleAlert},
 } as const;
 

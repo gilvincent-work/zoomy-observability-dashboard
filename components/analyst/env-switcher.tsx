@@ -22,7 +22,6 @@ export function EnvSwitcher({env}: {env: CoopEnvKey}) {
   const current = envByKey(env);
   const pathname = usePathname() || '/';
   const search = useSearchParams()?.toString() ?? '';
-  const hash = typeof window === 'undefined' ? '' : window.location.hash;
 
   return (
     <Menu.Root>
@@ -44,15 +43,26 @@ export function EnvSwitcher({env}: {env: CoopEnvKey}) {
               const active = e.key === env;
               const rail = <span aria-hidden className="h-5 w-0.5 shrink-0 rounded-full" style={{background: e.tone}} />;
               return active ? (
-                <Menu.Item key={e.key} className={cn(ITEM, 'data-[highlighted]:bg-transparent')} disabled>
+                // Not a menu item (nothing to do) — a plain row screen readers still read.
+                <div key={e.key} className={cn(ITEM, 'cursor-default')} aria-current="true">
                   {rail}
                   <span className="flex-1 font-medium">{e.label}</span>
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{color: 'var(--status-good)'}}>
                     <span className="size-1.5 rounded-full bg-current" /> Active
                   </span>
-                </Menu.Item>
+                </div>
               ) : (
-                <Menu.Item key={e.key} className={ITEM} render={<a href={switchHref(e.key, pathname, search, hash)} />}>
+                <Menu.Item
+                  key={e.key}
+                  className={ITEM}
+                  render={<a href={switchHref(e.key, pathname, search)} />}
+                  // Keep the current #anchor too — read at click time so it's never stale.
+                  onClick={(ev) => {
+                    if (!window.location.hash) return;
+                    ev.preventDefault();
+                    window.location.assign(switchHref(e.key, pathname, search, window.location.hash));
+                  }}
+                >
                   {rail}
                   <span className="flex-1">{e.label}</span>
                   <ArrowUpRight aria-hidden className="size-3.5 text-muted-foreground" />
