@@ -304,7 +304,7 @@ export function GoldlineInventoryView({data, canEdit}: {data: InventoryPageData;
                 </thead>
                 <tbody>
                   {pageItems.map((i) => (
-                    <Row key={i.item_code} i={i} />
+                    <Row key={i.item_code} i={i} store={selected.store_code} />
                   ))}
                 </tbody>
               </table>
@@ -324,13 +324,15 @@ export function GoldlineInventoryView({data, canEdit}: {data: InventoryPageData;
   );
 }
 
-function Row({i}: {i: InventoryItem}) {
+function Row({i, store}: {i: InventoryItem; store: string}) {
   return (
-    <tr className="border-b border-border/60 last:border-b-0 hover:bg-muted/30">
+    <tr className="relative border-b border-border/60 transition-colors duration-150 last:border-b-0 hover:bg-muted/40 has-[a:focus-visible]:bg-muted/40">
       <td className="py-2 pr-3 pl-4 font-mono text-xs whitespace-nowrap text-muted-foreground">{i.item_code}</td>
       <td className="max-w-[18rem] py-2 pr-3">
         <span className="flex items-center gap-1.5">
-          <span className="truncate font-medium">{i.name}</span>
+          <Link href={`/stock/${encodeURIComponent(i.item_code)}?store=${encodeURIComponent(store)}`} className="truncate font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset">
+            {i.name}
+          </Link>
           {i.bestseller && <Star aria-label="Bestseller" className="size-3.5 shrink-0 fill-current" style={{color: 'var(--status-warn)'}} />}
         </span>
         {i.productLine && <span className="block truncate text-xs text-muted-foreground">{i.productLine}</span>}

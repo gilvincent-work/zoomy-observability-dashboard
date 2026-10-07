@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
 import {NativeSelect} from '@/components/ui/native-select';
 import {cn} from '@/lib/utils';
+import type {ItemMovement} from '@/src/goldline-movement';
 
 // Small shared pieces for the Goldline stock pages (Inventory counts / forecast,
 // Action Feed, Health): the store picker and the Counts | Forecast tabs.
@@ -12,6 +13,15 @@ export const fmtDay = (iso: string | null) =>
   iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : '—';
 export const fmtRange = (start: string, end: string) => `${fmtDay(start)}–${fmtDay(end)}, ${end.slice(0, 4)}`;
 export const peso = (n: number) => `₱${Math.round(n).toLocaleString('en-US')}`;
+/** Movement status (Stock forecast, product page): label, tone, sort rank. */
+export const MOVEMENT_STATUS: Record<ItemMovement['status'], {label: string; tone: string | null; rank: number}> = {
+  out: {label: 'Out', tone: 'var(--status-crit)', rank: 0},
+  reorder: {label: 'Reorder', tone: 'var(--status-warn)', rank: 1},
+  watch: {label: 'Within a cycle', tone: 'var(--status-warn)', rank: 2},
+  healthy: {label: 'Healthy', tone: 'var(--status-good)', rank: 3},
+  no_history: {label: 'Needs 2 counts', tone: null, rank: 4},
+  not_counted: {label: 'Not counted', tone: null, rank: 5},
+};
 export const compactPeso = (n: number) => `₱${new Intl.NumberFormat('en', {notation: 'compact', maximumFractionDigits: 1}).format(n)}`;
 
 export function StorePicker({

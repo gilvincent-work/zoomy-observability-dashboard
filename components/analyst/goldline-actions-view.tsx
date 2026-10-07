@@ -123,7 +123,7 @@ export function GoldlineActionsView({
                 const tone = TONE[a.severity];
                 return (
                   <li key={`${a.storeCode}-${a.id}`}>
-                    <Card className="py-0">
+                    <Card className={cn('relative py-0', a.itemCode && 'transition-colors duration-150 hover:bg-muted/30 has-[a[data-item]:focus-visible]:bg-muted/30')}>
                       <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5">
                         <span
                           aria-hidden
@@ -143,10 +143,21 @@ export function GoldlineActionsView({
                               </span>
                             )}
                           </span>
-                          <span className="text-sm font-medium">{a.title}</span>
+                          {a.itemCode ? (
+                            // The whole card opens the product page for this store; the action button sits above it.
+                            <Link
+                              data-item
+                              href={`/stock/${encodeURIComponent(a.itemCode)}?store=${encodeURIComponent(a.storeCode)}`}
+                              className="text-sm font-medium outline-none after:absolute after:inset-0 after:rounded-[inherit] after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                            >
+                              {a.title}
+                            </Link>
+                          ) : (
+                            <span className="text-sm font-medium">{a.title}</span>
+                          )}
                           <span className="text-xs text-muted-foreground">{a.detail}</span>
                         </div>
-                        <Link href={a.cta.href} className={cn(buttonVariants({variant: 'outline', size: 'sm'}), 'shrink-0')}>
+                        <Link href={a.cta.href} className={cn(buttonVariants({variant: 'outline', size: 'sm'}), 'relative z-10 shrink-0')}>
                           {a.cta.label} <ArrowRight className="size-3.5" />
                         </Link>
                       </CardContent>
