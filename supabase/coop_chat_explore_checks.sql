@@ -41,8 +41,9 @@ where c.relkind in ('r', 'v', 'm', 'p', 'f')
   )
 order by 1;
 
--- (d) Role attributes. EXPECTED: rolcanlogin true; rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls all false;
+-- (d) Role attributes. EXPECTED: rolcanlogin true; rolbypassrls true; rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolreplication all false;
 -- rolconnlimit = 10. BAD: anything else.
+-- BYPASSRLS is on since Train 3 (coop_chat_explore_direct.sql): RLS is on with no policies on every archive table.
 select rolname, rolcanlogin, rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls, rolconnlimit
 from pg_roles where rolname = 'coop_explore_ro';
 

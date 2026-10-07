@@ -3,6 +3,8 @@
 import {DIGEST_SECTIONS, DIGEST_WINDOWS, PRODUCT_SHOWS} from './digest-lookup';
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {ToolDefinition} from './stream-types';
+import {CATALOG_DATA} from './catalog';
+import {isClosedRelation} from './explore/secret-names';
 
 const sortedUnion = (pick: (id: (typeof METRIC_IDS)[number]) => string[]): string[] =>
   [...new Set(METRIC_IDS.flatMap(pick))].sort();
@@ -63,7 +65,7 @@ const queryMetric: ToolDefinition = {
 const runQuery: ToolDefinition = {
   name: 'run_query',
   description:
-    'EXPLORATORY. Run ONE read-only SQL SELECT on the coop_explore_* views listed in the catalog, only when query_metric, lookup_product and get_digest cannot answer ' +
+    'EXPLORATORY. Run ONE read-only SQL SELECT on the database tables (see the data index; call describe_table first), only when query_metric, lookup_product and get_digest cannot answer ' +
     '(the registry has no measure or filter for the ask). Name every column (no select *). Aggregate in SQL; never return raw rows to count or add them yourself. ' +
     'step "probe" = a quick look (row count, null share, distinct values), not stored; step "final" = the query whose result you will explain or draw, stored with an id x1, x2... for render_chart / render_table / render_kpi. ' +
     'On an error code, fix the SQL and call again. At most 5 calls per question.',
@@ -256,9 +258,24 @@ const setReportTitle: ToolDefinition = {
 
 export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, getDigest, getChannelReport, lookupProduct, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);
 
+// Schema tools (spec 2.3): live from the database as the read-only login, merged with the catalog notes. Only domains with an open table.
+const OPEN_DOMAINS = CATALOG_DATA.domains.filter((d) => d.tables.some((t) => !isClosedRelation(t))).map((d) => d.id);
+const listTables: ToolDefinition = {
+  name: 'list_tables',
+  description: 'List every table and view run_query can read, with its domain, a one-line meaning and the preferred default view. Use it when you do not know which table holds something. "all" for every domain.',
+  strict: true,
+  input_schema: {type: 'object', properties: {domain: {type: 'string', enum: ['all', ...OPEN_DOMAINS], description: 'A domain id, or "all".'}}, required: ['domain'], additionalProperties: false},
+};
+const describeTable: ToolDefinition = {
+  name: 'describe_table',
+  description: 'Get the readable columns (name, type, nullable) of one table or view, live from the database, with its catalog meaning. Call it before writing run_query SQL on a table you have not described in this conversation. Secret columns are never listed.',
+  strict: true,
+  input_schema: {type: 'object', properties: {table: {type: 'string', description: 'The exact table or view name, no schema.'}}, required: ['table'], additionalProperties: false},
+};
+
 const EXPLORE_TOOLS: readonly ToolDefinition[] = (() => {
   const at = CHAT_TOOLS.findIndex((t) => t.name === 'query_metric') + 1;
-  return deepFreeze([...CHAT_TOOLS.slice(0, at), runQuery, ...CHAT_TOOLS.slice(at)]);
+  return deepFreeze([...CHAT_TOOLS.slice(0, at), runQuery, listTables, describeTable, ...CHAT_TOOLS.slice(at)]);
 })();
 
 /** The tool list for a user who may use Explore: CHAT_TOOLS with run_query spliced in after query_metric, so set_report_title stays last and keeps the cache breakpoint. */

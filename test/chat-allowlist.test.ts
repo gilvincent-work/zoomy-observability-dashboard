@@ -2,10 +2,11 @@ import {describe, expect, it} from 'vitest';
 import {TOOL_ALLOWLIST, isAllowedTool} from '../src/chat/tools';
 
 describe('tool allowlist', () => {
-  it('has exactly the twelve read-only tools (eleven plus run_query, which is only SENT to Explore users)', () => {
+  it('has exactly the fourteen read-only tools (eleven plus run_query, list_tables and describe_table, which are only SENT to Explore users)', () => {
     expect([...TOOL_ALLOWLIST]).toEqual([
       'describe_data', 'query_metric', 'render_chart', 'render_table', 'render_kpi',
       'set_report_filters', 'remove_block', 'set_report_title', 'get_digest', 'get_channel_report', 'lookup_product', 'run_query',
+      'list_tables', 'describe_table',
     ]);
   });
 
@@ -15,7 +16,7 @@ describe('tool allowlist', () => {
     expect(() => list.push('update_price')).toThrow();
     expect(() => { list[0] = 'update_price'; }).toThrow();
     expect(() => list.pop()).toThrow();
-    expect(TOOL_ALLOWLIST).toHaveLength(12);
+    expect(TOOL_ALLOWLIST).toHaveLength(14);
     expect(isAllowedTool('update_price')).toBe(false);
   });
 
