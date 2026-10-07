@@ -64,6 +64,7 @@ export async function createUpload(input: {
   bytes: ArrayBuffer;
   contentType: string;
   uploadedBy: string | null;
+  batchId?: string | null;
 }): Promise<string> {
   const supa = db();
   // Original name kept for display in the row; the storage KEY uses the sanitized
@@ -83,6 +84,7 @@ export async function createUpload(input: {
       storage_path: path,
       status: 'processing' satisfies UploadStatus,
       uploaded_by: input.uploadedBy,
+      batch_id: input.batchId ?? null,
     })
     .select('id')
     .single();
@@ -511,4 +513,153 @@ export async function formPageStrip(companyId: string, currentUploadId: string, 
     };
   });
   return {scope, cells};
+}
+
+
+// ── Upload batches (one store's form for one period, uploaded together) ─────────
+
+export type BatchRow = {
+  id: string;
+  company_id: string;
+  store_code: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  status: 'open' | 'committed';
+  created_by: string | null;
+  created_at: string;
+  committed_at: string | null;
+};
+
+const BATCH_COLS = 'id,company_id,store_code,period_start,period_end,status,created_by,created_at,committed_at';
+
+export async function createBatch(companyId: string, createdBy: string | null): Promise<string> {
+  const res = await db().from('gl_upload_batches').insert({company_id: companyId, created_by: createdBy}).select('id').single();
+  if (res.error) throw new Error(`gl_upload_batches insert failed: ${res.error.message}`);
+  return (res.data as {id: string}).id;
+}
+
+/** A batch, scoped to the company (null when it isn't theirs or doesn't exist). */
+export async function getBatch(companyId: string, id: string): Promise<BatchRow | null> {
+  if (!goldlineConfigured()) return null;
+  // pagination-ok: single row by primary key.
+  const res = await db().from('gl_upload_batches').select(BATCH_COLS).eq('company_id', companyId).eq('id', id).maybeSingle();
+  if (res.error) throw new Error(`gl_upload_batches read failed: ${res.error.message}`);
+  return (res.data as BatchRow | null) ?? null;
+}
+
+export async function updateBatchInfo(
+  companyId: string,
+  id: string,
+  info: {storeCode: string | null; periodStart: string | null; periodEnd: string | null},
+): Promise<void> {
+  const res = await db()
+    .from('gl_upload_batches')
+    .update({store_code: info.storeCode, period_start: info.periodStart, period_end: info.periodEnd})
+    .eq('company_id', companyId)
+    .eq('id', id)
+    .eq('status', 'open');
+  if (res.error) throw new Error(`gl_upload_batches update failed: ${res.error.message}`);
+}
+
+export type BatchPage = {
+  upload: UploadRow;
+  extraction: ExtractionRecord | null;
+};
+
+/** The batch's uploads with their staged readings, oldest first. Company-scoped. */
+export async function getBatchPages(companyId: string, batchId: string): Promise<BatchPage[]> {
+  if (!goldlineConfigured()) return [];
+  const supa = db();
+  const ups = await supa
+    .from('gl_uploads')
+    .select('id,company_id,kind,filename,status,page_count,reject_reason,uploaded_by,created_at,storage_path')
+    .eq('company_id', companyId)
+    .eq('batch_id', batchId)
+    .order('created_at', {ascending: true})
+    .limit(50); // pagination-ok: a batch is capped at 20 files (UI) — 50 is a hard ceiling
+  if (ups.error) throw new Error(`gl_uploads read failed: ${ups.error.message}`);
+  const uploads = (ups.data ?? []) as UploadRow[];
+  if (!uploads.length) return [];
+  const ext = await supa
+    .from('gl_extractions')
+    .select('upload_id,page,status,doc_confidence,rows')
+    .eq('company_id', companyId)
+    .in('upload_id', uploads.map((u) => u.id)); // pagination-ok: ≤ 50 ids, one row each
+  if (ext.error) throw new Error(`gl_extractions read failed: ${ext.error.message}`);
+  const byUpload = new Map(
+    ((ext.data ?? []) as Array<{upload_id: string; page: number; status: string; doc_confidence: number | null; rows: ExtractedPage}>).map((e) => [
+      e.upload_id,
+      {page: e.page, status: e.status, docConfidence: e.doc_confidence, data: e.rows} as ExtractionRecord,
+    ]),
+  );
+  return uploads.map((upload) => ({upload, extraction: byUpload.get(upload.id) ?? null}));
+}
+
+/**
+ * Commit every page of a batch into gl_inventory in ONE upsert (all-or-nothing for the
+ * counts), then close the pages and the batch. Refuses when two pages carry the same
+ * item code — e.g. page 3 scanned twice — since one upsert can't write a key twice and
+ * the counts would be ambiguous anyway.
+ */
+export async function commitBatch(input: {
+  companyId: string;
+  batchId: string;
+  storeCode: string;
+  period: Period;
+  consultant: string | null;
+  pages: Array<{uploadId: string; rows: ReviewedInventoryRow[]}>;
+}): Promise<{committed: number}> {
+  const supa = db();
+  const seen = new Map<string, string>();
+  for (const p of input.pages) {
+    for (const r of p.rows) {
+      const other = seen.get(r.item_code);
+      if (other && other !== p.uploadId) throw new BatchConflictError(r.item_code);
+      seen.set(r.item_code, p.uploadId);
+    }
+  }
+  const payload = input.pages.flatMap((p) =>
+    p.rows.map((r) => ({
+      company_id: input.companyId,
+      store_code: input.storeCode,
+      item_code: r.item_code,
+      period_start: input.period.start,
+      period_end: input.period.end,
+      consultant: input.consultant,
+      stockroom: r.stockroom,
+      drawer: r.drawer,
+      selling_area: r.selling_area,
+      delivery: r.delivery,
+      ending_on_hand: r.ending_on_hand,
+      source_upload_id: p.uploadId,
+    })),
+  );
+  if (payload.length) {
+    const ins = await supa.from('gl_inventory').upsert(payload, {onConflict: 'company_id,store_code,item_code,period_start,period_end'});
+    if (ins.error) throw new Error(`gl_inventory upsert failed: ${ins.error.message}`);
+  }
+  const ids = input.pages.map((p) => p.uploadId);
+  const ext = await supa.from('gl_extractions').update({status: 'confirmed'}).eq('company_id', input.companyId).in('upload_id', ids);
+  if (ext.error) throw new Error(`gl_extractions update failed: ${ext.error.message}`);
+  const up = await supa.from('gl_uploads').update({status: 'committed'}).eq('company_id', input.companyId).in('id', ids);
+  if (up.error) throw new Error(`gl_uploads update failed: ${up.error.message}`);
+  const b = await supa
+    .from('gl_upload_batches')
+    .update({
+      status: 'committed',
+      committed_at: new Date().toISOString(),
+      store_code: input.storeCode,
+      period_start: input.period.start,
+      period_end: input.period.end,
+    })
+    .eq('company_id', input.companyId)
+    .eq('id', input.batchId);
+  if (b.error) throw new Error(`gl_upload_batches update failed: ${b.error.message}`);
+  return {committed: payload.length};
+}
+
+export class BatchConflictError extends Error {
+  constructor(public itemCode: string) {
+    super(`item ${itemCode} appears on two pages`);
+  }
 }

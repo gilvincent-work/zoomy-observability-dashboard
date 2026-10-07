@@ -3,7 +3,22 @@
 import {revalidatePath} from 'next/cache';
 import {getDataContext} from '@/src/active-context';
 import {canEditData, outOfScopeStores} from '@/src/company';
-import {commitInventory, deleteImpact, deleteUpload, getUpload, uploadStores, type DeleteImpact, type ReviewedInventoryRow} from '@/src/goldline-data';
+import {auth} from '@/auth';
+import {
+  BatchConflictError,
+  commitBatch,
+  commitInventory,
+  createBatch,
+  deleteImpact,
+  deleteUpload,
+  getBatch,
+  getBatchPages,
+  getUpload,
+  updateBatchInfo,
+  uploadStores,
+  type DeleteImpact,
+  type ReviewedInventoryRow,
+} from '@/src/goldline-data';
 
 // Server action behind the review screen's "Commit" button. Re-derives the tenant
 // context server-side (never trusts a company id from the client beyond the switcher
@@ -160,5 +175,131 @@ export async function commitReview(input: {
     // Don't leak Postgres/schema detail to the browser; log it server-side.
     console.error('commitReview failed', e);
     return {ok: false, error: 'Could not commit the review — please try again.'};
+  }
+}
+
+
+// ── Upload batches ──────────────────────────────────────────────────────────────
+
+/** Coerce + bound one page's submitted rows (same rules as a single-page commit). */
+function cleanRows(raw: unknown[]): {ok: true; rows: ReviewedInventoryRow[]} | {ok: false; error: string} {
+  const rows = (Array.isArray(raw) ? raw : [])
+    .map(coerceRow)
+    .filter((r): r is ReviewedInventoryRow => r !== null)
+    .slice(0, MAX_ROWS);
+  for (const r of rows) {
+    for (const k of COUNT_KEYS) {
+      const v = r[k];
+      if (v !== null && (v < 0 || v > COUNT_MAX)) return {ok: false, error: `Row ${r.item_code}: ${k} (${v}) is out of range.`};
+    }
+  }
+  return {ok: true, rows};
+}
+
+export type BatchResult = {ok: true; batchId: string} | {ok: false; error: string};
+
+/** Start a batch for the active company (the uploader calls this before sending files). */
+export async function createBatchAction(input: {company: string | null}): Promise<BatchResult> {
+  const ctx = await getDataContext(input.company);
+  if (!ctx || !ctx.companyId) return {ok: false, error: 'Not authorized to upload for this company.'};
+  if (!canEditData(ctx.role)) return {ok: false, error: 'Your role cannot upload data.'};
+  try {
+    const session = await auth();
+    return {ok: true, batchId: await createBatch(ctx.companyId, session?.user?.email ?? null)};
+  } catch (e) {
+    console.error('createBatchAction', e);
+    return {ok: false, error: 'Could not start the upload — please try again.'};
+  }
+}
+
+/** Save the batch's store + period (entered once; prefilled from page 1). */
+export async function updateBatchInfoAction(input: {
+  company: string | null;
+  batchId: string;
+  storeCode: string;
+  periodStart: string;
+  periodEnd: string;
+}): Promise<{ok: true} | {ok: false; error: string}> {
+  const ctx = await getDataContext(input.company);
+  if (!ctx || !ctx.companyId) return {ok: false, error: 'Not authorized.'};
+  if (!canEditData(ctx.role)) return {ok: false, error: 'Your role cannot edit uploads.'};
+  const batch = await getBatch(ctx.companyId, input.batchId);
+  if (!batch) return {ok: false, error: 'Upload batch not found.'};
+  if (batch.status !== 'open') return {ok: false, error: 'This batch is already committed.'};
+  const store = (input.storeCode ?? '').trim() || null;
+  const start = input.periodStart && validIsoDate(input.periodStart) ? input.periodStart : null;
+  const end = input.periodEnd && validIsoDate(input.periodEnd) ? input.periodEnd : null;
+  if (start && end && start > end) return {ok: false, error: 'Period start must not be after period end.'};
+  if (store && outOfScopeStores(ctx.storeScope, [store]).length) return {ok: false, error: `Store ${store} is outside your access.`};
+  try {
+    await updateBatchInfo(ctx.companyId, input.batchId, {storeCode: store, periodStart: start, periodEnd: end});
+    return {ok: true};
+  } catch (e) {
+    console.error('updateBatchInfoAction', e);
+    return {ok: false, error: 'Could not save the store and period — please try again.'};
+  }
+}
+
+/**
+ * "Commit all pages": every page of the batch into one Inventory count, with the
+ * batch's store + period. Same authorization and validation as a single-page commit,
+ * plus: every page must belong to this batch and still be awaiting review.
+ */
+export async function commitBatchAction(input: {
+  company: string | null;
+  batchId: string;
+  storeCode: string;
+  periodStart: string;
+  periodEnd: string;
+  consultant?: string | null;
+  pages: Array<{uploadId: string; rows: unknown[]}>;
+}): Promise<CommitResult> {
+  const ctx = await getDataContext(input.company);
+  if (!ctx || !ctx.companyId) return {ok: false, error: 'Not authorized to commit for this company.'};
+  if (!canEditData(ctx.role)) return {ok: false, error: 'Your role cannot commit reviews.'};
+
+  const batch = await getBatch(ctx.companyId, input.batchId);
+  if (!batch) return {ok: false, error: 'Upload batch not found.'};
+  if (batch.status !== 'open') return {ok: false, error: 'This batch is already committed.'};
+
+  const store = (input.storeCode ?? '').trim();
+  if (!store) return {ok: false, error: 'A store code is required before committing.'};
+  if (!validIsoDate(input.periodStart) || !validIsoDate(input.periodEnd)) {
+    return {ok: false, error: 'Period start and end must be valid dates (YYYY-MM-DD).'};
+  }
+  if (input.periodStart > input.periodEnd) return {ok: false, error: 'Period start must not be after period end.'};
+  if (outOfScopeStores(ctx.storeScope, [store]).length) return {ok: false, error: `Store ${store} is outside your access.`};
+
+  const owned = new Map((await getBatchPages(ctx.companyId, input.batchId)).map((p) => [p.upload.id, p]));
+  const pages: Array<{uploadId: string; rows: ReviewedInventoryRow[]}> = [];
+  for (const p of (Array.isArray(input.pages) ? input.pages : []).slice(0, 50)) {
+    const mine = owned.get(p?.uploadId);
+    if (!mine) return {ok: false, error: 'A page doesn’t belong to this batch.'};
+    if (mine.upload.status !== 'needs_review') return {ok: false, error: `${mine.upload.filename} isn’t awaiting review.`};
+    const clean = cleanRows(p.rows);
+    if (!clean.ok) return clean;
+    pages.push({uploadId: p.uploadId, rows: clean.rows});
+  }
+  if (!pages.length || !pages.some((p) => p.rows.length)) return {ok: false, error: 'No valid rows to commit.'};
+
+  try {
+    const {committed} = await commitBatch({
+      companyId: ctx.companyId,
+      batchId: input.batchId,
+      storeCode: store,
+      period: {start: input.periodStart, end: input.periodEnd},
+      consultant: input.consultant ?? null,
+      pages,
+    });
+    revalidatePath('/uploads');
+    revalidatePath(`/uploads/batch/${input.batchId}`);
+    revalidatePath('/stock');
+    return {ok: true, committed};
+  } catch (e) {
+    if (e instanceof BatchConflictError) {
+      return {ok: false, error: `Item ${e.itemCode} appears on two pages — it looks like a page was scanned twice. Remove the duplicate page and try again.`};
+    }
+    console.error('commitBatchAction', e);
+    return {ok: false, error: 'Could not commit these pages. Please try again — committing again is safe.'};
   }
 }
