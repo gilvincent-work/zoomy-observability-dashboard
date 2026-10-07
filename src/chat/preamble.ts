@@ -14,15 +14,18 @@ function longToday(now: Date): string {
   return `${WEEKDAYS[pht.getUTCDay()]}, ${pht.getUTCDate()} ${FULL_MONTHS[pht.getUTCMonth()]} ${pht.getUTCFullYear()}`;
 }
 
-const NOT_AVAILABLE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (weekly digest only). Contact details (email, phone, instagram) are not exposed by the metrics. Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet. A free-form query tool is planned, not available yet.';
+const NOT_AVAILABLE_BASE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (weekly digest only). Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet.';
+const NOT_AVAILABLE_NO_EXPLORE = 'Contact details (email, phone, instagram) are not exposed by the metrics. Questions no metric covers cannot be answered.';
+const EXPLORE_AVAILABLE = 'For questions no metric covers (contacts, leads, stock, voided orders, hours), use run_query on the Explore views.';
+const notAvailable = (explore: boolean): string => `${NOT_AVAILABLE_BASE} ${explore ? EXPLORE_AVAILABLE : NOT_AVAILABLE_NO_EXPLORE}`;
 
 /** Per-turn context when the live-data path is unavailable: today's date and an honest "not available" (no data, no figures). */
 export function buildDegradedPreamble(now: Date): string {
-  return `[context] Today is ${longToday(now)} (Philippine time; ${phtDate(now)}). Live offline POS data is not available right now. ${NOT_AVAILABLE}`;
+  return `[context] Today is ${longToday(now)} (Philippine time; ${phtDate(now)}). Live offline POS data is not available right now. ${notAvailable(false)}`;
 }
 
 /** `outline` is the figure-free text of the open report (F8), or '' / absent when none is open. It rides in the per-turn preamble only, never in the cached system or tools. */
-export function buildPreamble(data: MetricData, now: Date, outline?: string, exploreCoverage?: string | null): string {
+export function buildPreamble(data: MetricData, now: Date, outline?: string, exploreCoverage?: string | null, opts: {explore?: boolean; page?: string | null} = {}): string {
   const c = buildCoverage(data);
   const head = `[context] Today is ${longToday(now)} (Philippine time; ${phtDate(now)}).`;
   let cover: string;
@@ -33,8 +36,9 @@ export function buildPreamble(data: MetricData, now: Date, outline?: string, exp
     const lead = c.source === 'mock' ? 'The data is sample data, not real sales, and covers' : 'Offline POS data is live and covers';
     cover = `${lead} ${shortDate(c.dataFrom)} to ${shortDate(c.dataTo)} (${c.orders} completed orders${share}).`;
   }
-  const base = `${head} ${cover} ${NOT_AVAILABLE} If a question is outside this range, say what the data covers.`;
-  const withCoverage = exploreCoverage ? `${base}\n${exploreCoverage}` : base;
+  const base = `${head} ${cover} ${notAvailable(opts.explore === true)} If a question is outside this range, say what the data covers.`;
+  const withPage = opts.page ? `${base}\n${opts.page}` : base;
+  const withCoverage = exploreCoverage ? `${withPage}\n${exploreCoverage}` : withPage;
   return outline ? `${withCoverage}\n${outline}` : withCoverage;
 }
 

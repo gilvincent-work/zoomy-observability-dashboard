@@ -107,7 +107,7 @@ const lookupProduct: ToolDefinition = {
   description:
     'Look up ONE product by SKU or name in the offline POS data: its current price, units and revenue sold, first and last sale, or its price changes. ' +
     'Call it when the owner names a specific product or SKU. To rank or list products use query_metric (top_products) instead. ' +
-    'If the name is ambiguous or unknown it returns the matches or close matches: call it again with the exact SKU. Stock levels are not available.',
+    'If the name is ambiguous or unknown it returns the matches or close matches: call it again with the exact SKU. It does not return stock levels.',
   strict: true,
   input_schema: {
     type: 'object',

@@ -99,7 +99,7 @@ export async function POST(req: Request) {
       system,
       tools: live.ok ? (explore ? exploreTools() : CHAT_TOOLS) : [],
       messages,
-      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage) : buildDegradedPreamble(now),
+      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null}) : buildDegradedPreamble(now),
       executors:
         live.ok && report
           ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, explore: explore?.executor})

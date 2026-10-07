@@ -30,10 +30,23 @@ describe('buildPreamble', () => {
   it('does not forbid pet and event questions as "customer-level data"', () => {
     const p = buildPreamble(data(), now);
     expect(p).not.toMatch(/customer-level/i);
-    expect(p).toMatch(/Contact details \(email, phone, instagram\) are not exposed/);
     expect(p).toMatch(/Pet type and event ARE available/);
-    expect(p).toMatch(/free-form query tool is planned, not available yet/);
     expect(buildDegradedPreamble(now)).not.toMatch(/customer-level/i);
+  });
+
+  it('Explore off: says contacts and free-form questions are out of reach', () => {
+    const p = buildPreamble(data(), now);
+    expect(p).toMatch(/Contact details \(email, phone, instagram\) are not exposed by the metrics/);
+    expect(p).toMatch(/Questions no metric covers cannot be answered/);
+  });
+
+  it('Explore on: never calls contacts, free-form questions or stock unavailable', () => {
+    const p = buildPreamble(data(), now, undefined, 'Explore coverage line', {explore: true});
+    expect(p).not.toMatch(/not exposed/i);
+    expect(p).not.toMatch(/planned, not available/i);
+    expect(p).not.toMatch(/cannot be answered/i);
+    expect(p).not.toMatch(/stock[^.]*not available/i);
+    expect(p).toMatch(/run_query/);
   });
 
   it('is deterministic', () => {

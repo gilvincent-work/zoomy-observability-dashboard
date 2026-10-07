@@ -439,7 +439,7 @@ export function lookupProduct(input: unknown, data: MetricData): MetricResult | 
     if (dataTo === null || d > dataTo) dataTo = d;
   }
 
-  const caveats: string[] = ['Stock levels are not available to Ask Coop: stock by location is on the Inventory page.'];
+  const caveats: string[] = ['This lookup has no stock levels. Stock by location is on the Inventory page.'];
   const checks: Check[] = [];
   if (data.source === 'mock') checks.push({code: 'mock_source', status: 'warn', text: 'This is sample data, not real sales.'});
 
