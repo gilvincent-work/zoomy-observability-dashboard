@@ -45,6 +45,53 @@ describe('2.1 the parser allows any open public relation and denies secret and t
   });
 });
 
+describe('2.1 JSON read as text cannot carry a secret-named key past the scanner (Task 7 review finding 1)', () => {
+  it('a secret-named JSON key in -> / ->> / jsonb_extract_path_text is E_BLOCKED_COLUMN, at any position and case', async () => {
+    await code("select s.value->>'api_key' as v from pos_settings s", 'E_BLOCKED_COLUMN');
+    await code("select s.value->'lazada'->>'access_token' as v from pos_settings s", 'E_BLOCKED_COLUMN');
+    await code("select s.value->'Refresh_Token' as v from pos_settings s", 'E_BLOCKED_COLUMN');
+    await code("select s.key from pos_settings s where s.value->>'password' is not null", 'E_BLOCKED_COLUMN');
+    await code("select jsonb_extract_path_text(s.value, 'access_token') as v from pos_settings s", 'E_BLOCKED_COLUMN');
+    await code("select jsonb_extract_path_text(s.value, 'lazada', 'token') as v from pos_settings s", 'E_BLOCKED_COLUMN');
+  });
+  it('Task 7 re-review R1: camelCase, PascalCase, UPPER and glued secret JSON keys are E_BLOCKED_COLUMN too', async () => {
+    for (const k of ['apiKey', 'accessToken', 'clientSecret', 'refreshToken', 'APIKey', 'ACCESS_TOKEN', 'apikey', 'x-api-key']) {
+      await code(`select s.value->>'${k}' as v from pos_settings s`, 'E_BLOCKED_COLUMN');
+    }
+    await code("select jsonb_extract_path_text(s.value, 'lazada', 'refreshToken') as v from pos_settings s", 'E_BLOCKED_COLUMN');
+    await ok("select s.value->>'shopName' as v from pos_settings s");
+    await ok("select s.value->>'isPinned' as v from pos_settings s");
+  });
+  it('a JSON key must be a plain literal: a computed key is E_BLOCKED_COLUMN (the name cannot be judged)', async () => {
+    await code("select s.value->>('api'||'_key') as v from pos_settings s", 'E_BLOCKED_COLUMN');
+    await code("select s.value->>lower('API_KEY') as v from pos_settings s", 'E_BLOCKED_COLUMN');
+    await code('select s.value->>s.key as v from pos_settings s', 'E_BLOCKED_COLUMN');
+    await code("select jsonb_extract_path_text(s.value, upper('token')) as v from pos_settings s", 'E_BLOCKED_COLUMN');
+  });
+  it('ordinary JSON keys and array indexes stay readable', async () => {
+    await ok("select s.value->>'threshold' as v from pos_settings s");
+    await ok("select s.value->'lazada'->>'shop_name' as v from pos_settings s");
+    await ok("select s.value->0->>'sku' as v from pos_settings s");
+    await ok("select jsonb_extract_path_text(s.value, 'lazada', 'shop_name') as v from pos_settings s");
+  });
+  it('a whole-row reference (t, t::text, concat(t), public.t) is E_SELECT_STAR: name the columns', async () => {
+    await code('select n::text as v from explore_fixture_notes n', 'E_SELECT_STAR');
+    await code('select n from explore_fixture_notes n', 'E_SELECT_STAR');
+    await code('select concat(n) as v from explore_fixture_notes n', 'E_SELECT_STAR');
+    await code('select length(explore_fixture_notes::text) as v from explore_fixture_notes', 'E_SELECT_STAR');
+    await code('select public.explore_fixture_notes::text as v from public.explore_fixture_notes', 'E_SELECT_STAR');
+    await code('with c as (select s.value from pos_settings s) select c::text as v from c', 'E_SELECT_STAR');
+    await code('select q::text as v from (select s.value from pos_settings s) q', 'E_SELECT_STAR');
+    await code('select o.id from pos_orders o where o::text like \'%x%\'', 'E_SELECT_STAR');
+  });
+  it('columns, CTE columns and a generate_series alias stay readable', async () => {
+    await ok('select n.id, n.note::text as v from explore_fixture_notes n');
+    await ok('with c as (select s.value from pos_settings s) select c.value from c');
+    await ok("select d.day from generate_series(date '2025-03-01', date '2025-03-05', interval '1 day') as d(day)");
+    await ok("select d from generate_series(date '2025-03-01', date '2025-03-05', interval '1 day') as d");
+  });
+});
+
 describe('2.1 views are default-deny in the parser too (Task 3 ruling): one allowlist, equal to the SQL', () => {
   const SQL = readFileSync('supabase/coop_chat_explore_direct.sql', 'utf8');
   const sqlAllowlist = (): string[] => {

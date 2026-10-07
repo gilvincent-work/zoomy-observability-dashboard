@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 import type {RawQueryResult} from '../src/chat/explore/result';
 import {createLiveValidator, createSchemaTools, LIST_TABLES_SQL, SCHEMA_CALLS_PER_QUESTION} from '../src/chat/explore/schema-tools';
 
@@ -74,7 +74,7 @@ describe('2.3 list_tables and describe_table', () => {
 });
 
 describe('2.1 the production validator uses the live relation kinds (views default-deny in the parser too)', () => {
-  it('reads the list once per question; an unlisted or unknown relation is E_RELATION; the static rule is the fallback', async () => {
+  it('reads the list once per question; an unlisted or unknown relation is E_RELATION', async () => {
     const seen: string[] = [];
     const validate = createLiveValidator(fake(seen));
     expect((await validate('select o.id from pos_orders o')).ok).toBe(true);
@@ -82,11 +82,75 @@ describe('2.1 the production validator uses the live relation kinds (views defau
     expect(await validate('select x.x from explore_fixture_qxml_view x')).toMatchObject({ok: false, code: 'E_RELATION'});
     expect(await validate('select n.id from not_granted_table n')).toMatchObject({ok: false, code: 'E_RELATION'});
     expect(seen.filter((s) => s.includes(LIST_TABLES_SQL))).toHaveLength(1);
-    const down = createLiveValidator(async () => {
-      throw new Error('down');
-    });
-    expect((await down('select n.id from not_granted_table n')).ok).toBe(true); // the database stays the lock
-    expect(await down('select m.marketplace from marketplace_tokens m')).toMatchObject({ok: false, code: 'E_RELATION'});
+    expect(await validate('select m.marketplace from marketplace_tokens m')).toMatchObject({ok: false, code: 'E_RELATION'});
+  });
+  it('fails CLOSED when the live list cannot be read: E_UNAVAILABLE, no query sent, the read not retried within the question (finding 5)', async () => {
+    let reads = 0;
+    const sent: string[] = [];
+    const runQuery = async (s: string): Promise<RawQueryResult> => {
+      sent.push(s);
+      if (s.includes(LIST_TABLES_SQL)) {
+        reads += 1;
+        throw new Error('down');
+      }
+      return res([[1]]);
+    };
+    const down = createLiveValidator(runQuery);
+    expect(await down('select o.id from pos_orders o')).toMatchObject({ok: false, code: 'E_UNAVAILABLE'});
+    expect(await down('select n.id from not_granted_table n')).toMatchObject({ok: false, code: 'E_UNAVAILABLE'});
+    expect(reads).toBe(1);
+    const {createExploreExecutor} = await import('../src/chat/explore/executor');
+    const limits = {maxRows: 200, maxCols: 12, maxBytes: 65536, timeoutMs: 5000, maxSqlChars: 2000, maxCallsPerQuestion: 5, maxPerUserDay: 100, modelRows: 50, maxRelations: 8, maxDepth: 20};
+    sent.length = 0;
+    const exec = createExploreExecutor({runQuery, validate: createLiveValidator(runQuery), limits, now: new Date(), user: 'u', store: {set: () => {}}, sink: {info: () => {}, error: () => {}}});
+    expect(await exec({purpose: 'p', sql: 'select o.id from pos_orders o', step: 'probe'})).toEqual({error: expect.stringMatching(/^E_UNAVAILABLE/)});
+    expect(sent.every((s) => s.includes(LIST_TABLES_SQL))).toBe(true); // only the failed list read, never the query
+  });
+});
+
+describe('2.3 schema tools are audited, count toward the daily limit, and validate the domain (findings 8, 9)', () => {
+  const sinkOf = () => {
+    const lines: Record<string, unknown>[] = [];
+    return {lines, sink: {info: (s: string) => lines.push(JSON.parse(s)), error: () => {}}};
+  };
+  it('every call writes one chat_explore_schema line: tool, code, table or domain, user; never rows', async () => {
+    const {lines, sink} = sinkOf();
+    const t = createSchemaTools(fake([]), {user: 'u@zoomy.ph', sink});
+    await t.list_tables({domain: 'all'});
+    await t.describe_table({table: 'pos_orders'});
+    await t.describe_table({table: 'gl_sales'});
+    await t.list_tables({domain: 'nope'});
+    expect(lines).toEqual([
+      {event: 'chat_explore_schema', tool: 'list_tables', ok: true, code: null, table: null, domain: 'all', user: 'u@zoomy.ph'},
+      {event: 'chat_explore_schema', tool: 'describe_table', ok: true, code: null, table: 'pos_orders', domain: null, user: 'u@zoomy.ph'},
+      {event: 'chat_explore_schema', tool: 'describe_table', ok: false, code: 'E_RELATION', table: 'gl_sales', domain: null, user: 'u@zoomy.ph'},
+      {event: 'chat_explore_schema', tool: 'list_tables', ok: false, code: 'E_INPUT', table: null, domain: 'nope', user: 'u@zoomy.ph'},
+    ]);
+  });
+  it('a call that would reach the database is counted by the day gate; a used-up gate is E_RATE_DAY with no database call', async () => {
+    const seen: string[] = [];
+    let allow = true;
+    let gated = 0;
+    const t = createSchemaTools(fake(seen), {dayGate: () => (gated++, allow)});
+    await t.list_tables({domain: 'all'});
+    await t.describe_table({table: 'pos_orders'});
+    await t.describe_table({table: 'gl_sales'}); // refused by name: no database call, not counted
+    expect(gated).toBe(2);
+    allow = false;
+    seen.length = 0;
+    expect(await t.list_tables({domain: 'all'})).toEqual({error: expect.stringMatching(/^E_RATE_DAY/)});
+    expect(await t.describe_table({table: 'pos_orders'})).toEqual({error: expect.stringMatching(/^E_RATE_DAY/)});
+    expect(seen).toHaveLength(0);
+  });
+  it('an unknown or missing domain is E_INPUT naming the valid ids, with no database call', async () => {
+    const seen: string[] = [];
+    const t = createSchemaTools(fake(seen));
+    for (const domain of ['nope', undefined, 42, 'marketplace-tokens']) {
+      expect(await t.list_tables({domain}), String(domain)).toEqual({error: expect.stringMatching(/^E_INPUT: .*"all".*pos-sales/)});
+    }
+    expect(await t.list_tables(null)).toEqual({error: expect.stringMatching(/^E_INPUT/)});
+    expect(seen).toHaveLength(0);
+    expect(((await t.list_tables({domain: 'pos-sales'})) as Listed).tables.map((x) => x.table)).toEqual(['pos_orders']);
   });
 });
 
@@ -104,5 +168,21 @@ describe('2.3 the tools are wired: allowlisted, dispatched only for Explore user
     expect(JSON.stringify(r.content)).toMatch(/tenant-fenced/);
     expect(statusFor('list_tables', {domain: 'all'})).toBe('Listing the tables');
     expect(statusFor('describe_table', {table: 'pos_orders'})).toBe("Reading a table's columns");
+  });
+});
+
+describe('2.3 the route wires the schema tools to the same audit sink and daily allowance as run_query (finding 8)', () => {
+  it('setupExplore passes user, sink and the shared day gate: the tools log, and over the allowance they stop', async () => {
+    vi.mock('server-only', () => ({}));
+    const {setupExplore} = await import('../src/chat/explore-setup');
+    const lines: Record<string, unknown>[] = [];
+    const sink = {info: (s: string) => lines.push(JSON.parse(s)), error: () => {}};
+    const env = {NODE_ENV: 'development', EXPLORE_MODE: 'on', EXPLORE_DATABASE_URL: 'postgres://coop_explore_ro:pw@127.0.0.1:54421/postgres', EXPLORE_ALLOWED_EMAILS: 'dev@localhost', EXPLORE_MAX_PER_USER_DAY: '2'};
+    const s = setupExplore({env, email: 'dev@localhost', now: new Date('2031-01-02T00:00:00Z'), user: 'wiring-test-user', store: {set: () => {}}, sink, runQuery: fake([])});
+    expect(s).not.toBeNull();
+    const outs = [];
+    for (let i = 0; i < 4; i++) outs.push(await s!.schema.list_tables({domain: 'all'}));
+    expect(lines.filter((l) => l.event === 'chat_explore_schema').map((l) => [l.user, l.code])).toEqual(outs.map((o) => ['wiring-test-user', (o as {error?: string}).error?.slice(0, 10) ?? null]));
+    expect(outs.at(-1)).toEqual({error: expect.stringMatching(/^E_RATE_DAY/)});
   });
 });

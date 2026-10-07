@@ -10,7 +10,7 @@ import {parse as pgParse} from 'libpg-query';
 import {fingerprintStatement} from './fingerprint';
 import {DEFAULT_EXPLORE_LIMITS} from './limits';
 import {relationRule} from './access';
-import {EXPLORE_SECRET_COLUMN_EXCEPTIONS, isSecretName} from './secret-names';
+import {EXPLORE_SECRET_COLUMN_EXCEPTIONS, isSecretJsonKey, isSecretName} from './secret-names';
 import {
   EXPLORE_ERROR_CLASS,
   EXPLORE_ERROR_MESSAGES,
@@ -150,6 +150,31 @@ interface State {
   statusSeen: boolean;
   seriesInFrom: WeakSet<object>;
   escapeCalls: WeakSet<object>;
+  /** Names that denote a whole ROW when used as a column (relations, aliases, CTEs), and the bare refs to judge against them after the walk. */
+  rowNames: Set<string>;
+  bareRefs: string[];
+  /** Aliases of FROM functions (generate_series): a bare ref to one is its scalar value, not a row. */
+  functionAliases: WeakSet<object>;
+}
+
+/** Functions whose 2nd..nth arguments are JSON keys (spec 7: a secret-named key is a secret column by another name). */
+const JSON_KEY_FUNCTIONS = new Set(['jsonb_extract_path_text']);
+const JSON_KEY_OPERATORS = new Set(['->', '->>']);
+
+/**
+ * A JSON key operand must be a plain literal: a string that is not secret-named, or an integer index. A computed key cannot be judged,
+ * so it is refused too (Task 7 review finding 1: JSON read as text never reaches the scanner's structural key rule).
+ */
+function checkJsonKey(node: unknown, st: State): void {
+  const w = wrapped(node);
+  if (!w || w.type !== 'A_Const') {
+    st.violations.add('E_BLOCKED_COLUMN');
+    return;
+  }
+  if (w.body.sval !== undefined) {
+    const key = (w.body.sval as Obj).sval;
+    if (typeof key !== 'string' || st.v.secretName(key.toLowerCase()) || isSecretJsonKey(key)) st.violations.add('E_BLOCKED_COLUMN'); // raw key: its case is a part boundary (R1)
+  } else if (w.body.ival === undefined) st.violations.add('E_BLOCKED_COLUMN'); // a float, boolean or NULL key: not a key we read
 }
 
 const addUnique = <T>(a: T[], x: T) => {
@@ -185,6 +210,7 @@ function walkSelect(body: Obj, scope: ReadonlySet<string>, depth: number, st: St
       else walkValue(c.body.ctequery, inner, depth + 1, st, 'ctequery', 0);
       inner = new Set(inner).add(String(c.body.ctename));
       addUnique(st.ctes, String(c.body.ctename));
+      st.rowNames.add(String(c.body.ctename).toLowerCase());
     }
   }
 
@@ -209,6 +235,7 @@ function walkSelect(body: Obj, scope: ReadonlySet<string>, depth: number, st: St
 function checkRangeVar(b: Obj, scope: ReadonlySet<string>, st: State): void {
   const name = String(b.relname ?? '');
   const schema = b.schemaname === undefined ? '' : String(b.schemaname);
+  st.rowNames.add(name.toLowerCase());
   if (b.inh !== true || (b.relpersistence !== undefined && b.relpersistence !== 'p')) {
     st.violations.add('E_NODE'); // ONLY, temp or unlogged references
     return;
@@ -253,6 +280,7 @@ function checkFuncCall(b: Obj, st: State): void {
     return;
   }
   addUnique(st.functions, name);
+  if (JSON_KEY_FUNCTIONS.has(name)) for (const a of ((b.args ?? []) as unknown[]).slice(1)) checkJsonKey(a, st);
   if (b.func_variadic) st.violations.add('E_FUNCTION');
   if (b.agg_within_group && name !== 'percentile_cont') st.violations.add('E_FUNCTION');
   if (name === 'generate_series' && !st.seriesInFrom.has(b)) st.violations.add('E_FUNCTION'); // FROM-only
@@ -307,6 +335,8 @@ function walkNode(type: string, b: Obj, scope: ReadonlySet<string>, depth: numbe
       const names = ((b.fields ?? []) as unknown[]).map(strOf);
       const last = names[names.length - 1];
       if (typeof last === 'string') st.refs.push({qualifier: names.length >= 2 && typeof names[names.length - 2] === 'string' ? (names[names.length - 2] as string) : null, column: last.toLowerCase()});
+      // `t` or `public.t` may be a whole row (t::text, concat(t)): judged after the walk, when every relation and alias is known
+      if (typeof last === 'string' && (names.length === 1 || (names.length === 2 && names[0]?.toLowerCase() === 'public'))) st.bareRefs.push(last.toLowerCase());
       for (const f of (b.fields ?? []) as unknown[]) {
         const s = strOf(f);
         if (s !== null) {
@@ -326,7 +356,11 @@ function walkNode(type: string, b: Obj, scope: ReadonlySet<string>, depth: numbe
       break;
     case 'A_Expr': {
       const kind = String(b.kind);
-      if (OP_KINDS.has(kind)) checkOperatorNames(namesOf(b.name), st);
+      if (OP_KINDS.has(kind)) {
+        checkOperatorNames(namesOf(b.name), st);
+        const op = namesOf(b.name);
+        if (op.length === 1 && op[0] !== null && JSON_KEY_OPERATORS.has(op[0])) checkJsonKey(b.rexpr, st);
+      }
       else if (!BETWEEN_KINDS.has(kind)) {
         st.violations.add('E_OPERATOR'); // SIMILAR TO, = ALL, anything new
         if (kind === 'AEXPR_SIMILAR') {
@@ -365,6 +399,7 @@ function walkNode(type: string, b: Obj, scope: ReadonlySet<string>, depth: numbe
       break;
     case 'RangeFunction':
       if (b.lateral) st.violations.add('E_LATERAL');
+      if (b.alias && typeof b.alias === 'object') st.functionAliases.add(b.alias as object);
       for (const fl of (b.functions ?? []) as unknown[]) {
         const l = wrapped(fl);
         for (const item of (l && l.type === 'List' ? l.body.items ?? [] : []) as unknown[]) {
@@ -375,6 +410,9 @@ function walkNode(type: string, b: Obj, scope: ReadonlySet<string>, depth: numbe
       break;
     case 'TypeName':
       checkTypeName(b, st);
+      break;
+    case 'Alias':
+      if (typeof b.aliasname === 'string' && !st.functionAliases.has(b)) st.rowNames.add(b.aliasname.toLowerCase());
       break;
     case 'A_Const':
       return; // a literal: its children are bare values ({ival: {ival: 1}}), nothing to walk
@@ -497,13 +535,15 @@ export function createExploreValidator(opts: ValidatorOptions = {}): ExploreVali
       }
 
       // 4-10. one generic, default-deny walk
-      const st: State = {v, limits, violations: new Set(), relations: [], aliases: new Map(), secretRefs: [], refs: [], viewRefs: 0, ctes: [], functions: [], statusSeen: false, seriesInFrom: new WeakSet(), escapeCalls: new WeakSet()};
+      const st: State = {v, limits, violations: new Set(), relations: [], aliases: new Map(), secretRefs: [], refs: [], viewRefs: 0, ctes: [], functions: [], statusSeen: false, seriesInFrom: new WeakSet(), escapeCalls: new WeakSet(), rowNames: new Set(), bareRefs: [], functionAliases: new WeakSet()};
       walkSelect(top.body, new Set(), 1, st, false);
       // A secret column is refused unless it is a reviewed exception whose table is read by this query (pos_settings.key).
       const bases = st.relations.map(baseRelation);
       const exempt = (c: string): boolean =>
         EXPLORE_SECRET_COLUMN_EXCEPTIONS.some((e) => e.endsWith(`.${c}`) && bases.includes(e.slice(0, e.length - c.length - 1)));
       if (st.secretRefs.some((c) => !exempt(c))) st.violations.add('E_BLOCKED_COLUMN');
+      // A whole-row reference turns every column (and any JSON in it) into one text value: refused like *, whatever wraps it.
+      if (st.bareRefs.some((r) => st.rowNames.has(r))) st.violations.add('E_SELECT_STAR');
       if (st.viewRefs > limits.maxRelations) st.violations.add('E_TOO_MANY_RELATIONS');
       const outputColumns = outputNames(top.body);
       if (outputColumns.length > limits.maxCols) st.violations.add('E_TOO_MANY_COLUMNS');

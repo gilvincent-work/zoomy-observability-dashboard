@@ -67,6 +67,17 @@ describe('EXP-05 the envelope', () => {
     expect(r.hidden).toBe(1);
   });
 
+  it('Task 7 round 2 N5: if the scanner throws (a stack overflow on a hostile value), no row leaves: ExploreDbError, rolled back', async () => {
+    const hostile = {get token(): string {
+      throw new RangeError('Maximum call stack size exceeded');
+    }};
+    const d = fakeDriver({rows: [[1, 'plain'], [2, hostile]], columns: [{name: 'id', type: 23}, {name: 'payload', type: 3802}]});
+    const p = runInEnvelope(d.sql, SQL, {timeoutMs: 5000, maxRows: 200});
+    await expect(p).rejects.toBeInstanceOf(ExploreDbError);
+    await expect(p).rejects.not.toHaveProperty('value');
+    expect(d.events.at(-1)).toBe('ROLLBACK');
+  });
+
   it('EXP-05 never uses the simple protocol for any statement (a second statement would otherwise run) and never COMMITs', async () => {
     const d = fakeDriver();
     await runInEnvelope(d.sql, SQL, {timeoutMs: 5000, maxRows: 200});
