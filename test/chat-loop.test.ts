@@ -3,7 +3,10 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {readFileSync} from 'node:fs';
 import {runChatLoop, UNTRUSTED_TEXT_TOOLS, CHAT_DEADLINE_MS, TOOL_DEADLINE_MS, WRAP_UP_TEXT, CUT_OFF_TEXT, DEGENERATE_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
 import {assertRequestShape} from '../src/chat/request-shape';
-import {CHAT_TOOLS, exploreTools} from '../src/chat/tool-defs';
+import {CHAT_TOOLS, chatTools, exploreTools} from '../src/chat/tool-defs';
+import {createExecutors} from '../src/chat/tool-executors';
+import {createCrmClient} from '../src/chat/crm/client';
+import {CRM_BODIES} from './support/crm-fixtures';
 import type {ChatStreamEvent} from '../src/chat/stream-types';
 import type {ToolExecutors} from '../src/chat/tools';
 
@@ -91,6 +94,39 @@ describe('runChatLoop', () => {
     const m = setup(metric);
     await runChatLoop(m.opts);
     expect(m.events.some((e) => e.t === 'untrusted')).toBe(false);
+  });
+
+  const CRM_ORDERS = {from: '2026-09-01', to: '2026-09-30', financial_status: 'all', group_by: 'none', limit: 10, offset: 0};
+  it('Train 4: a CRM list tool emits the untrusted event too', async () => {
+    const client = new FakeClient((n) => (n === 1 ? toolTurn(toolUse('t1', 'list_crm_orders', CRM_ORDERS)) : {text: ['Done.']}));
+    const {events, opts} = setup(client, {executors: {list_crm_orders: async () => ({id: 'r1', rows: []})}});
+    await runChatLoop(opts);
+    expect(events.filter((e) => e.t === 'untrusted')).toHaveLength(1);
+  });
+
+  it('Train 4: the REAL CRM executors over a fake fetch run in the loop, fire untrusted once, and the metrics tool (no customer text) does not', async () => {
+    const fetch = (async (input: RequestInfo | URL) => {
+      const id = ({'/api/orders': 'orders', '/api/metrics': 'metrics'} as Record<string, string>)[new URL(String(input)).pathname];
+      return new Response(JSON.stringify((CRM_BODIES as Record<string, unknown>)[id]), {status: 200});
+    }) as typeof globalThis.fetch;
+    const real = () => createExecutors({data: async () => ({source: 'live', orders: [], events: [], prices: [], priceChanges: [], bulkReads: []}), now: new Date('2026-10-07T04:00:00Z'), user: null, crm: createCrmClient({baseUrl: 'https://crm.example', token: 'tok', fetch})} as Parameters<typeof createExecutors>[0]);
+    const tools = chatTools({explore: false, crm: true});
+
+    const c1 = new FakeClient((n) => (n === 1 ? toolTurn(toolUse('t1', 'list_crm_orders', CRM_ORDERS)) : {text: ['Done.']}));
+    const a = setup(c1, {tools, executors: real()});
+    await runChatLoop(a.opts);
+    expect(a.events.filter((e) => e.t === 'untrusted')).toHaveLength(1);
+    expect(c1.requests[1]).toContain('#1001'); // the tool really ran and its result went back to the model
+
+    const c2 = new FakeClient((n) => (n === 1 ? toolTurn(toolUse('t1', 'get_crm_metrics', {})) : {text: ['Done.']}));
+    const b = setup(c2, {tools, executors: real()});
+    await runChatLoop(b.opts);
+    expect(b.events.some((e) => e.t === 'untrusted')).toBe(false);
+
+    const bad = new FakeClient((n) => (n === 1 ? toolTurn(toolUse('t1', 'list_crm_orders', {...CRM_ORDERS, url: 'https://evil.example'})) : {text: ['Done.']}));
+    const c = setup(bad, {tools, executors: real()});
+    await runChatLoop(c.opts);
+    expect(c.events.some((e) => e.t === 'untrusted')).toBe(false); // a refused call carries no customer text
   });
 
   it('degenerate loop: a repeated unit stops the stream, trims the tail, says so honestly and ends with done', async () => {
