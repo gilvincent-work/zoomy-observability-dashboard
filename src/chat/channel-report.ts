@@ -5,7 +5,7 @@ import {sameWindow, windowOf} from '../digest-windows';
 import {buckets, CHANNEL_LABEL, GRANULARITIES, ROLLUP_CHANNELS, rollupChannels, type Granularity, type RollupChannel, type RollupInput} from '../period-rollup';
 import {buildCoverage} from './coverage';
 import type {DigestSource} from './digest-lookup';
-import {dayKeysBetween, rangeLabel} from './range';
+import {dayKeysBetween, isRealDay, rangeLabel} from './range';
 import type {DigestRow} from './read/digest';
 import type {Check, MeasureDecl, MetricData, MetricError, MetricResult, MetricRow, ResultColumn} from './result-types';
 
@@ -31,8 +31,6 @@ const MAX_DAYS = 366;
 const MAX_BUCKETS: Record<Exclude<Granularity, 'total'>, number> = {week: 27, month: 13}; // 26 weeks or 12 months, plus a clipped edge
 const MAX_EXTRA_ROWS = 12;
 const MAX_NOTES = 16;
-/** A YYYY-MM-DD that is a real calendar day (rejects 2026-09-31 and 2026-13-01 instead of rolling over). */
-const isRealDay = (d: string): boolean => new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 const fail = (error: string): MetricError => ({error});
 const col = (key: string, label: string, unit: ResultColumn['unit'], role: ResultColumn['role']): ResultColumn => ({key, label, unit, role});
 
@@ -52,7 +50,7 @@ export function readReportInput(input: unknown): ChannelReportRequest | MetricEr
     return fail('A channel report needs the owner\'s dates. Ask them for a start and an end date (for example "September" or "1 Sep to 30 Sep"), then call again with from and to as YYYY-MM-DD. Do not pick dates yourself.');
   }
   for (const d of [from, to]) {
-    if (Number.isNaN(Date.parse(`${d}T00:00:00Z`)) || !isRealDay(d)) return fail(`${d} is not a real date; ask the owner for the dates again.`);
+    if (!isRealDay(d)) return fail(`${d} is not a real date; ask the owner for the dates again.`);
   }
   if (from > to) return fail('from is after to. Ask the owner for the dates again.');
   if (dayKeysBetween(from, to).length > MAX_DAYS) return fail(`That is more than ${MAX_DAYS} days. Ask the owner for a shorter range.`);

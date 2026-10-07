@@ -104,6 +104,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const seen: unknown[] = [];
   // EXP-04 (spec 7): after a run_query FINAL succeeded, the text of this turn is held until the number check has passed.
   let exploreUsed = false;
+  let reportUsed = false; // a get_channel_report result succeeded: the app draws it when the model typed a table instead (live A8)
   let registryUsed = false; // a query_metric result succeeded: the app may draw it when the model forgot (backstop)
   // An Explore-capable turn (the run_query tool was sent) holds ALL text until its step ends: narration in a step that only calls tools
   // ("Fix the grouping.") is dropped, and only text before a render call or from the final no-tool step is the answer.
@@ -178,7 +179,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
 
   // Explore backstop: if the model finishes without drawing the last final result, the app draws it (no model call, no model-typed numbers).
   const backstop = async (): Promise<void> => {
-    if (!(exploreUsed || (registryUsed && exploreTurn)) || !opts.executors.autoRender) return;
+    if (!(exploreUsed || reportUsed || (registryUsed && exploreTurn)) || !opts.executors.autoRender) return;
     try {
       if ((await opts.executors.autoRender()).length > 0) drawn = true;
     } catch {
@@ -374,6 +375,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       const content = results[i].content as {id?: unknown} | null;
       if (c.name === 'run_query' && !results[i].is_error && typeof content?.id === 'string') exploreUsed = true;
       if (c.name === 'query_metric' && !results[i].is_error && typeof content?.id === 'string') registryUsed = true;
+      if (c.name === 'get_channel_report' && !results[i].is_error && typeof content?.id === 'string') reportUsed = true;
       if (isRender(c.name) && !results[i].is_error && (content as {ok?: unknown} | null)?.ok === true) drawn = true;
     });
     convo.push({

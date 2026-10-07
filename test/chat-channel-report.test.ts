@@ -68,6 +68,19 @@ describe('golden: "Give me the September report per channel" (A8, offline replay
     expect(out.meta.coverage).toBe('partial');
     expect(r.blocks.map((b) => b.kind)).toEqual(['chart']);
   });
+  it('autoRender draws a channel report no block was bound from (chart first, table twin); a one-row report is not drawn', async () => {
+    const blocks: {kind: string}[] = [];
+    const ex = createExecutors({data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(), emitBlock: (b) => blocks.push(b)});
+    await ex.get_channel_report?.(ASK);
+    expect((await ex.autoRender?.())?.length).toBeGreaterThan(0);
+    expect(blocks.map((b) => b.kind)).toEqual(['chart']);
+    expect((await ex.autoRender?.())).toEqual([]); // already bound: never twice
+    const one: {kind: string}[] = [];
+    const ex1 = createExecutors({data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(), emitBlock: (b) => one.push(b)});
+    await ex1.get_channel_report?.({...ASK, channels: ['shopee']});
+    expect(await ex1.autoRender?.()).toEqual([]);
+    expect(one).toEqual([]);
+  });
   it('Website comes from the CRM orders when connected', async () => {
     const ex = createExecutors({
       data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(),

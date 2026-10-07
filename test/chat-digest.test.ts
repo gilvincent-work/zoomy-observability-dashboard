@@ -401,6 +401,13 @@ describe('F.5 get_digest window "covering" (PH days, re-runs removed)', () => {
     expect(e).toMatch(/^No stored digest covers Jun 1, 2026\. The nearest stored windows are: Jul 10, 2026 11:40 to Aug 9, 2026 11:40 \(PH time\); Aug 1, 2026 08:00/);
     expect(e).not.toMatch(/not available/);
   });
+  it('covering rejects an impossible date instead of rolling it over', () => {
+    for (const bad of ['2026-02-30', '2026-13-01', '2026-09-31']) {
+      expect(err({window: 'covering', section: 'comparison', from: bad, to: ''}, septSource())).toMatch(/needs the owner's date|not a real date/);
+      expect(err({window: 'covering', section: 'comparison', from: '2026-09-01', to: bad}, septSource())).toMatch(/needs the owner's date|not a real date/);
+    }
+    expect(ok({window: 'covering', section: 'comparison', from: '2026-09-28', to: ''}, septSource()).window.which).toBe('covering');
+  });
   it('covering without the owner\'s date asks for it; a pick that is not loaded says so', () => {
     expect(err({window: 'covering', section: 'comparison', from: '', to: ''}, septSource())).toMatch(/needs the owner's date/);
     expect(err({window: 'covering', section: 'comparison', from: '2026-08-15', to: ''}, septSource())).toMatch(/could not be loaded/);

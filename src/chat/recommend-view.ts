@@ -433,7 +433,7 @@ function untaggedNotes(totals: Map<string, {all: number; untagged: number}>, mea
  * to the one-dimension path. Only the x tail past TABLE_MIN_CLASSES and the series tail past SERIES_FOLD_AT fold into "Other"; the
  * table twin always has every row.
  */
-function decideTwoDim(result: MetricResult, request: ViewRequest, pick: {y?: string[]; title?: string}): BlockDecision | null {
+function decideTwoDim(result: MetricResult, request: ViewRequest, pick: {x?: string; y?: string[]; title?: string}): BlockDecision | null {
   const cats = result.columns.filter((c) => c.role === 'category');
   if (cats.length < 2 || cats.length > 3 || result.columns.some((c) => c.role === 'time') || !TWO_DIM_KINDS.has(request.kind)) return null;
   const {pair, parent} = splitParent(cats, result.rows);
@@ -444,7 +444,7 @@ function decideTwoDim(result: MetricResult, request: ViewRequest, pick: {y?: str
   const measures = numeric.filter((c) => c.role === 'measure');
   const m = wanted[0] ?? (measures.length ? pickMeasure(measures, pick.title ?? '') : undefined);
   if (!m || m.role !== 'measure' || !ADDITIVE.has(m.unit) || result.meta.measures.some((d) => d.key === m.key && d.kind === 'derived')) return null;
-  const [xc, sc] = pair;
+  const [xc, sc] = pick.x !== undefined && pair[1].key === pick.x ? [pair[1], pair[0]] : pair; // an explicit x picks the groups
   const spell = new Map(cats.map((c) => [c.key, displaySpellings(result.rows.map((r) => rawName(r, c)))] as const));
   const name = (r: MetricRow, c: ResultColumn): string => {
     const raw = rawName(r, c);
@@ -587,7 +587,8 @@ export function recommendView(result: MetricResult, request: ViewRequest, pick: 
     };
   }
 
-  if (!pick.x) {
+  // An explicit x on kind auto is a one-dimension ask; with a grouped/stacked/small-multiples kind, an x naming a category column still pivots (live A7).
+  if (!pick.x || (request.kind !== 'auto' && columns.some((c) => c.key === pick.x && c.role === 'category'))) {
     const two = decideTwoDim(result, request, pick);
     if (two) return {decisions: [two]};
   }

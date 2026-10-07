@@ -10,7 +10,7 @@ const one = (over: Partial<RollupInput>, c: RollupChannel) => rollupChannels(inp
 
 describe('F.6 test 1: overlapping digests, newest wins per channel and day, nothing double counted', () => {
   it('21 to 27 Sep is in two digests: the newer one counts, once', () => {
-    expect(one({fromDay: '2026-09-21', toDay: '2026-09-27'}, 'shopee')).toMatchObject({revenue: 8400, orders: 21, units: 28, aov: 400, status: 'ok', notes: []});
+    expect(one({fromDay: '2026-09-21', toDay: '2026-09-27'}, 'shopee')).toMatchObject({revenue: 8400, orders: 21, units: 28, aov: 400, status: 'ok', notes: ['Shopee: per-day sales from digests Sep 21 to Sep 27, 2026 (every day covered).']});
   });
   it('a newer digest without this channel\'s daily does not hide an older one that has it', () => {
     const newer = digestRow(phMidnight('2026-09-21'), phMidnight('2026-09-28'), '2026-09-29T00:00:00.000Z', {daily: {shopee: series('2026-09-21', '2026-09-27', 1300, 3, 4)}});
@@ -19,7 +19,7 @@ describe('F.6 test 1: overlapping digests, newest wins per channel and day, noth
     expect(one({fromDay: '2026-09-21', toDay: '2026-09-27', digests}, 'lazada')).toMatchObject({revenue: 11200, orders: 28});
   });
   it('a covered day with no sales is a zero, not a gap', () => {
-    expect(one({fromDay: '2026-09-15', toDay: '2026-09-15'}, 'shopee')).toEqual({channel: 'shopee', revenue: 0, orders: 0, units: 0, aov: null, status: 'ok', notes: []});
+    expect(one({fromDay: '2026-09-15', toDay: '2026-09-15'}, 'shopee')).toEqual({channel: 'shopee', revenue: 0, orders: 0, units: 0, aov: null, status: 'ok', notes: ['Shopee: per-day sales from digests Sep 1 to Sep 27, 2026 (every day covered).']});
   });
 });
 
@@ -49,6 +49,7 @@ describe('F.6 test 4: gaps and windows from before `daily` existed', () => {
     const s = one({fromDay: '2026-08-25', toDay: '2026-10-11'}, 'shopee');
     expect(s).toMatchObject({revenue: 33000, orders: 73, units: 99, aov: 452.05, status: 'partial'});
     expect(s.notes).toEqual([
+      'Shopee: per-day sales from digests Sep 1 to Sep 27, 2026; Sep 21 to Sep 27, 2026; Sep 28 to Oct 4, 2026.',
       'Shopee: the totals cover Sep 1 to Oct 4, 2026 only.',
       'Shopee: no stored digest covers Oct 5 to Oct 11, 2026.',
       'Shopee: Aug 25 to Aug 31, 2026 are only in published windows that overlap or do not line up with these dates (Aug 1, 2026 08:00 to Sep 1, 2026 08:00 (PH time)), so they are not combinable.',
@@ -67,14 +68,14 @@ describe('F.6 test 4: gaps and windows from before `daily` existed', () => {
     ];
     const s = one({fromDay: '2026-09-01', toDay: '2026-09-21', digests, channels: ['shopee']}, 'shopee');
     expect(s).toMatchObject({revenue: 5700, orders: 16, units: 20, aov: 356.25, status: 'ok'});
-    expect(s.notes).toEqual(['Shopee: Sep 1 to Sep 7, 2026; Sep 15 to Sep 21, 2026 come from whole published windows (Sep 1 to Sep 7, 2026; Sep 15 to Sep 21, 2026), not from per-day data.']);
+    expect(s.notes).toEqual(['Shopee: per-day sales from digests Sep 8 to Sep 14, 2026.', 'Shopee: Sep 1 to Sep 7, 2026; Sep 15 to Sep 21, 2026 come from whole published windows (Sep 1 to Sep 7, 2026; Sep 15 to Sep 21, 2026), not from per-day data.']);
   });
   it('a digest that stores an empty daily array for the channel covers its days as ok zeros', () => {
     const digests = [
       digestRow(phMidnight('2026-09-08'), phMidnight('2026-09-15'), '2026-09-15T01:00:00.000Z', {daily: {shopee: []}}),
       digestRow(phMidnight('2026-09-05'), phMidnight('2026-09-12'), '2026-09-12T01:00:00.000Z', {comparison: {shopee: cmp(2000, 4, 6)}}),
     ];
-    expect(one({fromDay: '2026-09-08', toDay: '2026-09-14', digests, channels: ['shopee']}, 'shopee')).toEqual({channel: 'shopee', revenue: 0, orders: 0, units: 0, aov: null, status: 'ok', notes: []});
+    expect(one({fromDay: '2026-09-08', toDay: '2026-09-14', digests, channels: ['shopee']}, 'shopee')).toEqual({channel: 'shopee', revenue: 0, orders: 0, units: 0, aov: null, status: 'ok', notes: ['Shopee: per-day sales from digests Sep 8 to Sep 14, 2026 (every day covered).']});
   });
   it('overlapping pre-daily windows are never summed', () => {
     const digests = [
@@ -103,8 +104,8 @@ describe('F.6 test 6: one month against a hand-computed total (the golden "Septe
   it('September 2026 per channel from the PROD-shaped digests', () => {
     const [b] = rollupChannels(input({}));
     expect(b.channels).toEqual([
-      {channel: 'shopee', ...SEPTEMBER_EXPECTED.shopee, status: 'ok', notes: []},
-      {channel: 'lazada', ...SEPTEMBER_EXPECTED.lazada, status: 'ok', notes: []},
+      {channel: 'shopee', ...SEPTEMBER_EXPECTED.shopee, status: 'ok', notes: ['Shopee: per-day sales from digests Sep 1 to Sep 27, 2026; Sep 21 to Sep 27, 2026; Sep 28 to Oct 4, 2026 (every day covered).']},
+      {channel: 'lazada', ...SEPTEMBER_EXPECTED.lazada, status: 'ok', notes: ['Lazada: per-day sales from digests Sep 1 to Sep 27, 2026; Sep 21 to Sep 27, 2026; Sep 28 to Oct 4, 2026 (every day covered).']},
     ]);
   });
 });

@@ -131,11 +131,15 @@ function marketplace(channel: 'shopee' | 'lazada', fromDay: string, toDay: strin
 
   // Oldest run first, so the newest run of any day is written last and wins.
   const merged = new Map<string, DaySales>();
+  const supplied = new Map<string, RollupDigest>(); // day -> the digest whose per-day figure was kept
   for (const d of digests.filter(hasDaily).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))) {
     const span = fullDays(windowOf(d));
     if (!span) continue;
     const byDay = new Map((d.digest.daily?.[channel] ?? []).map((x) => [x.day, x] as const));
-    for (const day of dayKeysBetween(span.min, span.max)) merged.set(day, byDay.get(day) ?? {day, revenue: 0, orders: 0, units: 0});
+    for (const day of dayKeysBetween(span.min, span.max)) {
+      merged.set(day, byDay.get(day) ?? {day, revenue: 0, orders: 0, units: 0});
+      supplied.set(day, d);
+    }
   }
   const covered = wanted.filter((d) => merged.has(d));
   const missing = wanted.filter((d) => !merged.has(d));
@@ -157,6 +161,11 @@ function marketplace(channel: 'shopee' | 'lazada', fromDay: string, toDay: strin
   let orders = daily?.orders ?? 0;
   let units: number | null = daily?.units ?? 0;
   const notes: string[] = [];
+  if (covered.length > 0) {
+    // Always name where the per-day figures came from, so a fully covered channel is never reported as "not checked".
+    const used = dedupeReruns([...new Set(covered.map((day) => supplied.get(day) as RollupDigest))], windowOf).sort((a, b) => Date.parse(a.window_from) - Date.parse(b.window_from));
+    notes.push(`${name}: per-day sales from digests ${labels(used)}${missing.length === 0 ? ' (every day covered)' : ''}.`);
+  }
   if (tiled) {
     for (const d of tiled) {
       const c = d.digest.comparison?.[channel];
