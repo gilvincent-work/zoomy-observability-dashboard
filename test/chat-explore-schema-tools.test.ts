@@ -115,16 +115,16 @@ describe('2.3 schema tools are audited, count toward the daily limit, and valida
   };
   it('every call writes one chat_explore_schema line: tool, code, table or domain, user; never rows', async () => {
     const {lines, sink} = sinkOf();
-    const t = createSchemaTools(fake([]), {user: 'u@zoomy.ph', sink});
+    const t = createSchemaTools(fake([]), {user: 'u@example.com', sink});
     await t.list_tables({domain: 'all'});
     await t.describe_table({table: 'pos_orders'});
     await t.describe_table({table: 'gl_sales'});
     await t.list_tables({domain: 'nope'});
     expect(lines).toEqual([
-      {event: 'chat_explore_schema', tool: 'list_tables', ok: true, code: null, table: null, domain: 'all', user: 'u@zoomy.ph'},
-      {event: 'chat_explore_schema', tool: 'describe_table', ok: true, code: null, table: 'pos_orders', domain: null, user: 'u@zoomy.ph'},
-      {event: 'chat_explore_schema', tool: 'describe_table', ok: false, code: 'E_RELATION', table: 'gl_sales', domain: null, user: 'u@zoomy.ph'},
-      {event: 'chat_explore_schema', tool: 'list_tables', ok: false, code: 'E_INPUT', table: null, domain: 'nope', user: 'u@zoomy.ph'},
+      {event: 'chat_explore_schema', tool: 'list_tables', ok: true, code: null, table: null, domain: 'all', user: 'u@example.com'},
+      {event: 'chat_explore_schema', tool: 'describe_table', ok: true, code: null, table: 'pos_orders', domain: null, user: 'u@example.com'},
+      {event: 'chat_explore_schema', tool: 'describe_table', ok: false, code: 'E_RELATION', table: 'gl_sales', domain: null, user: 'u@example.com'},
+      {event: 'chat_explore_schema', tool: 'list_tables', ok: false, code: 'E_INPUT', table: null, domain: 'nope', user: 'u@example.com'},
     ]);
   });
   it('a call that would reach the database is counted by the day gate; a used-up gate is E_RATE_DAY with no database call', async () => {
