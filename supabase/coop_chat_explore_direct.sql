@@ -2,7 +2,17 @@
 -- Owner: zoomy-observability-dashboard (Ask Coop direct reads, Train 3). Best practice: knowledge/best-practices/chat-direct-read-access.md
 -- Applied BY HAND in the archive project's SQL editor, as postgres: staging first. PROD only after zoomy-pos revokes PUBLIC/anon/
 -- authenticated execute on its write RPCs (spec 5.3). Re-runnable. Afterwards run supabase/coop_chat_explore_direct_checks.sql.
--- Rollback: supabase/coop_chat_explore_direct_rollback.sql, then re-run supabase/coop_chat_explore.sql.
+-- Rollback: supabase/coop_chat_explore_direct_rollback.sql, then (REQUIRED) re-run supabase/coop_chat_explore.sql and
+-- supabase/coop_chat_explore_checks.sql: the rollback's self-check proves the grants, the Train 1 checks prove the rest.
+--
+-- PRE-APPLY SNAPSHOT (ONCE per environment, BEFORE the first apply; keep the output with the environment notes, see
+-- knowledge/data-catalog/index.md "Environment notes"). apply_grants revokes PUBLIC's SELECT on any closed relation PUBLIC could
+-- read, and a rollback cannot restore it; this list is the only record of what PUBLIC held. Names and privileges only, no data:
+--   select c.relname, c.relkind, a.privilege_type, a.is_grantable
+--   from pg_class c join pg_namespace n on n.oid = c.relnamespace, aclexplode(c.relacl) a
+--   where n.nspname = 'public' and a.grantee = 0 order by 1, 3;
+-- Every apply and every re-apply also prints `NOTICE: coop_explore_admin: revoked SELECT from PUBLIC on <relation> (...)` for each
+-- relation it changes that way: keep the apply output too.
 --
 -- RUNBOOK (after every apply, as postgres):
 --   select jobname from cron.job where jobname = 'coop_explore_reapply';   -- must return ONE row; none = only the trigger guards new objects
@@ -13,7 +23,8 @@
 --   select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public'
 --     and has_any_column_privilege('coop_explore_ro', c.oid, 'select')
 --     and ((c.relkind in ('v', 'm', 'f') and not c.relname = any (coop_explore_admin.view_allowlist())) or coop_explore_admin.is_closed_table(c.relname));
---   select jsonb_pretty(coop_explore_admin.drift_findings());   -- every array empty (the daily job logs the same into coop_explore_drift_log)
+--   select jsonb_pretty(coop_explore_admin.drift_findings());   -- every SECURITY key empty; unlisted_views = views waiting for the
+--                                                                  -- allowlist only (a to-do, not counted in findings_count)
 -- KNOWN LIMITS (accepted, Train 3 review): a GRANT ... TO PUBLIC made by supabase_admin (or any superuser / reserved role, which skip
 -- the event trigger) stays readable by the login until the next coop_explore_reapply run (at most 5 minutes); apply_grants covers the
 -- public schema only (other schemas are fenced by USAGE, checked by drift other_schemas); new views (Task 8's included) are unreadable
@@ -275,6 +286,8 @@ begin
   if coop_explore_admin.login_leak(rel) is not null then
     execute format('revoke select on public.%I from public', r.relname);
     result := 'public-revoked';
+    raise notice 'coop_explore_admin: revoked SELECT from PUBLIC on % (%): record it, a rollback cannot restore it',
+      r.relname, coalesce(coop_explore_admin.closed_reason(rel), 'secret column');
     leak := coop_explore_admin.login_leak(rel);
     if leak is not null then
       raise warning 'coop_explore_admin: % still readable by the login through role membership (%)', r.relname, leak;
@@ -420,7 +433,8 @@ revoke all on public.coop_explore_drift_log from public, anon, authenticated;
 revoke all on sequence public.coop_explore_drift_log_id_seq from public, anon, authenticated;
 select coop_explore_admin.apply_grants('public.coop_explore_drift_log'::regclass) as drift_log_grant; -- without the trigger too
 
--- Every key holds an array of names (never values); every array is empty on a healthy database.
+-- Every key holds an array of names (never values). On a healthy database every SECURITY key is empty; unlisted_views is a TO-DO list
+-- (views waiting for the allowlist, closed meanwhile) and is not counted in findings_count by record_drift().
 --   closed_readable          a closed relation (secret or tenant name, view not allowlisted, view over a closed object) the login can
 --                            read, whoever granted it (its own grant, PUBLIC). Same rule as readable_closed(), minus mixed tables.
 --   secret_columns_readable  a secret column of an OPEN (mixed) table the login can read.
@@ -431,7 +445,9 @@ select coop_explore_admin.apply_grants('public.coop_explore_drift_log'::regclass
 --                            drop it; Task 8's new views land here until added.
 --   role                     role attribute drift, or ANY role membership: the login is NOINHERIT, so a granted role is invisible to
 --                            has_*_privilege but reachable through SET ROLE.
---   guard                    the event trigger or the coop_explore_reapply cron job is missing or disabled.
+--   guard                    the event trigger is missing or not firing for ordinary sessions (only evtenabled O or A fires; R =
+--                            replica only, D = disabled), or the coop_explore_reapply cron job is missing, inactive, or its latest
+--                            finished run failed or is older than 15 minutes (a brand-new job with no run yet is not reported).
 --   other_schemas            any schema other than public / pg_catalog / information_schema the login holds USAGE on.
 create or replace function coop_explore_admin.drift_findings() returns jsonb language plpgsql stable set search_path = '' as $$
 declare
@@ -439,12 +455,13 @@ declare
   f jsonb;
   guard text[] := '{}';
   job_ok boolean;
+  last_run text;
 begin
   if ro is null then
     return jsonb_build_object('role', jsonb_build_array('role coop_explore_ro missing'));
   end if;
-  if not exists (select 1 from pg_catalog.pg_event_trigger where evtname = 'coop_explore_guard_ddl' and evtenabled <> 'D') then
-    guard := guard || 'event trigger coop_explore_guard_ddl missing or disabled'::text;
+  if not exists (select 1 from pg_catalog.pg_event_trigger where evtname = 'coop_explore_guard_ddl' and evtenabled in ('O', 'A')) then
+    guard := guard || 'event trigger coop_explore_guard_ddl missing, disabled or replica-only'::text;
   end if;
   if pg_catalog.to_regclass('cron.job') is null then -- dynamic SQL below: this function must compile without pg_cron
     guard := guard || 'pg_cron not installed: no coop_explore_reapply backstop'::text;
@@ -452,6 +469,17 @@ begin
     execute 'select exists (select 1 from cron.job where jobname = ''coop_explore_reapply'' and active)' into job_ok;
     if not job_ok then
       guard := guard || 'cron job coop_explore_reapply missing or inactive'::text;
+    elsif pg_catalog.to_regclass('cron.job_run_details') is null then
+      guard := guard || 'cron.job_run_details missing: the coop_explore_reapply runs cannot be checked'::text;
+    else
+      -- the latest FINISHED run (a run in progress at this moment is skipped): it must have succeeded within the last 15 minutes
+      execute 'select d.status || case when d.end_time < now() - interval ''15 minutes'' then '':stale'' else '''' end
+               from cron.job_run_details d join cron.job j on j.jobid = d.jobid
+               where j.jobname = ''coop_explore_reapply'' and d.end_time is not null
+               order by d.end_time desc limit 1' into last_run;
+      if last_run is not null and last_run <> 'succeeded' then
+        guard := guard || format('cron job coop_explore_reapply: latest finished run is %s (expected succeeded within 15 minutes)', last_run);
+      end if;
     end if;
   end if;
   with rels as (
@@ -494,7 +522,7 @@ begin
   role_drift as (
     select 'role attributes' as what from pg_catalog.pg_roles
     where oid = ro
-      and not (rolcanlogin and not rolsuper and not rolinherit and not rolcreaterole and not rolcreatedb and not rolreplication and rolbypassrls)
+      and not (rolcanlogin and not rolsuper and not rolinherit and not rolcreaterole and not rolcreatedb and not rolreplication and rolbypassrls and rolconnlimit = 10)
     union all
     select 'member of ' || pg_catalog.pg_get_userbyid(m.roleid) from pg_catalog.pg_auth_members m where m.member = ro
   ),
@@ -516,13 +544,15 @@ begin
   return f;
 end $$;
 
--- One row per run (90 days kept); a WARNING in the Postgres log when anything is found. Returns the number of findings.
+-- One row per run (90 days kept); a WARNING in the Postgres log when a SECURITY finding exists. Returns the number of security findings
+-- (unlisted_views excluded: see drift_findings).
 create or replace function coop_explore_admin.record_drift() returns integer language plpgsql set search_path = '' as $$
 declare
   f jsonb := coop_explore_admin.drift_findings();
   n integer;
 begin
-  select coalesce(sum(jsonb_array_length(e.v)), 0)::integer into n from jsonb_each(f) as e(k, v);
+  -- security findings only: unlisted_views is a to-do list (closed by default), stored in findings but not counted
+  select coalesce(sum(jsonb_array_length(e.v)), 0)::integer into n from jsonb_each(f) as e(k, v) where e.k <> 'unlisted_views';
   insert into public.coop_explore_drift_log (findings, findings_count) values (f, n);
   delete from public.coop_explore_drift_log where checked_at < now() - interval '90 days';
   if n > 0 then

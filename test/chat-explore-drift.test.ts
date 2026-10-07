@@ -43,6 +43,19 @@ describe('drift job and rollback SQL (Train 3, Task 4)', () => {
     expect(direct).toMatch(/cron\.schedule\('coop_explore_drift', '0 22 \* \* \*'/);
     expect(direct).toMatch(/revoke all on sequence public\.coop_explore_drift_log_id_seq from public, anon, authenticated/);
   });
+  it('fix round 1: only an O/A trigger counts, the cron runs are checked, the conn limit is checked, unlisted views are not counted', () => {
+    const body = direct.slice(direct.indexOf('function coop_explore_admin.drift_findings()'));
+    expect(body).toMatch(/evtenabled in \('O', 'A'\)/);
+    expect(body).not.toMatch(/evtenabled <> 'D'/);
+    expect(body).toMatch(/cron\.job_run_details/);
+    expect(body).toMatch(/to_regclass\('cron\.job_run_details'\) is null/);
+    expect(body).toMatch(/rolconnlimit = 10/);
+    expect(direct).toMatch(/where e\.k <> 'unlisted_views'/);
+    expect(direct).toMatch(/raise notice 'coop_explore_admin: revoked SELECT from PUBLIC on %/);
+    expect(direct).toMatch(/PRE-APPLY SNAPSHOT/);
+    expect(read('coop_chat_explore_direct_checks.sql')).toMatch(/PRE-APPLY SNAPSHOT[\s\S]*a\.grantee = 0/);
+    expect(rollback).toMatch(/REQUIRED afterwards: re-run supabase\/coop_chat_explore\.sql, then supabase\/coop_chat_explore_checks\.sql/);
+  });
   it('the rollback is one transaction that removes every guard and ends in a self-check', () => {
     expect(rollback.trimStart().split('\n').filter((l) => !l.startsWith('--'))[0]).toBe('begin;');
     expect(rollback.trimEnd().endsWith('commit;')).toBe(true);

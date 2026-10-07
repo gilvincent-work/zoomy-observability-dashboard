@@ -179,9 +179,9 @@ try {
   rec('(i15) auth, storage and vault are refused', denied(await m3('select u.id from auth.users u')) && denied(await m3('select o.id from storage.objects o')) && denied(await m3('select s.id from vault.secrets s')))
   rec('(i15) the private helper schema is refused', denied(await m3('select coop_explore_admin.reapply_all() as n')))
   const setRole = await m1('set role postgres')
-  rec('(i15) SET ROLE is refused', setRole.outcome === 'rejected', label(setRole))
+  rec('(i15) SET ROLE is refused (42501)', denied(setRole), label(setRole))
   const copies = [await m1("copy pos_orders to program 'true'"), await m1("copy pos_orders to '/tmp/explore_probe_copy'"), await m1("copy pos_orders from '/etc/hostname'")]
-  rec('(i16) COPY TO PROGRAM, COPY TO a server file and COPY FROM a server file are refused', copies.every((r) => r.outcome === 'rejected'), copies.map(label).join(', '))
+  rec('(i16) COPY TO PROGRAM, COPY TO a server file and COPY FROM a server file are refused (42501)', copies.every(denied), copies.map(label).join(', '))
   rec('(i17) pos_settings.key (the reviewed exception) is readable', ran(await m3('select s.key, s.value from pos_settings s')))
   rec('(i18) the login reads the drift log through the envelope (what /api/chat/health runs)', ran(await m3('select d.checked_at, d.findings_count from coop_explore_drift_log d order by d.checked_at desc limit 1')))
 
@@ -202,10 +202,14 @@ try {
   rec('(j) drift reports the disabled event trigger', inj.guard.some((g) => /coop_explore_guard_ddl/.test(g)), JSON.stringify(inj.guard))
   const n = Number(q('select coop_explore_admin.record_drift()').split('\n').pop()) // the WARNING it raises comes first
   const logged = q('select d.findings_count from coop_explore_drift_log d order by d.id desc limit 1')
-  rec('(j) record_drift() counts them and logs the count', n === FIXTURE_UNLISTED.length + 4 && logged === String(n), `${n} / logged ${logged}`)
+  rec('(j) record_drift() counts the 3 security findings (role, guard, closed_readable; unlisted_views is a to-do, not counted) and logs the count', n === 3 && logged === String(n), `${n} / logged ${logged}`)
   admin(`revoke ${PROBE_ROLE} from ${ROLE}; drop role ${PROBE_ROLE}; drop view public.explore_probe_drift_view; alter event trigger coop_explore_guard_ddl enable; select coop_explore_admin.reapply_all()`)
   const after = drift()
   rec('(j) after cleanup and one reapply_all, the drift job is clean again', driftClean(after), JSON.stringify(after))
+  admin('alter event trigger coop_explore_guard_ddl enable replica') // evtenabled R: fires only for replication sessions, i.e. never here
+  const replica = drift().guard
+  admin('alter event trigger coop_explore_guard_ddl enable')
+  rec('(j) drift reports a replica-only event trigger (it never fires for ordinary sessions)', replica.some((g) => /coop_explore_guard_ddl/.test(g)), JSON.stringify(replica))
 
   // (i14) last, because it breaks reads_closed until the file is re-applied in `finally`
   admin(`create or replace function coop_explore_admin.reads_closed(rel oid) returns boolean language plpgsql as $$ begin raise exception 'probe failure'; end $$`)

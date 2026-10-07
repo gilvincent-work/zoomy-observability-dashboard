@@ -10,6 +10,15 @@
 --   * apply_grants covers the public schema only. Other schemas are fenced by USAGE: (b) other_schemas must be empty.
 --   * Views are default-deny: a new view (Task 8's included) is unreadable until it is added to coop_explore_admin.view_allowlist()
 --     and the data catalog. (b) unlisted_views names them; a name there is a to-do (allowlist it or leave it closed), not a leak.
+--   * A rollback cannot restore PUBLIC grants that apply_grants removed from closed relations: take the snapshot (0) BEFORE the first
+--     apply, and keep the apply output (each removal prints `NOTICE: coop_explore_admin: revoked SELECT from PUBLIC on ...`).
+
+-- (0) PRE-APPLY SNAPSHOT: run ONCE per environment BEFORE the first apply of coop_chat_explore_direct.sql, and keep the result with
+-- the environment notes (knowledge/data-catalog/index.md "Environment notes"). Every PUBLIC grant on a public relation; names and
+-- privileges only, no data. After the apply, PUBLIC may have lost SELECT on the closed ones listed here.
+select c.relname, c.relkind, a.privilege_type, a.is_grantable
+from pg_class c join pg_namespace n on n.oid = c.relnamespace, aclexplode(c.relacl) a
+where n.nspname = 'public' and a.grantee = 0 order by 1, 3;
 
 -- (a) role: EXPECT t|f|f|f|f|f|t|10 (login, not super, NOINHERIT, no createrole/createdb/replication, BYPASSRLS, limit 10)
 select rolcanlogin, rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls, rolconnlimit
@@ -18,7 +27,9 @@ from pg_roles where rolname = 'coop_explore_ro';
 -- (a2) memberships: EXPECT 0 rows. The login is NOINHERIT, so a granted role never shows in has_*_privilege, but SET ROLE reaches it.
 select pg_get_userbyid(m.roleid) as member_of from pg_auth_members m where m.member = 'coop_explore_ro'::regrole;
 
--- (b) drift: EXPECT every array empty (unlisted_views: see KNOWN LIMITS). The daily job logs the same into coop_explore_drift_log.
+-- (b) drift. HOSTED BASELINE: every SECURITY key empty (closed_readable, secret_columns_readable, write_privileges, unreadable_open,
+-- role, guard, other_schemas), and unlisted_views listing ONLY views waiting to be allowlisted (today: the Task 8 views until they are
+-- added). unlisted_views is a to-do list, not counted in findings_count. The daily job logs the same into coop_explore_drift_log.
 select jsonb_pretty(coop_explore_admin.drift_findings());
 
 -- (b2) the same two lists the drift job is built on, as rows. readable_closed: EXPECT 0 rows. unlisted_views: a 'STILL READABLE' line
@@ -52,7 +63,7 @@ from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
 order by 3, 1;
 
--- (g) the last drift rows: EXPECT findings_count 0 (plus one per view in unlisted_views) and a checked_at within the last day
+-- (g) the last drift rows: EXPECT findings_count 0 (security findings only) and a checked_at within the last day
 select checked_at, findings_count from public.coop_explore_drift_log order by checked_at desc limit 3;
 
 -- (h) ONE-TIME COLUMN REVIEW (spec 1.5): every column in public, NAMES AND TYPES ONLY (no row data; column_default is left out on

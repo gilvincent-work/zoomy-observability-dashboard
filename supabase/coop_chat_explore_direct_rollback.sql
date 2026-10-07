@@ -3,11 +3,13 @@
 -- Hand-applied in the SQL editor, as postgres. Re-runnable. ONE transaction: it ends with a self-check that raises on any miss, and
 -- then nothing at all is changed. Owner: zoomy-observability-dashboard (Ask Coop, Train 3).
 -- The app needs no change (the coop_explore_* aliases still work); the fastest stop, before or instead of this, is unsetting
--- EXPLORE_MODE. Optional afterwards: re-run supabase/coop_chat_explore.sql, then supabase/coop_chat_explore_checks.sql.
+-- EXPLORE_MODE. REQUIRED afterwards: re-run supabase/coop_chat_explore.sql, then supabase/coop_chat_explore_checks.sql and read every
+-- result against its expectation. The self-check below proves the grants; the Train 1 checks prove the role settings and the views.
 -- Tested locally by a round trip (apply, roll back, apply again; scripts/coop-explore-ro-proof.mjs at each point).
 --
 -- NOT restored: SELECT that apply_grants revoked from PUBLIC on a closed relation (a secret- or tenant-named table, an unlisted view)
--- that PUBLIC could read. That PUBLIC grant was a hole for every role, not a Train 1 feature; re-grant it by hand only if it was wanted.
+-- that PUBLIC could read. That PUBLIC grant was a hole for every role, not a Train 1 feature; re-grant it by hand only if it was wanted,
+-- from the PRE-APPLY SNAPSHOT (coop_chat_explore_direct_checks.sql (0)) and the apply output's `revoked SELECT from PUBLIC` notices.
 begin;
 
 create temp table coop_explore_rollback_views (v text primary key) on commit drop;
