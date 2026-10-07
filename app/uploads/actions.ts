@@ -282,6 +282,7 @@ export async function commitBatchAction(input: {
   for (const p of (Array.isArray(input.pages) ? input.pages : []).slice(0, 50)) {
     const mine = owned.get(p?.uploadId);
     if (!mine) return {ok: false, error: 'A page doesn’t belong to this batch.'};
+    if (mine.upload.kind !== 'inventory_pdf') continue; // legacy: a CSV that joined a batch commits on its own
     if (mine.upload.status !== 'needs_review') return {ok: false, error: `${mine.upload.filename} isn’t awaiting review.`};
     if (sent.has(p.uploadId)) continue;
     sent.add(p.uploadId);

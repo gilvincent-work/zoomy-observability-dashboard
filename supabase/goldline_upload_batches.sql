@@ -58,6 +58,11 @@ begin
   if v_status is null then raise exception 'batch_not_found' using errcode = 'P0002'; end if;
   if v_status <> 'open' then raise exception 'batch_not_open' using errcode = 'P0001'; end if;
 
+  -- A page still being read would become reviewable inside a closed batch: refuse.
+  if exists (select 1 from gl_uploads where company_id = p_company and batch_id = p_batch and status = 'processing') then
+    raise exception 'pages_mismatch' using errcode = 'P0001';
+  end if;
+
   select coalesce(array_agg(distinct (pg->>'upload_id')::uuid), '{}') into v_ids from jsonb_array_elements(p_pages) pg;
   select coalesce(array_agg(id), '{}') into v_expected
     from gl_uploads where company_id = p_company and batch_id = p_batch and status = 'needs_review' and kind = 'inventory_pdf';
@@ -68,7 +73,8 @@ begin
   -- One code per count: a page scanned twice (or a repeated code) is refused.
   select r->>'item_code' into v_dup
     from jsonb_array_elements(p_pages) pg, jsonb_array_elements(pg->'rows') r
-    group by r->>'item_code' having count(*) > 1 limit 1;
+    where r->>'item_code' is not null
+    group by r->>'item_code' having count(*) > 1 order by 1 limit 1;
   if v_dup is not null then
     raise exception 'duplicate_item:%', v_dup using errcode = 'P0001';
   end if;

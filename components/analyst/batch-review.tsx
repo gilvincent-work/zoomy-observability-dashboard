@@ -119,8 +119,10 @@ export function BatchReview({
       const next = {...all};
       for (const p of stale) {
         const had = next[p.upload.id];
-        // Keep edits if the snapshot only changed status (e.g. committed elsewhere).
-        next[p.upload.id] = had && had.rows.length && p.extraction ? {...had, seed: seedKey(p)} : seedPage(p);
+        // Keep edits only when the reading itself is unchanged (e.g. just committed
+        // elsewhere); a new or re-read extraction starts from the fresh rows.
+        const sameReading = had && had.seed.split(':')[1] === seedKey(p).split(':')[1] && had.seed.split(':')[1] !== 'none';
+        next[p.upload.id] = sameReading ? {...had, seed: seedKey(p)} : seedPage(p);
       }
       return next;
     });
@@ -420,7 +422,7 @@ export function BatchReview({
 
       {/* Sticky commit bar */}
       {editable && reviewable.length > 0 && done == null && (
-        <div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-background/90 backdrop-blur-sm max-md:bottom-[calc(4rem+env(safe-area-inset-bottom,0px))]">
+        <div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-background/90 backdrop-blur-sm max-md:bottom-16">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
             <span aria-live="polite" className={cn('text-sm', error ? 'text-destructive' : 'text-muted-foreground')}>
               {error ?? (readiness.ready ? `Ready — ${reviewable.length} ${reviewable.length === 1 ? 'page' : 'pages'} into one Inventory count.` : readiness.reason)}

@@ -38,6 +38,8 @@ Dates are local working dates (GMT+8). Newest first.
   - It upserts every count and closes the pages and the batch together, so a failure leaves nothing half-applied.
   - Same authorization, store scope and validation as a single-page commit. Service-role only; applied to Staging.
   - *Why a DB function:* the regression review showed that sequential client-side writes could double-commit under a race, or strand pages after a mid-way failure.
+  - A page that's still reading blocks the commit inside the transaction. A page whose upload lands after the commit is marked failed with "Start a new batch to add it", so a page is never stranded in a closed batch.
+  - **Deploy order:** the app now calls `gl_commit_batch`, so apply `supabase/goldline_upload_batches.sql` to an environment **before** its code ships there (Staging is done; prod goes in the additive promotion pass).
 - **Data:** new additive `gl_upload_batches` + nullable `gl_uploads.batch_id` (`supabase/goldline_upload_batches.sql`; RLS on, API roles revoked; applied to Staging). Background processing for bulk multi-store uploads stays a later phase.
 - **Review hardening:**
   - The batch review merges pages that finish reading while it's open (it never commits a page that was still empty), keeps your edits across refreshes, and keys tabs by upload.

@@ -200,6 +200,16 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     return json({error: 'Could not store the file — please try again.'}, 500);
   }
   track.uploadId = uploadId;
+  // The batch may have been committed while this page was uploading; a page added
+  // after that could never be committed, so stop here with a clear reason.
+  if (batchId && cls.kind === 'inventory_pdf') {
+    const now = await getBatch(companyId, batchId);
+    if (!now || now.status !== 'open') {
+      const reason = 'This store’s form was committed while this page was uploading. Start a new batch to add it.';
+      await setUploadStatus(uploadId, 'failed', {rejectReason: reason}).catch(() => {});
+      return json({uploadId, status: 'failed', error: reason}, 409);
+    }
+  }
   emit({type: 'stage', stage: 'stored'});
 
   // --- POS sales CSV -------------------------------------------------------

@@ -83,7 +83,9 @@ export function UploadQueueProvider({company, children}: {company: string | null
   const [notice, setNotice] = useState<string | null>(null);
   const aborts = useRef(new Map<string, () => void>());
   const batchPromise = useRef<Promise<string | null> | null>(null);
-  const cancelled = useRef(new Set<string>()); // cancelled before their request went out
+  // Run attempt per item: cancelling (before the request goes out) or retrying bumps
+  // it, so a superseded run stops at the gate and never overwrites a newer one.
+  const attempt = useRef(new Map<string, number>());
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const batchRef = useRef(batch);
   batchRef.current = batch;
@@ -144,6 +146,9 @@ export function UploadQueueProvider({company, children}: {company: string | null
 
   const run = useCallback(
     async (item: QueueItem) => {
+      const token = (attempt.current.get(item.id) ?? 0) + 1;
+      attempt.current.set(item.id, token);
+      const superseded = () => attempt.current.get(item.id) !== token;
       const company = queueCompany.current;
       if (!company) return patch(item.id, {state: 'failed', error: 'No company in view.'});
       patch(item.id, {state: 'running', phase: 'uploading', uploadFrac: 0, phaseAt: Date.now(), startedAt: Date.now(), error: undefined});
@@ -151,11 +156,11 @@ export function UploadQueueProvider({company, children}: {company: string | null
       try {
         if (item.kind === 'pdf') batchId = await ensureBatch();
       } catch (e) {
-        if (cancelled.current.delete(item.id)) return patch(item.id, {state: 'cancelled'});
+        if (superseded()) return; // cancelled (and maybe retried) meanwhile
         return patch(item.id, {state: 'failed', error: e instanceof Error ? e.message : 'Could not start the upload.'});
       }
       // Cancelled while the batch was being created: don't send.
-      if (cancelled.current.delete(item.id)) return patch(item.id, {state: 'cancelled'});
+      if (superseded()) return;
       const b = batchRef.current;
       const {promise, abort} = sendUpload({
         company,
@@ -324,7 +329,7 @@ export function UploadQueueProvider({company, children}: {company: string | null
         if (abort) return abort();
         const item = items.find((i) => i.id === id);
         // Running but not sent yet (the batch is still being created): stop it at the gate.
-        if (item?.state === 'running') cancelled.current.add(id);
+        if (item?.state === 'running') attempt.current.set(id, (attempt.current.get(id) ?? 0) + 1);
         patch(id, (i) => (i.state === 'queued' || i.state === 'waiting_period' || i.state === 'running' ? {state: 'cancelled'} : {}));
       },
       remove: (id) => setItems((all) => all.filter((i) => i.id !== id || i.state === 'running')),
@@ -334,7 +339,7 @@ export function UploadQueueProvider({company, children}: {company: string | null
         setItems([]);
         setBatch(EMPTY_BATCH);
         batchPromise.current = null;
-        cancelled.current.clear();
+        attempt.current.clear();
         setNotice(null);
       },
       dismissNotice: () => setNotice(null),
