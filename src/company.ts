@@ -144,7 +144,8 @@ export async function fetchCompanies(ids: string[]): Promise<{id: string; name: 
   try {
     const res = await fetch(
       `${url}/rest/v1/companies?select=id,name&id=in.(${encodeURIComponent(inList)})`,
-      {headers: {apikey: key, authorization: `Bearer ${key}`}},
+      // Company names change rarely — cached across requests for 5 minutes.
+      {headers: {apikey: key, authorization: `Bearer ${key}`}, next: {revalidate: 300}},
     );
     if (!res.ok) return [];
     return (await res.json()) as {id: string; name: string}[];

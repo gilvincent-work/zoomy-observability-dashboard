@@ -1,6 +1,7 @@
 import 'server-only';
 import {createClient, type SupabaseClient} from '@supabase/supabase-js';
 import {fetchAllRows} from './pos-fetch-paginate';
+import {getGlCatalog, getGlStores, getGlSupplyRef} from './goldline-ref-data';
 import type {InventoryRowIn} from './goldline-inventory';
 import {addDays, storeMovement, type Count} from './goldline-movement';
 import {countedSoldByMonth, type ItemCount} from './goldline-product';
@@ -55,40 +56,29 @@ export async function getBoardData(companyId: string, storeScope?: string[] | nu
   const since = addDays(today, -HISTORY_DAYS);
   const scope = storeScope ? new Set(storeScope) : null;
 
-  const [storesRows, products, counts, wh, settings, lines, transit, shipments] = await Promise.all([
-    fetchAllRows('gl_stores', (from, to) =>
-      supa.from('gl_stores').select('store_code,name,status').eq('company_id', companyId).order('store_code').range(from, to),
-    ) as unknown as Promise<Array<{store_code: string; name: string; status: string}>>,
-    fetchAllRows('gl_products', (from, to) =>
-      supa
-        .from('gl_products')
-        .select('item_code,sku_code,product_line,variant,unit_price,is_bestseller,hidden')
-        .eq('company_id', companyId)
-        .order('item_code')
-        .range(from, to),
-    ) as unknown as Promise<
-      Array<{item_code: string; sku_code: string | null; product_line: string | null; variant: string | null; unit_price: string | number | null; is_bestseller: boolean | null; hidden: boolean | null}>
-    >,
-    fetchAllRows('gl_inventory', (from, to) => {
-      let q = supa
-        .from('gl_inventory') // pagination-ok: paged by fetchAllRows (.range below)
-        .select('store_code,item_code,period_start,period_end,stockroom,drawer,selling_area,delivery,ending_on_hand')
-        .eq('company_id', companyId)
-        .gte('period_end', since);
-      if (storeScope) q = q.in('store_code', storeScope);
-      return q.order('id').range(from, to);
-    }) as unknown as Promise<Row[]>,
-    fetchAllRows('gl_warehouse_stock', (from, to) =>
-      supa.from('gl_warehouse_stock').select('item_code,on_hand,is_sample').eq('company_id', companyId).order('item_code').range(from, to),
-    ) as unknown as Promise<Array<{item_code: string; on_hand: number; is_sample: boolean}>>,
-    // pagination-ok: one row by primary key (company_id).
-    supa.from('gl_supply_settings').select('default_production_days,default_transit_days,is_sample').eq('company_id', companyId).maybeSingle(),
-    fetchAllRows('gl_line_lead_times', (from, to) =>
-      supa.from('gl_line_lead_times').select('product_line,production_days,is_sample').eq('company_id', companyId).order('product_line').range(from, to),
-    ) as unknown as Promise<Array<{product_line: string; production_days: number; is_sample: boolean}>>,
-    fetchAllRows('gl_store_transit', (from, to) =>
-      supa.from('gl_store_transit').select('store_code,transit_days,is_sample').eq('company_id', companyId).order('store_code').range(from, to),
-    ) as unknown as Promise<Array<{store_code: string; transit_days: number; is_sample: boolean}>>,
+  // Reference data (catalog, stores, supply) comes from the per-company cache; counts
+  // and shipments are read fresh, the big counts read in parallel pages.
+  const productsP = getGlCatalog(companyId);
+  // Linked sales start as soon as the (cached) catalog is known — alongside the counts.
+  const salesP = productsP.then((products) => linkedSales(supa, companyId, products, since, storeScope));
+  const [storesRows, products, supply, counts, shipments, sales] = await Promise.all([
+    getGlStores(companyId),
+    productsP,
+    getGlSupplyRef(companyId),
+    fetchAllRows(
+      'gl_inventory',
+      (from, to) => {
+        let q = supa
+          .from('gl_inventory') // pagination-ok: paged by fetchAllRows (.range below)
+          .select('store_code,item_code,period_start,period_end,stockroom,drawer,selling_area,delivery,ending_on_hand')
+          .eq('company_id', companyId)
+          .gte('period_end', since);
+        if (storeScope) q = q.in('store_code', storeScope);
+        return q.order('id').range(from, to);
+      },
+      undefined,
+      {concurrency: 4},
+    ) as unknown as Promise<Row[]>,
     fetchAllRows('gl_shipments', (from, to) => {
       let q = supa
         .from('gl_shipments') // pagination-ok: paged by fetchAllRows (.range below)
@@ -99,32 +89,11 @@ export async function getBoardData(companyId: string, storeScope?: string[] | nu
       if (storeScope) q = q.in('store_code', storeScope);
       return q.order('arrives_on').order('id').range(from, to);
     }) as unknown as Promise<Array<{id: string; store_code: string; item_code: string; qty: number; shipped_on: string; arrives_on: string}>>,
+    salesP,
   ]);
-  if (settings.error) throw new Error(`gl_supply_settings read failed: ${settings.error.message}`);
+  const {settings, lines, transit, warehouse: wh} = supply;
 
-  // Linked sales (POS SKU → item) for the same window — fills those months like the product page.
   const itemBySku = new Map(products.filter((p) => p.sku_code?.trim()).map((p) => [p.sku_code!.trim(), p.item_code]));
-  // Chunked so a big catalog doesn't overflow the request URL.
-  const skus = [...itemBySku.keys()];
-  const chunks: string[][] = [];
-  for (let i = 0; i < skus.length; i += 100) chunks.push(skus.slice(i, i + 100));
-  const sales = (
-    await Promise.all(
-      chunks.map(
-        (chunk) =>
-          fetchAllRows('gl_sales', (from, to) => {
-            let q = supa
-              .from('gl_sales') // pagination-ok: paged by fetchAllRows (.range below)
-              .select('store_code,sku_code,period_end,units')
-              .eq('company_id', companyId)
-              .in('sku_code', chunk)
-              .gte('period_end', since);
-            if (storeScope) q = q.in('store_code', storeScope);
-            return q.order('id').range(from, to);
-          }) as unknown as Promise<Array<{store_code: string; sku_code: string; period_end: string; units: number}>>,
-      ),
-    )
-  ).flat();
 
   const catalog: Record<string, CatalogItem> = {};
   for (const p of products) {
@@ -189,7 +158,7 @@ export async function getBoardData(companyId: string, storeScope?: string[] | nu
 
   const latest = stores.map((s) => s.latestEnd).filter((d): d is string => !!d).sort().pop();
   const sample =
-    Boolean(settings.data?.is_sample) || lines.some((l) => l.is_sample) || transit.some((t) => t.is_sample) || wh.some((w) => w.is_sample);
+    Boolean(settings?.is_sample) || lines.some((l) => l.is_sample) || transit.some((t) => t.is_sample) || wh.some((w) => w.is_sample);
   const activeCodes = storesRows.filter((s) => s.status !== 'closed' && (!scope || scope.has(s.store_code))).map((s) => s.store_code);
   const listCodes = [...new Set([...activeCodes, ...byStore.keys()])].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
 
@@ -200,8 +169,8 @@ export async function getBoardData(companyId: string, storeScope?: string[] | nu
     productLines: [...new Set(products.map((p) => p.product_line).filter((l): l is string => !!l))].sort(),
     warehouse: Object.fromEntries(wh.map((w) => [w.item_code, w.on_hand])),
     config: {
-      defaultProductionDays: settings.data?.default_production_days ?? 30,
-      defaultTransitDays: settings.data?.default_transit_days ?? 3,
+      defaultProductionDays: settings?.default_production_days ?? 30,
+      defaultTransitDays: settings?.default_transit_days ?? 3,
       lineProductionDays: Object.fromEntries(lines.map((l) => [l.product_line, l.production_days])),
       storeTransitDays: Object.fromEntries(transit.map((t) => [t.store_code, t.transit_days])),
       isSample: sample,
@@ -210,4 +179,39 @@ export async function getBoardData(companyId: string, storeScope?: string[] | nu
     currentMonth: (latest ?? today).slice(0, 7),
     today,
   };
+}
+
+/** Sales-report units for items with a linked POS SKU, chunked so a big catalog
+ *  doesn't overflow the request URL. */
+async function linkedSales(
+  supa: SupabaseClient,
+  companyId: string,
+  products: Array<{item_code: string; sku_code: string | null}>,
+  since: string,
+  storeScope?: string[] | null,
+): Promise<Array<{store_code: string; sku_code: string; period_end: string; units: number}>> {
+  const skus = [...new Set(products.map((p) => p.sku_code?.trim()).filter((s): s is string => !!s))];
+  const chunks: string[][] = [];
+  for (let i = 0; i < skus.length; i += 100) chunks.push(skus.slice(i, i + 100));
+  const pages = await Promise.all(
+    chunks.map(
+      (chunk) =>
+        fetchAllRows(
+          'gl_sales',
+          (from, to) => {
+            let q = supa
+              .from('gl_sales') // pagination-ok: paged by fetchAllRows (.range below)
+              .select('store_code,sku_code,period_end,units')
+              .eq('company_id', companyId)
+              .in('sku_code', chunk)
+              .gte('period_end', since);
+            if (storeScope) q = q.in('store_code', storeScope);
+            return q.order('id').range(from, to);
+          },
+          undefined,
+          {concurrency: 4},
+        ) as unknown as Promise<Array<{store_code: string; sku_code: string; period_end: string; units: number}>>,
+    ),
+  );
+  return pages.flat();
 }
