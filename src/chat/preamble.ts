@@ -1,5 +1,6 @@
 // F4: the per-turn coverage block and the static catalog for the cached system prompt. Pure.
 import {windowLabel, type DigestWindow} from '../digest-windows';
+import {notInDatabaseText} from './catalog/prompt';
 import {buildCoverage, phtDate} from './coverage';
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {MetricData} from './result-types';
@@ -15,9 +16,9 @@ function longToday(now: Date): string {
   return `${WEEKDAYS[pht.getUTCDay()]}, ${pht.getUTCDate()} ${FULL_MONTHS[pht.getUTCMonth()]} ${pht.getUTCFullYear()}`;
 }
 
-const NOT_AVAILABLE_BASE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (stored digests only). Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet.';
+const NOT_AVAILABLE_BASE = `Not available: Traffic (sample data only), Meta ads (not connected). ${notInDatabaseText()} Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet.`;
 const NOT_AVAILABLE_NO_EXPLORE = 'Contact details (email, phone, instagram) are not exposed by the metrics. Questions no metric covers cannot be answered.';
-const EXPLORE_AVAILABLE = 'For questions no metric covers (contacts, leads, stock, voided orders, hours), use run_query on the Explore views.';
+const EXPLORE_AVAILABLE = 'For questions no metric covers (contacts, leads, stock, lots, movements, saved reports, voided orders, hours), use list_tables, describe_table and run_query on the database tables.';
 const notAvailable = (explore: boolean): string => `${NOT_AVAILABLE_BASE} ${explore ? EXPLORE_AVAILABLE : NOT_AVAILABLE_NO_EXPLORE}`;
 
 /** Per-turn context when the live-data path is unavailable: today's date and an honest "not available" (no data, no figures). */

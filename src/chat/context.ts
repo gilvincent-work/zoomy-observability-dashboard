@@ -2,7 +2,7 @@ import 'server-only';
 import type {DigestArchiveRow} from '../types';
 import {pickIndex, fmtRange} from '../week';
 import {COOP_CHAT, buildGuardrails} from './config';
-import {buildExploreCatalogText} from './explore/catalog';
+import {buildDataIndexText} from './catalog/prompt';
 import {buildExamplesText} from './explore/examples';
 import {buildStaticCatalog} from './preamble';
 import {COOP_KNOWLEDGE} from './knowledge';
@@ -79,8 +79,8 @@ export function buildStaticSystem(opts: {tools?: boolean; explore?: boolean} = {
     KNOWLEDGE_BLOCK,
     '',
     withTools ? buildStaticCatalog() : NO_TOOLS_NOTICE,
-    // Explore adds its catalog and worked examples INSIDE this (already cached) block: the request is at the 4-breakpoint limit.
-    ...(explore ? ['', '## Exploratory views (run_query)', buildExploreCatalogText(), '', '## Worked exploratory queries', buildExamplesText()] : []),
+    // Explore adds its data index and worked examples INSIDE this (already cached) block: the request is at the 4-breakpoint limit.
+    ...(explore ? ['', buildDataIndexText(), '', '## Worked exploratory queries', buildExamplesText()] : []),
   ].join('\n');
 }
 

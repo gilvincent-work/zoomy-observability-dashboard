@@ -379,7 +379,7 @@ describe('POST /api/chat: live mode (no digest, no period)', () => {
     await drain(res);
     const last = messagesOf(lastRequest()).at(-1)?.content as Block[];
     expect(last[0].text).toContain('[page] The owner is on /inventory (Inventory');
-    expect(JSON.stringify(systemOf(lastRequest()))).not.toContain('[page]');
+    expect(JSON.stringify(systemOf(lastRequest()))).not.toContain('[page] The owner is on'); // the skill names the tag (PAGE-01); the per-turn line itself never rides in the cached system
   });
 
   it('F.2: a hostile page value and an off-host pasted link add no page line', async () => {

@@ -59,7 +59,7 @@
   },
   {
    "id": "digest",
-   "title": "Weekly digest",
+   "title": "Stored digests",
    "tables": [
     "digest_archive"
    ]

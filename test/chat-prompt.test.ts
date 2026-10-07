@@ -146,7 +146,8 @@ describe('explore variants of the period rule and the guardrails (spec 6.4)', ()
     const on = buildStaticSystem({tools: true, explore: true});
     expect(off).toMatch(/customer-level data are not available/);
     expect(off).not.toMatch(/run_query|coop_explore_/);
-    expect(on).toMatch(/coop_explore_orders/);
+    expect(on).toMatch(/pos_orders/);
+    expect(on).toMatch(/list_tables/);
     expect(on).toMatch(/Exploratory, not a registered metric/);
     expect(on).not.toMatch(/already masked/);
     expect(buildStaticSystem({tools: true, explore: true})).toBe(on); // cache-stable
