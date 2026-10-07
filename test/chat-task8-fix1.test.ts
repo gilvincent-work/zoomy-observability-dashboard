@@ -16,11 +16,17 @@ const SKILL = readFileSync('src/chat/skills/ask-coop-data-analyst/SKILL.md', 'ut
 const EXPLORE = readFileSync('src/chat/skills/ask-coop-data-analyst/topics/sql-explore.md', 'utf8');
 
 describe('F1 stock needs no period (one rule, every place that says "ask which dates")', () => {
-  it('both THINK-01 variants and both Period blocks carry the stock exception', () => {
+  it('both THINK-01 variants own the stock exception; every Period block points to THINK-01 instead of restating it (final review finding 11)', () => {
     const think = SKILL.split('\n').filter((l) => l.startsWith('[THINK-01]'));
     expect(think).toHaveLength(2);
     for (const l of think) expect(l).toMatch(/stock[^.]*as of now[^.]*no period/i);
-    for (const explore of [true, false]) expect(buildLiveContextBlock({explore})).toMatch(/stock[^.]*as of now[^.]*no period/i);
+    for (const explore of [true, false]) {
+      for (const website of [true, false]) {
+        const block = buildLiveContextBlock({explore, website});
+        expect(block).not.toMatch(/as of now/i);
+        expect(block).toMatch(/except where THINK-01 says otherwise \(stock\)/);
+      }
+    }
   });
 });
 
@@ -105,15 +111,22 @@ describe('F8 basis notes for mixed queries and the registry views', () => {
   });
 });
 
-describe('F10 one definition of completed: status = completed', () => {
-  it('isCompletedOrder is true only for status completed', () => {
+describe('F10 one definition of completed: the dashboard rule, any status but voided (final review finding 8)', () => {
+  it('isCompletedOrder is false only for status voided (a null, empty or unknown status counts, as on the Offline Sales page)', () => {
     expect(isCompletedOrder({status: 'completed'})).toBe(true);
     expect(isCompletedOrder({status: 'voided'})).toBe(false);
-    expect(isCompletedOrder({status: ''})).toBe(false);
+    expect(isCompletedOrder({status: ''})).toBe(true);
+    expect(isCompletedOrder({status: 'weird'})).toBe(true);
+    expect(isCompletedOrder({status: null as unknown as string})).toBe(true);
   });
-  it('the registry and the coverage use it: an unknown status is not counted', () => {
+  it('the registry and the coverage use it: an unknown status is counted, a voided one is not', () => {
     const o = (id: string, status: string) => ({id, status, total: 100, created_at: '2026-09-10T04:00:00Z', event_id: null, pet_type: null, items: [], subtotal: 100, discount: 0, oversold: false, payment_method: 'cash', edited_at: null});
-    const data = {source: 'live', orders: [o('1', 'completed'), o('2', 'weird')], events: [], prices: [], priceChanges: [], bulkReads: [], stock: null} as unknown as MetricData;
-    expect(buildCoverage(data).orders).toBe(1);
+    const data = {source: 'live', orders: [o('1', 'completed'), o('2', 'weird'), o('3', 'voided')], events: [], prices: [], priceChanges: [], bulkReads: [], stock: null} as unknown as MetricData;
+    expect(buildCoverage(data).orders).toBe(2);
+  });
+  it('the pos_orders_completed view uses the same rule (null-safe), and its comment says so', () => {
+    const sql = readFileSync('supabase/coop_chat_default_views.sql', 'utf8');
+    expect(sql).toMatch(/where o\.status is distinct from 'voided';/);
+    expect(sql).not.toMatch(/status = 'completed'/);
   });
 });

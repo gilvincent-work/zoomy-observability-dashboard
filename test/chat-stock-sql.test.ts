@@ -31,8 +31,8 @@ describe('supabase/coop_chat_stock.sql', () => {
 
 describe('supabase/coop_chat_default_views.sql', () => {
   const sql = text('coop_chat_default_views.sql');
-  it('pos_orders_completed filters on status only (the test-order marker is unknown: none is invented)', () => {
-    expect(sql).toContain("create or replace view public.pos_orders_completed as select o.* from public.pos_orders o where o.status = 'completed';");
+  it('pos_orders_completed filters on status only, with the dashboard rule (not voided, null-safe); no test-order marker is invented', () => {
+    expect(sql).toContain("create or replace view public.pos_orders_completed as select o.* from public.pos_orders o where o.status is distinct from 'voided';");
   });
   it('is granted to coop_explore_ro only', () => {
     expect(sql).toContain('revoke all on public.pos_orders_completed from public, anon, authenticated;');

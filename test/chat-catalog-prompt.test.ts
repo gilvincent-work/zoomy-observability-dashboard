@@ -9,6 +9,8 @@ import {GO_PATHS} from '../src/chat/go-links';
 import {PAGES, resolvePage} from '../src/chat/pages';
 import {buildStaticSystem} from '../src/chat/context';
 import {estimateTokens} from '../src/chat/skills/load';
+import {buildPreamble} from '../src/chat/preamble';
+import type {MetricData} from '../src/chat/result-types';
 
 const BUDGET = 14300; // measured 13,002 estimated tokens on 2026-10-07 (Train 3), plus 10%
 
@@ -60,6 +62,23 @@ describe('2b.1 the "not in the database" line comes from the catalog', () => {
   it('takes flags: with the CRM tools on, the CRM is no longer listed as a gap', () => {
     expect(notInDatabaseText({crm: true})).not.toContain('Website CRM Worker');
     expect(notInDatabaseText({crm: true})).toContain('Shopee Seller-Center exports');
+  });
+  it('three CRM states (final review finding 4): not wired, website totals only, CRM tools on', () => {
+    expect(notInDatabaseText()).toMatch(/Website CRM Worker \([^)]*\) \(an API, not readable by Ask Coop yet\)/);
+    const web = notInDatabaseText({website: true});
+    expect(web).toContain('website order totals for any dates through get_channel_report');
+    expect(web).toContain('customers, carts and order lists not readable by Ask Coop yet');
+    expect(web).not.toContain('an API, not readable by Ask Coop yet');
+    expect(notInDatabaseText({website: true, crm: true})).not.toContain('Website CRM Worker');
+  });
+  it('the per-turn preamble passes the flags through', () => {
+    const data = {source: 'live', orders: [], events: [], prices: [], priceChanges: [], bulkReads: [], stock: null} as unknown as MetricData;
+    const now = new Date('2026-09-28T04:00:00Z');
+    expect(buildPreamble(data, now, '', null, {flags: {website: true}})).toContain('through get_channel_report');
+    expect(buildPreamble(data, now, '', null, {})).toContain('an API, not readable by Ask Coop yet');
+  });
+  it('the cached customers term does not hard-code a CRM state', () => {
+    expect(buildDataIndexText()).not.toMatch(/website CRM \(API, not readable yet\)/);
   });
 });
 

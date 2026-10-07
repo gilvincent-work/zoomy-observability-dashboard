@@ -181,7 +181,7 @@ export function runMetric(input: unknown, data: MetricData, now: Date): MetricRe
   const def = METRICS[req.metric];
   const measure = req.measure === 'default' ? def.defaultMeasure : req.measure;
 
-  // Completed orders only (status = 'completed', see order-status.ts), with the event each order effectively belongs to.
+  // Completed orders only (every status but voided, the dashboard rule, see order-status.ts), with the event each order effectively belongs to.
   const completed = data.orders.filter(isCompletedOrder);
   const taggedIds = new Set(completed.filter((o) => o.event_id !== null).map((o) => o.id)); // explicit POS tag, before date attribution
   const resolved = resolveOrderEvents(completed, data.events);

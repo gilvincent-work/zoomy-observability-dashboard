@@ -112,13 +112,16 @@ export function buildDigestBlock(rows: DigestArchiveRow[], week?: string, opts?:
  * Live mode (tools available): NO period is pre-selected and no digest is loaded. The owner defines the dates; stored digests
  * are reachable only through get_digest, and only for the weeks that exist. Static text, so it is cache-friendly.
  */
-export function buildLiveContextBlock(opts: {explore?: boolean} = {}): string {
+export function buildLiveContextBlock(opts: {explore?: boolean; website?: boolean} = {}): string {
   return [
     '## Period',
+    // The stock exception lives in THINK-01 only (one rule per behaviour): this line points to it.
     opts.explore
-      ? 'No reporting period is selected for you: the owner chooses the dates. If a question asks for a figure for a period and names none, ask which dates before using any tool. Exception: stock is as of now and has no period, so never ask for dates for a stock question. Another exception: a ranking, profile or "most/least" question with no period means all available data; run it over the whole range, say so in the answer, and offer a narrower period.'
-      : 'No reporting period is selected for you: the owner chooses the dates. If a question has no period, ask which dates before using any tool. Exception: stock is as of now and has no period, so never ask for dates for a stock question.',
-    'Offline POS figures come from query_metric for any dates the data covers. Shopee, Lazada and Website figures come from the stored digests (get_digest reads one window as published; get_channel_report totals any dates per channel); digest windows vary in length (weekly or about a month) and are listed in the per-turn context: name the window you used and say which dates no digest covers instead of guessing.',
+      ? 'No reporting period is selected for you: the owner chooses the dates. If a question asks for a figure for a period and names none, ask which dates before using any tool, except where THINK-01 says otherwise (stock). Another exception: a ranking, profile or "most/least" question with no period means all available data; run it over the whole range, say so in the answer, and offer a narrower period.'
+      : 'No reporting period is selected for you: the owner chooses the dates. If a question has no period, ask which dates before using any tool, except where THINK-01 says otherwise (stock).',
+    opts.website
+      ? 'Offline POS figures come from query_metric for any dates the data covers. Shopee and Lazada figures come from the stored digests (get_digest reads one window as published; get_channel_report totals any dates per channel); Website totals for any dates come from live website orders through get_channel_report, and get_digest reads the Website figures a digest published. Digest windows vary in length (weekly or about a month) and are listed in the per-turn context: name the window you used and say which dates no digest covers instead of guessing.'
+      : 'Offline POS figures come from query_metric for any dates the data covers. Shopee, Lazada and Website figures come from the stored digests (get_digest reads one window as published; get_channel_report totals any dates per channel); digest windows vary in length (weekly or about a month) and are listed in the per-turn context: name the window you used and say which dates no digest covers instead of guessing.',
     'On the home screen, if asked what you can do, list what you can answer (offline POS metrics for any dates, channel digests by date, dashboards and charts) and ask what they want to see and for which dates.',
   ].join('\n');
 }

@@ -29,16 +29,28 @@ export function buildDataIndexText(): string {
   return lines.join('\n');
 }
 
-/** Which optional Ask Coop data tools are switched on. Train 4 adds `website` and `crm` here; a flag only removes its source from the gap line. */
-export interface DataFlags {crm?: boolean}
+/**
+ * Which optional Ask Coop data sources are switched on. `website`: get_channel_report reads live website (CRM) orders (Train 3, when
+ * the CRM is configured). `crm`: the CRM list tools are on (Train 4). A flag only changes its source's entry in the gap line.
+ */
+export interface DataFlags {website?: boolean; crm?: boolean}
 
+/** The flag that makes an API fully readable (it leaves the gap line). */
 const FLAG_FOR_API: Record<string, keyof DataFlags> = {'crm-api': 'crm'};
+/** A flag that makes part of an API readable: the gap line names what is readable and what is not yet. */
+const PARTIAL_FOR_API: Record<string, {flag: keyof DataFlags; text: string}> = {
+  'crm-api': {flag: 'website', text: 'website order totals for any dates through get_channel_report; customers, carts and order lists not readable by Ask Coop yet'},
+};
 const NOT_YET = 'an API, not readable by Ask Coop yet';
 
 /** The honest-gap line (spec 2b.1, 2.7): data that is not in the database, where it lives and why the chat cannot read it. */
 export function notInDatabaseText(flags: DataFlags = {}): string {
   const gaps = CATALOG_DATA.apis
     .filter((a) => /^none/i.test(a.askCoop) || (FLAG_FOR_API[a.id] !== undefined && !flags[FLAG_FOR_API[a.id]]))
-    .map((a) => `${a.source} (${/^none/i.test(a.askCoop) ? a.askCoop.replace(/^none:?\s*/i, '') : NOT_YET})`);
+    .map((a) => {
+      if (/^none/i.test(a.askCoop)) return `${a.source} (${a.askCoop.replace(/^none:?\s*/i, '')})`;
+      const partial = PARTIAL_FOR_API[a.id];
+      return `${a.source} (${partial && flags[partial.flag] ? partial.text : NOT_YET})`;
+    });
   return `Not in the database: ${gaps.join('; ')}.`;
 }

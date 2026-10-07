@@ -135,7 +135,7 @@
   "pos_orders_completed": {
    "name": "pos_orders_completed",
    "domain": "pos-sales",
-   "about": "Ask Coop default view: completed orders only (status = 'completed'); there is no test-order marker, so test orders are not separated.",
+   "about": "Ask Coop default view: completed orders, the same sales the dashboard counts (every status except voided, a null status included; in practice completed); there is no test-order marker, so test orders are not separated.",
    "columns": "the same as pos_orders.",
    "prefer": null,
    "testOrders": null
@@ -335,7 +335,7 @@
   "coop_report_versions": {
    "name": "coop_report_versions",
    "domain": "reports",
-   "about": "- Writes/reads: src/reports-actions.ts, src/reports-data.ts. Ask Coop: never. Verified: DDL.",
+   "about": "- Writes/reads: src/reports-actions.ts, src/reports-data.ts. Ask Coop: direct read (read only; never writes). Verified: DDL.",
    "columns": "report_id (FK to coop_reports.id), version, spec_version, spec (jsonb under 32 KB), source_prompt (max 2000 chars, never fed to a model), created_by, created_at.",
    "prefer": null,
    "testOrders": null
@@ -1143,7 +1143,7 @@
   {
    "term": "customers",
    "default": "ask",
-   "alternatives": "booth leads (spin_wheel_leads), website CRM (API, not readable yet), Lazada contacts (lazada_orders)",
+   "alternatives": "booth leads (spin_wheel_leads), website CRM customers (see the \"Not in the database\" line for what is readable), Lazada contacts (lazada_orders)",
    "askWhen": "always: there is no default"
   }
  ]
