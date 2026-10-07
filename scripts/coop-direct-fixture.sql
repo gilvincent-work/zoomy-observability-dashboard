@@ -6,6 +6,9 @@ alter table public.pos_orders enable row level security; -- RLS on, no policy (l
 
 drop view if exists public.explore_fixture_token_view, public.explore_fixture_alias_view, public.explore_fixture_row_view, public.explore_fixture_sd_view;
 drop view if exists public.explore_fixture_wrap_view, public.explore_fixture_op_view;
+drop view if exists public.explore_fixture_qxml_view, public.explore_fixture_tsstat_view, public.explore_fixture_domain_view;
+drop domain if exists public.explore_fixture_dom;
+drop function if exists public.explore_fixture_chk(integer);
 drop operator if exists public.### (integer, integer);
 drop function if exists public.explore_fixture_wrap_rows(), public.explore_fixture_sd_secret(integer, integer);
 drop function if exists public.explore_fixture_sd_rows();
@@ -49,6 +52,21 @@ revoke all on function public.explore_fixture_sd_secret(integer, integer) from p
 grant execute on function public.explore_fixture_sd_secret(integer, integer) to coop_explore_ro;
 create operator public.### (leftarg = integer, rightarg = integer, function = public.explore_fixture_sd_secret);
 create view public.explore_fixture_op_view as select 1 ### 1 as j;
+-- Fix round 4: routes the shape rules (reads_closed) do NOT see. All must stay ungranted because views are DEFAULT-DENY: none of
+-- these names is in coop_explore_admin.view_allowlist().
+-- Query-running pg_catalog functions: the SQL string is invisible to pg_depend, and it runs a definer function the login may EXECUTE.
+create view public.explore_fixture_qxml_view as
+  select query_to_xml('select to_jsonb(f) as j from public.explore_fixture_sd_rows() f', true, false, '') as x;
+create view public.explore_fixture_tsstat_view as
+  select s.word from ts_stat('select to_tsvector(''simple'', f.api_key) from public.explore_fixture_sd_rows() f') s;
+-- A domain CHECK reached through a pg_type dependency: the view names only the type, the CHECK calls a definer function.
+create function public.explore_fixture_chk(v integer) returns boolean
+  language plpgsql stable security definer set search_path = '' as $$
+  begin raise exception 'domain check saw: %', (select m.api_key from public.explore_fixture_mixed m where m.id = v); end $$;
+revoke all on function public.explore_fixture_chk(integer) from public, anon, authenticated;
+grant execute on function public.explore_fixture_chk(integer) to coop_explore_ro;
+create domain public.explore_fixture_dom as integer check (public.explore_fixture_chk(value));
+create view public.explore_fixture_domain_view as select 1::public.explore_fixture_dom as v;
 
 -- Tenant fence
 create table public.gl_fixture_stores (store_code text primary key, name text);

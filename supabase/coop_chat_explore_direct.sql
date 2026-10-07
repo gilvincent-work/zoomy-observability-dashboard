@@ -7,16 +7,28 @@
 -- RUNBOOK (after every apply, as postgres):
 --   select jobname from cron.job where jobname = 'coop_explore_reapply';   -- must return ONE row; none = only the trigger guards new objects
 --   select evtname, evtenabled from pg_event_trigger where evtname = 'coop_explore_guard_ddl';   -- expect coop_explore_guard_ddl|O
+--   select * from coop_explore_admin.unlisted_views();   -- every public view the login can NOT read because it is not allowlisted
+--   select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('v', 'm')
+--     and has_table_privilege('coop_explore_ro', c.oid, 'select') and not c.relname = any (coop_explore_admin.view_allowlist());   -- expect 0 rows
 -- Recover by hand (grants look wrong, the cron job is missing, or a guard warning mentions a cancel):
 --   select coop_explore_admin.reapply_all();   -- idempotent; returns how many relations it changed
+-- ADD A VIEW for Ask Coop (views are DEFAULT-DENY; tables are not):
+--   1. Review the view body: no function outside pg_catalog, no query-running function (query_to_xml, ts_stat, ...), no domain or type
+--      with a user CHECK/IO function, no closed table or secret column. The second layer (reads_closed) still closes it if it trips.
+--   2. Add ONE line to view_allowlist() below (name + where it comes from), add the view to knowledge/data-catalog/tables.md, re-apply
+--      this file, then `select coop_explore_admin.reapply_all();` and check has_table_privilege('coop_explore_ro', '<view>', 'select').
 --
 -- WHAT THIS DOES
 --   1. coop_explore_ro (created by coop_chat_explore.sql) gets BYPASSRLS: every archive table has RLS on and no policies.
 --   2. One secret-name rule in the private schema coop_explore_admin (never public: PostgREST exposes public functions to anon).
 --      TS copy: src/chat/explore/secret-names.ts; test/chat-explore-secret-names.test.ts fails when they differ.
---   3. apply_grants(rel): SELECT on an open relation; column grants on the safe columns of a relation with a secret column; nothing on
---      a closed relation (secret or tenant name) or on a view that reads one at any depth. Idempotent: no change when the ACL is right.
---   4. Default privileges for relations postgres creates, then reapply_all() for the existing ones.
+--   3. apply_grants(rel): TABLES are open by default: SELECT on an open table; column grants on the safe columns of a table with a
+--      secret column; nothing on a closed table (secret or tenant name). VIEWS (and materialized views) are DEFAULT-DENY: granted only
+--      when named in view_allowlist(), and even then closed when reads_closed() trips (second layer). A view runs logic as the login
+--      (query_to_xml over a definer function, a domain CHECK, a wrapper function, ...): no blacklist of view shapes is complete.
+--      Idempotent: no change when the ACL is right.
+--   4. Default privileges for relations postgres creates (only while the event trigger is installed: those privileges also cover
+--      views, and only the trigger takes a new view's grant back in the same transaction), then reapply_all() for the existing ones.
 --   5. Event trigger coop_explore_guard_ddl re-applies on DDL; pg_cron re-applies every 5 minutes as well, because Supabase skips user
 --      event triggers for superusers and reserved roles (https://supabase.com/blog/event-triggers-wo-superuser).
 -- The coop_explore_* views of coop_chat_explore.sql stay (aliases during the switch). Not touched: coop_chat_ro, the coop_chat_* views,
@@ -56,6 +68,25 @@ create or replace function coop_explore_admin.column_exceptions() returns text[]
   select array['pos_settings.key']::text[]
 $$;
 
+-- THE VIEW ALLOWLIST: the only public views and materialized views coop_explore_ro may read. One reviewed line per view, plus its
+-- entry in knowledge/data-catalog/tables.md (see "ADD A VIEW" in the header). A view NOT named here is never granted, and any grant
+-- on it is revoked by apply_grants, the event trigger and the cron job. A view dropped and re-created under a listed name is granted
+-- again (subject to reads_closed). Not listed on purpose: gl_inventory_snapshots (tenant fence; Ask Coop is Zoomy-only).
+create or replace function coop_explore_admin.view_allowlist() returns text[] language sql immutable set search_path = '' as $$
+  select array[
+    -- registry views, supabase/coop_chat_readonly.sql + coop_chat_digest.sql (data catalog section 15)
+    'coop_chat_bundles', 'coop_chat_digest', 'coop_chat_events', 'coop_chat_order_items',
+    'coop_chat_orders', 'coop_chat_price_changes', 'coop_chat_prices', 'coop_chat_products',
+    -- explore views, supabase/coop_chat_explore.sql, list in src/chat/explore/views.ts (data catalog section 15)
+    'coop_explore_bundle_items', 'coop_explore_bundles', 'coop_explore_digest', 'coop_explore_event_leads', 'coop_explore_events',
+    'coop_explore_inventory', 'coop_explore_inventory_by_location', 'coop_explore_inventory_lots', 'coop_explore_order_items',
+    'coop_explore_orders', 'coop_explore_price_changes', 'coop_explore_prices', 'coop_explore_products', 'coop_explore_stock_event',
+    'coop_explore_stock_movements',
+    -- zoomy-pos read views (DDL in zoomy-pos; data catalog: pos_inventory and pos_inventory_by_location, "a view")
+    'pos_inventory', 'pos_inventory_by_location'
+  ]::text[]
+$$;
+
 create or replace function coop_explore_admin.is_secret_name(name text) returns boolean language sql immutable set search_path = '' as $$
   select exists (
     select 1
@@ -83,7 +114,7 @@ $$;
 -- the function reads: `to_jsonb(f) from sd_fn() f`, an INVOKER wrapper around sd_fn() (the login has EXECUTE on definer RPCs), and an
 -- operator over sd_fn all returned the secret. The prosecdef clause is kept on purpose: only a superuser can put a function in
 -- pg_catalog, so it is redundant today, but it costs nothing and keeps the definer rule explicit.
--- No coop_chat_* or coop_explore_* view calls a user function (checked locally), so there is no allowlist.
+-- This is the SECOND layer for views: the first is view_allowlist() (default-deny). No allowlisted view trips it locally.
 create or replace function coop_explore_admin.reads_closed(rel oid) returns boolean language sql stable set search_path = '' as $$
   with recursive deps(oid, att) as (
     select d.refobjid, d.refobjsubid
@@ -125,6 +156,14 @@ create or replace function coop_explore_admin.reads_closed(rel oid) returns bool
       and (p.prosecdef or pn.nspname <> 'pg_catalog'))
 $$;
 
+-- For the drift check and the runbook: one line per public view the login can NOT read because it is not allowlisted.
+create or replace function coop_explore_admin.unlisted_views() returns setof text language sql stable set search_path = '' as $$
+  select format('view not allowlisted: %s (not readable until added)', c.relname)
+  from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind in ('v', 'm') and not (c.relname::text = any (coop_explore_admin.view_allowlist()))
+  order by c.relname
+$$;
+
 -- 3. apply_grants: decide ONE relation. Never raises (a failure in the event trigger would abort someone else's DDL).
 create or replace function coop_explore_admin.apply_grants(rel oid) returns text language plpgsql set search_path = '' as $$
 declare
@@ -144,7 +183,10 @@ begin
   if not found or ro is null or r.nspname <> 'public' or r.relkind not in ('r', 'p', 'v', 'm', 'f') then
     return 'skipped';
   end if;
-  closed := coop_explore_admin.is_closed_table(r.relname) or coop_explore_admin.reads_closed(rel);
+  -- views: default-deny (allowlist first), then the second layer; tables: open unless the name rule closes them
+  closed := coop_explore_admin.is_closed_table(r.relname)
+         or (r.relkind in ('v', 'm') and not (r.relname::text = any (coop_explore_admin.view_allowlist())))
+         or coop_explore_admin.reads_closed(rel);
   select coalesce(array_agg(a.attname::text order by a.attnum) filter (where not coop_explore_admin.is_secret_column(r.relname, a.attname)), '{}'),
          coalesce(bool_or(coop_explore_admin.is_secret_column(r.relname, a.attname)), false)
     into safe_cols, mixed
@@ -202,7 +244,7 @@ end $$;
 
 -- 4. Grants ------------------------------------------------------------------------------------------------------
 grant usage on schema public to coop_explore_ro;
-alter default privileges for role postgres in schema public grant select on tables to coop_explore_ro;
+-- default privileges are set with the event trigger in section 5 (they cover views too, so they need the trigger)
 select coop_explore_admin.reapply_all() as relations_changed;
 
 -- 5. Event trigger (SECURITY INVOKER on purpose: a definer event-trigger function fires even for superusers, supautils issue #140)
@@ -273,9 +315,14 @@ begin
     when tag in ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO', 'ALTER TABLE', 'CREATE VIEW', 'ALTER VIEW', 'CREATE MATERIALIZED VIEW',
                  'ALTER MATERIALIZED VIEW', 'CREATE FOREIGN TABLE', 'ALTER FOREIGN TABLE', 'GRANT', 'REVOKE', 'ALTER DEFAULT PRIVILEGES')
     execute function coop_explore_admin.guard_ddl();
+  -- new tables readable at once; a new view is granted by these too and the trigger revokes it in the same transaction
+  alter default privileges for role postgres in schema public grant select on tables to coop_explore_ro;
   raise notice 'event trigger coop_explore_guard_ddl installed';
 exception when insufficient_privilege then
-  raise notice 'event trigger NOT installed (%): the 5-minute pg_cron job below is the only guard for new objects', sqlerrm;
+  -- fail closed: without the trigger nothing would take a new VIEW's default grant back for up to 5 minutes, so no default
+  -- privileges; new tables then wait for the cron job (at most 5 minutes)
+  alter default privileges for role postgres in schema public revoke select on tables from coop_explore_ro;
+  raise notice 'event trigger NOT installed (%): no default privileges; the 5-minute pg_cron job below is the only guard and grants new tables', sqlerrm;
 end $$;
 
 -- 6. pg_cron backstop (skipped triggers: superuser or reserved-role DDL) ------------------------------------------

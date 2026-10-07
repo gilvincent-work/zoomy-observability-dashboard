@@ -4,6 +4,7 @@ import {
   EXPLORE_SECRET_COLUMN_EXCEPTIONS, EXPLORE_SECRET_PARTS, EXPLORE_TENANT_PREFIXES, EXPLORE_TENANT_TABLES,
   isClosedRelation, isSecretColumn, isSecretName,
 } from '../src/chat/explore/secret-names';
+import {EXPLORE_VIEW_NAMES} from '../src/chat/explore/views';
 
 const SQL = readFileSync('supabase/coop_chat_explore_direct.sql', 'utf8');
 const arrayOf = (fn: string): string[] => {
@@ -45,6 +46,34 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
     expect(SQL).toMatch(/loop\s+begin -- one sub-block per relation[\s\S]*?revoke all on public\.%I from coop_explore_ro cascade[\s\S]*?exception when query_canceled or others then[\s\S]*?end;\s+end loop;/);
     expect(SQL).toContain("select jobname from cron.job where jobname = 'coop_explore_reapply'");
     expect(SQL).toContain('select coop_explore_admin.reapply_all();');
+  });
+
+  it('fix round 4: views are default-deny, granted only through the one view_allowlist()', () => {
+    const allowlist = arrayOf('view_allowlist');
+    const chatViews = ['coop_chat_bundles', 'coop_chat_digest', 'coop_chat_events', 'coop_chat_order_items',
+      'coop_chat_orders', 'coop_chat_price_changes', 'coop_chat_prices', 'coop_chat_products'];
+    const expected = [...chatViews, ...EXPLORE_VIEW_NAMES, 'pos_inventory', 'pos_inventory_by_location'];
+    expect([...allowlist].sort()).toEqual([...expected].sort());
+    expect(allowlist).toHaveLength(25);
+    expect(new Set(allowlist).size).toBe(allowlist.length);
+    // the one decision: a view not on the list is closed, and a closed relation gets no table or column grant
+    expect(SQL).toContain("or (r.relkind in ('v', 'm') and not (r.relname::text = any (coop_explore_admin.view_allowlist())))");
+    expect(SQL).toContain("want_tab := case when closed or mixed then '{}'::text[] else array['SELECT'] end;");
+    expect(SQL).toContain("want_cols := case when not closed and mixed then safe_cols else '{}'::text[] end;");
+    // no other grant path: the only SELECT grants are apply_grants' two and the trigger-guarded default privileges
+    const code = SQL.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n');
+    const grants = [...code.matchAll(/\bgrant\s+select\b[^;']*/gi)].map((m) => m[0].replace(/\s+/g, ' '));
+    expect(grants).toEqual([
+      'grant select on public.%I to coop_explore_ro',
+      'grant select (%s) on public.%I to coop_explore_ro',
+      'grant select on tables to coop_explore_ro',
+    ]);
+    expect(code).toMatch(/create event trigger coop_explore_guard_ddl[\s\S]*?alter default privileges for role postgres in schema public grant select on tables to coop_explore_ro;[\s\S]*?exception when insufficient_privilege then\s+[\s\S]*?revoke select on tables from coop_explore_ro;/);
+    // the second layer stays, and the drift helper names every view that is not allowlisted
+    expect(SQL).toContain('or coop_explore_admin.reads_closed(rel);');
+    expect(SQL).toContain("format('view not allowlisted: %s (not readable until added)', c.relname)");
+    expect(SQL).toContain('ADD A VIEW');
+    expect(SQL).not.toMatch(/pg_sleep/);
   });
 
   it('matches whole word parts only', () => {
