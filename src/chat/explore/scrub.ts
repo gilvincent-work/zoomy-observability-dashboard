@@ -5,9 +5,13 @@
 // every complete JSON object, array or string literal inside a text value is found by a bracket scan that respects string literals and
 // escapes, JSON.parse'd, and scrubbed by the key rule on the parsed value (the WHOLE value under a secret key is hidden, objects and
 // arrays included; \u-escaped keys are decoded by the parse). A string literal that holds JSON (double-encoded) is decoded and scanned
-// again, up to MAX_JSON_DEPTH. The "name": value text rules remain only as the fallback for JSON that is cut short or not parseable.
-// The scan is bounded (MAX_SCAN_CHARS, MAX_STEPS, MAX_SPANS per cell) so a hostile value cannot make it slow; past a bound the text
-// rules still run. Secret JSON keys use isSecretJsonKey (camelCase aware, Task 7 re-review R1).
+// again, up to MAX_JSON_DEPTH.
+// The scan is bounded (MAX_SCAN_CHARS, MAX_STEPS, MAX_SPANS, MAX_JSON_DEPTH, MAX_NEST per cell) and every bound FAILS CLOSED (Task 7
+// re-review round 2 N1): text the structural pass did not judge is hidden, never handed to the text rules. A cell longer than
+// MAX_SCAN_CHARS is cut there first (the rest hidden), so no rule ever sees more than that. The "name": value pair rules are only the
+// fallback for JSON cut short inside an otherwise scanned cell (left(x::text, n)), and they hide to the end whenever they cannot see
+// where the value ends. Every rule is linear in the cell length (round 2 N4): no rule rescans a run from every position.
+// Secret JSON keys use isSecretJsonKey (camelCase aware, Task 7 re-review R1; credential header names, round 2 N3).
 // Runs are bounded by "not a letter or digit" (never \b: `_` is a word character, so `key_<hex>` would slip past, Task 7 review).
 // False positives are accepted on purpose (a 32-hex device id), but the shapes are chosen so ordinary data is never hit: a uuid's
 // hex groups are short, digit-only strings (order numbers, phones) need a letter, SKUs are upper-case, and dashes break a run.
@@ -20,81 +24,151 @@ export const HIDDEN = '[hidden]';
 const B = '(?<![A-Za-z0-9])'; // start of a run: not after a letter or digit
 const E = '(?![A-Za-z0-9])'; // end of a run
 
-/** Structural-scan bounds, per cell. */
-const MAX_SCAN_CHARS = 100_000; // longer text skips the structural pass (the text rules still run)
+/** Structural-scan bounds, per cell. Past any of them the unjudged rest is hidden (fail closed). */
+const MAX_SCAN_CHARS = 100_000; // a longer cell is cut here before any rule runs (the byte cap shows at most 256 KiB anyway)
 const MAX_STEPS = 1_000_000; // characters the bracket matching and parsing may visit in total
-const MAX_SPANS = 200; // JSON spans parsed
-const MAX_JSON_DEPTH = 5; // JSON inside a JSON string inside ... (deeper: text rules only)
+const MAX_SPANS = 200; // JSON objects, arrays and JSON-holding strings parsed
+const MAX_JSON_DEPTH = 5; // JSON inside a JSON string inside ... (deeper and still JSON-looking: hidden)
+const MAX_NEST = 256; // object / array nesting of a parsed value (deeper: hidden, instead of a stack overflow)
 
-/** A JSON key in text: plain characters or \uXXXX escapes (decoded before judging, as JSON.parse would). */
-const KEY = String.raw`((?:[A-Za-z0-9_.\- ]|\\u[0-9a-fA-F]{4}){1,64})`;
 const decodeKey = (k: string): string => k.replace(/\\u([0-9a-fA-F]{4})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16)));
 
-/** Fallback pair rule. q is the quote ("" in a row literal); an object or array value that could not be parsed is hidden to the end. */
-const pairReplace = (q: string) => (_m: string, name: string, sep: string, quoted?: string, objArr?: string, bare?: string): string | null => {
-  if (!isSecretJsonKey(decodeKey(name))) return null;
-  if (quoted !== undefined) return quoted === '' || quoted === HIDDEN ? null : `${q}${name}${q}${sep}${q}${HIDDEN}${q}`;
-  if (objArr !== undefined) return `${q}${name}${q}${sep}${HIDDEN}`;
-  return bare === undefined || bare === 'null' ? null : `${q}${name}${q}${sep}${HIDDEN}`;
+type Scrubbed = {value: unknown; hidden: number};
+type Step = (s: string) => {value: string; hidden: number};
+
+/** A regex rule: replace returns null to keep the match as it is. */
+const rule = (re: RegExp, replace: (m: string, ...g: string[]) => string | null): Step => (s) => {
+  let hidden = 0;
+  const value = s.replace(re, (m: string, ...g: unknown[]) => {
+    const r = replace(m, ...(g.slice(0, -2) as string[])); // drop offset and input
+    if (r === null) return m;
+    hidden += 1;
+    return r;
+  });
+  return {value, hidden};
+};
+const whole = (re: RegExp): Step => rule(re, () => HIDDEN);
+/** A whole run, hidden only when test passes: the run is matched once (no lookahead rescanning it from every position, N4). */
+const run = (re: RegExp, test: (m: string) => boolean): Step => rule(re, (m) => (test(m) ? HIDDEN : null));
+const has = (re: RegExp) => (m: string) => re.test(m);
+
+/**
+ * The cut-short fallback: a "name": in JSON text, at any escape level (\"name\" inside a JSON string, \\\"name\\\" one deeper), or
+ * ""name"": in a row literal. Only the name and the separator are matched; the value is read by hand, so a pair that is kept never
+ * swallows the text after it (an object value under a plain key is still searched). Keys: any run without a quote or backslash, up to
+ * 64 characters, or \uXXXX escapes ($token, lazada:token, @token; N2).
+ */
+const KEY_BODY = String.raw`((?:\\u[0-9a-fA-F]{4}|[^"\\\n]){1,64})`;
+const PAIR_KEY = new RegExp(String.raw`(?<![\\"])(\\*)"${KEY_BODY}\1"\s*:\s*`, 'g');
+const ROW_KEY = new RegExp(String.raw`""${KEY_BODY}""\s*:\s*`, 'g');
+const ROW_VALUE_END = /""(?=\s*(?:[,}\])]|$))/g;
+const BARE = /-?[^\s,}\])"]+/y;
+
+/** End of the value at p and what to put there, or null to keep it. end = s.length hides to the end of the text. */
+function secretValue(s: string, p: number, bs: string, row: boolean): {end: number; put: string} | null {
+  const q = row ? '""' : `${bs}"`;
+  if (s.startsWith('null', p) || s.startsWith(q + q, p) || s.startsWith(q + HIDDEN + q, p)) return null; // nothing to hide, or done
+  if (p >= s.length) return null;
+  const toEnd = {end: s.length, put: HIDDEN};
+  if (bs !== '') return toEnd; // inside an escaped string the parse could not take: where the value ends is not knowable, hide to the end
+  if (s[p] === '{' || s[p] === '[') return toEnd; // an object or array the parse could not take (cut short)
+  if (s.startsWith(q, p)) {
+    if (row) {
+      ROW_VALUE_END.lastIndex = p + 2;
+      const m = ROW_VALUE_END.exec(s);
+      return m ? {end: m.index + 2, put: `""${HIDDEN}""`} : toEnd;
+    }
+    for (let j = p + 1; j < s.length; j++) {
+      if (s[j] === '\\') j += 1;
+      else if (s[j] === '"') return {end: j + 1, put: `"${HIDDEN}"`};
+    }
+    return toEnd; // unterminated: hidden to the end (N2)
+  }
+  BARE.lastIndex = p;
+  const m = BARE.exec(s);
+  return m ? {end: p + m[0].length, put: HIDDEN} : null;
+}
+
+const pairs = (row: boolean): Step => (s) => {
+  const re = row ? ROW_KEY : PAIR_KEY;
+  re.lastIndex = 0;
+  let out = '';
+  let last = 0;
+  let hidden = 0;
+  for (let m = re.exec(s); m; m = re.exec(s)) {
+    const [bs, name] = row ? ['', m[1]] : [m[1], m[2]];
+    if (!isSecretJsonKey(decodeKey(name))) continue;
+    const p = re.lastIndex;
+    const v = secretValue(s, p, bs, row);
+    if (v === null) continue;
+    out += s.slice(last, p) + v.put;
+    last = v.end;
+    hidden += 1;
+    if (v.end >= s.length) break;
+    re.lastIndex = v.end;
+  }
+  return hidden === 0 ? {value: s, hidden} : {value: out + s.slice(last), hidden};
 };
 
-type Rule = {re: RegExp; replace: (m: string, ...g: string[]) => string | null}; // null = keep the match as it is
-const whole = (re: RegExp): Rule => ({re, replace: () => HIDDEN});
+/** JWTs, found by splitting each dotted run once (a regex from every "eyJ" would rescan the run each time, N4). */
+const jwts: Step = (s) => {
+  let hidden = 0;
+  const value = s.replace(/(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]{3,}/g, (m) => {
+    if (!m.includes('eyJ')) return m;
+    const seg = m.split('.');
+    const out: string[] = [];
+    for (let i = 0; i < seg.length; i++) {
+      const k = seg[i].indexOf('eyJ');
+      if (k >= 0 && seg[i].length - k - 3 >= 8 && (seg[i + 1]?.length ?? 0) >= 8 && (seg[i + 2]?.length ?? 0) >= 8) {
+        out.push(seg[i].slice(0, k) + HIDDEN);
+        hidden += 1;
+        i += 2;
+      } else out.push(seg[i]);
+    }
+    return out.join('.');
+  });
+  return {value, hidden};
+};
 
-const RULES: readonly Rule[] = [
+const STEPS: readonly Step[] = [
   // structure-keeping rules first: they hide the value and keep the name, so the row still reads
-  {re: /([a-z][a-z0-9+.-]*:\/\/)[^\s/:@]+:[^\s@/]+@/gi, replace: (_m, scheme) => `${scheme}${HIDDEN}@`}, // scheme://user:pass@
-  {
-    // fallback: a "name": value pair in JSON text that is cut short or not parseable (the quoted value is escape-aware)
-    re: new RegExp(String.raw`(?<!")"${KEY}"(\s*:\s*)(?:"((?:\\.|[^"\\])*)"|([{[][\s\S]*)|(-?[^\s,}\])"]+))`, 'g'),
-    replace: pairReplace('"'),
-  },
-  {
-    // the same in a row literal, where every quote is doubled: ("{""token"": ""x""}")
-    re: new RegExp(String.raw`""${KEY}""(\s*:\s*)(?:""(.*?)""(?=\s*(?:[,}\])]|$))|([{[][\s\S]*)|(-?[^\s,}\])"]+))`, 'g'),
-    replace: pairReplace('""'),
-  },
-  {
-    re: /(^|[?&;\s])([A-Za-z][A-Za-z0-9_.-]*)=([^&\s#"']+)/g, // ?access_token=..., token=..., &sign=..., apiKey=...
-    replace: (_m, pre, name) => (isSecretJsonKey(name) ? `${pre}${name}=${HIDDEN}` : null),
-  },
+  rule(/(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*:\/\/)[^\s/:@]+:[^\s@/]+@/gi, (_m, scheme) => `${scheme}${HIDDEN}@`), // scheme://user:pass@
+  pairs(false), // "name": value in JSON text cut short
+  pairs(true), // the same in a row literal, where every quote is doubled: ("{""token"": ""x""}")
+  rule(/(^|[?&;\s])([A-Za-z][A-Za-z0-9_.-]*)=([^&\s#"']+)/g, (_m, pre, name) => (isSecretJsonKey(name) ? `${pre}${name}=${HIDDEN}` : null)), // ?access_token=, &sign=
   whole(/\$2[abxy]?\$\d{2}\$[./A-Za-z0-9]{40,}/g), // bcrypt
   whole(/\$argon2(?:id|i|d)\$[^\s"']{10,}/g), // argon2
   whole(/\$[156]\$(?:rounds=\d+\$)?[^\s$]{1,16}\$[./A-Za-z0-9]{20,}/g), // crypt md5 / sha256 / sha512
-  whole(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g), // JWT
+  jwts, // JWT
   whole(/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?(?:-----END [A-Z0-9 ]+-----|$)/g), // any PEM block (a truncated one is hidden to the end)
   whole(new RegExp(`${B}(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{8,}`, 'g')), // Stripe-style
   whole(new RegExp(`${B}sk-[A-Za-z0-9_-]{16,}`, 'g')), // OpenAI / Anthropic style
   whole(new RegExp(`${B}sb_(?:secret|publishable)_[A-Za-z0-9_-]{16,}`, 'g')), // Supabase
   whole(new RegExp(`${B}(?:ghp|gho|ghs|github_pat)_[A-Za-z0-9_]{20,}`, 'g')), // GitHub
   whole(new RegExp(`${B}shp(?:at|ss|ca|pa)_[A-Za-z0-9]{16,}`, 'g')), // Shopify Admin / app tokens
-  whole(new RegExp(`${B}re_(?=[A-Za-z0-9_]*\\d)[A-Za-z0-9_]{16,}`, 'g')), // Resend (a digit required: re_order_settings stays)
+  run(new RegExp(`${B}re_[A-Za-z0-9_]{16,}`, 'g'), has(/\d/)), // Resend (a digit required: re_order_settings stays)
   whole(new RegExp(`${B}AIza[0-9A-Za-z_-]{30,}`, 'g')), // Google API key
   whole(new RegExp(`${B}GOCSPX-[A-Za-z0-9_-]{20,}`, 'g')), // Google OAuth client secret
   whole(new RegExp(`${B}glpat-[A-Za-z0-9_-]{20,}`, 'g')), // GitLab
   whole(new RegExp(`${B}xox[abeprs]-[A-Za-z0-9-]{10,}`, 'g')), // Slack
   whole(new RegExp(`${B}AKIA[0-9A-Z]{16}${E}`, 'g')), // AWS access key id
-  whole(new RegExp(`${B}(?=[A-Za-z0-9+/]*\\d)(?=[A-Za-z0-9+/]*[a-z])(?=[A-Za-z0-9+/]*[A-Z])(?=[A-Za-z0-9/]*\\+|[A-Za-z0-9+/]{40,}=)[A-Za-z0-9+/]{40,}={0,2}`, 'g')), // base64 with + or =
-  whole(new RegExp(`${B}(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{32,}${E}`, 'g')), // raw hex tokens and hashes (a-f letter needed: digit strings stay)
-  whole(new RegExp(`${B}(?=[A-Za-z0-9]*\\d)(?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]{32,}${E}`, 'g')), // 32+ with a digit and a lower-case letter (app secrets)
-  whole(new RegExp(`${B}(?=[A-Za-z0-9]*\\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{40,}${E}`, 'g')), // long opaque tokens (Lazada style)
+  run(/(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{40,}={0,2}/g, (m) => /\d/.test(m) && /[a-z]/.test(m) && /[A-Z]/.test(m) && (m.includes('+') || m.endsWith('='))), // base64 with + or =
+  run(new RegExp(`${B}[0-9a-fA-F]{32,}${E}`, 'g'), has(/[a-fA-F]/)), // raw hex tokens and hashes (a-f letter needed: digit strings stay)
+  run(new RegExp(`${B}[A-Za-z0-9]{32,}${E}`, 'g'), (m) => /\d/.test(m) && /[a-z]/.test(m)), // 32+ with a digit and a lower-case letter (app secrets)
+  run(new RegExp(`${B}[A-Za-z0-9]{40,}${E}`, 'g'), (m) => /\d/.test(m) && /[A-Za-z]/.test(m)), // long opaque tokens (Lazada style)
 ];
 
 function scrubPlain(s: string): {value: string; hidden: number} {
   let hidden = 0;
   let out = s;
-  for (const {re, replace} of RULES) {
-    out = out.replace(re, (m: string, ...g: unknown[]) => {
-      const r = replace(m, ...(g.slice(0, -2) as string[])); // drop offset and input
-      if (r === null) return m;
-      hidden += 1;
-      return r;
-    });
+  for (const step of STEPS) {
+    const r = step(out);
+    out = r.value;
+    hidden += r.hidden;
   }
   return {value: out, hidden};
 }
 
-type Scrubbed = {value: unknown; hidden: number};
 type Budget = {steps: number};
 
 /** End index of the complete JSON object, array or string literal that starts at i, or -1 (unbalanced, or out of budget). */
@@ -121,84 +195,106 @@ function spanEnd(s: string, i: number, b: Budget): number {
   return -1;
 }
 
+
 function scrubText(s: string, depth: number, b: Budget): Scrubbed {
-  let out = s;
+  if (depth > MAX_JSON_DEPTH && /[{[]/.test(s)) return {value: HIDDEN, hidden: 1}; // JSON past the decode bound: not judged, hidden
   let hidden = 0;
-  if (depth <= MAX_JSON_DEPTH && s.length <= MAX_SCAN_CHARS) {
-    const parts: string[] = [];
-    let last = 0;
-    let spans = 0;
-    for (let i = 0; i < s.length && b.steps > 0 && spans < MAX_SPANS; i++) {
-      const c = s[i];
-      if (c !== '{' && c !== '[' && c !== '"') continue;
-      const end = spanEnd(s, i, b);
-      if (end < 0) continue; // cut short: an inner span may still be complete
-      const raw = s.slice(i, end + 1);
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        continue; // not JSON (a row literal, prose in brackets): inner spans and the text rules still see it
-      }
-      b.steps -= raw.length;
-      spans += 1;
-      let r: Scrubbed;
-      if (typeof parsed === 'string') {
-        if (!/[{[]/.test(parsed)) {
-          i = end; // a plain string literal: nothing structural inside
-          continue;
-        }
-        r = scrubText(parsed, depth + 1, b); // a string holding JSON (double-encoded): decode and scan again
-        if (r.hidden === 0) continue; // the quote may have been misread (row text): keep scanning inside it
-      } else {
-        r = scrub(parsed, depth + 1, b);
-        if (r.hidden === 0) {
-          i = end;
-          continue;
-        }
-      }
-      parts.push(s.slice(last, i), JSON.stringify(r.value));
-      hidden += r.hidden;
-      last = end + 1;
-      i = end;
-    }
-    if (parts.length > 0) out = parts.join('') + s.slice(last);
+  let tail = ''; // the hidden marker for text the structural pass did not judge
+  let text = s;
+  if (text.length > MAX_SCAN_CHARS) {
+    text = text.slice(0, MAX_SCAN_CHARS); // cut BEFORE any rule runs: nothing past this is judged, so it is hidden
+    tail = HIDDEN;
+    hidden += 1;
   }
-  const p = scrubPlain(out); // shape rules everywhere, and the pair fallback for JSON the parse could not take
-  return {value: p.value, hidden: hidden + p.hidden};
+  const parts: string[] = [];
+  let last = 0;
+  let spans = 0;
+  let stop = -1; // where a bound stopped the pass: nothing from the next span start on was judged
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c !== '{' && c !== '[' && c !== '"') continue;
+    if (b.steps <= 0 || spans >= MAX_SPANS) {
+      stop = i;
+      break;
+    }
+    const end = spanEnd(text, i, b);
+    if (end < 0 && b.steps < 0) {
+      stop = i; // out of budget inside this span: it was not judged
+      break;
+    }
+    if (end < 0) continue; // cut short: an inner span may still be complete, and the pair fallback sees the rest
+    const raw = text.slice(i, end + 1);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue; // not JSON (a row literal, prose in brackets): inner spans and the text rules still see it
+    }
+    b.steps -= raw.length;
+    let r: Scrubbed;
+    if (typeof parsed === 'string') {
+      if (!/[{[]/.test(parsed)) {
+        i = end; // a plain string literal: nothing structural inside
+        continue;
+      }
+      spans += 1;
+      r = scrubText(parsed, depth + 1, b); // a string holding JSON (double-encoded): decode and scan again
+      if (r.hidden === 0) continue; // the quote may have been misread (row text): keep scanning inside it
+    } else {
+      spans += 1;
+      r = scrub(parsed, depth + 1, b, 0);
+      if (r.hidden === 0) {
+        i = end;
+        continue;
+      }
+    }
+    parts.push(text.slice(last, i), JSON.stringify(r.value));
+    hidden += r.hidden;
+    last = end + 1;
+    i = end;
+  }
+  if (stop >= 0) {
+    // a bound stopped the pass at a span start: from there on the text was not judged, so it is hidden (N1), never left to the
+    // text rules
+    text = text.slice(0, stop);
+    if (tail === '') hidden += 1;
+    tail = HIDDEN;
+  }
+  const out = (parts.length > 0 ? parts.join('') : '') + text.slice(last);
+  const p = scrubPlain(out); // shape rules everywhere, and the pair fallback for JSON cut short
+  return {value: p.value + tail, hidden: hidden + p.hidden};
 }
 
-function scrub(v: unknown, depth: number, b: Budget): Scrubbed {
+function scrub(v: unknown, depth: number, b: Budget, nest: number): Scrubbed {
   if (typeof v === 'string') return scrubText(v, depth, b);
+  if (v === null || typeof v !== 'object') return {value: v, hidden: 0};
+  if (nest >= MAX_NEST) return {value: HIDDEN, hidden: 1}; // nested past the bound: not judged, hidden (N5)
   if (Array.isArray(v)) {
     let hidden = 0;
     const value = v.map((x) => {
-      const r = scrub(x, depth, b);
+      const r = scrub(x, depth, b, nest + 1);
       hidden += r.hidden;
       return r.value;
     });
     return {value, hidden};
   }
-  if (v !== null && typeof v === 'object') {
-    let hidden = 0;
-    const value: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-      if (isSecretJsonKey(k) && x !== null && x !== undefined && x !== '') {
-        value[k] = HIDDEN;
-        hidden += 1;
-      } else {
-        const r = scrub(x, depth, b);
-        value[k] = r.value;
-        hidden += r.hidden;
-      }
+  let hidden = 0;
+  const value: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    if (isSecretJsonKey(k) && x !== null && x !== undefined && x !== '') {
+      value[k] = HIDDEN;
+      hidden += 1;
+    } else {
+      const r = scrub(x, depth, b, nest + 1);
+      value[k] = r.value;
+      hidden += r.hidden;
     }
-    return {value, hidden};
   }
-  return {value: v, hidden: 0};
+  return {value, hidden};
 }
 
 /** Scrub one value (a cell): a fresh scan budget per call. */
-export const scrubValue = (v: unknown): Scrubbed => scrub(v, 0, {steps: MAX_STEPS});
+export const scrubValue = (v: unknown): Scrubbed => scrub(v, 0, {steps: MAX_STEPS}, 0);
 
 export function scrubRows(rows: unknown[][]): {rows: unknown[][]; hidden: number} {
   let hidden = 0;

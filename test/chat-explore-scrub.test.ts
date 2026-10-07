@@ -154,14 +154,94 @@ describe('2.2 scanner, Task 7 re-review R1/R2: camelCase keys, every JSON span p
     const r = scrubValue(big);
     expect(Date.now() - t0).toBeLessThan(2000);
     expect(String(r.value)).not.toContain('zz');
+    // past the decode bound the value fails closed (round 2 N1): hidden, not handed to the text rules
     const deep = JSON.stringify(JSON.stringify(JSON.stringify(JSON.stringify(JSON.stringify(JSON.stringify(JSON.stringify({a: 1})))))));
-    expect(scrubValue(deep).hidden).toBe(0);
+    const d = scrubValue(deep);
+    expect(d.hidden).toBe(1);
+    expect(String(d.value)).toContain(HIDDEN);
+    expect(String(d.value)).not.toMatch(/a\\*"\s*:\s*1/);
   });
   it('no regressions from the span scan: ordinary prose, brackets and JSON keep their text', () => {
     for (const v of ['price [PHP] {promo}', 'see [1] and {x}', '"quoted" words', '{"shop": "Zoomy",  "threshold": 5}', '[1, 2, 3]',
       'he said "{not json}"', '{"note": "the key to it"}']) {
       expect(scrubValue(v), v).toEqual({value: v, hidden: 0});
     }
+  });
+});
+
+describe('2.2 scanner, Task 7 re-review round 2 N1-N5: past a bound it fails closed; the cut-short fallback; credential keys; linear time', () => {
+  const enc1 = '"{\\"token\\":\\"shorty\\"}"'; // a double-encoded value, as jsonb::text of a jsonb string shows it
+  const noLeak = (v: unknown, label: string) => {
+    const r = scrubValue(v);
+    expect(JSON.stringify(r.value), label).not.toContain('shorty');
+    expect(r.hidden, label).toBeGreaterThan(0);
+    return r;
+  };
+  it('N1: more than the span bound, then a double-encoded secret: the unscanned rest is hidden', () => {
+    noLeak('{"a":1},'.repeat(201) + enc1, 'string_agg of 201 objects');
+    noLeak('"q",'.repeat(201) + enc1, '201 quoted strings');
+    // a form only the parse can judge (a \u-escaped key inside double-encoded JSON): past the bound it must still be hidden, which
+    // proves the rest is hidden rather than left to the text rules
+    const encU = JSON.stringify('{"\\u0074oken":"shorty"}');
+    expect(scrubValue(encU).value).not.toContain('shorty'); // inside the bounds the parse decodes the key
+    noLeak('{"a":1},'.repeat(201) + encU, 'span bound, escaped key');
+    noLeak('['.repeat(30) + 'b'.repeat(60_000) + ' ' + encU, 'step bound, escaped key');
+    const r = scrubValue('{"a":1},'.repeat(201) + encU);
+    expect(String(r.value).startsWith('{"a":1},'.repeat(200))).toBe(true); // the judged head stays readable
+    expect(String(r.value).endsWith(HIDDEN)).toBe(true);
+  });
+  it('N1: a cell over the length bound is cut before any scan and the rest is hidden; the scanned head stays readable', () => {
+    const r = noLeak('x'.repeat(100_001) + ' ' + enc1, 'over 100k, then encoded');
+    expect(String(r.value).startsWith('x'.repeat(1000))).toBe(true);
+    expect(String(r.value).endsWith(HIDDEN)).toBe(true);
+    noLeak(JSON.stringify(JSON.stringify({pad: 'a'.repeat(100_001), token: 'shorty'})), 'large double-encoded jsonb');
+    noLeak('x'.repeat(100_001) + ' {"$token":"shorty"}', 'over 100k, unusual key');
+    expect(scrubValue('plain words '.repeat(8_000))).toEqual({value: 'plain words '.repeat(8_000), hidden: 0}); // under the bound: untouched
+  });
+  it('N1: the step budget used up below the length bound hides the unscanned rest', () => {
+    noLeak('['.repeat(30) + 'b'.repeat(60_000) + ' ' + enc1, 'unclosed openers');
+  });
+  it('N1: JSON encoded past the decode bound is hidden, not handed to the text rules', () => {
+    let v: string = JSON.stringify({token: 'shorty'});
+    for (let k = 0; k < 8; k++) v = JSON.stringify(v);
+    noLeak(v, '8 encodings');
+  });
+  it('N2: cut-short JSON: escaped quotes, keys with $ : @, and an unterminated value under a secret key', () => {
+    noLeak('"{\\"token\\":\\"shorty\\"', 'cut and escaped');
+    noLeak('"{\\"a\\":\\"{\\\\\\"token\\\\\\":\\\\\\"shorty', 'cut, encoded twice');
+    noLeak('x {"$token":"shorty"', '$ key');
+    noLeak('x {"lazada:token":"shorty"', ': key');
+    noLeak('x {"@token":"shorty"', '@ key');
+    expect(scrubValue('x {"token": "shorty and more')).toEqual({value: `x {"token": ${HIDDEN}`, hidden: 1});
+    noLeak('x {"shop": {"token": "shorty"', 'a kept object value does not shield the pair inside it');
+    noLeak('(1,"{""shop"": {""token"": ""shorty""', 'row literal, the same');
+    expect(scrubValue('x {"shop": "Zoomy", "n": 1')).toEqual({value: 'x {"shop": "Zoomy", "n": 1', hidden: 0});
+  });
+  it('N3: credential-bearing JSON keys are hidden, parsed and as text (request headers stored as jsonb)', () => {
+    for (const k of ['Authorization', 'Proxy-Authorization', 'cookie', 'Cookie', 'Set-Cookie', 'bearer', 'passphrase', 'jwt', 'otp', 'cvv', 'cvc']) {
+      expect(scrubValue({headers: {[k]: 'Bearer shorty'}}).value, k).toEqual({headers: {[k]: HIDDEN}});
+      noLeak(`{"headers": {"${k}": "Bearer shorty"}}`, k);
+      noLeak(`x {"${k}": "shorty"`, `${k} cut`);
+    }
+    expect(scrubValue('https://x.example/cb?cookie=shorty&n=1').value).toBe(`https://x.example/cb?cookie=${HIDDEN}&n=1`);
+    expect(scrubValue({monkey: 1, isPinned: true, keyword: 'jerky', hashtag: '#zoomy'}).hidden).toBe(0);
+  });
+  it('N4: every rule is linear: a 100k-character cell of any shape scrubs in well under 500 ms', () => {
+    const cells = ['ZM001'.repeat(20_000), 'a'.repeat(100_000), 'eyJ_'.repeat(25_000), '_eyJ'.repeat(25_000), 're_'.repeat(33_333),
+      'a+'.repeat(50_000), 'a/'.repeat(50_000), 'sk-'.repeat(33_333), 'ab.'.repeat(33_333), '"a":'.repeat(25_000), '"token": '.repeat(11_111),
+      '\\'.repeat(100_000), '{"a": '.repeat(16_666), 'x'.repeat(1_000_000)];
+    for (const c of cells) {
+      const t0 = performance.now();
+      scrubValue(c);
+      expect(performance.now() - t0, c.slice(0, 12)).toBeLessThan(500);
+    }
+  });
+  it('N5: very deep nesting never returns the original value (hidden, not a stack overflow)', () => {
+    const text = '['.repeat(10_000) + '{"token":"shorty"}' + ']'.repeat(10_000);
+    noLeak(text, 'deep text');
+    let o: unknown = {token: 'shorty'};
+    for (let k = 0; k < 20_000; k++) o = [o];
+    noLeak(o, 'deep parsed');
   });
 });
 

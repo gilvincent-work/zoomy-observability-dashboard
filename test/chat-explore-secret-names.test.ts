@@ -119,6 +119,18 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
       expect(isSecretJsonKey(k), k).toBe(false);
     }
   });
+  it('round 2 N3: credential words are secret as JSON keys (whole parts, camel / snake / kebab / glued), not as SQL columns', () => {
+    for (const k of ['authorization', 'Authorization', 'Proxy-Authorization', 'proxyAuthorization', 'proxyauthorization', 'cookie', 'Cookie',
+      'cookies', 'Set-Cookie', 'setCookie', 'setcookie', 'bearer', 'bearerToken', 'passphrase', 'walletPassphrase', 'jwt', 'userJwt', 'jwt_token',
+      'otp', 'otpCode', 'OTP', 'cvv', 'cardCvv', 'cvc', 'CVC', 'authToken', 'auth_token']) {
+      expect(isSecretJsonKey(k), k).toBe(true);
+    }
+    for (const k of ['monkey', 'isPinned', 'keyword', 'hashtag', 'authorName', 'author', 'bearing', 'otter', 'cvvx', 'cookiecutter']) {
+      expect(isSecretJsonKey(k), k).toBe(false);
+    }
+    // the SQL column rule and its SQL twin are untouched
+    for (const n of ['authorization', 'cookie', 'bearer', 'passphrase', 'jwt', 'otp', 'cvv', 'cvc']) expect(isSecretName(n), n).toBe(false);
+  });
   it('R1 does not touch the SQL column rule: Postgres folds unquoted names, so camelCase stays one part there', () => {
     for (const n of ['apiKey', 'accessToken']) expect(isSecretName(n), n).toBe(false);
     expect(isSecretColumn('pos_settings', 'key')).toBe(false);
