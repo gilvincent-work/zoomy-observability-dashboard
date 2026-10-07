@@ -181,7 +181,7 @@ export function UploadReview({
                   <span
                     key={p.page}
                     className={cn(cls, 'border-dashed text-muted-foreground/60')}
-                    title={pageStrip.scope === 'batch' ? 'Not uploaded in this batch' : 'No scan of this page in this form yet'}
+                    title={pageStrip.scope === 'batch' ? 'No readable scan of this page in this batch' : 'No scan of this page in this form yet'}
                   >
                     {p.page}
                   </span>
