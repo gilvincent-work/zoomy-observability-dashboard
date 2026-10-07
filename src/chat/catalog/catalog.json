@@ -129,7 +129,7 @@
    "about": "One row per sale made at the POS (offline: booths, bazaars, shop). Business facts live here, not in the website/Shopee/Lazada data.",
    "columns": "id, client_uuid, subtotal, discount, total (PHP; subtotal = total + discount), oversold (bool: sold more than on hand), device_id, payment_method (cash, gcash, card, maya; null = legacy cash), customer_handle, status (completed or voided), remarks, created_at, edited_at (null = never edited), event_id (null = not tagged to an event), pet_type (dog, cat, both, null = untagged).",
    "prefer": null,
-   "testOrders": "UNKNOWN: no marker found in code. Searched zoomy-pos (app/, components/, db/, utils/, hooks/, docs/): no is_test flag, no test status, no training mode; status is only completed/voided; remarks is free text set by the cashier (zoomy-pos/app/modals/transactions.tsx:264-272); device_id is not written anywhere in zoomy-pos code (the sync that fills it is not in the repo). The dashboard has no test-order filter either; its fixtures use event ids X-... and order ids >= 1000 only to isolate local tests (scripts/coop-explore-fixture.sql:6). Knowledge notes staging holds \"6 test events\" (knowledge/tasks/2026-10-07-ask-coop-live-data-and-page-awareness.md:118), so a marker may be an event name. Owner query (read-only, run on staging or PROD):"
+   "testOrders": "UNKNOWN: no marker found in code (status is only completed or voided; device_id is never written)."
   },
   "pos_order_items": {
    "name": "pos_order_items",
