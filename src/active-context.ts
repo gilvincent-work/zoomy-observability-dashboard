@@ -1,4 +1,5 @@
 import 'server-only';
+import {cache} from 'react';
 import {cookies} from 'next/headers';
 import {redirect} from 'next/navigation';
 import {auth} from '@/auth';
@@ -44,8 +45,11 @@ async function cookieView(session: ViewSession | null): Promise<string | null> {
  * `active_view` cookie set by the switcher. resolveActive ignores a view the user
  * doesn't hold and falls back to one they do, so it can never grant access.
  */
+// One session read per request (the layout, the page and the nav all ask for it).
+const sessionOnce = cache(() => auth());
+
 export async function getActiveContext(requested?: string | null): Promise<ActiveContext | null> {
-  const session = await auth();
+  const session = await sessionOnce();
   if (!session) return null;
   const memberships = (session as {memberships?: Membership[]}).memberships ?? [];
   const pick = requested ?? (await cookieView(session as ViewSession));
@@ -88,8 +92,8 @@ export type NavContext = {
   views: NavView[];
 };
 
-export async function getNavContext(): Promise<NavContext | null> {
-  const session = await auth();
+export const getNavContext = cache(async (): Promise<NavContext | null> => {
+  const session = await sessionOnce();
   if (!session) return null;
   const memberships = (session as {memberships?: Membership[]}).memberships ?? [];
   const active = resolveActive(memberships, await cookieView(session as ViewSession));
@@ -112,4 +116,4 @@ export async function getNavContext(): Promise<NavContext | null> {
     isCoopAdmin: active.isCoopAdmin,
     views: navViews,
   };
-}
+});
