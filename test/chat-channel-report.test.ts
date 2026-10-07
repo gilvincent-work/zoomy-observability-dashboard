@@ -22,6 +22,13 @@ describe('get_channel_report input', () => {
     expect('error' in e && e.error).toMatch(/needs the owner's dates/);
     expect('error' in e && e.error).toMatch(/Do not pick dates yourself/);
   });
+  it('refuses dates that are not real (Sep 31, month 13) with an honest error, never a roll-over or a throw', () => {
+    for (const bad of [{from: '2026-09-31'}, {to: '2026-09-31'}, {from: '2026-13-01'}, {to: '2026-02-30'}]) {
+      const e = readReportInput({...ASK, ...bad});
+      expect('error' in e && e.error).toMatch(/is not a real date; ask the owner for the dates again/);
+    }
+    expect('error' in readReportInput({...ASK, from: '2024-02-29', to: '2024-03-01'})).toBe(false);
+  });
   it('refuses reversed dates, unknown channels or granularity, and too many buckets', () => {
     expect('error' in readReportInput({...ASK, from: '2026-10-01'})).toBe(true);
     expect('error' in readReportInput({...ASK, channels: ['tiktok']})).toBe(true);
@@ -68,6 +75,15 @@ describe('golden: "Give me the September report per channel" (A8, offline replay
     });
     const r = (await ex.get_channel_report?.(ASK)) as {rows: Record<string, unknown>[]};
     expect(r.rows[2]).toEqual({channel: 'Website', revenue: 1000, orders: 1, units: 2, aov: 1000});
+  });
+  it('a CRM read that throws says the CRM could not be read, not "live orders as of" or zero sales', async () => {
+    const ex = createExecutors({data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(), crmOrders: async () => { throw new Error('boom'); }});
+    const r = (await ex.get_channel_report?.(ASK)) as {rows: Record<string, unknown>[]; meta: {checks: {text: string}[]}};
+    expect(r.rows[2]).toEqual({channel: 'Website', revenue: null, orders: null, units: null, aov: null});
+    const text = r.meta.checks.map((c) => c.text).join('\n');
+    expect(text).toMatch(/Website: the CRM could not be read right now; no website figures\./);
+    expect(text).not.toMatch(/live CRM orders as of/);
+    expect(text).not.toMatch(/not connected/);
   });
   it('by week: one row per week (Monday start, clipped), one revenue column per channel', () => {
     const res = shapeChannelReport({from: '2026-09-01', to: '2026-09-30', channels: ['shopee', 'lazada'], granularity: 'week'}, {digests: SEPTEMBER_ROWS, mock: false, website: null, data: null});

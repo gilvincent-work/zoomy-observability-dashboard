@@ -22,6 +22,8 @@ export interface ReportSources {
   mock: boolean;
   website: RollupInput['website'];
   data: MetricData | null;
+  /** The CRM is connected but the read failed: Website says so instead of "not connected". */
+  websiteFailed?: boolean;
 }
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -29,6 +31,8 @@ const MAX_DAYS = 366;
 const MAX_BUCKETS: Record<Exclude<Granularity, 'total'>, number> = {week: 27, month: 13}; // 26 weeks or 12 months, plus a clipped edge
 const MAX_EXTRA_ROWS = 12;
 const MAX_NOTES = 16;
+/** A YYYY-MM-DD that is a real calendar day (rejects 2026-09-31 and 2026-13-01 instead of rolling over). */
+const isRealDay = (d: string): boolean => new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 const fail = (error: string): MetricError => ({error});
 const col = (key: string, label: string, unit: ResultColumn['unit'], role: ResultColumn['role']): ResultColumn => ({key, label, unit, role});
 
@@ -46,6 +50,9 @@ export function readReportInput(input: unknown): ChannelReportRequest | MetricEr
   const to = typeof o.to === 'string' ? o.to : '';
   if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) {
     return fail('A channel report needs the owner\'s dates. Ask them for a start and an end date (for example "September" or "1 Sep to 30 Sep"), then call again with from and to as YYYY-MM-DD. Do not pick dates yourself.');
+  }
+  for (const d of [from, to]) {
+    if (Number.isNaN(Date.parse(`${d}T00:00:00Z`)) || !isRealDay(d)) return fail(`${d} is not a real date; ask the owner for the dates again.`);
   }
   if (from > to) return fail('from is after to. Ask the owner for the dates again.');
   if (dayKeysBetween(from, to).length > MAX_DAYS) return fail(`That is more than ${MAX_DAYS} days. Ask the owner for a shorter range.`);
@@ -87,6 +94,9 @@ export function shapeChannelReport(req: ChannelReportRequest, src: ReportSources
     website: src.website,
     offline: src.data ? {orders: src.data.orders, dataFrom: cover?.dataFrom ?? null, dataTo: cover?.dataTo ?? null} : null,
   });
+  if (src.websiteFailed) {
+    for (const b of out) for (const p of b.channels) if (p.channel === 'website' && p.status === 'not_connected') p.notes = ['Website: the CRM could not be read right now; no website figures.'];
+  }
   const total = req.granularity === 'total';
   const columns: ResultColumn[] = total
     ? [col('channel', 'Channel', 'text', 'category'), col('revenue', 'Revenue', 'PHP', 'measure'), col('orders', 'Orders', 'count', 'measure'), col('units', 'Units', 'units', 'measure'), col('aov', 'Average order value', 'PHP', 'measure')]

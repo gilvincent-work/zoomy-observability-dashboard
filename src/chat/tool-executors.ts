@@ -76,17 +76,19 @@ export function createExecutors(ctx: ChatToolContext): ChatExecutors {
         }
       }
       let website: {orders: RangeOrder[]; asOf: string} | null = null;
+      let websiteFailed = false;
       if (wants('website') && ctx.crmOrders) {
         try {
           website = await ctx.crmOrders();
         } catch {
-          website = {orders: [], asOf: ctx.now.toISOString()}; // read failed: "no orders found ... or the CRM could not be read"
+          websiteFailed = true; // read failed: say so, never "live orders as of ..." with zero sales
         }
       }
       const result = shapeChannelReport(req, {
         digests: digest ? await digestsFor(digest, req.from, req.to) : null,
         mock: digest?.source === 'mock',
         website,
+        websiteFailed,
         data: wants('offline') ? await data() : null,
       });
       counter += 1;
