@@ -10,6 +10,11 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Uploads: tap a finished file to open its review
+- In the batch file list, a page that has been read is now a **fully clickable row** that opens that page's review (`/uploads/[id]`). Previously you had to aim for a small "Open" text button.
+  - The row highlights on hover and shows a chevron, and it is a single keyboard stop with an inset focus ring and a label such as "Review 2.pdf (page 2)".
+  - Rows still uploading or failed keep their Retry, Cancel and Remove buttons, which sit above the row link.
+
 ## 2026-10-07 — Multi-file uploads: a store's whole form in one go, with progress that follows you
 - **Batch uploads (one store's inventory form for one period).**
   - Drop or browse several files at once: a PDF per page, one PDF with every page, or both, plus a sales CSV if needed.
