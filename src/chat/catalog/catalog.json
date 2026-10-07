@@ -99,7 +99,8 @@
    "tables": [
     "companies",
     "company_users",
-    "company_user_audit"
+    "company_user_audit",
+    "company_user_prefs"
    ]
   },
   {
@@ -348,6 +349,14 @@
   },
   "company_user_audit": {
    "name": "company_user_audit",
+   "domain": "tenancy",
+   "about": "",
+   "columns": "",
+   "prefer": null,
+   "testOrders": null
+  },
+  "company_user_prefs": {
+   "name": "company_user_prefs",
    "domain": "tenancy",
    "about": "---",
    "columns": "",
@@ -622,6 +631,18 @@
    "redirectTo": null
   },
   {
+   "route": "/uploads/batch/[id]",
+   "title": "Goldline upload batch",
+   "shows": "Review one upload batch (a store's inventory form for one period) and commit every page into one Inventory count; another tenant's batch id is a 404",
+   "data": "gl_upload_batches, gl_uploads, gl_extractions, gl_products, gl_stores, gl_commit_batch",
+   "domains": [
+    "goldline"
+   ],
+   "fenced": true,
+   "access": "none (tenant fence: Ask Coop is Zoomy-only)",
+   "redirectTo": null
+  },
+  {
    "route": "/admin/users",
    "title": "Users and roles",
    "shows": "Manage company users and roles (Coop Admin and company admins only; others are redirected)",
@@ -643,6 +664,70 @@
    ],
    "fenced": true,
    "access": "none (tenant fence)",
+   "redirectTo": null
+  },
+  {
+   "route": "/stock",
+   "title": "Goldline inventory",
+   "shows": "Goldline Inventory board: counts, forecast and the warehouse side (need, ship by, produce by); lives at /stock because /inventory is the Zoomy page",
+   "data": "gl_inventory, gl_sales, gl_shipments, gl_count_sources, gl_uploads, gl_products, gl_stores, gl_supply_settings, gl_line_lead_times, gl_store_transit, gl_warehouse_stock",
+   "domains": [
+    "goldline",
+    "tenancy"
+   ],
+   "fenced": true,
+   "access": "none (tenant fence: Ask Coop is Zoomy-only)",
+   "redirectTo": null
+  },
+  {
+   "route": "/stock/[...item]",
+   "title": "Goldline product",
+   "shows": "Goldline product page: one item's sales and stock month by month, one store or all of the caller's stores; an item with no catalog row and no counts is a 404; the item code can contain /",
+   "data": "gl_inventory, gl_inventory_snapshots, gl_sales",
+   "domains": [
+    "goldline",
+    "tenancy"
+   ],
+   "fenced": true,
+   "access": "none (tenant fence: Ask Coop is Zoomy-only)",
+   "redirectTo": null
+  },
+  {
+   "route": "/stock/forecast",
+   "title": "Goldline forecast",
+   "shows": "Redirect (redirect()) to /stock, keeping store; the Forecast tab was merged into the Inventory board",
+   "data": "",
+   "domains": [
+    "n/a"
+   ],
+   "fenced": false,
+   "access": "n/a (redirect)",
+   "redirectTo": "/stock"
+  },
+  {
+   "route": "/store-health",
+   "title": "Goldline store health",
+   "shows": "Goldline store and stock health scored from stock and form data (Zoomy's /health is Zoomy-only; Goldline has no orders or acquisition cost)",
+   "data": "gl_inventory, gl_inventory_snapshots, gl_uploads",
+   "domains": [
+    "goldline",
+    "tenancy"
+   ],
+   "fenced": true,
+   "access": "none (tenant fence: Ask Coop is Zoomy-only)",
+   "redirectTo": null
+  },
+  {
+   "route": "/action-feed",
+   "title": "Goldline actions",
+   "shows": "Goldline Action Feed: action cards for all stores or one store, built from stock movement and counts",
+   "data": "gl_inventory, gl_inventory_snapshots, gl_uploads",
+   "domains": [
+    "goldline",
+    "tenancy"
+   ],
+   "fenced": true,
+   "access": "none (tenant fence: Ask Coop is Zoomy-only)",
    "redirectTo": null
   },
   {
@@ -919,6 +1004,42 @@
    "route": "/dev/chat-blocks",
    "title": "Chat blocks preview",
    "shows": "DEV only preview of every chat block variant on synthetic data; 404 in production",
+   "data": "",
+   "domains": [
+    "n/a"
+   ],
+   "fenced": false,
+   "access": "n/a",
+   "redirectTo": null
+  },
+  {
+   "route": "/dev/goldline-inventory",
+   "title": "Goldline inventory preview",
+   "shows": "DEV only preview of the Goldline Inventory board on synthetic counts; 404 in production",
+   "data": "",
+   "domains": [
+    "n/a"
+   ],
+   "fenced": false,
+   "access": "n/a",
+   "redirectTo": null
+  },
+  {
+   "route": "/dev/goldline-product",
+   "title": "Goldline product preview",
+   "shows": "DEV only preview of the Goldline product page on synthetic counts; 404 in production",
+   "data": "",
+   "domains": [
+    "n/a"
+   ],
+   "fenced": false,
+   "access": "n/a",
+   "redirectTo": null
+  },
+  {
+   "route": "/dev/perf",
+   "title": "Loader timings",
+   "shows": "DEV only: times the Goldline page loaders and shows timings, never data; 404 outside development",
    "data": "",
    "domains": [
     "n/a"
