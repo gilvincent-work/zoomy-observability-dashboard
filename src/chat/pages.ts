@@ -14,7 +14,7 @@ export const PAGES: readonly PageInfo[] = [
   {route: '/inventory', title: 'Inventory', shows: 'stock on hand, by location (event = sellable, office = back stock), forecast, bundles, intake, transfers', data: 'pos_inventory, pos_inventory_by_location, pos_stock_movements, pos_products'},
   {route: '/inventory/[sku]', title: 'Product detail', shows: 'one product: stock by location, movement and price history, forecast', data: 'pos_products, pos_stock_movements, pos_orders'},
   {route: '/customers/all', title: 'All customers', shows: 'merged contacts across website CRM, Lazada uploads and booth leads', data: 'CRM customers and orders, lazada_orders, spin_wheel_leads'},
-  {route: '/customers/website-crm', title: 'Website CRM', shows: 'website customers, orders, abandoned checkouts, vouchers', data: 'CRM API only (not readable by Ask Coop yet)'},
+  {route: '/customers/website-crm', title: 'Website CRM', shows: 'website customers, orders, abandoned checkouts, vouchers', data: 'website CRM API, read live by the CRM tools (get_crm_metrics, list_crm_orders, list_crm_customers, list_crm_checkouts); checkout links and voucher codes are withheld'},
   {route: '/customers/leads', title: 'Booth leads', shows: 'booth leads matched to orders and prizes', data: 'spin_wheel_leads, pos_orders, pos_order_prizes'},
   {route: '/customers/lazada', title: 'Lazada contacts', shows: 'Lazada contacts from uploaded exports', data: 'lazada_orders'},
   {route: '/reports', title: 'Saved reports', shows: 'gallery of saved Ask Coop reports', data: 'coop_reports'},

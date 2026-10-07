@@ -100,6 +100,16 @@ describe('golden: "Give me the September report per channel" (A8, offline replay
     const r = (await ex.get_channel_report?.(ASK)) as {rows: Record<string, unknown>[]};
     expect(r.rows[2]).toEqual({channel: 'Website', revenue: 1000, orders: 1, units: 2, aov: 1000});
     expect(JSON.parse(info.mock.calls[0][0] as string)).toMatchObject({event: 'chat_crm_call', tool: 'get_channel_report', endpoints: ['orders'], ok: true, rows: 2});
+    // Parity: the same orders through the injected function give the same notes and checks, not only the same row.
+    vi.useFakeTimers({toFake: ['Date']});
+    vi.setSystemTime(NOW);
+    const same = createExecutors({data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(), crmOrders: async () => ({orders: body.orders as never, asOf: '2026-10-07T04:00:00Z'})});
+    const crm2 = createExecutors({data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(), crmOrders: () => websiteOrdersForReport({client: crm, user: null, sink: {info: vi.fn(), error: vi.fn()}})});
+    const r2 = (await same.get_channel_report?.(ASK)) as {meta: {checks: unknown[]; caveats: unknown[]}};
+    const r3 = (await crm2.get_channel_report?.(ASK)) as typeof r2;
+    vi.useRealTimers();
+    expect(r3.meta.checks).toEqual(r2.meta.checks);
+    expect(r3.meta.caveats).toEqual(r2.meta.caveats);
   });
 
   it('Train 4: an unreachable CRM says "could not be read", never "no orders" (Review Focus 3)', async () => {

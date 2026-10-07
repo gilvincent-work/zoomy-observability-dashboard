@@ -85,7 +85,7 @@ const getDigest: ToolDefinition = {
   name: 'get_digest',
   description:
     'Read ONE stored DIGEST as published: Shopee, Lazada and Website figures (revenue, orders, ad spend, ROAS, top products, customers) for that digest\'s window. Digest windows vary in length (weekly or about a month); the stored windows are listed in the per-turn context. ' +
-    'Call it for a question about Shopee, Lazada or the website, or a channel comparison, in one window. Use window "covering" with the owner\'s date (from, and to for a range) to read the digest that covers it or overlaps it most; "latest" and "previous" read the newest two. ' +
+    'Call it for a question about Shopee, Lazada or the website\'s published digest figures (ad spend, top products, customers), or a channel comparison, in one window. When the website CRM tools are available, live website orders and customers come from them instead. Use window "covering" with the owner\'s date (from, and to for a range) to read the digest that covers it or overlaps it most; "latest" and "previous" read the newest two. ' +
     'It returns a result id you can pass to render_table or render_chart; the figures are as published, every row says its time basis (never present an all-time figure as this week), and you must name the window it used. ' +
     'For offline POS sales use query_metric instead. Use "comparison" for Lazada vs Shopee vs Website. ' +
     'For a total over any dates (a month, a custom range) or a trend by week or month, use get_channel_report instead.',

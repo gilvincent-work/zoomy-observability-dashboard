@@ -96,8 +96,8 @@ export async function POST(req: Request) {
   const crm: CrmClient | null = live.ok && crmAccess.enabled ? createCrmClient({baseUrl: crmAccess.baseUrl, token: crmAccess.token, fetch}) : null;
   const crmTools = crm !== null && crmAccess.enabled && crmAccess.tools;
   const system = [
-    {type: 'text' as const, text: buildStaticSystem({tools: live.ok, explore: explore !== null}), cache_control: {type: 'ephemeral' as const}},
-    {type: 'text' as const, text: live.ok ? buildLiveContextBlock({explore: explore !== null}) : buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
+    {type: 'text' as const, text: buildStaticSystem({tools: live.ok, explore: explore !== null, crm: crmTools}), cache_control: {type: 'ephemeral' as const}},
+    {type: 'text' as const, text: live.ok ? buildLiveContextBlock({explore: explore !== null, crm: crmTools}) : buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
   ];
 
   const anthropic = new Anthropic({apiKey: key});
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
       system,
       tools: live.ok ? chatTools({explore: explore !== null, crm: crmTools}) : [],
       messages,
-      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null, page: pageLine, digests: digestLine}) : buildDegradedPreamble(now),
+      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null, page: pageLine, digests: digestLine, crm: crmTools}) : buildDegradedPreamble(now),
       executors:
         live.ok && report
           ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, crmOrders: crm ? () => websiteOrdersForReport({client: crm, user}) : undefined, explore: explore?.executor, crm: crmTools && crm ? crm : undefined})

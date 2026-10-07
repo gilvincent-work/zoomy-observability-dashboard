@@ -15,10 +15,14 @@ function longToday(now: Date): string {
   return `${WEEKDAYS[pht.getUTCDay()]}, ${pht.getUTCDate()} ${FULL_MONTHS[pht.getUTCMonth()]} ${pht.getUTCFullYear()}`;
 }
 
-const NOT_AVAILABLE_BASE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (stored digests only). Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet.';
+const PET_EVENT = 'Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet.';
+const NOT_AVAILABLE_BASE = `Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (stored digests only). ${PET_EVENT}`;
+const NOT_AVAILABLE_BASE_CRM = `Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada sales (stored digests only). Website orders, customers and abandoned checkouts ARE available live (get_crm_metrics, list_crm_orders, list_crm_customers, list_crm_checkouts). ${PET_EVENT}`;
 const NOT_AVAILABLE_NO_EXPLORE = 'Contact details (email, phone, instagram) are not exposed by the metrics. Questions no metric covers cannot be answered.';
+const NOT_AVAILABLE_NO_EXPLORE_CRM = 'POS contact details are not exposed by the metrics; website customer contacts come from list_crm_customers. Other questions no tool covers cannot be answered.';
 const EXPLORE_AVAILABLE = 'For questions no metric covers (contacts, leads, stock, voided orders, hours), use run_query on the Explore views.';
-const notAvailable = (explore: boolean): string => `${NOT_AVAILABLE_BASE} ${explore ? EXPLORE_AVAILABLE : NOT_AVAILABLE_NO_EXPLORE}`;
+const notAvailable = (explore: boolean, crm = false): string =>
+  `${crm ? NOT_AVAILABLE_BASE_CRM : NOT_AVAILABLE_BASE} ${explore ? EXPLORE_AVAILABLE : crm ? NOT_AVAILABLE_NO_EXPLORE_CRM : NOT_AVAILABLE_NO_EXPLORE}`;
 
 /** Per-turn context when the live-data path is unavailable: today's date and an honest "not available" (no data, no figures). */
 export function buildDegradedPreamble(now: Date): string {
@@ -26,7 +30,7 @@ export function buildDegradedPreamble(now: Date): string {
 }
 
 /** `outline` is the figure-free text of the open report (F8), or '' / absent when none is open. It rides in the per-turn preamble only, never in the cached system or tools. */
-export function buildPreamble(data: MetricData, now: Date, outline?: string, exploreCoverage?: string | null, opts: {explore?: boolean; page?: string | null; digests?: string | null} = {}): string {
+export function buildPreamble(data: MetricData, now: Date, outline?: string, exploreCoverage?: string | null, opts: {explore?: boolean; page?: string | null; digests?: string | null; crm?: boolean} = {}): string {
   const c = buildCoverage(data);
   const head = `[context] Today is ${longToday(now)} (Philippine time; ${phtDate(now)}).`;
   let cover: string;
@@ -37,7 +41,7 @@ export function buildPreamble(data: MetricData, now: Date, outline?: string, exp
     const lead = c.source === 'mock' ? 'The data is sample data, not real sales, and covers' : 'Offline POS data is live and covers';
     cover = `${lead} ${shortDate(c.dataFrom)} to ${shortDate(c.dataTo)} (${c.orders} completed orders${share}).`;
   }
-  const base = `${head} ${cover} ${notAvailable(opts.explore === true)} If a question is outside this range, say what the data covers.`;
+  const base = `${head} ${cover} ${notAvailable(opts.explore === true, opts.crm === true)} If a question is outside this range, say what the data covers.`;
 const withPage = opts.page ? `${base}\n${opts.page}` : base;
   const withDigests = opts.digests ? `${withPage}\n${opts.digests}` : withPage;
   const withCoverage = exploreCoverage ? `${withDigests}\n${exploreCoverage}` : withDigests;

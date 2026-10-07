@@ -11,7 +11,7 @@ export const CRM_TOOL_NAMES = ['get_crm_metrics', 'list_crm_orders', 'list_crm_c
 export type CrmToolName = (typeof CRM_TOOL_NAMES)[number];
 
 const SAY = 'Say so plainly and give no website figure; do not guess, and do not use another source in its place.';
-export const CRM_ERROR_TEXT: Readonly<Record<CrmErrorCode, string>> = Object.freeze({
+export const CRM_ERROR_TEXT: Readonly<Record<CrmErrorCode | 'refused_cap', string>> = Object.freeze({
   unreachable: `The website CRM is unreachable right now. ${SAY}`,
   timeout: `The website CRM did not answer in time, so it is unreachable right now. ${SAY}`,
   upstream_error: `The website CRM returned an error, so its data is not available right now. ${SAY}`,
@@ -19,6 +19,7 @@ export const CRM_ERROR_TEXT: Readonly<Record<CrmErrorCode, string>> = Object.fre
   bad_shape: `The website CRM answered in an unexpected format, so its data is not available right now. ${SAY}`,
   call_cap: 'This question has used its website CRM reads. Answer from the CRM results you already have, or ask the owner to ask a narrower question.',
   refused: 'That website CRM request is not allowed.',
+  refused_cap: 'Too many invalid requests this turn.',
 });
 
 export interface CrmDeps {
@@ -76,8 +77,8 @@ export function createCrmExecutors(deps: CrmExecutorDeps): Record<CrmToolName, (
       const req = read(input);
       if (isMetricError(req)) {
         if (refused >= maxRefused) {
-          refusedLine(name, input, 'call_cap');
-          return {error: CRM_ERROR_TEXT.call_cap};
+          refusedLine(name, input, 'refused_cap');
+          return {error: CRM_ERROR_TEXT.refused_cap};
         }
         refused += 1;
         refusedLine(name, input, 'input');

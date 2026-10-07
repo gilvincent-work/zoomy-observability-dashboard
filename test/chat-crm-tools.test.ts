@@ -166,7 +166,8 @@ describe('createCrmExecutors', () => {
     const ex = createCrmExecutors({client: f.client, now: NOW, user: null, sink: s, keep: (r) => r, maxCalls: 2, maxRefused: 3});
     const bad = {...ORD, method: 'POST'};
     for (let i = 0; i < 3; i++) expect(await ex.list_crm_orders(bad)).toEqual({error: expect.stringMatching(/Use exactly these parameters/)});
-    expect(await ex.list_crm_orders(bad)).toEqual({error: CRM_ERROR_TEXT.call_cap});
+    expect(await ex.list_crm_orders(bad)).toEqual({error: CRM_ERROR_TEXT.refused_cap});
+    expect(CRM_ERROR_TEXT.refused_cap).toBe('Too many invalid requests this turn.');
     expect(await ex.get_crm_metrics({})).not.toHaveProperty('error');
     expect(await ex.get_crm_metrics({})).not.toHaveProperty('error');
     expect(await ex.get_crm_metrics({})).toEqual({error: CRM_ERROR_TEXT.call_cap});
