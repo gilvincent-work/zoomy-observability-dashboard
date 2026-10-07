@@ -14,7 +14,7 @@ export type MetricId =
   | 'bundle_picks';
 
 /** What a stored result may be: a registry metric, or one of the lookup tools' results (F10). Only registry metrics can be re-run or saved. */
-export type ResultMetricId = MetricId | 'digest' | 'product_lookup' | 'explore' | 'channel_report';
+export type ResultMetricId = MetricId | 'digest' | 'product_lookup' | 'explore' | 'channel_report' | 'crm_metrics' | 'crm_customers' | 'crm_orders' | 'crm_checkouts';
 
 export type PetKey = 'dog' | 'cat' | 'both' | 'untagged';
 

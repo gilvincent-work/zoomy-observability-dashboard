@@ -4,6 +4,7 @@
 // Never projected: `raw` (the Shopify payload; reduced to `stage` here), `abandonedCheckoutUrl` (only the pages add it back, in
 // crm-data.ts), the birthday voucher `code` (there is no voucher projection). Ask Coop sees none of them.
 import {checkoutStage} from './crm-compute';
+import {parseLineItems} from './custom-range';
 import type {CrmCheckout, CrmCustomer, CrmMembershipConfig, CrmMetrics, CrmOrder} from './crm-types';
 
 export type CrmCheckoutSafe = Omit<CrmCheckout, 'abandonedCheckoutUrl'>;
@@ -94,6 +95,16 @@ export function projectOrder(o: Rec): CrmOrder {
     // title/quantity/price/discounts then.
     lineItems: typeof o.lineItems === 'string' ? o.lineItems : o.lineItems === null || o.lineItems === undefined ? null : JSON.stringify(o.lineItems),
   };
+}
+
+/** What Ask Coop may know of a line item: numbers and the product title. No properties, SKU, vendor or any other free text. */
+export type CrmLineItemSafe = {title: string; quantity: number; price: number; discount: number};
+export type CrmOrderChat = Omit<CrmOrder, 'lineItems'> & {lineItems: CrmLineItemSafe[]};
+
+/** An order for the model: the pages' fields, with the raw Shopify line-item JSON (customer notes, gift messages, SKUs) reduced to {title, quantity, price, discount}. */
+export function projectOrderChat(o: Rec): CrmOrderChat {
+  const {lineItems: _raw, ...rest} = projectOrder(o);
+  return {...rest, lineItems: parseLineItems(o.lineItems).map((i) => ({title: i.title.slice(0, 120), quantity: i.quantity, price: i.unitPrice, discount: i.discount}))};
 }
 
 /** A checkout without its recovery link; the progress stage is derived from `raw` here and the blob is dropped. */

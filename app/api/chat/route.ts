@@ -7,7 +7,9 @@ import {encodeEvent} from '@/src/chat/stream-protocol';
 import {dashboardLinks, pageContextLine, readPageInput} from '@/src/chat/pages';
 import {buildDegradedPreamble, buildPreamble, digestIndexLine} from '@/src/chat/preamble';
 import {openReportSession} from '@/src/chat/report-session';
-import {CHAT_TOOLS, exploreTools} from '@/src/chat/tool-defs';
+import {chatTools} from '@/src/chat/tool-defs';
+import {resolveCrmAccess} from '@/src/chat/crm/config';
+import {createCrmClient, type CrmClient} from '@/src/chat/crm/client';
 import {setupExplore} from '@/src/chat/explore-setup';
 import {createExecutors} from '@/src/chat/tool-executors';
 import {getChatDigest, getChatDigestIndex, getChatMetricDataOrDegrade} from '@/src/chat/server';
@@ -89,6 +91,10 @@ export async function POST(req: Request) {
   const report = live.ok ? openReportSession(body.report, live.data, now, () => console.warn(JSON.stringify({event: 'chat_report_rejected'}))) : null;
   // Explore (run_query): fail-closed. Only an allowed user on a ready read path gets the tool, the prompt block and the executor.
   const explore = live.ok && report ? setupExplore({env: process.env, email: user, now, user, store: report.store}) : null;
+  // Train 4: the GET-only website CRM client, one per request (its memo and caps are per turn). Fail-closed: no env, no client.
+  const crmAccess = resolveCrmAccess(process.env);
+  const crm: CrmClient | null = live.ok && crmAccess.enabled ? createCrmClient({baseUrl: crmAccess.baseUrl, token: crmAccess.token, fetch}) : null;
+  const crmTools = crm !== null && crmAccess.enabled && crmAccess.tools;
   const system = [
     {type: 'text' as const, text: buildStaticSystem({tools: live.ok, explore: explore !== null}), cache_control: {type: 'ephemeral' as const}},
     {type: 'text' as const, text: live.ok ? buildLiveContextBlock({explore: explore !== null}) : buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
@@ -103,12 +109,12 @@ export async function POST(req: Request) {
       maxTokens: COOP_CHAT.maxTokens,
       effort: CHAT_EFFORT,
       system,
-      tools: live.ok ? (explore ? exploreTools() : CHAT_TOOLS) : [],
+      tools: live.ok ? chatTools({explore: explore !== null, crm: crmTools}) : [],
       messages,
       preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null, page: pageLine, digests: digestLine}) : buildDegradedPreamble(now),
       executors:
         live.ok && report
-          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, crmOrders: crmConfigured() ? async () => ({orders: await getCrmOrders(), asOf: new Date().toISOString()}) : undefined, explore: explore?.executor})
+          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, crmOrders: crmConfigured() ? async () => ({orders: await getCrmOrders(), asOf: new Date().toISOString()}) : undefined, explore: explore?.executor, crm: crmTools && crm ? crm : undefined})
           : {},
       emit,
       user,

@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {
   LEGACY_ALLOWED_IMPORTS,
   LEGACY_ROUTE,
+  PURE_CRM_MODULES,
   REPORTS_IO_FILES,
   WRITE_CALL_EXCEPTIONS,
   buildClosure,
@@ -58,6 +59,10 @@ describe('real tree', () => {
 
 // Layer 7 (F9): the reports write path is unreachable from chat, and the module that renders a saved report stays pure.
 describe('reports write separation (layer 7), real tree', () => {
+  it.each(PURE_CRM_MODULES)('Train 4: %s stays pure (no server-only, Supabase, Anthropic, Next or auth)', (entry) => {
+    expect(impureInClosure(buildClosure([entry], files), files)).toEqual([]);
+  });
+
   const PURE = ['src/reports-run.ts', 'src/reports-access.ts', 'src/reports-suggest.ts', 'src/reports-types.ts'];
   const {files, entries} = loadRealTree(process.cwd(), [...PURE, ...REPORTS_IO_FILES]);
   const all = loadDirs(process.cwd(), ['src', 'app', 'components', 'lib']);
@@ -170,6 +175,13 @@ describe('LEGACY_ALLOWED_IMPORTS', () => {
 });
 
 describe('scanner rules fire on planted violations', () => {
+  it('Train 4: the pure CRM modules may be imported by chat; the pages reader and any other crm module may not', () => {
+    const ok = run({'src/chat/c.ts': "import {projectOrder} from '../crm-project';", 'src/crm-project.ts': "import {checkoutStage} from './crm-compute';", 'src/crm-compute.ts': 'export const checkoutStage = 1;'});
+    expect(forbiddenInClosure(ok.closure, ok.files)).toEqual([]);
+    const bad = run({'src/chat/c.ts': "import {getCrmOrders} from '../crm-data';", 'src/crm-data.ts': 'export const getCrmOrders = 1;'});
+    expect(forbiddenInClosure(bad.closure, bad.files).join()).toContain('src/crm-data.ts: crm module');
+  });
+
   const base: FileMap = {
     'src/chat/ok.ts': "import {x} from './util';\nexport const y = x;",
     'src/chat/util.ts': 'export const x = 1;',
