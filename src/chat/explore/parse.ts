@@ -43,7 +43,7 @@ export const EXPLORE_CASTS: readonly string[] = ['text', 'int4', 'int8', 'numeri
 export const EXPLORE_NODE_TYPES: readonly string[] = [
   'SelectStmt', 'WithClause', 'CommonTableExpr', 'ResTarget', 'ColumnRef', 'String', 'Integer', 'Float', 'Boolean', 'A_Const', 'A_Expr', 'BoolExpr',
   'FuncCall', 'TypeCast', 'TypeName', 'RangeVar', 'JoinExpr', 'Alias', 'SortBy', 'CaseExpr', 'CaseWhen', 'NullTest', 'BooleanTest', 'SubLink',
-  'CoalesceExpr', 'MinMaxExpr', 'SQLValueFunction', 'WindowDef', 'RangeSubselect', 'RangeFunction', 'List',
+  'CoalesceExpr', 'MinMaxExpr', 'SQLValueFunction', 'WindowDef', 'RangeSubselect', 'RangeFunction', 'List', 'CollateClause',
 ];
 
 /** Violation priority (spec 4.2). `E_RECURSIVE`, `E_VALUES`, `E_PARAM` sit before the shape rules: see the deviation list in the build report. */
@@ -365,6 +365,10 @@ function walkNode(type: string, b: Obj, scope: ReadonlySet<string>, depth: numbe
       break;
     case 'TypeName':
       checkTypeName(b, st);
+      break;
+    case 'CollateClause':
+      // Only the byte-order collation "C" (the app's label rule: capitalised spelling wins). Any other collation is an unknown shape.
+      if (namesOf(b.collname).join('.') !== 'C') st.violations.add('E_NODE');
       break;
     case 'A_Const':
       return; // a literal: its children are bare values ({ival: {ival: 1}}), nothing to walk
