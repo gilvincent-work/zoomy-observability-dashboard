@@ -140,10 +140,10 @@ export const DIRECT_READ_ATTACKS = [
     raw: ONE(AGG201), secrets: [S], visible: ['{"n": 1000}', '{"n": 1199}'],
   }),
   a('A43', 'char-bound', `select repeat('x', 100001) || ${enc(`'${TOKEN_JSON}'::text`, 1)} as v`, 'E_FUNCTION_DENIED', 'SCAN', {
-    raw: ONE('x'.repeat(100001) + encJs(TOKEN_JSON, 1)), secrets: [S], visible: ['xxxx'], maxMs: 5000,
+    raw: ONE('x'.repeat(100001) + encJs(TOKEN_JSON, 1)), secrets: [S], maxMs: 5000, // a single run past the cap is hidden whole (K2)
   }),
   a('A44', 'char-bound', `select repeat('x', 100001) || ${enc(`'{"$token":"shorty"}'::text`, 1)} as v`, 'E_FUNCTION_DENIED', 'SCAN', {
-    raw: ONE('x'.repeat(100001) + encJs('{"$token":"shorty"}', 1)), secrets: [S], visible: ['xxxx'], maxMs: 5000,
+    raw: ONE('x'.repeat(100001) + encJs('{"$token":"shorty"}', 1)), secrets: [S], maxMs: 5000,
   }),
   a('A45', 'step-bound', `select repeat('[', 30) || repeat('b', 60000) || ${enc(`'${TOKEN_JSON}'::text`, 1)} as v`, 'E_FUNCTION_DENIED', 'SCAN', {
     raw: ONE('['.repeat(30) + 'b'.repeat(60000) + encJs(TOKEN_JSON, 1)), secrets: [S], maxMs: 5000,
