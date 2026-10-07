@@ -2,6 +2,7 @@ import 'server-only';
 import {createClient, type SupabaseClient} from '@supabase/supabase-js';
 import {fetchAllRows} from './pos-fetch-paginate';
 import type {CompanyRole, MembershipStatus} from './company';
+import {currentEnv} from './coop-env-server';
 
 // Coop Admin role-management data layer (server-only). Reads/writes company_users +
 // companies with the service-role key and writes company_user_audit on every change.
@@ -96,14 +97,20 @@ async function audit(input: {
   newRole?: CompanyRole | null;
 }): Promise<void> {
   try {
-    const res = await db().from('company_user_audit').insert({
+    const row = {
       actor_email: input.actor,
       target_email: input.email,
       company_id: input.companyId,
       action: input.action,
       old_role: input.oldRole ?? null,
       new_role: input.newRole ?? null,
-    });
+    };
+    // Which environment the change was made in. Where the `env` column isn't there yet
+    // (prod before company_user_audit_env.sql), fall back to the old row — never lose
+    // the audit entry over it.
+    const env = await currentEnv().then((e) => e.key).catch(() => null);
+    let res = await db().from('company_user_audit').insert({...row, env});
+    if (res.error && /\benv\b/.test(res.error.message ?? '')) res = await db().from('company_user_audit').insert(row);
     if (res.error) console.error('company_user_audit write failed', input.action, input.email, res.error.message);
   } catch (e) {
     console.error('company_user_audit write threw', input.action, input.email, e);

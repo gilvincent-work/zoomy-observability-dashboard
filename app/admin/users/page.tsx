@@ -4,6 +4,7 @@ import {getActiveContext} from '@/src/active-context';
 import {canManageRoles} from '@/src/company';
 import {homeFor} from '@/src/company-nav';
 import {listCompanies, listUsers} from '@/src/admin-data';
+import {currentEnv} from '@/src/coop-env-server';
 import {AdminUsersView} from '@/components/analyst/admin-users-view';
 
 export const dynamic = 'force-dynamic';
@@ -14,8 +15,8 @@ export default async function Page() {
   const ctx = await getActiveContext();
   if (!ctx) redirect('/');
   if (!canManageRoles(ctx.role)) redirect(homeFor(ctx));
-  const [users, companies, session] = await Promise.all([listUsers(), listCompanies(), auth()]);
+  const [users, companies, session, env] = await Promise.all([listUsers(), listCompanies(), auth(), currentEnv()]);
   // `me` only drives UI hints ("You", disabled self-removal); the server actions
   // enforce the real self/last-admin guards.
-  return <AdminUsersView users={users} companies={companies} me={session?.user?.email?.toLowerCase() ?? null} />;
+  return <AdminUsersView users={users} companies={companies} me={session?.user?.email?.toLowerCase() ?? null} env={env.key} />;
 }

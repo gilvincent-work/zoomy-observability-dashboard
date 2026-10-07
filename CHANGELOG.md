@@ -10,6 +10,26 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Environment switcher (Staging ↔ Production) for Coop Admins
+- **Who sees it:** anyone who **holds a Coop Admin role**, in whatever view they're using. A Coop Admin who's in the Goldline or Zoomy view still sees it. It's checked on the server from the person's memberships; people without that role never get it.
+- **Header pill** ("Staging" / "Production", colour-coded blue / purple), styled after the reference console:
+  - Its menu lists the two environments with a colour rail, marks the current one **Active**, and links the other to **the same page** on that site, keeping filters and anchor.
+  - A **Manage environments** link sits at the bottom.
+  - A thin colour strip along the top of the header (thicker in Production) shows Coop Admins where they are.
+- **Only two environments:** the develop branch also deploys to Staging.
+- **Decided: link between deployments, not switch the data source.** Each environment keeps its own database keys and sign-in, so the Staging site never holds a production key and Staging stays prod-free. That also works with prod and Staging being on different Supabase accounts.
+- **No settings needed on either Vercel project.** The environment list lives in code (`src/coop-env.ts`) and each site recognises itself from its own address:
+  - `coop-brand-os.vercel.app` is Production.
+  - Everything else is Staging: the staging site, localhost and previews, which all read the Staging database.
+- **Manage environments (`/admin/environments`),** read-only, for Coop Admin role holders in any view. For each site it shows the address, whether it's up and connected to its database, the deployed branch and commit, and the database (ID partly hidden). It reads each site's new public **`/api/health`**, which returns only those facts; no data, no secrets.
+- **Production safeguards:**
+  - In Users & Roles on Production, **Suspend** and **Remove access** require typing **PRODUCTION**. This is checked in the server actions too, not only in the UI. Reactivating is unaffected.
+  - Each access change records its **environment** in `company_user_audit.env`, via the additive `supabase/company_user_audit_env.sql`, applied to Staging. Until that's applied to prod, the audit write falls back to the old row, so no entry is ever lost.
+- **To use it on Production:**
+  - The prod site needs this code deployed; until then Manage environments shows prod as "running an older version".
+  - You need a Coop Admin role in prod's own `company_users` (reviewed SQL), because each site checks its own database.
+- **Tests:** host detection, links and the confirm rule (`src/coop-env.test.ts`), plus the server-side Production guard (`test/admin-actions.test.ts`). Dev-only preview at `/dev/env-switcher`.
+
 ## 2026-10-07 — Goldline pages load faster (and stay fast at 300 stores)
 - **Measured first** on Staging, from Manila, one run per request:
 
