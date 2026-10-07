@@ -2,7 +2,7 @@
 
 import {useEffect, useRef, useState} from 'react';
 import Link from 'next/link';
-import {AlertTriangle, ArrowRight, Check, CloudUpload, Loader2, Plus, RotateCcw, Sparkles, Trash2, X} from 'lucide-react';
+import {AlertTriangle, ArrowRight, Check, ChevronRight, CloudUpload, Loader2, Plus, RotateCcw, Sparkles, Trash2, X} from 'lucide-react';
 import {useUploadQueue, type QueueItem} from '@/components/analyst/upload-queue';
 import {eta, itemLabel, itemPercent, summarize} from '@/components/analyst/upload-queue-format';
 import {batchCoverage, FORM_PAGES, MAX_BATCH_FILES} from '@/src/upload-batch';
@@ -241,7 +241,7 @@ export function BatchUploader({canEdit, configured, stores}: {canEdit: boolean; 
               </div>
             )}
 
-            <ul className="flex flex-col divide-y divide-border rounded-xl border border-border" aria-label="Files in this batch">
+            <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border" aria-label="Files in this batch">
               {q.items.map((i) => (
                 <FileRow key={i.id} i={i} now={now} onRetry={() => q.retry(i.id)} onCancel={() => q.cancel(i.id)} onRemove={() => q.remove(i.id)} />
               ))}
@@ -273,8 +273,25 @@ function FileRow({i, now, onRetry, onCancel, onRemove}: {i: QueueItem; now: numb
   const pct = itemPercent(i, now);
   const failed = i.state === 'failed';
   const done = i.state === 'done';
+  // A read page opens its own review: the whole row is the target (stretched link),
+  // so there's no small "Open" to aim for.
+  const href = done && i.uploadId && i.kind === 'pdf' ? `/uploads/${i.uploadId}` : null;
   return (
-    <li className={cn('flex items-center gap-3 px-3.5 py-2.5', i.state === 'cancelled' && 'opacity-50')}>
+    <li
+      className={cn(
+        'relative flex items-center gap-3 px-3.5 py-2.5',
+        i.state === 'cancelled' && 'opacity-50',
+        href && 'transition-colors duration-150 ease-out hover:bg-muted/60 has-[a:focus-visible]:bg-muted/60',
+      )}
+    >
+      {href && (
+        <Link
+          href={href}
+          aria-label={`Review ${i.name}${i.page ? ` (page ${i.page})` : ''}`}
+          title={i.name}
+          className="absolute inset-0 z-0 rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        />
+      )}
       <FileTypeBadge filename={i.name} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-baseline justify-between gap-3">
@@ -296,13 +313,10 @@ function FileRow({i, now, onRetry, onCancel, onRemove}: {i: QueueItem; now: numb
           </div>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {done && i.uploadId && i.kind === 'pdf' && (
-          <Link href={`/uploads/${i.uploadId}`} className="rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-muted">
-            Open
-          </Link>
-        )}
+      {/* Icons let clicks fall through to the row link; only the buttons catch them. */}
+      <div className="pointer-events-none relative z-10 flex shrink-0 items-center gap-1 [&_button]:pointer-events-auto">
         {done && <Check className="size-4" style={{color: 'var(--status-good)'}} aria-label="Done" />}
+        {href && <ChevronRight aria-hidden className="size-4 text-muted-foreground" />}
         {failed && (
           <Button variant="ghost" size="icon-sm" aria-label={`Retry ${i.name}`} onClick={onRetry}>
             <RotateCcw className="size-3.5" />
