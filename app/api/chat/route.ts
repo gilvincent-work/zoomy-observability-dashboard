@@ -4,6 +4,7 @@ import {buildDigestBlock, buildLiveContextBlock, buildStaticSystem} from '@/src/
 import {CHAT_EFFORT, COOP_CHAT} from '@/src/chat/config';
 import {CHAT_DEADLINE_MS, runChatLoop, SAFE_ERROR_TEXT} from '@/src/chat/loop';
 import {encodeEvent} from '@/src/chat/stream-protocol';
+import {dashboardLinks, pageContextLine, readPageInput} from '@/src/chat/pages';
 import {buildDegradedPreamble, buildPreamble} from '@/src/chat/preamble';
 import {openReportSession} from '@/src/chat/report-session';
 import {CHAT_TOOLS, exploreTools} from '@/src/chat/tool-defs';
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
   if (rateLimited(ip, Date.now())) return new Response('Too many requests — give Coop a moment.', {status: 429});
 
-  let body: {messages?: InMsg[]; week?: string; home?: boolean; report?: unknown};
+  let body: {messages?: InMsg[]; week?: string; home?: boolean; report?: unknown; page?: unknown};
   try {
     body = await req.json();
   } catch {
@@ -78,6 +79,8 @@ export async function POST(req: Request) {
   const rows = live.ok ? [] : await getDigests(); // PII-masked server-side
   const now = new Date();
   const user = session.user.email ?? null;
+  // F.2: the page the owner is on, and dashboard links pasted in the latest question. Untrusted input, validated here.
+  const pageLine = pageContextLine(readPageInput(body.page), dashboardLinks(messages[messages.length - 1].content, new URL(req.url).host));
   // F8: the open dashboard the drawer sends back. Untrusted: validated and re-run here; invalid or oversized is ignored
   // (one log line, no content). Digest-only mode has no tools, so a report is ignored there.
   const report = live.ok ? openReportSession(body.report, live.data, now, () => console.warn(JSON.stringify({event: 'chat_report_rejected'}))) : null;
@@ -99,7 +102,7 @@ export async function POST(req: Request) {
       system,
       tools: live.ok ? (explore ? exploreTools() : CHAT_TOOLS) : [],
       messages,
-      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null}) : buildDegradedPreamble(now),
+      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null, page: pageLine}) : buildDegradedPreamble(now),
       executors:
         live.ok && report
           ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, explore: explore?.executor})

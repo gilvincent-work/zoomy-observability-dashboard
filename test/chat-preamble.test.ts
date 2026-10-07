@@ -49,6 +49,14 @@ describe('buildPreamble', () => {
     expect(p).toMatch(/run_query/);
   });
 
+  it('puts the page line after the base line and before the Explore coverage line', () => {
+    const p = buildPreamble(data(), now, undefined, 'Explore coverage line', {explore: true, page: '[page] PAGE LINE'});
+    const base = p.indexOf('If a question is outside this range');
+    expect(base).toBeGreaterThan(-1);
+    expect(p.indexOf('[page] PAGE LINE')).toBeGreaterThan(base);
+    expect(p.indexOf('Explore coverage line')).toBeGreaterThan(p.indexOf('[page] PAGE LINE'));
+  });
+
   it('is deterministic', () => {
     expect(buildPreamble(data(), now)).toBe(buildPreamble(data(), now));
   });

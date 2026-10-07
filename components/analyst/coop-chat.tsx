@@ -179,7 +179,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {'content-type': 'application/json'},
-          body: JSON.stringify({messages: history.map(({blocks: _blocks, ...rest}) => rest), week, home, report: reportBody(reportAtSend)}),
+          body: JSON.stringify({messages: history.map(({blocks: _blocks, ...rest}) => rest), week, home, report: reportBody(reportAtSend), page: {path: window.location.pathname, query: window.location.search.slice(1)}}),
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {

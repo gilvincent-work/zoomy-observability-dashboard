@@ -87,6 +87,7 @@ vi.mock('@/src/chat/loop', async () => {
 });
 vi.mock('@/src/chat/stream-protocol', async () => await import('../src/chat/stream-protocol'));
 vi.mock('@/src/chat/preamble', async () => await import('../src/chat/preamble'));
+vi.mock('@/src/chat/pages', async () => await import('../src/chat/pages'));
 vi.mock('@/src/chat/report-session', async () => await import('../src/chat/report-session'));
 vi.mock('@/src/chat/tool-defs', async () => await import('../src/chat/tool-defs'));
 vi.mock('@/src/chat/tool-executors', async () => await import('../src/chat/tool-executors'));
@@ -355,6 +356,21 @@ describe('POST /api/chat: live mode (no digest, no period)', () => {
     const last = messagesOf(p).at(-1)?.content as Block[];
     expect(last[0].text).toMatch(/\[dashboard open\] "Bundle sales by pet"/);
     expect(JSON.stringify(systemOf(p))).not.toContain('Bundle sales by pet');
+  });
+
+  it('F.2: sends a validated page line in the per-turn preamble', async () => {
+    const res = await post(ask('why is this low?', {page: {path: '/inventory', query: ''}}));
+    expect(res.status).toBe(200);
+    await drain(res);
+    const last = messagesOf(lastRequest()).at(-1)?.content as Block[];
+    expect(last[0].text).toContain('[page] The owner is on /inventory (Inventory');
+    expect(JSON.stringify(systemOf(lastRequest()))).not.toContain('[page]');
+  });
+
+  it('F.2: a hostile page value and an off-host pasted link add no page line', async () => {
+    await drain(await post(ask('see http://evil.example/inventory', {page: {path: '//evil.example/x', query: ''}})));
+    const last = messagesOf(lastRequest()).at(-1)?.content as Block[];
+    expect(last[0].text).not.toContain('[page]');
   });
 
   it('an invalid report is ignored with one log line that carries no content, and the chat still answers', async () => {
