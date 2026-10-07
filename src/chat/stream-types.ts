@@ -52,4 +52,8 @@ export interface ChatToolContext {
   emitReport?: (spec: ReportSpec | null) => void;
   /** Explore: the run_query executor, present only for an allowed user (route-gated). Absent means the tool is not registered. */
   explore?: (input: unknown) => Promise<unknown>;
+  /** Train 4: the GET-only website CRM client for this request; present only when the CRM is configured and CHAT_CRM_TOOLS is not off. Absent means the four CRM tools are not registered. */
+  crm?: import('./crm/client').CrmClient;
+  /** Where audit lines go (tests pass a fake). Absent means console. */
+  sink?: import('./audit').AuditSink;
 }

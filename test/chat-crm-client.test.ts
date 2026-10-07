@@ -37,6 +37,18 @@ describe('resolveCrmAccess (fail closed)', () => {
 });
 
 describe('createCrmClient', () => {
+  it('refuses a base URL carrying credentials or a query instead of silently dropping them', () => {
+    for (const baseUrl of ['https://u:p@crm.example', 'https://u@crm.example/w', 'https://crm.example/w?x=1']) {
+      expect(() => createCrmClient({baseUrl, token: TOKEN, fetch: fakeFetch(() => json({})).fetch})).toThrow(expect.objectContaining({code: 'refused'}));
+    }
+  });
+
+  it('treats a null query like no query', async () => {
+    const {c, calls} = client(() => json({}));
+    await c.get('metrics', null as unknown as undefined);
+    expect(calls[0].url).toBe('https://crm.example/worker/api/metrics');
+  });
+
   it('sends one GET to base path + endpoint path with the bearer token, no redirects, no caching', async () => {
     const {c, calls} = client(() => json({customers: 3}));
     const r = await c.get('metrics');

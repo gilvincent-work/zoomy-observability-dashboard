@@ -117,6 +117,10 @@ export function buildClosure(
 
 // The reports write seam (F9, layer 7): the actions, the guarded clients, and the modules that wrap them. The pure reports
 // modules (reports-run, -access, -suggest, -types) are NOT here: the chat may share them, they hold no I/O.
+// Train 4: pure CRM modules the chat may import (the field contract and the CRM rules; no I/O, pinned pure by the architecture test).
+// src/crm-data.ts (the pages' cached proxy with its own fetch) stays forbidden.
+export const PURE_CRM_MODULES: readonly string[] = ['src/crm-compute.ts', 'src/crm-project.ts', 'src/crm-types.ts'];
+
 export const REPORTS_IO_FILES: readonly string[] = ['src/reports-actions.ts', 'src/reports-client.ts', 'src/reports-data.ts', 'src/reports-session.ts'];
 const FORBIDDEN_FILES = new Set(['src/pos-data.ts', 'src/data.ts', ...REPORTS_IO_FILES]);
 
@@ -125,7 +129,7 @@ export function forbiddenInClosure(closure: Closure, files: FileMap): string[] {
   for (const f of closure.files) {
     if (/(^|\/)[^/]*-actions\.ts$/.test(f)) bad.push(`${f}: server-actions file`);
     if (FORBIDDEN_FILES.has(f)) bad.push(`${f}: forbidden module`);
-    if (/^src\/crm-[^/]*\.ts$/.test(f)) bad.push(`${f}: crm module`);
+    if (/^src\/crm-[^/]*\.ts$/.test(f) && !PURE_CRM_MODULES.includes(f)) bad.push(`${f}: crm module`);
     if (hasUseServer(files[f])) bad.push(`${f}: 'use server' directive`);
   }
   return bad;

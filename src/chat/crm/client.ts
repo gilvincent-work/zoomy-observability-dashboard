@@ -100,6 +100,7 @@ export function createCrmClient(cfg: CrmClientConfig): CrmClient {
   const limits: CrmLimits = {...CRM_LIMITS, ...cfg.limits};
   const clock = cfg.clock ?? Date.now;
   const base = new URL(cfg.baseUrl);
+  if (base.username || base.password || base.search) throw new CrmError('refused'); // never silently drop what the operator configured
   const basePath = base.pathname.replace(/\/+$/, '');
   const memo = new Map<string, Promise<Omit<CrmRead, 'cached'>>>();
   let gets = 0;
@@ -146,9 +147,9 @@ export function createCrmClient(cfg: CrmClientConfig): CrmClient {
   }
 
   return {
-    async get(id, query = {}) {
+    async get(id, query) {
       if (typeof id !== 'string' || !has(CRM_ENDPOINTS, id)) throw new CrmError('refused');
-      const url = urlFor(id, query);
+      const url = urlFor(id, query ?? {});
       const hit = memo.get(url);
       if (hit) return {...(await hit), ms: 0, cached: true};
       if (gets >= limits.maxGetsPerTurn) throw new CrmError('call_cap');

@@ -1,6 +1,7 @@
 // F5 + F7 + F8 + F10: executors for describe_data, query_metric, get_digest, lookup_product, the three render tools and the three report-edit tools, and the progress line for the stream.
 // Pure; data loads lazily. query_metric keeps the FULL result in a per-request store that the render tools bind from.
 import {describeData} from './coverage';
+import {createCrmExecutors} from './crm/executors';
 import {digestsFor, readReportInput, shapeChannelReport} from './channel-report';
 import type {RangeOrder} from '../custom-range';
 import {coveringWindow, lookupProduct, shapeDigest, type DigestSource} from './digest-lookup';
@@ -25,11 +26,19 @@ export function createExecutors(ctx: ChatToolContext): ChatExecutors {
   let counter = 0;
   // The open report (F8) owns the result store: results are reachable by result id and by block id. Empty when none is open.
   const session = ctx.report ?? createReportSession();
+  // Train 4: CRM results go into the same store as every other tool (charts and the number check work on them).
+  const keep = (r: MetricResult) => {
+    counter += 1;
+    const id = `r${counter}`;
+    session.store.set(id, {...r, id});
+    return compact(r, id);
+  };
 
   return {
     ...createRenderExecutors(ctx, session),
     ...createReportExecutors(ctx, session, data),
     ...(ctx.explore ? {run_query: ctx.explore} : {}),
+    ...(ctx.crm ? createCrmExecutors({client: ctx.crm, now: ctx.now, user: ctx.user, sink: ctx.sink, keep}) : {}),
     describe_data: async (input) => describeData(input as {metric: string}, await data(), ctx.now, !!ctx.explore),
     query_metric: async (input) => {
       const result = runMetric(input, await data(), ctx.now);
@@ -136,6 +145,10 @@ export function statusFor(name: string, input: unknown): string {
   if (name === 'run_query') return 'Running an exploratory query'; // constant: never echoes the SQL
   if (name === 'get_digest') return 'Reading a stored digest';
   if (name === 'get_channel_report') return 'Building the channel report';
+  if (name === 'get_crm_metrics') return 'Reading the website CRM totals';
+  if (name === 'list_crm_orders') return 'Looking up website orders';
+  if (name === 'list_crm_customers') return 'Looking up website customers';
+  if (name === 'list_crm_checkouts') return 'Looking up abandoned checkouts';
   if (name === 'lookup_product') return 'Looking up a product';
   if (name === 'render_kpi') return 'Adding a tile';
   if (name === 'render_chart') return 'Drawing a chart';
