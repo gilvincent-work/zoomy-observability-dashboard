@@ -34,12 +34,16 @@ export function ordersBasisNotes(v: Pick<ValidateOk, 'relations' | 'columnRefs'>
   return [...(byTag ? [ORDERS_BY_TAG_NOTE] : []), ...(byDate ? [ORDERS_BY_DATE_NOTE] : [])];
 }
 
-/** One sentence per basis the query's tables imply (spec 2.5), written by code; shown in Notes and given to the model as a caveat. */
+// The registry views (coop_chat_*) are 1:1 projections of these base tables, so they carry the same basis.
+const CHAT_VIEW_BASE: Record<string, string> = {coop_chat_orders: 'pos_orders', coop_chat_stock_by_location: 'pos_inventory_by_location'};
+
+/** One sentence per basis the query's tables imply (spec 2.5), written by code; shown in Notes and given to the model as a caveat. A query that reads both order bases gets both notes. */
 export function tableBasisNotes(relations: readonly string[]): string[] {
-  const has = (base: string, ...names: string[]): boolean => relations.some((r) => baseRelation(r) === base || names.includes(r));
+  const bases = relations.map((r) => CHAT_VIEW_BASE[r] ?? baseRelation(r));
+  const has = (base: string): boolean => bases.includes(base);
   const notes: string[] = [];
-  if (relations.includes('pos_orders_completed')) notes.push('Basis: completed orders only (the pos_orders_completed default).');
-  else if (has('pos_orders')) notes.push('Basis: all orders (pos_orders), including voided ones unless the query filters status.');
+  if (relations.includes('pos_orders_completed')) notes.push('Basis: completed orders only (status = completed, the pos_orders_completed default).');
+  if (has('pos_orders')) notes.push('Basis: all orders (pos_orders), including voided ones unless the query filters status.');
   if (relations.includes('coop_explore_stock_event')) notes.push('Basis: Event (sellable) stock only.');
   else if (has('pos_inventory')) notes.push('Basis: stock at all locations (event + office).');
   else if (has('pos_inventory_by_location')) notes.push('Basis: stock per location.');

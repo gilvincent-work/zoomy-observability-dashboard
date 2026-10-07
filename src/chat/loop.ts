@@ -311,7 +311,9 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       }
       // Explore: the answer is checked before anyone sees it. One rewrite on a violation (it consumes a step), then the note.
       // A rewrite never starts past the hard deadline: the held answer is shown with its note instead.
-      const bad = releaseHeld(!numberRetried && steps < maxSteps && clock() - t0 <= deadlineMs);
+      // Nor past the cost cap: a rewrite would be thrown away by the cap check, so the held answer is shown with its note instead.
+      const capped = opts.turnBudget !== undefined && costUnits(usage) >= opts.turnBudget;
+      const bad = releaseHeld(!numberRetried && !capped && steps < maxSteps && clock() - t0 <= deadlineMs);
       if (bad === null) return finish(endReason, true);
       numberRetried = true;
       dropHeld();

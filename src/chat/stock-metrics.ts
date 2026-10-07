@@ -17,6 +17,9 @@ const BASIS: Record<string, string> = {
 const STATUS_RANK: Record<ForecastStatus, number> = {out: 0, low: 1, healthy: 2};
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 const PRODUCT: ResultColumn = {key: 'product', label: 'Product', unit: 'text', role: 'category'};
+/** "2026-09-28 12:00 PHT": the caveat clock is Philippine time, like every date the owner sees. */
+const phtStamp = (iso: string): string => `${new Date(Date.parse(iso) + 8 * 3600_000).toISOString().slice(0, 16).replace('T', ' ')} PHT`;
+
 const UNITS: ResultColumn = {key: 'stock_units', label: 'Stock', unit: 'units', role: 'measure'};
 
 export function runStockMetric(req: MetricRequest, data: MetricData, now: Date): MetricResult | MetricError {
@@ -47,7 +50,7 @@ export function runStockMetric(req: MetricRequest, data: MetricData, now: Date):
     }));
     rows.sort((a, b) => (req.sort === 'value_asc' ? 1 : -1) * (Number(a.stock_units) - Number(b.stock_units)) || String(a.product).localeCompare(String(b.product)));
   }
-  const caveats = [`Basis: ${BASIS[req.dimension] ?? BASIS.sellable}, as of now (${s.asOf.slice(0, 16).replace('T', ' ')} UTC); stock has no date range.`];
+  const caveats = [`Basis: ${BASIS[req.dimension] ?? BASIS.sellable}, as of now (${phtStamp(s.asOf)}); stock has no date range.`];
   if (rows.length > req.limit) {
     caveats.push(`Showing the first ${req.limit} of ${rows.length} products.`);
     rows = rows.slice(0, req.limit);

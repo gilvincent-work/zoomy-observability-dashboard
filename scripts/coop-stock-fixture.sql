@@ -25,12 +25,13 @@ insert into public.pos_inventory_lots (product_id, location, lot_code, expires_o
   ('P1', 'office', 'FX-2', '2027-03-31', 60, 60),   -- trap: back stock, not sellable
   ('P2', 'event',  'FX-3', '2026-11-30', 10, 0),    -- trap: empty lot, P2 sellable = 0
   ('P2', 'office', 'FX-4', '2027-01-31', 25, 25);
+-- Dates are relative to now() so the 60-day forecast window and the 30-day G30 window never expire (the P1 and P2 sales are on different days).
 delete from public.pos_stock_movements where created_by = 'fixture@example.com';
 insert into public.pos_stock_movements (product_id, delta, reason, created_by, created_at, location) values
-  ('P1', -28, 'sale',     'fixture@example.com', '2026-09-20T10:00:00+08', 'event'),
-  ('P2', -10, 'sale',     'fixture@example.com', '2026-09-21T11:00:00+08', 'event'),
-  ('P1',  40, 'receipt',  'fixture@example.com', '2026-09-01T09:00:00+08', 'event'),
-  ('P2',   2, 'add-void', 'fixture@example.com', '2026-09-22T12:00:00+08', 'event');
+  ('P1', -28, 'sale',     'fixture@example.com', now() - interval '8 days', 'event'),
+  ('P2', -10, 'sale',     'fixture@example.com', now() - interval '7 days', 'event'),
+  ('P1',  40, 'receipt',  'fixture@example.com', now() - interval '40 days', 'event'),
+  ('P2',   2, 'add-void', 'fixture@example.com', now() - interval '6 days', 'event');
 
 -- pos_settings: the reviewed exception pos_settings.key (moved here by Task 8)
 create table if not exists public.pos_settings (key text primary key, value jsonb, updated_at timestamptz default now());

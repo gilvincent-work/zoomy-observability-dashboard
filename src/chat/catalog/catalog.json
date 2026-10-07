@@ -129,13 +129,13 @@
    "domain": "pos-sales",
    "about": "One row per sale made at the POS (offline: booths, bazaars, shop). Business facts live here, not in the website/Shopee/Lazada data.",
    "columns": "id, client_uuid, subtotal, discount, total (PHP; subtotal = total + discount), oversold (bool: sold more than on hand), device_id, payment_method (cash, gcash, card, maya; null = legacy cash), customer_handle, status (completed or voided), remarks, created_at, edited_at (null = never edited), event_id (null = not tagged to an event), pet_type (dog, cat, both, null = untagged).",
-   "prefer": "pos_orders_completed for sales; this table for voided or test rows.",
+   "prefer": "pos_orders_completed for sales; this table for voided rows.",
    "testOrders": "UNKNOWN: no marker found in code (status is only completed or voided; device_id is never written)."
   },
   "pos_orders_completed": {
    "name": "pos_orders_completed",
    "domain": "pos-sales",
-   "about": "Ask Coop default view: completed orders only (and not test orders, if a marker exists).",
+   "about": "Ask Coop default view: completed orders only (status = 'completed'); there is no test-order marker, so test orders are not separated.",
    "columns": "the same as pos_orders.",
    "prefer": null,
    "testOrders": null
@@ -1130,7 +1130,7 @@
  "terms": [
   {
    "term": "stock",
-   "default": "Event (sellable) stock, coop_explore_stock_event",
+   "default": "Event (sellable) stock (registry stock_on_hand; in SQL coop_explore_stock_event)",
    "alternatives": "all locations (pos_inventory), office back stock (pos_inventory_by_location where location = 'office')",
    "askWhen": "the answer drives a reorder or transfer decision and no location is named"
   },

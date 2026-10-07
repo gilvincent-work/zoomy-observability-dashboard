@@ -78,8 +78,8 @@ describe('EXP-03 the golden set is well formed', () => {
     }
   });
 
-  it('EXP-03 the Day 6 live set is 8 questions: G01 first, then R01, the injection, the no-period ranking, the partial event name, the repair case and two more', () => {
-    expect(LIVE_SET.map((c) => c.id)).toEqual(['G01', 'G04', 'G08b', 'G14', 'G15', 'G20', 'G25', 'R01']);
+  it('EXP-03 the live set is 11 questions: the Day 6 eight plus the stock, stock-cover and completed-basis cases (Task 8 fix 1)', () => {
+    expect(LIVE_SET.map((c) => c.id)).toEqual(['G01', 'G04', 'G08b', 'G14', 'G15', 'G20', 'G25', 'R01', 'G26', 'G28', 'G33']);
     expect(LIVE_SET.every((c) => c.liveWhy && c.liveWhy.length > 20)).toBe(true);
   });
 });

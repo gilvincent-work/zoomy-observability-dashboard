@@ -1,6 +1,7 @@
 import type {PosEvent, PosOrder} from '../pos-sales-types';
 import {manilaDayKey, resolveOrderEvents} from '../pos-sales-compute';
 import {buildPriceHistory} from '../pos-price-history';
+import {isCompletedOrder} from './order-status';
 import {resolveRange} from './range';
 import {METRICS, METRIC_IDS, type ComputeOutput} from './metrics-registry';
 import {isStockMetric, runStockMetric} from './stock-metrics';
@@ -180,8 +181,8 @@ export function runMetric(input: unknown, data: MetricData, now: Date): MetricRe
   const def = METRICS[req.metric];
   const measure = req.measure === 'default' ? def.defaultMeasure : req.measure;
 
-  // Completed orders only (the existing voided rule), with the event each order effectively belongs to.
-  const completed = data.orders.filter((o) => o.status !== 'voided');
+  // Completed orders only (status = 'completed', see order-status.ts), with the event each order effectively belongs to.
+  const completed = data.orders.filter(isCompletedOrder);
   const taggedIds = new Set(completed.filter((o) => o.event_id !== null).map((o) => o.id)); // explicit POS tag, before date attribution
   const resolved = resolveOrderEvents(completed, data.events);
   const dated: DatedOrder[] = [];

@@ -1,5 +1,6 @@
 // F4: what the data covers (the coverage note and describe_data). Pure.
 import {manilaDayKey} from '../pos-sales-compute';
+import {isCompletedOrder} from './order-status';
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {MetricData} from './result-types';
 
@@ -21,7 +22,7 @@ export function buildCoverage(data: MetricData): CoverageSummary {
   let orders = 0;
   let untaggedOrders = 0;
   for (const o of data.orders) {
-    if (o.status === 'voided' || Number.isNaN(Date.parse(o.created_at))) continue;
+    if (!isCompletedOrder(o) || Number.isNaN(Date.parse(o.created_at))) continue;
     const day = manilaDayKey(o.created_at);
     orders += 1;
     if (o.pet_type === null || o.pet_type === undefined) untaggedOrders += 1;

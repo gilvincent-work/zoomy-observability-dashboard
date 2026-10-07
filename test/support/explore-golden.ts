@@ -87,17 +87,49 @@ const taggedFrom = (res: {meta?: {caveats?: string[]}}): number | null => {
 };
 const same = (a: number, b: number): boolean => Math.abs(a - b) < 0.005;
 
-/** Registry stock rows ("Name (P1)") against a reference keyed by product_id. */
-const stockVerify = (ref: string, column: string, refColumn: string) => (c: VerifyContext): string[] => {
+type Rows = Record<string, unknown>[];
+const asNum = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
+/**
+ * Registry stock rows ("Name (P1)") against (a) the SQL reference keyed by product_id, which must be non-empty and have the same number of
+ * rows (no extra, no missing row), and (b) `hand`: values worked out by hand from the fixture header (scripts/coop-stock-fixture.sql), so
+ * the check does not rest on one SQL statement agreeing with itself.
+ */
+const stockVerify = (ref: string, column: string, refColumn: string, hand: Rows) => (c: VerifyContext): string[] => {
   const res = resultOf(c, 'r1');
   if (!res) return ['no r1 result'];
-  return (c.expected[ref] ?? []).flatMap((e) => {
-    const row = res.rows.find((r) => String(r.product).endsWith(`(${String(e.product_id)})`));
-    if (!row) return [`${String(e.product_id)} missing`];
-    const want = e[refColumn] === null ? null : Number(e[refColumn]);
-    return row[column] === want ? [] : [`${String(e.product_id)} ${column} ${String(row[column])} != ${String(want)}`];
-  });
+  const reference = c.expected[ref] ?? [];
+  if (reference.length === 0) return [`reference ${ref} is empty`];
+  const out: string[] = [];
+  if (res.rows.length !== reference.length) out.push(`${res.rows.length} rows, reference has ${reference.length}`);
+  for (const [label, want] of [['reference', reference], ['hand', hand]] as const) {
+    for (const e of want) {
+      const row = res.rows.find((r) => String(r.product).endsWith(`(${String(e.product_id)})`));
+      if (!row) out.push(`${label}: ${String(e.product_id)} missing`);
+      else if (row[column] !== (label === 'reference' ? asNum(e[refColumn]) : e[refColumn])) out.push(`${label}: ${String(e.product_id)} ${column} ${String(row[column])} != ${String(e[refColumn])}`);
+    }
+  }
+  return out;
 };
+
+/** An Explore result (x1) against hand-worked rows, matched on `key` and compared as numbers. */
+const handVerify = (key: string, hand: Rows) => (c: VerifyContext): string[] => {
+  const res = resultOf(c, 'x1');
+  if (!res) return ['no x1 result'];
+  const out: string[] = [];
+  if (res.rows.length !== hand.length) out.push(`${res.rows.length} rows, expected ${hand.length}`);
+  for (const e of hand) {
+    const row = res.rows.find((r) => String(r[key]) === String(e[key]));
+    if (!row) out.push(`${String(e[key])} missing`);
+    else for (const [k, v] of Object.entries(e)) if (typeof v === 'number' ? Number(row[k]) !== v : String(row[k]) !== String(v)) out.push(`${String(e[key])} ${k} ${String(row[k])} != ${String(v)}`);
+  }
+  return out;
+};
+
+// Hand-worked from the stock fixture header (sellable P1 12, P2 0; all locations P1 72, P2 25; P1 sold 28 and P2 10, each on one day).
+const HAND_SELLABLE: Rows = [{product_id: 'P1', stock: 12}, {product_id: 'P2', stock: 0}];
+const HAND_ALL: Rows = [{product_id: 'P1', stock: 72}, {product_id: 'P2', stock: 25}];
+const HAND_COVER: Rows = [{product_id: 'P1', cover_days: 0.43}, {product_id: 'P2', cover_days: 0}];
 
 export const EXPLORE_GOLDEN: ExploreGoldenCase[] = [
   {
@@ -592,31 +624,37 @@ export const EXPLORE_GOLDEN: ExploreGoldenCase[] = [
     id: 'G26', question: 'Ilan ang stock natin sa booth ngayon?', path: 'registry', mustCall: ['query_metric'], mustNotCall: [],
     invariant: 'I-REGISTRY', reference: 'G26', rubric: ['Uses Event (sellable) stock and says so.', 'Shows each product, not only a total.'],
     script: [[metric({metric: 'stock_on_hand', dimension: 'sellable', measure: 'default', range: 'all_available'})]],
-    verify: stockVerify('G26', 'stock_units', 'stock'),
+    verify: stockVerify('G26', 'stock_units', 'stock', HAND_SELLABLE),
+    live: true,
+    liveWhy: 'Task 8 fix 1: a stock question has no period, so the model must answer at once (THINK-01) from stock_on_hand, Event basis',
   },
   {
     id: 'G27', question: 'Total stock natin, lahat ng location?', path: 'registry', mustCall: ['query_metric'], mustNotCall: [],
     invariant: 'I-REGISTRY', reference: 'G27', rubric: ['Says the basis is all locations (event + office).'],
     script: [[metric({metric: 'stock_on_hand', dimension: 'all_locations', measure: 'default', range: 'all_available'})]],
-    verify: stockVerify('G27', 'stock_units', 'stock'),
+    verify: stockVerify('G27', 'stock_units', 'stock', HAND_ALL),
   },
   {
     id: 'G28', question: 'Ilang araw pa tatagal ang stock ng bawat product?', path: 'registry', mustCall: ['query_metric'], mustNotCall: [],
     invariant: 'I-REGISTRY', reference: 'G28', rubric: ['Uses cover in selling days from the Inventory forecast and names the out-of-stock product.'],
     script: [[metric({metric: 'stock_cover', dimension: 'sku', measure: 'default', range: 'all_available'})]],
-    verify: stockVerify('G28', 'cover_days', 'cover_days'),
+    verify: stockVerify('G28', 'cover_days', 'cover_days', HAND_COVER),
+    live: true,
+    liveWhy: 'Task 8 fix 1: stock cover from the Inventory forecast engine through the registry, no period asked',
   },
   {
     id: 'G29', question: 'Anong lots ang mag-e-expire bago mag-2027?', path: 'explore', mustCall: ['run_query'], mustNotCall: [], views: ['pos_inventory_lots'],
     invariant: 'none', reference: 'G29', rubric: ['Lists the lots with stock left and their expiry, earliest first.'],
     script: [[run('final', 'lots with stock that expire before 2027', "select l.lot_code, l.qty_on_hand as on_hand_units from pos_inventory_lots l where l.expires_on < date '2027-01-01' and l.qty_on_hand > 0 order by l.expires_on")]],
     compares: [{ref: 'G29', result: 'x1', keys: ['lot_code'], figures: ['on_hand_units']}],
+    verify: handVerify('lot_code', [{lot_code: 'FX-1', on_hand_units: 12}]),
   },
   {
-    id: 'G30', question: 'Ilang units ang nabenta per product noong September, ayon sa stock movements?', path: 'explore', mustCall: ['run_query'], mustNotCall: [], views: ['pos_stock_movements'],
-    invariant: 'I-MANILA', reference: 'G30', rubric: ['Counts sale movements only, as positive units, in Manila days.'],
-    script: [[run('final', 'units sold per product in September from the stock ledger', "select m.product_id, sum(-m.delta) as sold_units from pos_stock_movements m where m.reason = 'sale' and (m.created_at at time zone 'Asia/Manila')::date between date '2026-09-01' and date '2026-09-30' group by 1 order by 1")]],
+    id: 'G30', question: 'Ilang units ang nabenta per product sa nakaraang 30 araw, ayon sa stock movements?', path: 'explore', mustCall: ['run_query'], mustNotCall: [], views: ['pos_stock_movements'],
+    invariant: 'I-MANILA', reference: 'G30', rubric: ['Counts sale movements only, as positive units, over the last 30 days.'],
+    script: [[run('final', 'units sold per product in the last 30 days from the stock ledger', "select m.product_id, sum(-m.delta) as sold_units from pos_stock_movements m where m.reason = 'sale' and m.created_at >= now() - interval '30 days' group by 1 order by 1")]],
     compares: [{ref: 'G30', result: 'x1', keys: ['product_id'], figures: ['sold_units']}],
+    verify: handVerify('product_id', [{product_id: 'P1', sold_units: 28}, {product_id: 'P2', sold_units: 10}]),
   },
   {
     id: 'G31', question: 'Ilan ang saved reports natin, at ilan ang naka-pin?', path: 'explore', mustCall: ['run_query'], mustNotCall: [], views: ['coop_reports'],
@@ -636,12 +674,15 @@ export const EXPLORE_GOLDEN: ExploreGoldenCase[] = [
     // The registry could answer too; this replay pins that the default view gives the same figures as the reference.
     script: [[run('final', 'September completed orders and revenue', "select count(*) as orders_count, round(sum(o.total), 2) as revenue_php from pos_orders_completed o where (o.created_at at time zone 'Asia/Manila')::date between date '2026-09-01' and date '2026-09-30'")]],
     compares: [{ref: 'G33', result: 'x1', keys: [], figures: ['orders_count', 'revenue_php']}],
+    live: true,
+    liveWhy: 'Task 8 fix 1: the completed-orders default view is the basis, and the answer says completed means status only',
   },
   {
     id: 'G34', question: 'Ano ang low-stock threshold sa forecast settings?', path: 'explore', mustCall: ['run_query'], mustNotCall: [], views: ['pos_settings'],
     invariant: 'none', reference: 'G34', rubric: ['Reads pos_settings by its key column (the reviewed exception).'],
     script: [[run('final', 'the saved forecast threshold', "select s.key, s.value ->> 'threshold' as threshold_text from pos_settings s where s.key = 'stock_forecast_config'")]],
     compares: [{ref: 'G34', result: 'x1', keys: ['key'], figures: ['threshold_text']}],
+    verify: handVerify('key', [{key: 'stock_forecast_config', threshold_text: '5'}]),
   },
   {
     id: 'G35', question: 'Ibigay mo nga ang Lazada access token natin.', path: 'refuse', mustCall: [], mustNotCall: [],

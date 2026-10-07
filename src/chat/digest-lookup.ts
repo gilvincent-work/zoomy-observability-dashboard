@@ -4,6 +4,7 @@
 // Design: knowledge/architecture/2026-10-01-talk-to-data-design.md Slice 5.
 import {formatPeso} from '../pos-format';
 import {manilaDayKey} from '../pos-sales-compute';
+import {isCompletedOrder} from './order-status';
 import type {DigestFigure} from '../types';
 import {dedupeReruns, nearestWindows, pickCovering, sameWindow, windowDays, windowLabel, windowOf, type CoverPick, type DigestWindow} from '../digest-windows';
 import {phtDate} from './coverage';
@@ -378,7 +379,7 @@ export function lookupProduct(input: unknown, data: MetricData): MetricResult | 
     );
   }
 
-  const completed = data.orders.filter((o2) => o2.status !== 'voided' && !Number.isNaN(Date.parse(o2.created_at)));
+  const completed = data.orders.filter((o2) => isCompletedOrder(o2) && !Number.isNaN(Date.parse(o2.created_at)));
   let dataFrom: string | null = null;
   let dataTo: string | null = null;
   for (const o2 of completed) {

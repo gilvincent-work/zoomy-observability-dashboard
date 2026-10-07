@@ -20,8 +20,9 @@ const tags = tagsOf(text);
 const exploreText = renderSkill({explore: true});
 const exploreTags = tagsOf(exploreText);
 // sha256 of the non-explore render (16,089 characters). Re-pinned 2026-10-07 (Train 3): the page-context topic (PAGE-01) was added on purpose.
+// Re-pinned again 2026-10-07 (Train 3 Task 8 fix 1): THINK-01 gained the stock-has-no-period exception.
 // The original pre-Explore hash was 963c0e5c4a98... (15,668 characters, fix/ask-coop b28abd0).
-const BASELINE_SHA256 = '8239c8131ba5c5dcb5b208b66af88fd3bb89e02b64b1077bf90a9b5b9d03c037';
+const BASELINE_SHA256 = 'b129c1b98d92a62a2dff8171df601726f9da79ece7df10709c22aac2489be9ce';
 
 function fixtureDir(files: {skill: string; topic?: string}): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'skill-'));

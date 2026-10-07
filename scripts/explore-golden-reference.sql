@@ -155,7 +155,7 @@ select l.lot_code, l.qty_on_hand as on_hand_units from public.pos_inventory_lots
 
 -- @ref G30
 select m.product_id, sum(-m.delta)::int as sold_units from public.pos_stock_movements m
-where m.reason = 'sale' and (m.created_at at time zone 'Asia/Manila')::date between date '2026-09-01' and date '2026-09-30' group by 1 order by 1;
+where m.reason = 'sale' and m.created_at >= now() - interval '30 days' group by 1 order by 1;
 
 -- @ref G31
 select count(*) as reports_count, count(*) filter (where r.pinned) as pinned_count from public.coop_reports r where r.deleted_at is null;
