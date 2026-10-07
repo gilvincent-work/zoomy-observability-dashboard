@@ -562,6 +562,14 @@
    "columns": "",
    "prefer": null,
    "testOrders": null
+  },
+  "coop_explore_drift_log": {
+   "name": "coop_explore_drift_log",
+   "domain": "chat-plumbing",
+   "about": "read-only view over coop_explore_admin.record_drift(), pg_cron job coop_explore_drift daily 22:00 UTC (06:00 PH), kept 90 days",
+   "columns": "",
+   "prefer": null,
+   "testOrders": null
   }
  },
  "pages": [
@@ -922,7 +930,7 @@
     "crm-api"
    ],
    "fenced": false,
-   "access": "none (API only until Train 4)",
+   "access": "partial: CRM tools (metrics, customers, orders, checkouts); vouchers and checkout links withheld",
    "redirectTo": null
   },
   {
@@ -1053,7 +1061,7 @@
   {
    "id": "crm-api",
    "source": "Website CRM Worker (Cloudflare Worker over D1; Shopify customers, orders, checkouts)",
-   "askCoop": "none: website CRM API, read-only tools come in Train 4"
+   "askCoop": "tools: get_crm_metrics, list_crm_orders, list_crm_customers, list_crm_checkouts (GET only)"
   },
   {
    "id": "shopee-files",
