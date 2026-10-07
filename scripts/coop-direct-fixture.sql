@@ -74,8 +74,9 @@ insert into public.gl_fixture_stores values ('S1', 'Fixture store');
 create table if not exists public.companies (id text primary key, name text);
 insert into public.companies (id, name) values ('zoomy', 'Zoomy') on conflict do nothing;
 
--- pos_settings: the reviewed exception pos_settings.key (Task 8 moves this block to scripts/coop-stock-fixture.sql)
-create table if not exists public.pos_settings (key text primary key, value jsonb, updated_at timestamptz default now());
-insert into public.pos_settings (key, value) values
-  ('stock_forecast_config', '{"threshold": 5, "target_cover_events": 6, "lead_time_days": 3, "early_warning_events": 3}')
-on conflict (key) do update set value = excluded.value;
+-- Saved reports for the golden case G31 (3 rows: 1 pinned, 1 deleted). Columns per supabase/coop_reports.sql (no foreign key from current_version).
+delete from public.coop_reports where owner_email = 'fixture@example.com';
+insert into public.coop_reports (owner_email, title, visibility, pinned, current_version, deleted_at) values
+  ('fixture@example.com', 'Fixture: weekly bundles', 'team', true, 1, null),
+  ('fixture@example.com', 'Fixture: pet mix', 'private', false, 1, null),
+  ('fixture@example.com', 'Fixture: old report', 'team', false, 1, now());

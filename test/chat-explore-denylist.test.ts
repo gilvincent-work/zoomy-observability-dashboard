@@ -52,10 +52,10 @@ describe('2.1 views are default-deny in the parser too (Task 3 ruling): one allo
     if (!m) throw new Error('view_allowlist not found in the SQL');
     return [...m[1].matchAll(/'([^']*)'/g)].map((x) => x[1]);
   };
-  it('the TS view allowlist equals coop_explore_admin.view_allowlist() (25 names, no duplicates)', () => {
+  it('the TS view allowlist equals coop_explore_admin.view_allowlist() (29 names, no duplicates)', () => {
     expect([...EXPLORE_VIEW_ALLOWLIST].sort()).toEqual(sqlAllowlist().sort());
-    expect(EXPLORE_VIEW_ALLOWLIST).toHaveLength(25);
-    expect(new Set(EXPLORE_VIEW_ALLOWLIST).size).toBe(25);
+    expect(EXPLORE_VIEW_ALLOWLIST).toHaveLength(29);
+    expect(new Set(EXPLORE_VIEW_ALLOWLIST).size).toBe(29);
   });
   it('with the live relation kinds: tables open unless closed, views only when allowlisted, unknown names refused', async () => {
     const kinds = new Map<string, 'table' | 'view'>([

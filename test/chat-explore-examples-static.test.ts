@@ -11,7 +11,8 @@ const SUFFIX = /_(php|pct|count|units|ratio)$/;
 const views = new Set<string>(EXPLORE_VIEW_NAMES);
 const colsOfView = (v: string): string[] => [...EXPLORE_VIEWS[v as keyof typeof EXPLORE_VIEWS].columns, ...EXPLORE_VIEWS[v as keyof typeof EXPLORE_VIEWS].optionalColumns];
 // Train 3: examples use the base table names. A base table's columns are the union over the Explore views whose source it is (views.ts baseRelation).
-const viewsOf = (rel: string): string[] => (views.has(rel) ? [rel] : EXPLORE_VIEW_NAMES.filter((v) => baseRelation(v) === rel));
+// pos_orders_completed is pos_orders filtered to completed (Task 8): same columns.
+const viewsOf = (rel: string): string[] => (rel === 'pos_orders_completed' ? viewsOf('pos_orders') : views.has(rel) ? [rel] : EXPLORE_VIEW_NAMES.filter((v) => baseRelation(v) === rel));
 const isKnown = (rel: string): boolean => viewsOf(rel).length > 0;
 const colsOf = (rel: string): string[] => viewsOf(rel).flatMap(colsOfView);
 const ctes = (sql: string) => [...sql.matchAll(/(?:\bwith|,)\s+([a-z_]\w*)\s+as\s*\(/gi)].map((m) => m[1].toLowerCase());

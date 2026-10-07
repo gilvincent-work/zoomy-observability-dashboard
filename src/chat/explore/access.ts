@@ -6,11 +6,12 @@ import {CHAT_RELATIONS, DIGEST_RELATIONS} from '../read/relations';
 import {isClosedRelation, isSecretName} from './secret-names';
 import {EXPLORE_VIEW_NAMES} from './views';
 
-/** The views the login may read: the registry views, the Train 1 explore aliases, and the two zoomy-pos read views. = view_allowlist(). */
+/** The views the login may read: the ten registry views, the Train 1 explore aliases, the two zoomy-pos read views and pos_orders_completed. = view_allowlist(). */
 export const EXPLORE_VIEW_ALLOWLIST: readonly string[] = Object.freeze([
   ...Object.values(CHAT_RELATIONS.ro_role.tables), DIGEST_RELATIONS.ro_role, // coop_chat_* (supabase/coop_chat_readonly.sql + coop_chat_digest.sql)
   ...EXPLORE_VIEW_NAMES, // coop_explore_* (supabase/coop_chat_explore.sql)
   'pos_inventory', 'pos_inventory_by_location', // zoomy-pos read views
+  'pos_orders_completed', // the Ask Coop default view (supabase/coop_chat_default_views.sql)
 ]);
 
 /** Relations the app refuses although the database grants them. ONE line, easy to change. Empty: the drift log is readable (Task 4 review). */

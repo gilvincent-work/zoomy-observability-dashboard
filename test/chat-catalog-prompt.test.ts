@@ -19,15 +19,27 @@ describe('2b.2 data index in the cached prompt', () => {
     expect(text).toContain('pos_orders');
     expect(text).toContain('coop_explore_stock_event');
     for (const t of PROMPT_TABLES) expect(text).toContain(`- ${t}:`);
-    expect(text).toMatch(/describe_table before writing SQL/);
+    expect(text).toContain('describe_table'); // the rule itself lives once, in EXP-09 (sql-explore.md)
     expect(text).toMatch(/stock: default Event \(sellable\) stock/);
     expect(text).toContain('list_tables');
   });
   it('never names a closed table or another company', () => {
     expect(text).not.toMatch(/marketplace_tokens|\bgl_|companies|company_users/);
   });
+  it('carries no dev notes: no UNKNOWN, no dated PROD evidence, no empty blurb, no digest_archive.bundle', () => {
+    expect(text).not.toMatch(/UNKNOWN|PROD \d{4}|\d{4}-\d{2}-\d{2}/);
+    expect(text).not.toMatch(/^- [a-z_]+: ?$/m);
+    expect(text).not.toMatch(/Test orders:/); // no marker exists, so nothing is said (Task 8: none invented)
+    expect(text).not.toMatch(/verbatim customer quotes/);
+    const digest = text.split('\n').find((l) => l.startsWith('  columns:') && l.includes('window_from')) ?? '';
+    expect(digest).not.toMatch(/bundle \(/);
+  });
+  it('names pos_orders_completed first among the most-used tables, as the sales default', () => {
+    expect(PROMPT_TABLES[0]).toBe('pos_orders_completed');
+    expect(text).toMatch(/- sales: default completed orders \(pos_orders_completed\)/);
+  });
   it('stays small (most-used tables only, never the whole catalog)', () => {
-    expect(estimateTokens(text)).toBeLessThan(2500);
+    expect(estimateTokens(text)).toBeLessThan(1600); // measured about 1,500 on 2026-10-07 (Train 3 Task 8)
     expect(estimateTokens(text)).toBeLessThan(estimateTokens(JSON.stringify(CATALOG_DATA)) / 3);
   });
   it('the Explore system prompt uses it instead of the coop_explore_ views list', () => {

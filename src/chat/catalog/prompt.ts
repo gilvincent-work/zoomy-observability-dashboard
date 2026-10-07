@@ -4,7 +4,7 @@ import {isClosedRelation} from '../explore/secret-names';
 import {CATALOG_DATA} from './index';
 
 /** The tables whose columns stay in the cached prompt, to save describe_table round trips (spec 2.3). */
-export const PROMPT_TABLES: readonly string[] = ['pos_orders', 'pos_order_items', 'pos_products', 'pos_events', 'pos_inventory_by_location', 'pos_stock_movements', 'spin_wheel_leads', 'digest_archive', 'coop_reports'];
+export const PROMPT_TABLES: readonly string[] = ['pos_orders_completed', 'pos_orders', 'pos_order_items', 'pos_products', 'pos_events', 'pos_inventory_by_location', 'pos_stock_movements', 'spin_wheel_leads', 'digest_archive', 'coop_reports'];
 
 export function buildDataIndexText(): string {
   const lines = [
@@ -19,12 +19,13 @@ export function buildDataIndexText(): string {
   for (const name of PROMPT_TABLES) {
     const t = CATALOG_DATA.tables[name];
     if (!t || isClosedRelation(name)) continue;
-    lines.push(`- ${name}: ${t.about}${t.prefer ? ` Prefer: ${t.prefer}` : ''}${t.testOrders ? ` Test orders: ${t.testOrders}` : ''}`);
+    const test = t.testOrders && !/^unknown/i.test(t.testOrders) ? ` Test orders: ${t.testOrders}` : ''; // an unknown marker is a dev note, not a fact for the model
+    lines.push(`- ${name}: ${t.about}${t.prefer ? ` Prefer: ${t.prefer}` : ''}${test}`);
     if (t.columns) lines.push(`  columns: ${t.columns}`);
   }
   lines.push('', 'Defaults for ambiguous words. If the page or the question settles the meaning, use it; otherwise use the default, say it, and offer the alternative in one line:');
   for (const t of CATALOG_DATA.terms) lines.push(`- ${t.term}: default ${t.default}; alternatives ${t.alternatives}; ask first when ${t.askWhen}`);
-  lines.push('', 'Call describe_table before writing SQL on a table you have not described in this conversation. list_tables shows every readable table.');
+  lines.push('', 'list_tables shows every readable table; describe_table shows the columns of any table.');
   return lines.join('\n');
 }
 

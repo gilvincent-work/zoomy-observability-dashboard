@@ -1,6 +1,6 @@
 // Shape one Explore query result into a MetricResult (spec 3.3). Pure: the driver rows come in, the stored result and the
 // model-visible payload come out. The model declares no column types: code derives them from the driver types and the alias suffix.
-import {leadsCoverageNote, ordersBasisNotes, type LeadFacts} from './basis';
+import {leadsCoverageNote, ordersBasisNotes, tableBasisNotes, type LeadFacts} from './basis';
 import type {Check, ColumnUnit, MetricResult, MetricRow, ResultColumn} from '../result-types';
 import type {ExploreErrorCode, ExploreLimits, ExploreLint, ValidateOk} from './types';
 import {baseRelation} from './views';
@@ -181,6 +181,10 @@ export function shapeResult({raw, validated, limits, id, leadFacts}: ShapeInput)
     }
   }
   for (const n of ordersBasisNotes({relations: validated.relations, columnRefs: validated.columnRefs ?? []})) {
+    notes.push(n);
+    caveats.push(n);
+  }
+  for (const n of tableBasisNotes(validated.relations)) {
     notes.push(n);
     caveats.push(n);
   }

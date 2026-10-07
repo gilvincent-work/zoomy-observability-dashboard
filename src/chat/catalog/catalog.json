@@ -6,6 +6,7 @@
    "title": "POS sales and catalogue",
    "tables": [
     "pos_orders",
+    "pos_orders_completed",
     "pos_order_items",
     "pos_products",
     "pos_prices",
@@ -128,8 +129,16 @@
    "domain": "pos-sales",
    "about": "One row per sale made at the POS (offline: booths, bazaars, shop). Business facts live here, not in the website/Shopee/Lazada data.",
    "columns": "id, client_uuid, subtotal, discount, total (PHP; subtotal = total + discount), oversold (bool: sold more than on hand), device_id, payment_method (cash, gcash, card, maya; null = legacy cash), customer_handle, status (completed or voided), remarks, created_at, edited_at (null = never edited), event_id (null = not tagged to an event), pet_type (dog, cat, both, null = untagged).",
-   "prefer": null,
+   "prefer": "pos_orders_completed for sales; this table for voided or test rows.",
    "testOrders": "UNKNOWN: no marker found in code (status is only completed or voided; device_id is never written)."
+  },
+  "pos_orders_completed": {
+   "name": "pos_orders_completed",
+   "domain": "pos-sales",
+   "about": "Ask Coop default view: completed orders only (and not test orders, if a marker exists).",
+   "columns": "the same as pos_orders.",
+   "prefer": null,
+   "testOrders": null
   },
   "pos_order_items": {
    "name": "pos_order_items",
@@ -231,7 +240,7 @@
    "name": "pos_stock_movements",
    "domain": "stock",
    "about": "Append-only stock ledger. Signed delta (sales negative).",
-   "columns": "id, product_id, delta, reason, created_by, created_at; the RPC body also writes lot_id, location, order_id. Reason values seen in code: sale, receipt (intake), add-void (undo of an intake), recount. Other reasons (transfer, prize, taste, void restock) are UNKNOWN.",
+   "columns": "id, product_id, delta, reason, created_by, created_at; the RPC body also writes lot_id, location, order_id. Reason values seen in code: sale, receipt (intake), add-void (undo of an intake), recount. Other reasons (transfer, prize, taste, void restock) are not confirmed.",
    "prefer": null,
    "testOrders": null
   },
@@ -286,8 +295,8 @@
   "digest_archive": {
    "name": "digest_archive",
    "domain": "digest",
-   "about": "One archived digest per run of a window; windows vary (weekly, about a month, rolling 30 days: PROD 2026-10-07) (the synthesized DigestDocument, plus the retrieval bundle it was built from).",
-   "columns": "id, window_from, window_to (timestamptz), bundle (jsonb: the RetrievalBundle, holds verbatim customer quotes), digest (jsonb DigestDocument, mirrored in src/types.ts), created_at.",
+   "about": "One archived digest per run of a window; windows vary (weekly, about a month, rolling 30 days) (the synthesized DigestDocument, plus the retrieval bundle it was built from).",
+   "columns": "id, window_from, window_to (timestamptz), digest (jsonb DigestDocument, mirrored in src/types.ts), created_at; the bundle column is not for Ask Coop.",
    "prefer": null,
    "testOrders": null
   },
@@ -318,7 +327,7 @@
   "coop_reports": {
    "name": "coop_reports",
    "domain": "reports",
-   "about": "",
+   "about": "Saved Ask Coop reports: one row per report (title, owner, team or private, pinned, soft delete).",
    "columns": "id, owner_email, title (1 to 120 chars), visibility (team | private), pinned, current_version, deleted_at (soft delete), created_at, updated_at.",
    "prefer": null,
    "testOrders": null
@@ -439,6 +448,30 @@
    "name": "coop_chat_digest",
    "domain": "chat-plumbing",
    "about": "read-only view over digest_archive",
+   "columns": "",
+   "prefer": null,
+   "testOrders": null
+  },
+  "coop_chat_stock_by_location": {
+   "name": "coop_chat_stock_by_location",
+   "domain": "chat-plumbing",
+   "about": "read-only view over pos_inventory_by_location",
+   "columns": "",
+   "prefer": null,
+   "testOrders": null
+  },
+  "coop_chat_sale_movements": {
+   "name": "coop_chat_sale_movements",
+   "domain": "chat-plumbing",
+   "about": "read-only view over pos_stock_movements (where reason = 'sale')",
+   "columns": "",
+   "prefer": null,
+   "testOrders": null
+  },
+  "coop_chat_stock_config": {
+   "name": "coop_chat_stock_config",
+   "domain": "chat-plumbing",
+   "about": "read-only view over pos_settings (where key = 'stock_forecast_config')",
    "columns": "",
    "prefer": null,
    "testOrders": null

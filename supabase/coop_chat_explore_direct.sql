@@ -98,13 +98,17 @@ create or replace function coop_explore_admin.view_allowlist() returns text[] la
     -- registry views, supabase/coop_chat_readonly.sql + coop_chat_digest.sql (data catalog section 15)
     'coop_chat_bundles', 'coop_chat_digest', 'coop_chat_events', 'coop_chat_order_items',
     'coop_chat_orders', 'coop_chat_price_changes', 'coop_chat_prices', 'coop_chat_products',
+    -- registry stock views, supabase/coop_chat_stock.sql (data catalog section 15)
+    'coop_chat_sale_movements', 'coop_chat_stock_by_location', 'coop_chat_stock_config',
     -- explore views, supabase/coop_chat_explore.sql, list in src/chat/explore/views.ts (data catalog section 15)
     'coop_explore_bundle_items', 'coop_explore_bundles', 'coop_explore_digest', 'coop_explore_event_leads', 'coop_explore_events',
     'coop_explore_inventory', 'coop_explore_inventory_by_location', 'coop_explore_inventory_lots', 'coop_explore_order_items',
     'coop_explore_orders', 'coop_explore_price_changes', 'coop_explore_prices', 'coop_explore_products', 'coop_explore_stock_event',
     'coop_explore_stock_movements',
     -- zoomy-pos read views (DDL in zoomy-pos; data catalog: pos_inventory and pos_inventory_by_location, "a view")
-    'pos_inventory', 'pos_inventory_by_location'
+    'pos_inventory', 'pos_inventory_by_location',
+    -- Ask Coop default view over pos_orders (completed only), supabase/coop_chat_default_views.sql (data catalog section 1)
+    'pos_orders_completed'
   ]::text[]
 $$;
 

@@ -3,6 +3,7 @@ import {fetchAllRows} from '../../pos-fetch-paginate';
 import type {ReadClient} from '../../pos-orders-read';
 import type {MetricData} from '../result-types';
 import {readChatOrders} from './pos-orders';
+import {loadStockData, type StockReadClient} from './stock-data';
 import {relationsForMode, type ChatReadMode} from './relations';
 
 // Loads everything the pure metric executor needs, through the guarded chat read client:
@@ -24,6 +25,8 @@ export async function loadMetricData(client: ReadClient, mode: ChatReadMode): Pr
     fetchAllRows(tables.priceChanges, (from, to) =>
       client.from(tables.priceChanges).select(columns.priceChanges).order('id', {ascending: true}).range(from, to)),
   ]);
+
+  const stock = await loadStockData(client as unknown as StockReadClient, mode, new Date());
 
   return {
     source: 'live',
@@ -51,6 +54,7 @@ export async function loadMetricData(client: ReadClient, mode: ChatReadMode): Pr
       new_price: Number(c.new_price ?? 0),
       changed_at: String(c.changed_at),
     })),
+    stock,
     // Orders and lines are read together by readChatOrders: their counts are the orders and the attached lines.
     bulkReads: [
       {relation: tables.orders, rows: orders.length},

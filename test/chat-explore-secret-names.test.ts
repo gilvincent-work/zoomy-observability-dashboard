@@ -51,10 +51,11 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
   it('fix round 4: views are default-deny, granted only through the one view_allowlist()', () => {
     const allowlist = arrayOf('view_allowlist');
     const chatViews = ['coop_chat_bundles', 'coop_chat_digest', 'coop_chat_events', 'coop_chat_order_items',
-      'coop_chat_orders', 'coop_chat_price_changes', 'coop_chat_prices', 'coop_chat_products'];
-    const expected = [...chatViews, ...EXPLORE_VIEW_NAMES, 'pos_inventory', 'pos_inventory_by_location'];
+      'coop_chat_orders', 'coop_chat_price_changes', 'coop_chat_prices', 'coop_chat_products',
+      'coop_chat_sale_movements', 'coop_chat_stock_by_location', 'coop_chat_stock_config'];
+    const expected = [...chatViews, ...EXPLORE_VIEW_NAMES, 'pos_inventory', 'pos_inventory_by_location', 'pos_orders_completed'];
     expect([...allowlist].sort()).toEqual([...expected].sort());
-    expect(allowlist).toHaveLength(25);
+    expect(allowlist).toHaveLength(29);
     expect(new Set(allowlist).size).toBe(allowlist.length);
     // the one decision: a view not on the list is closed, and a closed relation gets no table or column grant
     expect(SQL).toContain("when c.relkind in ('v', 'm', 'f') and not (c.relname::text = any (coop_explore_admin.view_allowlist())) then 'view not allowlisted'");

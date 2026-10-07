@@ -84,13 +84,13 @@ fi
 set -a; . "$ENVF"; set +a
 
 # ---- the SQL, in order ----------------------------------------------------------------------------------------------
-EXPLORE_VIEWS="coop_explore_orders coop_explore_order_items coop_explore_products coop_explore_bundles coop_explore_bundle_items coop_explore_events coop_explore_prices coop_explore_price_changes coop_explore_event_leads coop_explore_digest coop_explore_inventory coop_explore_inventory_by_location coop_explore_inventory_lots coop_explore_stock_movements coop_explore_stock_event"
+PRE_DROP_VIEWS="pos_orders_completed coop_explore_orders coop_explore_order_items coop_explore_products coop_explore_bundles coop_explore_bundle_items coop_explore_events coop_explore_prices coop_explore_price_changes coop_explore_event_leads coop_explore_digest coop_explore_inventory coop_explore_inventory_by_location coop_explore_inventory_lots coop_explore_stock_movements coop_explore_stock_event"
 
 apply_sql() {
   local f out v
-  # The explore views depend on the pos_* tables, which scripts/coop-chat-ro-fixture.sql drops and recreates: drop them first (harmless if absent).
-  for v in $EXPLORE_VIEWS; do psql_pg -o /dev/null -c "set client_min_messages = warning; drop view if exists public.$v" || die "could not drop $v"; done
-  for f in scripts/coop-chat-ro-fixture.sql scripts/local-supabase/seed-digest.sql supabase/coop_chat_readonly.sql supabase/coop_chat_digest.sql supabase/coop_reports.sql; do
+  # The explore views and pos_orders_completed depend on the pos_* tables, which scripts/coop-chat-ro-fixture.sql drops and recreates: drop them first (harmless if absent).
+  for v in $PRE_DROP_VIEWS; do psql_pg -o /dev/null -c "set client_min_messages = warning; drop view if exists public.$v" || die "could not drop $v"; done
+  for f in scripts/coop-chat-ro-fixture.sql scripts/coop-stock-fixture.sql scripts/local-supabase/seed-digest.sql supabase/coop_chat_readonly.sql supabase/coop_chat_digest.sql supabase/coop_chat_stock.sql supabase/coop_reports.sql; do
     if [ ! -f "$ROOT/$f" ]; then echo "skipped $f (not found yet; run scripts/local-supabase/up.sh --reapply once it exists)"; continue; fi
     out="$(psql_pg -o /dev/null < "$ROOT/$f" 2>&1)" || { echo "$out" | grep -v '^NOTICE:' >&2; die "failed applying $f"; }
     echo "applied $f"
@@ -103,7 +103,7 @@ apply_sql() {
 apply_explore() {
   local f out
   [ -n "${EXPLORE_PG_PASSWORD:-}" ] || die 'EXPLORE_PG_PASSWORD is not in .local-env'
-  for f in supabase/spin_wheel_leads.sql supabase/spin_wheel_leads_instagram.sql scripts/coop-explore-fixture.sql supabase/coop_chat_explore.sql supabase/coop_chat_explore_direct.sql scripts/coop-direct-fixture.sql; do
+  for f in supabase/spin_wheel_leads.sql supabase/spin_wheel_leads_instagram.sql scripts/coop-explore-fixture.sql supabase/coop_chat_explore.sql supabase/coop_chat_explore_direct.sql supabase/coop_chat_default_views.sql scripts/coop-direct-fixture.sql; do
     out="$(psql_pg -o /dev/null < "$ROOT/$f" 2>&1)" || { echo "$out" | grep -v '^NOTICE:' >&2; die "failed applying $f"; }
     echo "applied $f"
     # direct reads: say whether the event trigger and the cron guard were installed (the file never fails on either)

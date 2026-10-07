@@ -134,6 +134,43 @@ select (select count(*) from spin_wheel_leads)::int as leads_count,
 select pet, count(*)::int as leads_count from spin_wheel_leads
 where (collected_at at time zone 'Asia/Manila')::date = date '2026-09-27' group by 1 order by 2 desc, 1;
 
+-- Train 3 (direct reads). Base tables only, as the superuser on the local fixture.;
+
+-- @ref G26
+select l.product_id, sum(l.qty_on_hand)::int as stock from public.pos_inventory_lots l where l.location = 'event' group by 1 order by 1;
+
+-- @ref G27
+select l.product_id, sum(l.qty_on_hand)::int as stock from public.pos_inventory_lots l group by 1 order by 1;
+
+-- @ref G28
+with s as (
+  select m.product_id, sum(-m.delta) as units, count(distinct (m.created_at at time zone 'Asia/Manila')::date) as days
+  from public.pos_stock_movements m where m.reason = 'sale' and m.created_at >= now() - interval '60 days' group by 1),
+e as (select l.product_id, sum(l.qty_on_hand)::int as stock from public.pos_inventory_lots l where l.location = 'event' group by 1)
+select e.product_id, e.stock, round(e.stock / nullif(s.units::numeric / s.days, 0), 2) as cover_days
+from e left join s on s.product_id = e.product_id order by 1;
+
+-- @ref G29
+select l.lot_code, l.qty_on_hand as on_hand_units from public.pos_inventory_lots l where l.expires_on < date '2027-01-01' and l.qty_on_hand > 0 order by l.expires_on;
+
+-- @ref G30
+select m.product_id, sum(-m.delta)::int as sold_units from public.pos_stock_movements m
+where m.reason = 'sale' and (m.created_at at time zone 'Asia/Manila')::date between date '2026-09-01' and date '2026-09-30' group by 1 order by 1;
+
+-- @ref G31
+select count(*) as reports_count, count(*) filter (where r.pinned) as pinned_count from public.coop_reports r where r.deleted_at is null;
+
+-- @ref G32
+select count(*) as voided_count from public.pos_orders o
+where o.status = 'voided' and (o.created_at at time zone 'Asia/Manila')::date between date '2026-09-01' and date '2026-09-30';
+
+-- @ref G33
+select count(*) as orders_count, round(sum(o.total), 2) as revenue_php from public.pos_orders o
+where o.status = 'completed' and (o.created_at at time zone 'Asia/Manila')::date between date '2026-09-01' and date '2026-09-30';
+
+-- @ref G34
+select s.key, s.value ->> 'threshold' as threshold_text from public.pos_settings s where s.key = 'stock_forecast_config';
+
 -- @ref A07_pet_venue_event
 select e.venue as venue, e.name as event, coalesce(o.pet_type, 'untagged') as pet, count(*)::int as orders_count, sum(o.total)::numeric as revenue_php
 from pos_orders o join pos_events e on e.event_id = o.event_id

@@ -33,3 +33,15 @@ export function ordersBasisNotes(v: Pick<ValidateOk, 'relations' | 'columnRefs'>
   const byDate = v.columnRefs.some((c) => c.column === 'starts_on' || c.column === 'ends_on');
   return [...(byTag ? [ORDERS_BY_TAG_NOTE] : []), ...(byDate ? [ORDERS_BY_DATE_NOTE] : [])];
 }
+
+/** One sentence per basis the query's tables imply (spec 2.5), written by code; shown in Notes and given to the model as a caveat. */
+export function tableBasisNotes(relations: readonly string[]): string[] {
+  const has = (base: string, ...names: string[]): boolean => relations.some((r) => baseRelation(r) === base || names.includes(r));
+  const notes: string[] = [];
+  if (relations.includes('pos_orders_completed')) notes.push('Basis: completed orders only (the pos_orders_completed default).');
+  else if (has('pos_orders')) notes.push('Basis: all orders (pos_orders), including voided ones unless the query filters status.');
+  if (relations.includes('coop_explore_stock_event')) notes.push('Basis: Event (sellable) stock only.');
+  else if (has('pos_inventory')) notes.push('Basis: stock at all locations (event + office).');
+  else if (has('pos_inventory_by_location')) notes.push('Basis: stock per location.');
+  return notes;
+}

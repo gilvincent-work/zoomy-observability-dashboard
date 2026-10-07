@@ -18,7 +18,7 @@ function longToday(now: Date): string {
 
 const NOT_AVAILABLE_BASE = `Not available: Traffic (sample data only), Meta ads (not connected). ${notInDatabaseText()} Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet.`;
 const NOT_AVAILABLE_NO_EXPLORE = 'Contact details (email, phone, instagram) are not exposed by the metrics. Questions no metric covers cannot be answered.';
-const EXPLORE_AVAILABLE = 'For questions no metric covers (contacts, leads, stock, lots, movements, saved reports, voided orders, hours), use list_tables, describe_table and run_query on the database tables.';
+const EXPLORE_AVAILABLE = 'For questions no metric covers (contacts, leads, stock lots and movements, saved reports, voided orders, hours), use list_tables, describe_table and run_query on the database tables.';
 const notAvailable = (explore: boolean): string => `${NOT_AVAILABLE_BASE} ${explore ? EXPLORE_AVAILABLE : NOT_AVAILABLE_NO_EXPLORE}`;
 
 /** Per-turn context when the live-data path is unavailable: today's date and an honest "not available" (no data, no figures). */

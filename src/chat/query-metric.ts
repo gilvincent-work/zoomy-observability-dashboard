@@ -3,6 +3,7 @@ import {manilaDayKey, resolveOrderEvents} from '../pos-sales-compute';
 import {buildPriceHistory} from '../pos-price-history';
 import {resolveRange} from './range';
 import {METRICS, METRIC_IDS, type ComputeOutput} from './metrics-registry';
+import {isStockMetric, runStockMetric} from './stock-metrics';
 import {runChecks} from './checks';
 import {buildInsights} from './insights';
 import type {Check, ChecksInput, Coverage, Insight, MetricData, MetricError, MetricId, MetricRequest, MetricResult, MetricRow, ResultColumn} from './result-types';
@@ -175,6 +176,7 @@ const insightsOf = (out: ComputeOutput, prev: ComputeOutput | null): Insight[] =
 export function runMetric(input: unknown, data: MetricData, now: Date): MetricResult | MetricError {
   const req = validate(input, data);
   if ('error' in req) return req;
+  if (isStockMetric(req.metric)) return runStockMetric(req, data, now); // "as of now": no orders, range or checks
   const def = METRICS[req.metric];
   const measure = req.measure === 'default' ? def.defaultMeasure : req.measure;
 

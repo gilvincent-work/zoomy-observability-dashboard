@@ -74,5 +74,5 @@ export function pageContextLine(current: {path: string; query: string} | null, p
     const p = resolvePage(link);
     if (p) parts.push(`They pasted a link to ${link} (${describe(p)}).`);
   }
-  return parts.length ? `[page] ${parts.join(' ')} Read "this" and "here" as that page's data.` : null;
+  return parts.length ? `[page] ${parts.join(' ')}` : null;
 }

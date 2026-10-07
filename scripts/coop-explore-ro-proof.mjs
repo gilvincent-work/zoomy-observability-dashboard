@@ -111,7 +111,7 @@ const driftClean = (f) => Object.entries(f).every(([k, v]) => (k === 'unlisted_v
   const allow = q('select string_agg(v, \',\' order by v) from unnest(coop_explore_admin.view_allowlist()) v').split(',')
   const allowFail = []
   for (const v of allow) { const r = await m3(`select count(*) as n from ${v} x`); if (r.outcome !== 'executed') allowFail.push(`${v}:${label(r)}`) }
-  rec(`(a) all ${allow.length} allowlisted views read in M3`, allow.length === 25 && allowFail.length === 0, allowFail.join(' '))
+  rec(`(a) all ${allow.length} allowlisted views read in M3`, allow.length === 29 && allowFail.length === 0, allowFail.join(' '))
   const open = q(`select string_agg(c.relname, ',' order by c.relname) from pg_class c join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
     where c.relkind in ('r','p') and not coop_explore_admin.is_closed_table(c.relname)`).split(',')
   const openFail = []
