@@ -7,6 +7,13 @@
 --
 -- PREREQUISITES (the file fails loudly if one is missing):
 --   supabase/spin_wheel_leads.sql and supabase/spin_wheel_leads_instagram.sql applied (the leads view reads instagram and pet).
+--   The zoomy-pos stock sources: pos_inventory, pos_inventory_by_location (WITH a `location` column), pos_inventory_lots and
+--   pos_stock_movements. None is confirmed on staging or PROD yet. Before applying, run these read-only checks and read the result:
+--     select table_name, column_name, data_type, ordinal_position from information_schema.columns
+--       where table_schema = 'public' and table_name in ('pos_inventory','pos_inventory_by_location','pos_inventory_lots','pos_stock_movements')
+--       order by table_name, ordinal_position;                       -- all 4 tables present; by_location has `location`
+--     select distinct location from pos_inventory_by_location;      -- expect 'event' (sellable) and 'office'
+--   If one is missing the file stops in step 0 below, naming it, before changing anything.
 --
 -- WHAT THIS DOES
 --   1. a LOGIN role `coop_explore_ro` (no password here), the first Postgres credential the dashboard holds;
@@ -26,12 +33,21 @@
 
 -- 0. Prerequisites ----------------------------------------------------------------------------------------------
 do $$
+declare t text;
 begin
   if to_regclass('public.spin_wheel_leads') is null then
     raise exception 'apply supabase/spin_wheel_leads.sql first';
   end if;
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'spin_wheel_leads' and column_name = 'instagram') then
     raise exception 'apply supabase/spin_wheel_leads_instagram.sql first';
+  end if;
+  foreach t in array array['pos_inventory', 'pos_inventory_by_location', 'pos_inventory_lots', 'pos_stock_movements'] loop
+    if to_regclass('public.' || t) is null then
+      raise exception 'missing stock source public.% (owned by zoomy-pos): run the read-only checks in this file''s header, then apply nothing until it exists', t;
+    end if;
+  end loop;
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'pos_inventory_by_location' and column_name = 'location') then
+    raise exception 'public.pos_inventory_by_location has no location column: coop_explore_stock_event cannot be built';
   end if;
 end $$;
 

@@ -153,6 +153,19 @@ describe('EXP-02 supabase/coop_chat_explore.sql stays in step with views.ts and 
     expect(c).not.toMatch(/notify\s+pgrst/i);
   });
 
+  it('fails loudly, before any change, when a stock source or the location column is missing', () => {
+    const c = code(SQL);
+    const gate = c.indexOf("to_regclass('public.' || t)");
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(c.indexOf('create role'));
+    for (const t of ['pos_inventory', 'pos_inventory_by_location', 'pos_inventory_lots', 'pos_stock_movements']) {
+      expect(c, t).toContain(`'${t}'`);
+    }
+    expect(c).toMatch(/table_name = 'pos_inventory_by_location' and column_name = 'location'/);
+    expect(c).toMatch(/raise exception 'missing stock source/);
+    expect(c).toMatch(/raise exception 'public\.pos_inventory_by_location has no location column/);
+  });
+
   it('fails loudly when the lead tables are missing (prerequisite check)', () => {
     expect(SQL).toMatch(/apply supabase\/spin_wheel_leads\.sql first/);
     expect(SQL).toMatch(/apply supabase\/spin_wheel_leads_instagram\.sql first/);
