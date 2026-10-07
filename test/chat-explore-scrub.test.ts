@@ -100,7 +100,7 @@ describe('2.2 scanner, Task 7 review findings 1-3: JSON as text, glued prefixes,
       'ZMY-JERKY-100G-CHICKEN', 'SKU_DOGTREATS_100G_2026', 'ZOOMYCHICKENJERKY100GPACKOFTWELVE01', // 35 upper + digits: a long SKU
       '250928ABCD1234', '1234567890123456', 'SPEPH0123456789A',
       '2026-09-28', '2026-09-28T04:00:00+08:00', '28/09/2026',
-      'juan.delacruz1990@gmail.com', 'zoomy.orders+lazada@zoomy.ph', '+63 917 123 4567', '09171234567',
+      'juan.delacruz1990@example.com', 'shop.orders+lazada@example.org', '+63 917 123 4567', '09171234567',
       '₱1,290.00', 'Price $12.50 each, $3$ off', 'P1,290 / 3 = 430',
       'https://cdn.shopify.com/s/files/1/0612/3456/7890/products/IMG1234.jpg?v=1696000000',
       'https://zoomy.ph/collections/all?page=2&sort_by=price-ascending&keyword=jerky',
@@ -274,6 +274,20 @@ describe('2.2 scanner, Task 7 re-review round 3 K1-K3: parsed keys are scanned; 
     expect(JSON.stringify(r.value)).toBe(`{"__proto__":{"x":1},"token":"${HIDDEN}"}`);
     expect(Object.getPrototypeOf(r.value)).toBeNull();
     expect(scrubValue('x {"__proto__": {"x": 1}, "token": "shorty"}').value).toBe(`x {"__proto__":{"x":1},"token":"${HIDDEN}"}`);
+  });
+  it('K1 (final review finding 7): 20,000 keys hidden to one marker are suffixed in linear time, and a literal suffixed key is never overwritten', () => {
+    const many: Record<string, number> = {};
+    for (let i = 0; i < 20_000; i += 1) many[`${i.toString(16).padStart(8, '0')}${'c0ffee'.repeat(6)}`] = i; // 44 hex characters each, built at run time
+    const t0 = performance.now();
+    const r = scrubValue(many);
+    const ms = performance.now() - t0;
+    const keys = Object.keys(r.value as object);
+    expect(keys).toHaveLength(20_000);
+    expect(keys[0]).toBe(HIDDEN);
+    expect(keys[19_999]).toBe(`${HIDDEN} 20000`);
+    expect(ms).toBeLessThan(500);
+    // a key that already reads "[hidden] 2" keeps its value; the next hidden key skips past it
+    expect(scrubValue({[hex]: 1, [`${HIDDEN} 2`]: 'kept', [jwt]: 3}).value).toEqual({[HIDDEN]: 1, [`${HIDDEN} 2`]: 'kept', [`${HIDDEN} 3`]: 3});
   });
   it('K2: the 100,000-character cut never leaves the readable prefix of a run it splits: the whole run joins the hidden tail', () => {
     const pad = (n: number) => 'w '.repeat(n / 2); // word breaks, so only the run at the cut is in question

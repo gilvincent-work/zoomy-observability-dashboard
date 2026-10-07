@@ -293,11 +293,17 @@ function scrub(v: unknown, depth: number, b: Budget, nest: number): Scrubbed {
   }
   let hidden = 0;
   const value: Record<string, unknown> = Object.create(null); // no prototype: a __proto__ key is stored, not interpreted (N6)
+  const lastSuffix = new Map<string, number>(); // per base key, the last suffix used: N keys hidden to one marker cost O(N), not O(N^2)
   for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
     const kr = scrubText(k, depth, b); // the key is text too (K1): a token-shaped key, or JSON holding a secret, is hidden like a value
     hidden += kr.hidden;
     let key = kr.value;
-    for (let n = 2; key in value; n += 1) key = `${kr.value} ${n}`; // two keys hidden to the same marker: keep both entries
+    if (key in value) {
+      // two keys hidden to the same marker: keep both entries. Resume from the last suffix; skip one a literal key already holds.
+      let n = lastSuffix.get(kr.value) ?? 1;
+      do key = `${kr.value} ${(n += 1)}`; while (key in value);
+      lastSuffix.set(kr.value, n);
+    }
     if (isSecretJsonKey(k) && x !== null && x !== undefined && x !== '') {
       value[key] = HIDDEN;
       hidden += 1;
