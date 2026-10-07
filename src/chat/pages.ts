@@ -23,6 +23,8 @@ export const PAGES: readonly PageInfo[] = [
 
 const MAX_PATH = 200;
 const MAX_QUERY = 300;
+const MAX_PAIRS = 5;
+const PATH_RE = /^\/(?!\/)[\w\-./[\]]*$/;
 const MAX_LINKS = 3;
 
 /** Exact route, or a single dynamic segment (`[x]`). Never a word prefix. */
@@ -36,12 +38,22 @@ export function resolvePage(path: string): PageInfo | null {
   return null;
 }
 
+/** Allow-list for a query string that reaches the model: short plain key=value pairs only, at most 5. */
+function safeQuery(raw: string): string {
+  const out: string[] = [];
+  for (const [k, v] of new URLSearchParams(raw)) {
+    if (/^[a-z_]{1,20}$/.test(k) && /^[\w.:-]{1,40}$/.test(v)) out.push(`${k}=${v}`);
+    if (out.length === MAX_PAIRS) break;
+  }
+  return out.join('&');
+}
+
 /** Untrusted client input -> a safe {path, query} or null. */
 export function readPageInput(raw: unknown): {path: string; query: string} | null {
   if (raw === null || typeof raw !== 'object') return null;
   const {path, query} = raw as {path?: unknown; query?: unknown};
-  if (typeof path !== 'string' || path.length > MAX_PATH || !/^\/(?!\/)[\w\-./[\]]*$/.test(path)) return null;
-  const q = typeof query === 'string' && query.length <= MAX_QUERY ? query : '';
+  if (typeof path !== 'string' || path.length > MAX_PATH || !PATH_RE.test(path)) return null;
+  const q = typeof query === 'string' && query.length <= MAX_QUERY ? safeQuery(query) : '';
   return {path, query: q};
 }
 
@@ -52,7 +64,9 @@ export function dashboardLinks(text: string, host: string): string[] {
     let u: URL;
     try { u = new URL(m[0]); } catch { continue; }
     if (u.host !== host) continue;
-    out.push(u.pathname + u.search);
+    if (u.pathname.length > MAX_PATH || !PATH_RE.test(u.pathname) || !resolvePage(u.pathname)) continue;
+    const q = u.search.length <= MAX_QUERY + 1 ? safeQuery(u.search) : '';
+    out.push(q ? `${u.pathname}?${q}` : u.pathname);
     if (out.length === MAX_LINKS) break;
   }
   return out;

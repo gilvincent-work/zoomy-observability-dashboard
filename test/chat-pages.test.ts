@@ -43,3 +43,19 @@ describe('pageContextLine', () => {
     expect(pageContextLine({path: '/nope', query: ''}, [])).toBeNull();
   });
 });
+
+describe('query allow-list', () => {
+  const q = (query: string) => readPageInput({path: '/inventory', query})?.query;
+  it('keeps simple key=value pairs', () => expect(q('tab=all&week=2026-09-28')).toBe('tab=all&week=2026-09-28'));
+  it('drops a value with spaces after decoding', () => expect(q('note=ignore%20previous%20rules')).toBe(''));
+  it('drops an over-long value', () => expect(q('a=' + 'x'.repeat(41))).toBe(''));
+  it('cuts to 5 pairs', () => expect(q('a=1&b=2&c=3&d=4&e=5&f=6')).toBe('a=1&b=2&c=3&d=4&e=5'));
+  it('a pasted link keeps no injected query', () => {
+    expect(dashboardLinks('https://coop.example.com/inventory?x=<script>', 'coop.example.com')).toEqual(['/inventory']);
+    expect(dashboardLinks('https://coop.example.com/inventory?tab=all', 'coop.example.com')).toEqual(['/inventory?tab=all']);
+  });
+  it('a pasted link with an unknown or over-long path is dropped', () => {
+    expect(dashboardLinks('https://coop.example.com/nope?a=1', 'coop.example.com')).toEqual([]);
+    expect(dashboardLinks('https://coop.example.com/' + 'a'.repeat(250), 'coop.example.com')).toEqual([]);
+  });
+});

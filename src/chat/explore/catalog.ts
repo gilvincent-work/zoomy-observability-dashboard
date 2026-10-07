@@ -255,6 +255,10 @@ export const CATALOG: Record<ExploreViewName, ViewDoc> = {
 
 const typeOf = (view: ExploreViewName, column: string): string => (EXPLORE_VIEWS[view].types as Record<string, string>)[column] ?? '?';
 
+// Page lines name base tables; the header names the base table so the model can map one to the other.
+const sourceOf = (view: ExploreViewName): string =>
+  view === 'coop_explore_stock_event' ? `${EXPLORE_VIEWS[view].source} where location = 'event'` : EXPLORE_VIEWS[view].source;
+
 /** One compact, deterministic block. A column line: `  col type meaning | e.g. samples | coverage | rules`. Default coverage is left out. */
 export function buildExploreCatalogText(): string {
   const lines = [
@@ -263,7 +267,7 @@ export function buildExploreCatalogText(): string {
   ];
   for (const view of EXPLORE_VIEW_NAMES) {
     const doc = CATALOG[view];
-    lines.push('', `${view}: ${doc.about} (grain: ${doc.grain})`);
+    lines.push('', `${view} (from ${sourceOf(view)}): ${doc.about} (grain: ${doc.grain})`);
     for (const [name, d] of Object.entries(doc.columns)) {
       const parts = [`  ${name} ${typeOf(view, name)} ${d.meaning}`];
       if (d.samples.length) parts.push(`e.g. ${d.samples.join(' ')}`);
