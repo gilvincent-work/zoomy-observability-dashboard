@@ -108,7 +108,7 @@ export async function deleteUploadAction(input: {company: string | null; uploadI
     return {ok: true, committed: 0};
   } catch (e) {
     console.error('deleteUploadAction', e);
-    return {ok: false, error: 'Could not delete the upload — please try again.'};
+    return {ok: false, error: 'Could not delete the upload. Please try again.'};
   }
 }
 
@@ -175,7 +175,7 @@ export async function commitReview(input: {
   } catch (e) {
     // Don't leak Postgres/schema detail to the browser; log it server-side.
     console.error('commitReview failed', e);
-    return {ok: false, error: 'Could not commit the review — please try again.'};
+    return {ok: false, error: 'Could not commit the review. Please try again.'};
   }
 }
 
@@ -209,7 +209,7 @@ export async function createBatchAction(input: {company: string | null}): Promis
     return {ok: true, batchId: await createBatch(ctx.companyId, session?.user?.email ?? null)};
   } catch (e) {
     console.error('createBatchAction', e);
-    return {ok: false, error: 'Could not start the upload — please try again.'};
+    return {ok: false, error: 'Could not start the upload. Please try again.'};
   }
 }
 
@@ -237,7 +237,7 @@ export async function updateBatchInfoAction(input: {
     return {ok: true};
   } catch (e) {
     console.error('updateBatchInfoAction', e);
-    return {ok: false, error: 'Could not save the store and period — please try again.'};
+    return {ok: false, error: 'Could not save the store and period. Please try again.'};
   }
 }
 
@@ -311,7 +311,7 @@ export async function commitBatchAction(input: {
     return {ok: true, committed};
   } catch (e) {
     if (e instanceof BatchConflictError) {
-      return {ok: false, error: `Item ${e.itemCode} appears more than once — a page may have been scanned twice, or a code was misread. Fix or remove the duplicate and try again.`};
+      return {ok: false, error: `Item ${e.itemCode} appears more than once. A page may have been scanned twice, or a code was misread. Fix or remove the duplicate and try again.`};
     }
     if (e instanceof BatchStateError) {
       return {
@@ -320,6 +320,6 @@ export async function commitBatchAction(input: {
       };
     }
     console.error('commitBatchAction', e);
-    return {ok: false, error: 'Could not commit these pages. Please try again — committing again is safe.'};
+    return {ok: false, error: 'Could not commit these pages. Please try again; committing again is safe.'};
   }
 }

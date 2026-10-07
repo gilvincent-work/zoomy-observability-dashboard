@@ -116,7 +116,7 @@ async function safeHandle(req: Request, emit: Emit): Promise<Outcome> {
         errorDetail: msg(e),
       }).catch(() => {});
     }
-    return {body: {uploadId: track.uploadId, status: 'failed', error: 'Upload failed — please try again.'}, status: 500};
+    return {body: {uploadId: track.uploadId, status: 'failed', error: 'Upload failed. Please try again.'}, status: 500};
   }
 }
 
@@ -174,7 +174,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
       }
       pages = doc.getPageCount();
     } catch {
-      return json({error: 'This PDF couldn’t be opened — it may be damaged. Please re-scan it.', status: 'rejected'}, 415);
+      return json({error: 'This PDF couldn’t be opened. It may be damaged, so please re-scan it.', status: 'rejected'}, 415);
     }
     if (pages > 1) {
       return json(
@@ -197,7 +197,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     });
   } catch (e) {
     console.error('goldline upload: store failed', e);
-    return json({error: 'Could not store the file — please try again.'}, 500);
+    return json({error: 'Could not store the file. Please try again.'}, 500);
   }
   track.uploadId = uploadId;
   // The batch may have been committed while this page was uploading; a page added
@@ -242,7 +242,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     } catch (e) {
       console.error('goldline upload: gl_sales commit failed', e);
       await setUploadStatus(uploadId, 'failed', {rejectReason: 'Could not save sales rows.'});
-      return json({uploadId, status: 'failed', error: 'Could not save sales rows — please try again.'}, 500);
+      return json({uploadId, status: 'failed', error: 'Could not save sales rows. Please try again.'}, 500);
     }
   }
 
@@ -253,7 +253,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     return json({
       uploadId,
       status: 'needs_review',
-      note: 'Stored. Extraction is not configured (ANTHROPIC_API_KEY missing) — review manually.',
+      note: 'Stored. Extraction is not configured (ANTHROPIC_API_KEY missing), so review it manually.',
     });
   }
 
@@ -265,12 +265,12 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     emit({type: 'stage', stage: 'detecting'});
     const page = await detectPage(pdfBase64);
     if (page === 0) {
-      const reason = 'This doesn’t look like a Nichido inventory form page. Please upload a clear scan of an inventory page (1–5).';
+      const reason = 'This doesn’t look like a Nichido inventory form page. Please upload a clear scan of an inventory page (pages 1 to 5).';
       await setUploadStatus(uploadId, 'failed', {rejectReason: reason});
       return json({uploadId, status: 'failed', error: reason}, 422);
     }
     if (!INVENTORY_PAGES.includes(page)) {
-      const reason = 'This is page 6, the daily Sales Report — not an inventory page. Only inventory pages (1–5) are read here.';
+      const reason = 'This is page 6, the daily Sales Report, not an inventory page. Only inventory pages (1 to 5) are read here.';
       await setUploadStatus(uploadId, 'rejected', {rejectReason: reason, pageCount: page});
       return json({uploadId, status: 'rejected', error: reason}, 422);
     }

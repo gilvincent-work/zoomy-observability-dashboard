@@ -12,7 +12,7 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {DocumentConfidence} from '@/components/analyst/document-confidence';
-import {ReviewRows, type ColKey, type ReviewView} from '@/components/analyst/review-rows';
+import {reviewRowEl, ReviewRows, type ColKey, type ReviewView} from '@/components/analyst/review-rows';
 import {LOW_BELOW, rowConfidence, toneText} from '@/src/review-confidence';
 import {pageTotal, reconcile, stepFlag, unresolvedFlags, type CatalogLite} from '@/src/review-workbench';
 
@@ -111,7 +111,7 @@ export function UploadReview({
     setActive(index);
     setQuery(''); // a search could be hiding the target row
     requestAnimationFrame(() => {
-      const row = document.getElementById(`review-row-${index}`);
+      const row = reviewRowEl(index);
       row?.scrollIntoView({behavior: 'smooth', block: 'center'});
       row?.querySelector<HTMLInputElement>('input')?.focus({preventScroll: true});
     });
@@ -227,10 +227,24 @@ export function UploadReview({
               <CardContent>
                 {/* Click the thumbnail to enlarge. The iframe is pointer-events-none so the
                     click lands on the button overlay, not the embedded PDF viewer. */}
+{/* Phones can't show a PDF inside the page — open it in the phone's viewer instead. */}
+                <a
+                  href={scanUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm transition-colors active:bg-muted md:hidden"
+                >
+                  <FileText aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="font-medium">View the scan</span>
+                    <span className="text-xs text-muted-foreground">Opens the PDF to compare with the rows below</span>
+                  </span>
+                  <ExternalLink aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                </a>
                 <button
                   type="button"
                   onClick={() => setLightboxOpen(true)}
-                  className="group relative block w-full overflow-hidden rounded-md border border-border bg-muted"
+                  className="group relative block w-full overflow-hidden rounded-md border border-border bg-muted max-md:hidden"
                   aria-label="Enlarge scan"
                 >
                   <iframe
@@ -262,7 +276,7 @@ export function UploadReview({
           <CardContent className="flex flex-col gap-2 text-sm">
             <p className="text-muted-foreground">
               {upload.kind === 'pos_csv'
-                ? 'Sales files commit directly to the sales table — there is nothing to review here.'
+                ? 'Sales files commit directly to the sales table, so there is nothing to review here.'
                 : 'No extraction is staged for this file.'}
             </p>
             <p>
@@ -326,7 +340,7 @@ export function UploadReview({
                 </div>
                 {(extraction.page ?? 1) > 1 && !committed && (
                   <p className="text-xs text-muted-foreground">
-                    Pages 2–5 don&apos;t print the store or period. Use the same ones as this store&apos;s page 1 so all pages land in
+                    Pages 2 to 5 don&apos;t print the store or period. Use the same ones as this store&apos;s page 1 so all pages land in
                     one Inventory count.
                   </p>
                 )}
@@ -356,13 +370,13 @@ export function UploadReview({
                     {check.state === 'match' && <span style={{color: toneText('var(--status-good)')}}>✓ Reconciled</span>}
                     {check.state === 'off' && (
                       <span style={{color: toneText('var(--status-crit)')}}>
-                        Off by {peso(Math.abs(check.diff))} — the page reads {check.diff > 0 ? 'higher' : 'lower'} than the form
+                        Off by {peso(Math.abs(check.diff))}: the page reads {check.diff > 0 ? 'higher' : 'lower'} than the form
                       </span>
                     )}
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Optional. A mismatch usually means a misread count — check the flagged rows and any row with a big value.
+                  Optional. A mismatch usually means a misread count, so check the flagged rows and any row with a big value.
                 </p>
               </section>
             </CardContent>

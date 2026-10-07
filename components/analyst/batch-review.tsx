@@ -12,7 +12,7 @@ import {batchCoverage, batchReadiness, FORM_PAGES} from '@/src/upload-batch';
 import {LOW_BELOW, rowConfidence, toneText} from '@/src/review-confidence';
 import {stepFlag, unresolvedFlags, type CatalogLite} from '@/src/review-workbench';
 import {DocumentConfidence} from '@/components/analyst/document-confidence';
-import {ReviewRows, type ColKey, type ReviewView} from '@/components/analyst/review-rows';
+import {reviewRowEl, ReviewRows, type ColKey, type ReviewView} from '@/components/analyst/review-rows';
 import {useUploadQueue} from '@/components/analyst/upload-queue';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button, buttonVariants} from '@/components/ui/button';
@@ -160,7 +160,7 @@ export function BatchReview({
     if (index == null) return;
     setCur({active: index, query: '', view: 'needs'});
     requestAnimationFrame(() => {
-      const row = document.getElementById(`review-row-${index}`);
+      const row = reviewRowEl(index);
       row?.scrollIntoView({behavior: 'smooth', block: 'center'});
       row?.querySelector<HTMLInputElement>('input')?.focus({preventScroll: true});
     });
@@ -275,7 +275,7 @@ export function BatchReview({
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               {coverage.duplicates.length > 0 && (
                 <span className="inline-flex items-center gap-1" style={{color: toneText('var(--status-warn)')}}>
-                  <AlertTriangle className="size-3.5" aria-hidden /> Page {coverage.duplicates.join(', ')} is here twice — remove the extra copy from Uploads.
+                  <AlertTriangle className="size-3.5" aria-hidden /> Page {coverage.duplicates.join(', ')} is here twice. Remove the extra copy from Uploads.
                 </span>
               )}
               {coverage.missing.length > 0 && (
@@ -347,11 +347,25 @@ export function BatchReview({
                           <ExternalLink className="size-3.5" /> Open
                         </a>
                       </div>
-                      <button
+{/* Phones can't show a PDF inside the page — open it in the phone's viewer instead. */}
+                <a
+                  href={cur.scanUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm transition-colors active:bg-muted md:hidden"
+                >
+                  <FileText aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="font-medium">View the scan</span>
+                    <span className="text-xs text-muted-foreground">Opens the PDF to compare with the rows below</span>
+                  </span>
+                  <ExternalLink aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                </a>
+                <button
                         type="button"
                         onClick={() => setLightbox(cur.scanUrl)}
                         aria-label="Enlarge scan"
-                        className="group relative block w-full overflow-hidden rounded-md border border-border bg-muted"
+                        className="group relative block w-full overflow-hidden rounded-md border border-border bg-muted max-md:hidden"
                       >
                         <iframe src={cur.scanUrl} title={`Scan of ${cur.upload.filename}`} tabIndex={-1} className="pointer-events-none h-[360px] w-full lg:h-[min(640px,calc(100dvh-12rem))]" />
                         <span className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/40 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
@@ -416,7 +430,7 @@ export function BatchReview({
 
       {otherFiles.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Also in this batch: {otherFiles.map((f) => f.filename).join(', ')} (sales — saved directly).
+          Also in this batch: {otherFiles.map((f) => f.filename).join(', ')} (sales, saved directly).
         </p>
       )}
 
@@ -425,7 +439,7 @@ export function BatchReview({
         <div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-background/90 backdrop-blur-sm max-md:bottom-16">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
             <span aria-live="polite" className={cn('text-sm', error ? 'text-destructive' : 'text-muted-foreground')}>
-              {error ?? (readiness.ready ? `Ready — ${reviewable.length} ${reviewable.length === 1 ? 'page' : 'pages'} into one Inventory count.` : readiness.reason)}
+              {error ?? (readiness.ready ? `Ready: ${reviewable.length} ${reviewable.length === 1 ? 'page' : 'pages'} into one Inventory count.` : readiness.reason)}
             </span>
             <div className="flex items-center gap-2">
               {!readiness.ready && openFlags > 0 && (
@@ -477,7 +491,7 @@ export function BatchReview({
     if (first == null) return;
     setState((all) => ({...all, [p.upload.id]: {...all[p.upload.id], active: first, query: '', view: 'needs'}}));
     requestAnimationFrame(() => {
-      const row = document.getElementById(`review-row-${first}`);
+      const row = reviewRowEl(first);
       row?.scrollIntoView({behavior: 'smooth', block: 'center'});
       row?.querySelector<HTMLInputElement>('input')?.focus({preventScroll: true});
     });

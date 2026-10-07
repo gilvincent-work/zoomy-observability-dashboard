@@ -36,7 +36,7 @@ describe('batchReadiness', () => {
 
 describe('splitName', () => {
   it('names split pages', () => {
-    expect(splitName('cubao-oct.pdf', 1, 5)).toBe('cubao-oct — page 2 of 5.pdf');
-    expect(splitName('scan', 0, 2)).toBe('scan — page 1 of 2.pdf');
+    expect(splitName('cubao-oct.pdf', 1, 5)).toBe('cubao-oct (page 2 of 5).pdf');
+    expect(splitName('scan', 0, 2)).toBe('scan (page 1 of 2).pdf');
   });
 });

@@ -44,7 +44,7 @@ export function buildActions(input: {
       id: `gap-${storeCode}`,
       kind: 'gap',
       severity: 'critical',
-      title: `Inventory form not in for ${fmtDay(currentPeriod.start)}–${fmtDay(currentPeriod.end)}`,
+      title: `Inventory form not in for ${fmtDay(currentPeriod.start)} to ${fmtDay(currentPeriod.end)}`,
       detail: lastCountEnd ? `Last count ended ${fmtDay(lastCountEnd)} · chase the beauty consultant` : 'No count on record yet · chase the beauty consultant',
       impact: Number.MAX_SAFE_INTEGER, // a missing count hides everything else
       itemCode: null,
