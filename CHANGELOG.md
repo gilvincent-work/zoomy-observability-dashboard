@@ -10,6 +10,14 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Ask Coop digest periods and charts (Train 2)
+- **Digests by date.** Ask Coop reads digests by date in Philippine days. `window_from` is a PH-midnight `timestamptz` and was read with `slice(0,10)`, which showed 27 Sep for a window starting 28 Sep. PROD holds mixed windows (weekly, about a month, rolling 30 days, re-runs), so every stored window is listed per turn (newest re-run only), and `get_digest` can pick the one covering a date.
+- **Any period per channel.** New `get_channel_report`: Shopee and Lazada from the digests' per-day `daily` data (merged per channel and day, newest digest wins), Website from live CRM orders, Offline from POS. AOV is recomputed, never averaged. Old windows without `daily` are summed only when they tile exactly, and overlapping ones are refused as "not combinable". Website units are "unknown" when the CRM has no line items. The chat route now passes `getCrmOrders` to this one tool: a deliberate, temporary architecture exception (aggregates only, fence test updated) that Train 4's GET-only CRM tools replace.
+- **`recent_weeks` removed.** It matched weeks by Monday and showed a month as a "week"; `get_channel_report` replaces it.
+- **Two-dimension charts.** Event-by-pet results draw as grouped bars, 100% stacked or small multiples (one colour per series), with a code-written note for every group over 10% untagged and display spelling merged to the most frequent variant. No SQL to apply.
+- **Framing rule (EXP-08).** Explore skill rule that a claim about a group must hold for every row (no "both venues" overclaims); golden A07 and a fixture trap pin it. Explore skill budget raised to 6,600 tokens (measures about 6,523).
+- **Not saved into reports.** `get_channel_report` charts, like `get_digest` charts, are not saved into reports.
+
 ## 2026-10-07 — Ask Coop fast path (Train 1)
 - **Ask Coop fast path (Train 1).** The per-turn context no longer calls contacts, free-form questions or stock unavailable when Explore is on (it did on every turn in PROD). The chat now sends the open page, and dashboard links pasted in a question are described from a page map, so "this" means the page's data. Explore can read stock (5 views over 4 zoomy-pos sources; `coop_explore_stock_event` is the default) with sellable Event stock as the default basis, because two kinds of "stock" exist and the dashboard forecast uses Event. `pos_locations` was left out (it may not exist on staging or PROD), and `coop_chat_explore.sql` now stops in step 0 with a clear message if a stock source or `pos_inventory_by_location.location` is missing. Needs `supabase/coop_chat_explore.sql` re-applied on staging and PROD.
 
