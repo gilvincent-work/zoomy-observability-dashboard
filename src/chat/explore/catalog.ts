@@ -178,6 +178,63 @@ const digest: ViewDoc = {
   },
 };
 
+const inventory: ViewDoc = {
+  about: 'Stock on hand per product across all locations (event + office). Not the sellable figure: for "how much can we sell" use stock_event.',
+  grain: EXPLORE_VIEWS.coop_explore_inventory.grain,
+  columns: {
+    product_id: col('product; joins to products.product_id'),
+    stock: col('units on hand, all locations'),
+    next_expiry: col('earliest expiry date that still has stock', ["'2026-12-31'"], 'null when no stock or no expiry'),
+  },
+};
+const inventoryByLocation: ViewDoc = {
+  about: 'Stock on hand per product per location. location event = sellable at the booth; office = back stock.',
+  grain: EXPLORE_VIEWS.coop_explore_inventory_by_location.grain,
+  columns: {
+    product_id: col('product; joins to products.product_id'),
+    location: col('where the stock is', ["'event'", "'office'"]),
+    stock: col('units on hand at that location'),
+  },
+};
+const inventoryLots: ViewDoc = {
+  about: 'Stock lots (batches) with expiry; the source under the two stock views. Stock is used earliest expiry first.',
+  grain: EXPLORE_VIEWS.coop_explore_inventory_lots.grain,
+  columns: {
+    lot_id: col('lot id'),
+    product_id: col('product; joins to products.product_id'),
+    location: col('where the lot is', ["'event'", "'office'"]),
+    lot_code: col('lot label', ["'opening'", "'adjust'", "'SUP-123'"]),
+    expires_on: col('expiry date', ["'2026-12-31'"], 'may be null'),
+    qty_received: col('units received in the lot'),
+    qty_on_hand: col('units left in the lot'),
+    received_at: col('when received', TS),
+    updated_at: col('last change', TS),
+  },
+};
+const stockMovements: ViewDoc = {
+  about: 'Append-only stock ledger. delta is signed: sales are negative.',
+  grain: EXPLORE_VIEWS.coop_explore_stock_movements.grain,
+  columns: {
+    id: col('movement id'),
+    product_id: col('product; joins to products.product_id'),
+    delta: col('units in (+) or out (-)'),
+    reason: col('why stock moved', ["'sale'", "'receipt'", "'add-void'", "'recount'"], FILLED, ['probe distinct values first; other reasons exist']),
+    created_by: col('staff email who moved it'),
+    created_at: col('when', TS, FILLED, ["use at time zone 'Asia/Manila' for a Manila day"]),
+    lot_id: col('lot moved', [], 'may be null or absent'),
+    location: col('location moved', ["'event'", "'office'"], 'may be null or absent'),
+    order_id: col('sale that caused it; joins to orders.id', [], 'null unless reason is sale'),
+  },
+};
+const stockEvent: ViewDoc = {
+  about: 'DEFAULT for stock questions: sellable stock at the event location, one row per product.',
+  grain: EXPLORE_VIEWS.coop_explore_stock_event.grain,
+  columns: {
+    product_id: col('product; joins to products.product_id'),
+    stock: col('sellable units at the event location'),
+  },
+};
+
 export const CATALOG: Record<ExploreViewName, ViewDoc> = {
   coop_explore_orders: orders,
   coop_explore_order_items: orderItems,
@@ -189,6 +246,11 @@ export const CATALOG: Record<ExploreViewName, ViewDoc> = {
   coop_explore_price_changes: priceChanges,
   coop_explore_event_leads: eventLeads,
   coop_explore_digest: digest,
+  coop_explore_inventory: inventory,
+  coop_explore_inventory_by_location: inventoryByLocation,
+  coop_explore_inventory_lots: inventoryLots,
+  coop_explore_stock_movements: stockMovements,
+  coop_explore_stock_event: stockEvent,
 };
 
 const typeOf = (view: ExploreViewName, column: string): string => (EXPLORE_VIEWS[view].types as Record<string, string>)[column] ?? '?';

@@ -23,7 +23,7 @@ const TIMEOUT_MS = 5000
 const MUST_CODES = new Set(['42501', '25006', '42P01', '42883', '42601', '0A000', '3F000', '42809', '55000', '54000', '42703', '428C9'])
 // 42703 undefined_column (a blocked or unknown column), 428C9 generated_always (an INSERT into the identity column of an auto-updatable view
 // is refused at analysis, before the privilege check; the role holds no INSERT anyway, see step (a)). Both are the database refusing on its own.
-const TEN_VIEWS = ['coop_explore_orders', 'coop_explore_order_items', 'coop_explore_products', 'coop_explore_bundles', 'coop_explore_bundle_items', 'coop_explore_events', 'coop_explore_prices', 'coop_explore_price_changes', 'coop_explore_event_leads', 'coop_explore_digest']
+const EXPLORE_VIEWS = ['coop_explore_orders', 'coop_explore_order_items', 'coop_explore_products', 'coop_explore_bundles', 'coop_explore_bundle_items', 'coop_explore_events', 'coop_explore_prices', 'coop_explore_price_changes', 'coop_explore_event_leads', 'coop_explore_digest', 'coop_explore_inventory', 'coop_explore_inventory_by_location', 'coop_explore_inventory_lots', 'coop_explore_stock_movements', 'coop_explore_stock_event']
 
 const admin = (sql, extra = '') => execSync(`${PSQL} ${extra} 2>&1`, { input: sql, encoding: 'utf8', maxBuffer: 1 << 24 })
 const q = (sql) => admin(sql, '-t -A -F"|"').trim()
@@ -77,20 +77,20 @@ const rejectedByDb = (r) => r.outcome === 'rejected' && MUST_CODES.has(r.code)
   rec('role default settings include read-only and the 5s timeout', /default_transaction_read_only=on/.test(settings) && /statement_timeout=5s/.test(settings), settings)
 }
 
-// ---- (a) privileges: ten views, SELECT only, nothing else ---------------------------------------------------------------------
+// ---- (a) privileges: fifteen views, SELECT only, nothing else ---------------------------------------------------------------------
 {
   const others = q(`select string_agg(c.relname, ',') from pg_class c join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
-    where c.relkind in ('r','v','m','p','f') and c.relname <> all (array['${TEN_VIEWS.join("','")}'])
+    where c.relkind in ('r','v','m','p','f') and c.relname <> all (array['${EXPLORE_VIEWS.join("','")}'])
     and (has_table_privilege('${ROLE}', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') or has_any_column_privilege('${ROLE}', c.oid, 'SELECT,INSERT,UPDATE,REFERENCES'))`)
   rec('(a) no privilege on any base table or any other view (pos_*, coop_chat_*, coop_chat_digest, spin_wheel_leads, digest_archive)', others === '', others)
-  const writes = q(`select string_agg(c.relname, ',') from pg_class c where c.relname = any (array['${TEN_VIEWS.join("','")}']) and has_table_privilege('${ROLE}', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')`)
-  rec('(a) no write privilege on any of the ten views', writes === '', writes)
-  const reach = q(`select count(*) from unnest(array['${TEN_VIEWS.join("','")}']) v where has_table_privilege('${ROLE}', ('public.' || v)::regclass, 'SELECT')`)
-  rec('(a) SELECT on exactly the ten views', reach === '10', reach)
+  const writes = q(`select string_agg(c.relname, ',') from pg_class c where c.relname = any (array['${EXPLORE_VIEWS.join("','")}']) and has_table_privilege('${ROLE}', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')`)
+  rec('(a) no write privilege on any of the fifteen views', writes === '', writes)
+  const reach = q(`select count(*) from unnest(array['${EXPLORE_VIEWS.join("','")}']) v where has_table_privilege('${ROLE}', ('public.' || v)::regclass, 'SELECT')`)
+  rec('(a) SELECT on exactly the fifteen views', reach === String(EXPLORE_VIEWS.length), reach)
   const create = q(`select has_schema_privilege('${ROLE}', 'public', 'CREATE')`)
   rec('(a) no CREATE on schema public', create === 'f', create)
   const exposed = q(`select count(*) from pg_class c cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a where c.relname like 'coop\\_explore\\_%' and (a.grantee = 0 or pg_get_userbyid(a.grantee) in ('anon','authenticated'))`)
-  rec('(a) PUBLIC, anon and authenticated hold nothing on the ten views', exposed === '0', exposed)
+  rec('(a) PUBLIC, anon and authenticated hold nothing on the fifteen views', exposed === '0', exposed)
 }
 
 // ---- the corpus, validator bypassed ------------------------------------------------------------------------------------------

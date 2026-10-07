@@ -10,11 +10,11 @@
 --
 -- WHAT THIS DOES
 --   1. a LOGIN role `coop_explore_ro` (no password here), the first Postgres credential the dashboard holds;
---   2. ten DEFINER views `coop_explore_*` (no security_invoker), one per business table, built by a generator that reads the base
+--   2. fifteen DEFINER views `coop_explore_*` (no security_invoker), one per business table, built by a generator that reads the base
 --      table's columns AT APPLY TIME. Open by default: every column is exposed EXCEPT those whose NAME matches
 --      password|token|secret|key|pin|hash|credential (case-insensitive substring, fails closed). A column added to a base table later
 --      stays hidden until a person re-applies this file. The resulting column list per view is printed with RAISE NOTICE;
---   3. grants: SELECT on the ten views to the role and nothing else; REVOKE ALL from PUBLIC, anon, authenticated (these views carry
+--   3. grants: SELECT on the fifteen views to the role and nothing else; REVOKE ALL from PUBLIC, anon, authenticated (these views carry
 --      contact data and PostgREST would otherwise expose them: Supabase default privileges grant new public objects to those roles).
 --
 -- AFTER APPLYING, ONCE, in the SQL editor and NEVER in this file (a login role with no password cannot connect by password):
@@ -69,7 +69,11 @@ declare
     'coop_explore_prices',         'pos_prices',
     'coop_explore_price_changes',  'pos_price_changes',
     'coop_explore_event_leads',    'spin_wheel_leads',
-    'coop_explore_digest',         'digest_archive'
+    'coop_explore_digest',         'digest_archive',
+    'coop_explore_inventory',             'pos_inventory',
+    'coop_explore_inventory_by_location', 'pos_inventory_by_location',
+    'coop_explore_inventory_lots',        'pos_inventory_lots',
+    'coop_explore_stock_movements',       'pos_stock_movements'
   ];
   i int;
   vname text;
@@ -98,6 +102,12 @@ begin
     raise notice '% <- %: % | dropped by name pattern: %', vname, src, cols, coalesce(dropped, '(none)');
   end loop;
 end $$;
+
+-- Default view (spec 2.4/F.3): sellable stock = the event location. Raw stock stays readable in the views above.
+drop view if exists public.coop_explore_stock_event;
+create view public.coop_explore_stock_event as select product_id, stock from public.pos_inventory_by_location where location = 'event';
+revoke all on public.coop_explore_stock_event from public, anon, authenticated;
+grant select on public.coop_explore_stock_event to coop_explore_ro;
 
 revoke all on schema public from coop_explore_ro;
 grant usage on schema public to coop_explore_ro;

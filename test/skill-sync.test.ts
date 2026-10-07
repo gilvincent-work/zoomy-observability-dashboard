@@ -117,10 +117,10 @@ describe('size and caching', () => {
   it('the non-explore render is byte-identical to the pre-Explore text', () => {
     expect(createHash('sha256').update(text).digest('hex')).toBe(BASELINE_SHA256);
   });
-  it('the explore variant fits its budget (6,300) and puts sql-explore after dashboard-composition', () => {
+  it('the explore variant fits its budget (6,400) and puts sql-explore after dashboard-composition', () => {
     const tokens = estimateTokens(exploreText);
     console.log(`explore skill: ${exploreText.length} characters, about ${tokens} tokens`);
-    expect(tokens).toBeLessThan(6300);
+    expect(tokens).toBeLessThan(6400);
     expect(exploreText.indexOf('## Topic: dashboard-composition')).toBeGreaterThan(-1);
     expect(exploreText.indexOf('## Topic: dashboard-composition')).toBeLessThan(exploreText.indexOf('## Topic: sql-explore'));
     expect([...EXPLORE_TOPICS]).toEqual(['sql-explore']);
