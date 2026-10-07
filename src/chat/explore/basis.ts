@@ -1,6 +1,7 @@
 // Evidence notes for an Explore result, written by CODE from the parsed query and fixed coverage figures, never by the model (spec R6).
 // Pure. The sentences are part of the result's caveats and coverage_note, so the model sees them and quoting their figures is not a new claim.
 import type {ValidateOk} from './types';
+import {baseRelation} from './views';
 
 export const ORDERS_BY_TAG_NOTE = 'Orders counted are those tagged to the event in the POS (untagged sales on the event dates are not included).';
 export const ORDERS_BY_DATE_NOTE = 'Orders attributed to the event by date window (includes untagged sales rung up on the event dates).';
@@ -26,8 +27,9 @@ export function leadsCoverageNote(f: LeadFacts): string {
 
 /** Orders joined to events: say whether orders were counted by the POS event tag (orders.event_id), by the event date window (starts_on / ends_on), or both. */
 export function ordersBasisNotes(v: Pick<ValidateOk, 'relations' | 'columnRefs'>): string[] {
-  if (!v.relations.includes('coop_explore_orders') || !v.relations.includes('coop_explore_events')) return [];
-  const byTag = v.columnRefs.some((c) => c.relation === 'coop_explore_orders' && c.column === 'event_id');
+  const isOrders = (r: string | null): boolean => r !== null && ['pos_orders', 'pos_orders_completed'].includes(baseRelation(r));
+  if (!v.relations.some(isOrders) || !v.relations.some((r) => baseRelation(r) === 'pos_events')) return [];
+  const byTag = v.columnRefs.some((c) => isOrders(c.relation) && c.column === 'event_id');
   const byDate = v.columnRefs.some((c) => c.column === 'starts_on' || c.column === 'ends_on');
   return [...(byTag ? [ORDERS_BY_TAG_NOTE] : []), ...(byDate ? [ORDERS_BY_DATE_NOTE] : [])];
 }

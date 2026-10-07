@@ -51,4 +51,6 @@ export interface ChatToolContext {
   emitReport?: (spec: ReportSpec | null) => void;
   /** Explore: the run_query executor, present only for an allowed user (route-gated). Absent means the tool is not registered. */
   explore?: (input: unknown) => Promise<unknown>;
+  /** list_tables / describe_table (Explore users only), built with the same read-only runner. */
+  exploreSchema?: {list_tables: (input: unknown) => Promise<unknown>; describe_table: (input: unknown) => Promise<unknown>};
 }

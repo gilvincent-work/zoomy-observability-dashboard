@@ -65,7 +65,8 @@ export type CheckCode =
   | 'untagged_share'
   | 'partial_coverage'
   | 'sudden_change'
-  | 'mock_source';
+  | 'mock_source'
+  | 'values_hidden';
 
 export interface Check {
   code: CheckCode;

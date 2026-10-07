@@ -4,7 +4,6 @@
 //
 // Expected figures are NEVER typed here. `reference` is a key of scripts/explore-golden-reference.sql: independent queries on the base tables,
 // run on the local fixture at test time. The names in the questions are the fixture's fictional ones; no production figure appears anywhere.
-import type {ExploreViewName} from '../../src/chat/explore/views';
 
 export type GoldenInvariant =
   | 'I-VOID' | 'I-MANILA' | 'I-GRAIN' | 'I-UNTAGGED' | 'I-LEADS' | 'I-EVENT' | 'I-ILIKE' | 'I-NOWRITE' | 'I-NOSECRET' | 'I-INJECT' | 'I-REGISTRY' | 'I-FIGURES' | 'none';
@@ -36,7 +35,7 @@ export interface ExploreGoldenCase {
   path: 'registry' | 'explore' | 'lookup' | 'ask_first' | 'refuse' | 'knowledge';
   mustCall: string[];
   mustNotCall: string[];
-  views?: ExploreViewName[];
+  views?: string[];
   invariant: GoldenInvariant;
   reference?: string;
   rubric: string[];

@@ -9,20 +9,19 @@
 import {parse as pgParse} from 'libpg-query';
 import {fingerprintStatement} from './fingerprint';
 import {DEFAULT_EXPLORE_LIMITS} from './limits';
+import {relationRule} from './access';
+import {EXPLORE_SECRET_COLUMN_EXCEPTIONS, isSecretName} from './secret-names';
 import {
-  EXPLORE_BLOCKED_COLUMN_RE,
-  EXPLORE_COLUMN_PATTERN_EXCEPTIONS,
   EXPLORE_ERROR_CLASS,
   EXPLORE_ERROR_MESSAGES,
   EXPLORE_FUNCTION_NAMES,
-  EXPLORE_VIEW_NAMES,
   type ExploreErrorCode,
   type ExploreLimits,
   type ExploreLint,
-  type ExploreViewName,
   type ValidateErr,
   type ValidateOk,
 } from './types';
+import {baseRelation} from './views';
 
 export type {ExploreLint, ValidateErr, ValidateOk} from './types';
 
@@ -34,9 +33,16 @@ export const EXPLORE_FUNCTIONS: readonly string[] = EXPLORE_FUNCTION_NAMES;
 /** Explicitly denied, in addition to the `pg_*`, `dblink*` and `lo_*` prefixes. */
 export const EXPLORE_DENIED_FUNCTIONS: readonly string[] = [
   'set_config', 'current_setting', 'repeat', 'version', 'current_database', 'current_schema', 'current_schemas', 'inet_server_addr', 'inet_client_addr',
-  'txid_current', 'nextval', 'currval', 'setval', 'lastval', 'query_to_xml', 'table_to_xml', 'xpath', 'xmlparse',
+  'txid_current', 'nextval', 'currval', 'setval', 'lastval', 'xpath', 'xmlparse',
+  // Query-running functions: they run a query given as a STRING, as the login, which this walk never sees (Task 3 review). The
+  // *_to_xml* families are also denied by prefix below, so a variant spelling is caught too.
+  'query_to_xml', 'query_to_xmlschema', 'query_to_xml_and_xmlschema', 'table_to_xml', 'table_to_xmlschema', 'table_to_xml_and_xmlschema',
+  'cursor_to_xml', 'cursor_to_xmlschema', 'schema_to_xml', 'schema_to_xmlschema', 'schema_to_xml_and_xmlschema',
+  'database_to_xml', 'database_to_xmlschema', 'database_to_xml_and_xmlschema', 'ts_stat', 'ts_rewrite', 'to_tsquery',
 ];
-const DENIED_PREFIXES: readonly string[] = ['pg_', 'dblink', 'lo_'];
+const DENIED_PREFIXES: readonly string[] = ['pg_', 'dblink', 'lo_', 'query_to_xml', 'table_to_xml', 'cursor_to_xml', 'schema_to_xml', 'database_to_xml'];
+/** A relation name the parser accepts: plain lower-case (a quoted mixed-case or Unicode-escaped look-alike never matches). */
+const RELATION_NAME_RE = /^[a-z_][a-z0-9_]*$/;
 export const EXPLORE_OPERATORS: readonly string[] = ['+', '-', '*', '/', '%', '=', '<>', '!=', '<', '>', '<=', '>=', '||', '->', '->>', '~~', '~~*', '!~~', '!~~*', '~', '~*', '!~', '!~*'];
 /** The parser spells integer as pg_catalog.int4 and double precision as pg_catalog.float8. varchar, bpchar, bool, json, regclass... are not allowed. */
 export const EXPLORE_CASTS: readonly string[] = ['text', 'int4', 'int8', 'numeric', 'float8', 'date', 'timestamp', 'timestamptz', 'interval'];
@@ -72,8 +78,10 @@ export interface ValidatorOptions {
   deniedFunctions?: readonly string[];
   deniedPrefixes?: readonly string[];
   nodeTypes?: readonly string[];
-  viewNames?: readonly string[];
-  blockedColumnRe?: RegExp;
+  /** Which public relation names may be read (default: relationRule(), every name that is not closed). The database grants are the real lock. */
+  relationAllowed?: (name: string) => boolean;
+  /** Which column names are secret (default: the whole-word rule of secret-names.ts). */
+  secretName?: (name: string) => boolean;
   /** Test seam: a replacement parser (used by the mutation checks of spec 4.8). Production never sets it. */
   parse?: ParseFn;
   /** Test seam for the mutation check "a validator that skips the wrapper check must be caught". Production never sets it. */
@@ -127,12 +135,14 @@ const DATA_NODES = new Set(['ColumnRef', 'FuncCall', 'SQLValueFunction']);
 const COLUMN_NODES = new Set(['ColumnRef']);
 
 interface State {
-  v: Required<Pick<ValidatorOptions, 'functions' | 'deniedFunctions' | 'deniedPrefixes' | 'nodeTypes' | 'viewNames' | 'blockedColumnRe'>>;
+  v: Required<Pick<ValidatorOptions, 'functions' | 'deniedFunctions' | 'deniedPrefixes' | 'nodeTypes' | 'relationAllowed' | 'secretName'>>;
   limits: ExploreLimits;
   violations: Set<ExploreErrorCode>;
-  relations: ExploreViewName[];
-  /** alias (or view name) -> view, for resolving column refs; `refs` = every column reference as written (qualifier or null, column). */
-  aliases: Map<string, ExploreViewName>;
+  relations: string[];
+  /** alias (or relation name) -> relation, for resolving column refs; `refs` = every column reference as written (qualifier or null, column). */
+  aliases: Map<string, string>;
+  /** Secret column names as written; judged after the walk, when every relation of the query is known (the pos_settings.key exception). */
+  secretRefs: string[];
   refs: {qualifier: string | null; column: string}[];
   viewRefs: number;
   ctes: string[];
@@ -213,12 +223,12 @@ function checkRangeVar(b: Obj, scope: ReadonlySet<string>, st: State): void {
     return;
   }
   if (schema === '' && scope.has(name)) return; // a CTE reference, in scope
-  if ((schema === '' || schema === 'public') && st.v.viewNames.includes(name)) {
+  if ((schema === '' || schema === 'public') && RELATION_NAME_RE.test(name) && st.v.relationAllowed(name)) {
     st.viewRefs += 1;
-    addUnique(st.relations, name as ExploreViewName);
-    st.aliases.set(name, name as ExploreViewName);
+    addUnique(st.relations, name);
+    st.aliases.set(name, name);
     const alias = b.alias && typeof b.alias === 'object' ? ((b.alias as Obj).aliasname ?? (wrapped(b.alias)?.body.aliasname)) : undefined;
-    if (typeof alias === 'string') st.aliases.set(alias, name as ExploreViewName);
+    if (typeof alias === 'string') st.aliases.set(alias, name);
     return;
   }
   st.violations.add('E_RELATION');
@@ -302,7 +312,7 @@ function walkNode(type: string, b: Obj, scope: ReadonlySet<string>, depth: numbe
         if (s !== null) {
           const lc = s.toLowerCase();
           if (lc === 'status') st.statusSeen = true;
-          if (!EXPLORE_COLUMN_PATTERN_EXCEPTIONS.includes(lc) && st.v.blockedColumnRe.test(lc)) st.violations.add('E_BLOCKED_COLUMN');
+          if (st.v.secretName(lc)) st.secretRefs.push(lc);
         }
       }
       break;
@@ -436,8 +446,8 @@ export function createExploreValidator(opts: ValidatorOptions = {}): ExploreVali
     deniedFunctions: opts.deniedFunctions ?? EXPLORE_DENIED_FUNCTIONS,
     deniedPrefixes: opts.deniedPrefixes ?? DENIED_PREFIXES,
     nodeTypes: opts.nodeTypes ?? EXPLORE_NODE_TYPES,
-    viewNames: opts.viewNames ?? EXPLORE_VIEW_NAMES,
-    blockedColumnRe: opts.blockedColumnRe ?? EXPLORE_BLOCKED_COLUMN_RE,
+    relationAllowed: opts.relationAllowed ?? relationRule(),
+    secretName: opts.secretName ?? isSecretName,
   };
 
   return async function validate(sql: unknown, limitsIn: Partial<ExploreLimits> = {}): Promise<ValidateOk | ValidateErr> {
@@ -487,8 +497,13 @@ export function createExploreValidator(opts: ValidatorOptions = {}): ExploreVali
       }
 
       // 4-10. one generic, default-deny walk
-      const st: State = {v, limits, violations: new Set(), relations: [], aliases: new Map(), refs: [], viewRefs: 0, ctes: [], functions: [], statusSeen: false, seriesInFrom: new WeakSet(), escapeCalls: new WeakSet()};
+      const st: State = {v, limits, violations: new Set(), relations: [], aliases: new Map(), secretRefs: [], refs: [], viewRefs: 0, ctes: [], functions: [], statusSeen: false, seriesInFrom: new WeakSet(), escapeCalls: new WeakSet()};
       walkSelect(top.body, new Set(), 1, st, false);
+      // A secret column is refused unless it is a reviewed exception whose table is read by this query (pos_settings.key).
+      const bases = st.relations.map(baseRelation);
+      const exempt = (c: string): boolean =>
+        EXPLORE_SECRET_COLUMN_EXCEPTIONS.some((e) => e.endsWith(`.${c}`) && bases.includes(e.slice(0, e.length - c.length - 1)));
+      if (st.secretRefs.some((c) => !exempt(c))) st.violations.add('E_BLOCKED_COLUMN');
       if (st.viewRefs > limits.maxRelations) st.violations.add('E_TOO_MANY_RELATIONS');
       const outputColumns = outputNames(top.body);
       if (outputColumns.length > limits.maxCols) st.violations.add('E_TOO_MANY_COLUMNS');
@@ -497,7 +512,7 @@ export function createExploreValidator(opts: ValidatorOptions = {}): ExploreVali
 
       // 11. lints (never fail)
       const lints: ExploreLint[] = [];
-      if (st.relations.includes('coop_explore_orders') && !st.statusSeen) {
+      if (st.relations.some((r) => baseRelation(r) === 'pos_orders') && !st.statusSeen) {
         lints.push({code: 'W_NO_STATUS_FILTER', message: 'This query counts voided orders unless you filter status.'});
       }
       const fp = fingerprintStatement(top.body);

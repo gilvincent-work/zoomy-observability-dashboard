@@ -134,6 +134,17 @@ describe('exploreHealth: the explore object of /api/chat/health', () => {
     expect(await exploreHealth(dev, 'a@x.com', {runQuery})).toMatchObject({enabled: true, probe: {ok: true}, drift: {checkedAt: null, findings: null, stale: true}});
     expect(await exploreHealth({...dev, EXPLORE_MODE: 'off'}, 'a@x.com', {runQuery})).not.toHaveProperty('drift');
   });
+  it('Task 7: explore health counts open live tables the data catalog does not know (uncatalogued); null when the read fails', async () => {
+    const runQuery = async (sent: string): Promise<RawQueryResult> => sent.includes('information_schema.tables')
+      ? {columns: [], rows: [['pos_orders', 'BASE TABLE'], ['brand_new_table', 'BASE TABLE'], ['marketplace_tokens', 'BASE TABLE'], ['explore_fixture_qxml_view', 'VIEW']], fetched: 4, ms: 1}
+      : okRows;
+    expect(await exploreHealth(dev, 'a@x.com', {runQuery})).toMatchObject({enabled: true, uncatalogued: 1});
+    const failing = async (sent: string): Promise<RawQueryResult> => {
+      if (sent.includes('information_schema.tables')) throw new ExploreDbError('E_DB_OTHER');
+      return okRows;
+    };
+    expect(await exploreHealth(dev, 'a@x.com', {runQuery: failing})).toMatchObject({enabled: true, probe: {ok: true}, uncatalogued: null});
+  });
   it('off example for the docs', async () => {
     console.log(JSON.stringify(await exploreHealth({...dev, EXPLORE_ALLOWED_EMAILS: ''}, 'a@x.com'), null, 2));
   });

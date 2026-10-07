@@ -108,7 +108,7 @@ export async function POST(req: Request) {
       preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null, page: pageLine, digests: digestLine}) : buildDegradedPreamble(now),
       executors:
         live.ok && report
-          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, crmOrders: crmConfigured() ? async () => ({orders: await getCrmOrders(), asOf: new Date().toISOString()}) : undefined, explore: explore?.executor})
+          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, crmOrders: crmConfigured() ? async () => ({orders: await getCrmOrders(), asOf: new Date().toISOString()}) : undefined, explore: explore?.executor, exploreSchema: explore?.schema})
           : {},
       emit,
       user,

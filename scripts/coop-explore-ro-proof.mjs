@@ -19,7 +19,7 @@ const ROLE = 'coop_explore_ro'
 const CURSOR = 'coop_explore_c'
 const wrap = (sql) => `DECLARE ${CURSOR} NO SCROLL CURSOR FOR ${sql}` // = wrapCursor() in src/chat/explore/parse.ts (a test pins them equal)
 const FETCH = 'FETCH FORWARD 201 FROM coop_explore_c'
-const ENVELOPE = ['BEGIN READ ONLY', "SET LOCAL statement_timeout = 5000", "SET LOCAL lock_timeout = 2000", "SET LOCAL timezone = 'Asia/Manila'", "SET LOCAL search_path = public"]
+const ENVELOPE = ['BEGIN READ ONLY', "SET LOCAL statement_timeout = 5000", "SET LOCAL lock_timeout = 2000", "SET LOCAL timezone = 'Asia/Manila'", "SET LOCAL search_path = public, pg_temp"]
 const TIMEOUT_MS = 5000
 const MUST_CODES = new Set(['42501', '25006', '42P01', '42883', '42601', '0A000', '3F000', '42809', '55000', '54000', '42703', '428C9'])
 // 42703 undefined_column (a blocked or unknown column), 428C9 generated_always (an INSERT into the identity column of an auto-updatable view
