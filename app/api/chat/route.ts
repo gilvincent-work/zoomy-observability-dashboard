@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import {getDigests} from '@/src/data';
 import {buildDigestBlock, buildLiveContextBlock, buildStaticSystem} from '@/src/chat/context';
 import {CHAT_EFFORT, COOP_CHAT} from '@/src/chat/config';
+import {turnBudgetFromEnv} from '@/src/chat/cost';
 import {CHAT_DEADLINE_MS, runChatLoop, SAFE_ERROR_TEXT} from '@/src/chat/loop';
 import {encodeEvent} from '@/src/chat/stream-protocol';
 import {dashboardLinks, pageContextLine, readPageInput} from '@/src/chat/pages';
@@ -116,6 +117,7 @@ export async function POST(req: Request) {
       deadlineMs: Math.max(0, CHAT_DEADLINE_MS - (Date.now() - started)),
       signal: req.signal,
       exploreGap: explore?.executor.gap,
+      turnBudget: turnBudgetFromEnv(process.env),
     }).then(() => undefined),
   );
 }

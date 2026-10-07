@@ -8,6 +8,7 @@ import {trailingRepeat} from './degenerate';
 import {checkNumbers} from './number-check';
 import {stripMarkdownTables} from './strip-tables';
 import {assertRequestShape} from './request-shape';
+import {COST_CAP_TEXT, costUnits} from './cost';
 import type {ChatStreamEvent, ChatUsage, ToolDefinition} from './stream-types';
 import {statusFor} from './tool-executors';
 import {dispatchToolCall, RUN_QUERY_TOOL, type ToolExecutors, type ToolResult} from './tools';
@@ -52,6 +53,8 @@ export interface ChatLoopOptions {
   sink?: AuditSink;
   /** Explore: the shape facts of the finals that succeeded (fingerprints, views), for the once-per-question chat_registry_gap line. */
   exploreGap?: () => {fingerprints: string[]; views: string[]};
+  /** Cost cap per turn in input-token equivalents (cost.ts costUnits); undefined = no cap. */
+  turnBudget?: number;
 }
 
 export interface ChatLoopSummary {
@@ -207,7 +210,14 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
       emit({t: 'text', d: `${answer.trim() ? '\n\n' : ''}${DEADLINE_TEXT}`});
       return finish('deadline', true);
     }
-    if (!wrapping && seen.length > 0 && clock() - t0 > softMs) {
+    const overBudget = opts.turnBudget !== undefined && costUnits(usage) >= opts.turnBudget;
+    if (overBudget && (wrapping || seen.length === 0)) {
+      await backstop();
+      releaseHeld(false);
+      emit({t: 'text', d: `${answer.trim() ? '\n\n' : ''}${COST_CAP_TEXT}`});
+      return finish('cost_cap', true);
+    }
+    if (!wrapping && seen.length > 0 && (clock() - t0 > softMs || overBudget)) {
       wrapping = true;
       const last = convo[convo.length - 1];
       if (last?.role === 'user' && Array.isArray(last.content)) convo[convo.length - 1] = {role: 'user', content: [...last.content, {type: 'text', text: WRAP_UP_TEXT}]};

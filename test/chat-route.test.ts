@@ -2,6 +2,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {POST} from '../app/api/chat/route';
 import {buildDigestBlock, buildLiveContextBlock, buildStaticSystem} from '../src/chat/context';
 import {CHAT_DEADLINE_MS, SAFE_ERROR_TEXT} from '../src/chat/loop';
+import {DEFAULT_TURN_BUDGET} from '../src/chat/cost';
 import {CHAT_TOOLS} from '../src/chat/tool-defs';
 import type {DigestArchiveRow} from '../src/types';
 import {MOCK_DIGESTS} from '../src/mock';
@@ -25,7 +26,7 @@ const h = vi.hoisted(() => ({
   sdkParams: [] as Record<string, unknown>[],
   sdkKeys: [] as (string | undefined)[],
   sdkFail: false,
-  loopOpts: [] as {deadlineMs?: number; signal?: AbortSignal}[],
+  loopOpts: [] as {deadlineMs?: number; signal?: AbortSignal; turnBudget?: number}[],
   exploreRuns: [] as string[],
 }));
 
@@ -88,6 +89,7 @@ vi.mock('@/src/chat/loop', async () => {
     },
   };
 });
+vi.mock('@/src/chat/cost', async () => await import('../src/chat/cost'));
 vi.mock('@/src/chat/stream-protocol', async () => await import('../src/chat/stream-protocol'));
 vi.mock('@/src/chat/preamble', async () => await import('../src/chat/preamble'));
 vi.mock('@/src/chat/pages', async () => await import('../src/chat/pages'));
@@ -409,6 +411,11 @@ describe('POST /api/chat: live mode (no digest, no period)', () => {
     h.onLoad = () => vi.setSystemTime(new Date('2026-10-01T04:03:00Z'));
     await drain(await post(ask()));
     expect(h.loopOpts.at(-1)?.deadlineMs).toBe(0);
+  });
+
+  it('2.8: the loop gets the per-turn cost cap (the default budget unless CHAT_TURN_BUDGET is set)', async () => {
+    await drain(await post(ask()));
+    expect(h.loopOpts.at(-1)?.turnBudget).toBe(DEFAULT_TURN_BUDGET);
   });
 
   it('the request signal is handed to the loop so a closed tab stops the work', async () => {
