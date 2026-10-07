@@ -48,6 +48,11 @@ export const UNAVAILABLE: readonly {what: string; why: string}[] = Object.freeze
   {what: 'Anything before the first order date', why: 'There is no data before the first order.'},
 ]);
 
+/** With Explore on, contacts and leads are reachable through run_query, so the contact caveat goes and the digest-only wording drops "not queryable yet". */
+const unavailableFor = (explore: boolean): {what: string; why: string}[] =>
+  UNAVAILABLE.filter((u) => !(explore && u.what === 'Customer-level data')).map((u) =>
+    explore && u.what.startsWith('Shopee') ? {...u, why: 'Only in the weekly digest (get_digest).'} : {...u});
+
 export interface DescribeDataResult {
   today: string;
   source: 'live' | 'mock';
@@ -74,7 +79,7 @@ function noteFor(c: CoverageSummary): string {
   return c.source === 'mock' ? `This is sample data, not real sales. ${base}` : base;
 }
 
-export function describeData(input: {metric: string}, data: MetricData, now: Date): DescribeDataResult | {error: string} {
+export function describeData(input: {metric: string}, data: MetricData, now: Date, explore = false): DescribeDataResult | {error: string} {
   const raw = (input as {metric?: unknown} | null)?.metric;
   const ids = METRIC_IDS as readonly string[];
   if (typeof raw !== 'string' || (raw !== 'all' && !ids.includes(raw))) {
@@ -99,6 +104,6 @@ export function describeData(input: {metric: string}, data: MetricData, now: Dat
         supports: {pet: m.supportsPet, event: m.supportsEvent, compare: m.supportsCompare},
       };
     }),
-    unavailable: UNAVAILABLE.map((u) => ({...u})),
+    unavailable: unavailableFor(explore),
   };
 }

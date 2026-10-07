@@ -27,7 +27,7 @@ export function createExecutors(ctx: ChatToolContext): ChatExecutors {
     ...createRenderExecutors(ctx, session),
     ...createReportExecutors(ctx, session, data),
     ...(ctx.explore ? {run_query: ctx.explore} : {}),
-    describe_data: async (input) => describeData(input as {metric: string}, await data(), ctx.now),
+    describe_data: async (input) => describeData(input as {metric: string}, await data(), ctx.now, !!ctx.explore),
     query_metric: async (input) => {
       const result = runMetric(input, await data(), ctx.now);
       if ('error' in result) return {error: result.error};

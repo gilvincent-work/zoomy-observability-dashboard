@@ -28,6 +28,14 @@ describe('executors', () => {
     expect(Object.keys(createExecutors(ctx())).sort()).toEqual(['autoRender', 'describe_data', 'get_digest', 'lookup_product', 'query_metric', 'remove_block', 'render_chart', 'render_kpi', 'render_table', 'set_report_filters', 'set_report_title']);
   });
 
+  it('describe_data follows Explore: on drops the contact caveat, off keeps it', async () => {
+    type R = {unavailable: {what: string}[]};
+    const on = (await createExecutors({...ctx(), explore: async () => ({})}).describe_data?.({metric: 'all'})) as R;
+    const off = (await createExecutors(ctx()).describe_data?.({metric: 'all'})) as R;
+    expect(on.unavailable.map((u) => u.what)).not.toContain('Customer-level data');
+    expect(off.unavailable.map((u) => u.what)).toContain('Customer-level data');
+  });
+
   it('describe_data happy path', async () => {
     const r = (await createExecutors(ctx()).describe_data?.({metric: 'all'})) as {metrics: unknown[]; today: string};
     expect(r.metrics).toHaveLength(METRIC_IDS.length);
