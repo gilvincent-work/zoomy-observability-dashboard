@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {filterByName, sortRows} from '../src/pos-rankings';
+import {filterByName, parseRankingsDir, parseRankingsSort, pickEventDay, rankingsHref, sortRows} from '../src/pos-rankings';
 import {topBundles, topProducts} from '../src/pos-sales-compute';
 import type {PosOrder, TopBundle, TopProduct} from '../src/pos-sales-types';
 
@@ -107,5 +107,37 @@ describe('topProducts / topBundles with limit Infinity', () => {
     const orders = [order(Array.from({length: 7}, (_, i) => bl(`bundle-${i}`, (i + 1) * 100)))];
     expect(topBundles(orders, Infinity)).toHaveLength(7);
     expect(topBundles(orders)).toHaveLength(5);
+  });
+});
+
+describe('event-scoped rankings URL helpers', () => {
+  it('rankingsHref omits defaults so the overview link is unchanged', () => {
+    expect(rankingsHref()).toBe('/offline-sales/rankings');
+    expect(rankingsHref({tab: 'products', sort: 'revenue', dir: 'top'})).toBe('/offline-sales/rankings');
+    expect(rankingsHref({tab: 'bundles'})).toBe('/offline-sales/rankings?tab=bundles');
+  });
+
+  it('rankingsHref carries event, day and the tile toggles', () => {
+    expect(rankingsHref({event: 'ev-1', day: '2026-10-06', sort: 'units', dir: 'bottom'})).toBe(
+      '/offline-sales/rankings?event=ev-1&day=2026-10-06&sort=units&dir=bottom',
+    );
+    expect(rankingsHref({event: 'ev-1', day: null})).toBe('/offline-sales/rankings?event=ev-1');
+    // A day without an event is meaningless and dropped.
+    expect(rankingsHref({day: '2026-10-06'})).toBe('/offline-sales/rankings');
+  });
+
+  it('parses sort/dir with safe defaults', () => {
+    expect(parseRankingsSort('units')).toBe('units');
+    expect(parseRankingsSort('bogus')).toBe('revenue');
+    expect(parseRankingsSort(undefined)).toBe('revenue');
+    expect(parseRankingsDir('bottom')).toBe('bottom');
+    expect(parseRankingsDir('x')).toBe('top');
+  });
+
+  it('pickEventDay only accepts one of the event days', () => {
+    const days = ['2026-10-06', '2026-10-07'];
+    expect(pickEventDay('2026-10-07', days)).toBe('2026-10-07');
+    expect(pickEventDay('2026-10-09', days)).toBeNull();
+    expect(pickEventDay(undefined, days)).toBeNull();
   });
 });
