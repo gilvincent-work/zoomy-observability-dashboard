@@ -127,7 +127,7 @@ function marketplace(channel: 'shopee' | 'lazada', fromDay: string, toDay: strin
   const name = CHANNEL_LABEL[channel];
   if (digests === null) return empty(channel, 'not_connected', [`${name}: the stored digests are not available right now.`]);
   const wanted = dayKeysBetween(fromDay, toDay);
-  const hasDaily = (d: RollupDigest): boolean => (d.digest.daily?.[channel]?.length ?? 0) > 0;
+  const hasDaily = (d: RollupDigest): boolean => Array.isArray(d.digest.daily?.[channel]);
 
   // Oldest run first, so the newest run of any day is written last and wins.
   const merged = new Map<string, DaySales>();
@@ -144,7 +144,8 @@ function marketplace(channel: 'shopee' | 'lazada', fromDay: string, toDay: strin
     return day >= w.min && day <= w.max;
   };
   const touching = dedupeReruns(digests.filter((d) => !hasDaily(d)), windowOf).filter((d) => missing.some((m) => touchesDay(d, m)));
-  const tiled = missing.length > 0 && touching.length > 0 ? tile(touching, channel, new Set(missing)) : null;
+  const tiledRaw = missing.length > 0 && touching.length > 0 ? tile(touching, channel, new Set(missing)) : null;
+  const tiled = tiledRaw && [...tiledRaw].sort((a, b) => Date.parse(a.window_from) - Date.parse(b.window_from));
 
   if (covered.length === 0 && !tiled) {
     if (touching.length > 0) return empty(channel, 'not_combinable', [`${notCombinable(name, missing, touching)} Read one of those windows on its own instead.`]);
@@ -181,7 +182,10 @@ function website(fromDay: string, toDay: string, w: RollupInput['website']): Cha
   const {metrics} = websiteRangeMetrics([...w.orders], range);
   const basis = `live CRM orders as of ${phStamp(w.asOf)} (PH time)`;
   if (!metrics) return empty('website', 'no_data', [`Website: no website orders were found for these dates (${basis}; or the CRM could not be read).`]);
-  return {channel: 'website', revenue: metrics.revenue, orders: metrics.orders, units: metrics.units, aov: metrics.aov, status: 'ok', notes: [`Website: ${basis}.`]};
+  // websiteRangeMetrics counts only parseable line items: 0 units means none were readable, not "0 sold".
+  const unitsKnown = metrics.units > 0;
+  const notes = [`Website: ${basis}.`, ...(unitsKnown ? [] : ['Website: units unknown (CRM orders carry no line items).'])];
+  return {channel: 'website', revenue: metrics.revenue, orders: metrics.orders, units: unitsKnown ? metrics.units : null, aov: metrics.aov, status: 'ok', notes};
 }
 
 function offline(fromDay: string, toDay: string, o: RollupInput['offline']): ChannelPeriod {

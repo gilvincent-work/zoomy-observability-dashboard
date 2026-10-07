@@ -67,7 +67,14 @@ describe('F.6 test 4: gaps and windows from before `daily` existed', () => {
     ];
     const s = one({fromDay: '2026-09-01', toDay: '2026-09-21', digests, channels: ['shopee']}, 'shopee');
     expect(s).toMatchObject({revenue: 5700, orders: 16, units: 20, aov: 356.25, status: 'ok'});
-    expect(s.notes).toEqual(['Shopee: Sep 1 to Sep 7, 2026; Sep 15 to Sep 21, 2026 come from whole published windows (Sep 15 to Sep 21, 2026; Sep 1 to Sep 7, 2026), not from per-day data.']);
+    expect(s.notes).toEqual(['Shopee: Sep 1 to Sep 7, 2026; Sep 15 to Sep 21, 2026 come from whole published windows (Sep 1 to Sep 7, 2026; Sep 15 to Sep 21, 2026), not from per-day data.']);
+  });
+  it('a digest that stores an empty daily array for the channel covers its days as ok zeros', () => {
+    const digests = [
+      digestRow(phMidnight('2026-09-08'), phMidnight('2026-09-15'), '2026-09-15T01:00:00.000Z', {daily: {shopee: []}}),
+      digestRow(phMidnight('2026-09-05'), phMidnight('2026-09-12'), '2026-09-12T01:00:00.000Z', {comparison: {shopee: cmp(2000, 4, 6)}}),
+    ];
+    expect(one({fromDay: '2026-09-08', toDay: '2026-09-14', digests, channels: ['shopee']}, 'shopee')).toEqual({channel: 'shopee', revenue: 0, orders: 0, units: 0, aov: null, status: 'ok', notes: []});
   });
   it('overlapping pre-daily windows are never summed', () => {
     const digests = [
@@ -85,7 +92,7 @@ describe('F.6 test 5: a month-boundary order at 23:59 PH', () => {
     const [sep, oct] = rollupChannels(input({fromDay: '2026-09-01', toDay: '2026-10-31', channels: ['website', 'offline'], granularity: 'month', website, offline}));
     expect([sep.label, oct.label]).toEqual(['Sep 1 to Sep 30, 2026', 'Oct 1 to Oct 31, 2026']);
     expect(sep.channels).toEqual([
-      {channel: 'website', revenue: 300, orders: 1, units: 0, aov: 300, status: 'ok', notes: ['Website: live CRM orders as of Oct 7, 2026 14:05 (PH time).']},
+      {channel: 'website', revenue: 300, orders: 1, units: null, aov: 300, status: 'ok', notes: ['Website: live CRM orders as of Oct 7, 2026 14:05 (PH time).', 'Website: units unknown (CRM orders carry no line items).']},
       {channel: 'offline', revenue: 100, orders: 1, units: 1, aov: 100, status: 'ok', notes: []},
     ]);
     expect(oct.channels.map((c) => c.revenue)).toEqual([400, 200]);
