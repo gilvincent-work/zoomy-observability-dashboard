@@ -11,7 +11,7 @@ import {Pagination} from '@/components/analyst/pagination';
 import {Card, CardContent} from '@/components/ui/card';
 import {buttonVariants} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
-import {fmtDay, fmtRange, InventoryTabs, StorePicker, ToneChip} from '@/components/analyst/goldline-ops-shared';
+import {fmtDay, fmtRange, InventoryTabs, MOVEMENT_STATUS, StorePicker, ToneChip} from '@/components/analyst/goldline-ops-shared';
 
 // Stock forecast (plan §07g): on hand from the latest count ÷ movement estimated from
 // the previous counts → days of cover, stock-out date and a suggested order. Movement
@@ -19,14 +19,7 @@ import {fmtDay, fmtRange, InventoryTabs, StorePicker, ToneChip} from '@/componen
 // the page says so.
 
 type Status = ItemMovement['status'];
-const STATUS: Record<Status, {label: string; tone: string | null; rank: number}> = {
-  out: {label: 'Out', tone: 'var(--status-crit)', rank: 0},
-  reorder: {label: 'Reorder', tone: 'var(--status-warn)', rank: 1},
-  watch: {label: 'Within a cycle', tone: 'var(--status-warn)', rank: 2},
-  healthy: {label: 'Healthy', tone: 'var(--status-good)', rank: 3},
-  no_history: {label: 'Needs 2 counts', tone: null, rank: 4},
-  not_counted: {label: 'Not counted', tone: null, rank: 5},
-};
+const STATUS = MOVEMENT_STATUS;
 const PAGE_SIZE = 25;
 // Sort key for cover: known days first (ascending), then "no sales" (∞), then unknown.
 const coverRank = (d: number | null) => (d == null ? Number.MAX_VALUE : Number.isFinite(d) ? d : Number.MAX_VALUE / 2);
@@ -153,10 +146,15 @@ export function GoldlineForecastView({data, canEdit}: {data: ForecastData; canEd
                         const c = catalog[i.item_code];
                         const s = STATUS[i.status];
                         return (
-                          <tr key={i.item_code} className="border-b border-border/60 last:border-b-0 hover:bg-muted/30">
+                          <tr key={i.item_code} className="relative border-b border-border/60 transition-colors duration-150 last:border-b-0 hover:bg-muted/40 has-[a:focus-visible]:bg-muted/40">
                             <td className="max-w-[20rem] py-2 pr-3 pl-4">
                               <span className="flex items-center gap-1.5">
-                                <span className="truncate font-medium">{c?.name ?? i.item_code}</span>
+                                <Link
+                                  href={`/stock/${encodeURIComponent(i.item_code)}?store=${encodeURIComponent(store)}`}
+                                  className="truncate font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+                                >
+                                  {c?.name ?? i.item_code}
+                                </Link>
                                 {c?.bestseller && <Star aria-label="Bestseller" className="size-3.5 shrink-0 fill-current" style={{color: 'var(--status-warn)'}} />}
                               </span>
                               <span className="block truncate font-mono text-[11px] text-muted-foreground">
