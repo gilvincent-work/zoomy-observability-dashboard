@@ -10,9 +10,8 @@ import {join, posix} from 'node:path';
 
 export type FileMap = Record<string, string>; // repo-relative posix path -> source text
 
-// removed when the route is rewritten in F5 / slice 5. src/crm-data.ts (F.6, get_channel_report's Website row: a GET with the read-scoped
-// token, only aggregated numbers reach the model): Train 4 replaces this with GET-only CRM tools.
-export const LEGACY_ALLOWED_IMPORTS: readonly string[] = ['src/crm-data.ts', 'src/data.ts'];
+// removed when the route is rewritten in F5 / slice 5. (Train 4 removed src/crm-data.ts: the Website row reads the GET-only client.)
+export const LEGACY_ALLOWED_IMPORTS: readonly string[] = ['src/data.ts'];
 export const LEGACY_ROUTE = 'app/api/chat/route.ts';
 
 const EXTS = ['', '.ts', '.tsx', '.mjs', '/index.ts', '/index.tsx', '/index.mjs'];

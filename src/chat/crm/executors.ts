@@ -1,10 +1,11 @@
 // The website CRM tool executors (spec 4.2, 4.3): a per-turn call cap, one chat_crm_call audit line per call, honest failure. Pure:
 // the GET-only client is injected (src/chat/crm/client.ts), so vitest drives it with a fake.
+import type {RangeOrder} from '../../custom-range';
 import {logCrmCall, type AuditSink} from '../audit';
 import {paramsFingerprint} from '../explore/fingerprint';
 import type {MetricError, MetricResult} from '../result-types';
 import {CRM_LIMITS, CrmError, type CrmClient, type CrmEndpointId, type CrmErrorCode, type CrmRead} from './client';
-import {crmCheckoutsResult, crmCustomersResult, crmMetricsResult, crmOrdersResult, isMetricError, readCheckoutsInput, readCustomersInput, readMetricsInput, readOrdersInput, type CrmGet} from './tools';
+import {crmCheckoutsResult, crmCustomersResult, crmMetricsResult, crmOrdersResult, crmRangeOrders, isMetricError, readCheckoutsInput, readCustomersInput, readMetricsInput, readOrdersInput, type CrmGet} from './tools';
 
 export const CRM_TOOL_NAMES = ['get_crm_metrics', 'list_crm_orders', 'list_crm_customers', 'list_crm_checkouts'] as const;
 export type CrmToolName = (typeof CRM_TOOL_NAMES)[number];
@@ -58,26 +59,35 @@ export interface CrmExecutorDeps extends CrmDeps {
   /** Stores a result in the turn's result store and returns what the model sees (tool-executors.ts: id + compact). */
   keep: (result: MetricResult) => unknown;
   maxCalls?: number;
+  /** Cap on refused (bad input) calls, separate from the read budget, so the model cannot loop on bad input. */
+  maxRefused?: number;
 }
 
 export function createCrmExecutors(deps: CrmExecutorDeps): Record<CrmToolName, (input: unknown) => Promise<unknown>> {
   let calls = 0;
+  let refused = 0;
   const max = deps.maxCalls ?? CRM_LIMITS.maxToolCallsPerTurn;
+  const maxRefused = deps.maxRefused ?? CRM_LIMITS.maxToolCallsPerTurn;
   const refusedLine = (tool: CrmToolName, input: unknown, code: string): void =>
     logCrmCall({tool, endpoints: [], paramsFp: paramsFingerprint(input), ok: false, code, rows: null, bytes: 0, ms: 0, user: deps.user}, deps.sink);
   const tool =
     <R>(name: CrmToolName, read: (input: unknown) => R | MetricError, build: (req: R, get: CrmGet) => Promise<MetricResult>) =>
     async (input: unknown): Promise<unknown> => {
-      calls += 1;
-      if (calls > max) {
-        refusedLine(name, input, 'call_cap');
-        return {error: CRM_ERROR_TEXT.call_cap};
-      }
       const req = read(input);
       if (isMetricError(req)) {
+        if (refused >= maxRefused) {
+          refusedLine(name, input, 'call_cap');
+          return {error: CRM_ERROR_TEXT.call_cap};
+        }
+        refused += 1;
         refusedLine(name, input, 'input');
         return req;
       }
+      if (calls >= max) {
+        refusedLine(name, input, 'call_cap');
+        return {error: CRM_ERROR_TEXT.call_cap};
+      }
+      calls += 1;
       const out = await tracked(deps, name, req, (get) => build(req, get), (r) => r.rows.length);
       return isMetricError(out) ? out : deps.keep(out);
     };
@@ -87,4 +97,11 @@ export function createCrmExecutors(deps: CrmExecutorDeps): Record<CrmToolName, (
     list_crm_customers: tool('list_crm_customers', readCustomersInput, (req, get) => crmCustomersResult(req, get, deps.now)),
     list_crm_checkouts: tool('list_crm_checkouts', readCheckoutsInput, crmCheckoutsResult),
   };
+}
+
+/** get_channel_report's Website row (F.6) through the same client and audit line. Throws when the CRM cannot be read, so the report says "could not be read", never "no orders". */
+export async function websiteOrdersForReport(deps: CrmDeps): Promise<{orders: RangeOrder[]; asOf: string}> {
+  const out = await tracked(deps, 'get_channel_report', {endpoint: 'orders'}, crmRangeOrders, (orders) => orders.length);
+  if (isMetricError(out)) throw new CrmError('unreachable');
+  return {orders: out, asOf: new Date().toISOString()};
 }

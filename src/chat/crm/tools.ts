@@ -188,9 +188,9 @@ function pageOf<T>(all: readonly T[], p: Page): {rows: T[]; note: Check | null} 
 }
 
 /** Keep the result small (spec 4.2): drop rows from the end until the JSON fits, and say so. */
-function fitBytes(rows: MetricRow[]): {rows: MetricRow[]; cut: number} {
+export function fitBytes(rows: MetricRow[]): {rows: MetricRow[]; cut: number} {
   let out = rows;
-  while (out.length > 1 && JSON.stringify(out).length > CRM_LIMITS.maxResultBytes) out = out.slice(0, Math.floor(out.length * 0.8));
+  while (out.length > 1 && new TextEncoder().encode(JSON.stringify(out)).length > CRM_LIMITS.maxResultBytes) out = out.slice(0, Math.floor(out.length * 0.8));
   return {rows: out, cut: rows.length - out.length};
 }
 
@@ -335,7 +335,7 @@ export async function crmCustomersResult(req: CrmCustomersRequest, get: CrmGet, 
 
   if (req.group_by === 'none') {
     const {rows, note} = pageOf(sorted, req);
-    const columns = [col('name', 'Name', 'text', 'category'), col('email', 'Email', 'text', 'category'), col('phone', 'Phone', 'text', 'category'), col('tier', 'Tier', 'text', 'category'), col('orders', 'Orders', 'count', 'measure'), col('spent', 'Spent', 'PHP', 'measure'), col('spend_ytd', 'Spent this membership year', 'PHP', 'measure'), col('pet', 'Pet', 'text', 'category'), col('pet_birthday', 'Pet birthday', 'date', 'category'), col('email_marketing', 'Email marketing', 'text', 'category'), col('joined', 'Joined (PH day)', 'date', 'category')];
+    const columns = [col('name', 'Name', 'text', 'category'), col('email', 'Email', 'text', 'category'), col('phone', 'Phone', 'text', 'category'), col('tier', 'Tier', 'text', 'category'), col('orders', 'Orders', 'count', 'measure'), col('spent', 'Spent', 'PHP', 'measure'), col('spend_ytd', 'Spent this membership year', 'PHP', 'measure'), col('pet', 'Pet', 'text', 'category'), col('pet_birthday', 'Pet birthday', 'text', 'category'), col('email_marketing', 'Email marketing', 'text', 'category'), col('joined', 'Joined (PH day)', 'date', 'category')];
     const out: MetricRow[] = rows.map((c) => ({
       name: safeText([c.firstName, c.lastName].filter(Boolean).join(' ')),
       email: safeText(c.email),

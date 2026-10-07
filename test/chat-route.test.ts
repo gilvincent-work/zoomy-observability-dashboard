@@ -41,7 +41,6 @@ vi.mock('@/auth', () => ({
 vi.mock('@/src/active-context', () => ({
   getActiveContext: async () => null,
 }));
-vi.mock('@/src/crm-data', () => ({crmConfigured: () => false, getCrmOrders: async () => []}));
 vi.mock('@/src/data', () => ({
   getDigests: async () => {
     h.getDigestsCalls += 1;
@@ -95,6 +94,7 @@ vi.mock('@/src/chat/report-session', async () => await import('../src/chat/repor
 vi.mock('@/src/chat/tool-defs', async () => await import('../src/chat/tool-defs'));
 vi.mock('@/src/chat/crm/config', async () => await import('../src/chat/crm/config'));
 vi.mock('@/src/chat/crm/client', async () => await import('../src/chat/crm/client'));
+vi.mock('@/src/chat/crm/executors', async () => await import('../src/chat/crm/executors'));
 vi.mock('@/src/chat/tool-executors', async () => await import('../src/chat/tool-executors'));
 // Explore: the real gate and executor, but the driver is a fake that records what it is asked (never a real connection).
 vi.mock('@/src/chat/explore-setup', async () => {

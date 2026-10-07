@@ -1,5 +1,7 @@
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 import {readReportInput, shapeChannelReport} from '../src/chat/channel-report';
+import {createCrmClient} from '../src/chat/crm/client';
+import {websiteOrdersForReport} from '../src/chat/crm/executors';
 import {dispatchToolCall} from '../src/chat/tools';
 import {createExecutors} from '../src/chat/tool-executors';
 import type {DigestSource} from '../src/chat/digest-lookup';
@@ -89,6 +91,26 @@ describe('golden: "Give me the September report per channel" (A8, offline replay
     const r = (await ex.get_channel_report?.(ASK)) as {rows: Record<string, unknown>[]};
     expect(r.rows[2]).toEqual({channel: 'Website', revenue: 1000, orders: 1, units: 2, aov: 1000});
   });
+  it('Train 4: the Website row reads the GET-only CRM client and logs one chat_crm_call line', async () => {
+    const info = vi.fn();
+    const body = {orders: [{shopifyOrderId: 1, createdAt: '2026-09-30T15:59:00Z', totalPrice: '1000', lineItems: JSON.stringify([{title: 'A', quantity: 2, price: 500}])}, {shopifyOrderId: 2, createdAt: '2026-09-30T16:00:00Z', totalPrice: '700'}]};
+    const fetch = (async () => new Response(JSON.stringify(body), {status: 200})) as typeof globalThis.fetch;
+    const crm = createCrmClient({baseUrl: 'https://crm.example', token: 'tok', fetch});
+    const ex = createExecutors({data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(), crmOrders: () => websiteOrdersForReport({client: crm, user: null, sink: {info, error: vi.fn()}})});
+    const r = (await ex.get_channel_report?.(ASK)) as {rows: Record<string, unknown>[]};
+    expect(r.rows[2]).toEqual({channel: 'Website', revenue: 1000, orders: 1, units: 2, aov: 1000});
+    expect(JSON.parse(info.mock.calls[0][0] as string)).toMatchObject({event: 'chat_crm_call', tool: 'get_channel_report', endpoints: ['orders'], ok: true, rows: 2});
+  });
+
+  it('Train 4: an unreachable CRM says "could not be read", never "no orders" (Review Focus 3)', async () => {
+    const fetch = (async () => { throw new TypeError('fetch failed'); }) as typeof globalThis.fetch;
+    const crm = createCrmClient({baseUrl: 'https://crm.example', token: 'tok', fetch});
+    const ex = createExecutors({data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(), crmOrders: () => websiteOrdersForReport({client: crm, user: null, sink: {info: vi.fn(), error: vi.fn()}})});
+    const r = (await ex.get_channel_report?.(ASK)) as {rows: Record<string, unknown>[]; meta: {checks: {text: string}[]}};
+    expect(r.rows[2]).toEqual({channel: 'Website', revenue: null, orders: null, units: null, aov: null});
+    expect(r.meta.checks.map((c) => c.text).join('\n')).toMatch(/Website: the CRM could not be read right now; no website figures\./);
+  });
+
   it('a CRM read that throws says the CRM could not be read, not "live orders as of" or zero sales', async () => {
     const ex = createExecutors({data: async () => goldenData(), now: NOW, user: null, digest: async () => sept(), crmOrders: async () => { throw new Error('boom'); }});
     const r = (await ex.get_channel_report?.(ASK)) as {rows: Record<string, unknown>[]; meta: {checks: {text: string}[]}};

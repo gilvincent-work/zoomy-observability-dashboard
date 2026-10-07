@@ -1,6 +1,6 @@
 import {describe, expect, it, vi} from 'vitest';
 import {CRM_ERROR_TEXT, createCrmExecutors} from '../src/chat/crm/executors';
-import {crmRangeOrders, crmCheckoutsResult, crmCustomersResult, crmMetricsResult, crmOrdersResult, readCheckoutsInput, readCustomersInput, readOrdersInput, safeText, UNTRUSTED_NOTE, type CrmGet} from '../src/chat/crm/tools';
+import {crmRangeOrders, crmCheckoutsResult, fitBytes, crmCustomersResult, crmMetricsResult, crmOrdersResult, readCheckoutsInput, readCustomersInput, readOrdersInput, safeText, UNTRUSTED_NOTE, type CrmGet} from '../src/chat/crm/tools';
 import {CHAT_TOOLS, chatTools} from '../src/chat/tool-defs';
 import {createExecutors, statusFor} from '../src/chat/tool-executors';
 import {assertRequestShape} from '../src/chat/request-shape';
@@ -76,9 +76,15 @@ describe('list_crm_customers', () => {
     expect(pet).not.toMatch(/[\u0000‮]/);
     expect(pet.length).toBeLessThanOrEqual(121);
     expect(pet.endsWith('…')).toBe(true);
+    expect(r.meta.caveats).toContain(UNTRUSTED_NOTE);
     expect(safeText('  a\u0007b  ')).toBe('a b');
     expect(safeText('')).toBeNull();
     expect(safeText(5)).toBeNull();
+  });
+
+  it('pet_birthday is customer-entered text, so its column is text, not date', async () => {
+    const r = await crmCustomersResult(req(readCustomersInput(CUS)), get(), NOW);
+    expect(r.columns.find((c) => c.key === 'pet_birthday')?.unit).toBe('text');
   });
 
   it('filters by tier, buyers and join dates; groups by tier with counts from code', async () => {
@@ -146,12 +152,32 @@ describe('createCrmExecutors', () => {
   it('caps calls per turn and refuses bad input with zero GETs', async () => {
     const s = sink();
     const f = fakeCrmClient();
-    const ex = createCrmExecutors({client: f.client, now: NOW, user: null, sink: s, keep: (r) => r, maxCalls: 2});
+    const ex = createCrmExecutors({client: f.client, now: NOW, user: null, sink: s, keep: (r) => r, maxCalls: 1});
     expect(await ex.list_crm_orders({...ORD, method: 'POST'})).toEqual({error: expect.stringMatching(/Use exactly these parameters/)});
     await ex.get_crm_metrics({});
     expect(await ex.get_crm_metrics({})).toEqual({error: CRM_ERROR_TEXT.call_cap});
     expect(f.gets).toEqual(['metrics']);
     expect(lines(s).map((l) => l.code)).toEqual(['input', null, 'call_cap']);
+  });
+
+  it('refused calls do not use up the CRM budget, but have their own cap', async () => {
+    const s = sink();
+    const f = fakeCrmClient();
+    const ex = createCrmExecutors({client: f.client, now: NOW, user: null, sink: s, keep: (r) => r, maxCalls: 2, maxRefused: 3});
+    const bad = {...ORD, method: 'POST'};
+    for (let i = 0; i < 3; i++) expect(await ex.list_crm_orders(bad)).toEqual({error: expect.stringMatching(/Use exactly these parameters/)});
+    expect(await ex.list_crm_orders(bad)).toEqual({error: CRM_ERROR_TEXT.call_cap});
+    expect(await ex.get_crm_metrics({})).not.toHaveProperty('error');
+    expect(await ex.get_crm_metrics({})).not.toHaveProperty('error');
+    expect(await ex.get_crm_metrics({})).toEqual({error: CRM_ERROR_TEXT.call_cap});
+    expect(f.gets).toEqual(['metrics', 'metrics']);
+  });
+
+  it('fitBytes counts UTF-8 bytes, not UTF-16 units', () => {
+    const rows = Array.from({length: 40}, (_, i) => ({n: i, t: '🐶'.repeat(1000)})); // 2 UTF-16 units but 4 bytes each
+    const out = fitBytes(rows);
+    expect(new TextEncoder().encode(JSON.stringify(out.rows)).length).toBeLessThanOrEqual(65_536);
+    expect(out.cut).toBeGreaterThan(0);
   });
 
   it('a non-CRM error is logged as internal and rethrown (dispatchToolCall reports a generic failure)', async () => {
