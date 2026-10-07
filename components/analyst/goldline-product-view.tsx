@@ -15,6 +15,7 @@ import {Metric} from '@/components/analyst/metric';
 import {Card, CardContent} from '@/components/ui/card';
 import {fmtDay, MOVEMENT_STATUS, peso, StorePicker, ToneChip} from '@/components/analyst/goldline-ops-shared';
 import {cn} from '@/lib/utils';
+import {GL_TILES_MOBILE} from '@/src/goldline-ui';
 
 type Status = ItemMovement['status'];
 
@@ -74,7 +75,7 @@ export function GoldlineProductView({data}: {data: ProductViewData}) {
         </Card>
       ) : (
         <>
-          <section aria-label="Summary" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <section aria-label="Summary" className={cn("grid grid-cols-2 gap-4 lg:grid-cols-4", GL_TILES_MOBILE)}>
             {single ? (
               <>
                 <Metric label="On the shelf now" value={num(single.onHand)} sub={single.latestEnd ? `counted ${fmtDay(single.latestEnd)}` : 'not counted'}

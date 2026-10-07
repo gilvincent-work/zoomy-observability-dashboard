@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import {useEffect, useMemo, useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {AlertTriangle, CheckCircle2, Clock, Loader2, Search, Trash2, X, XCircle} from 'lucide-react';
@@ -109,7 +110,7 @@ export function UploadsView({
       <header className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-semibold tracking-tight">Uploads</h1>
         <p className="text-sm text-muted-foreground">
-          Add a store&apos;s inventory form — every page at once — or a POS sales export. Scans are read automatically and wait
+          Add a store&apos;s inventory form (every page at once) or a POS sales export. Scans are read automatically and wait
           for your review; sales are saved right away.
         </p>
       </header>
@@ -174,7 +175,42 @@ export function UploadsView({
               {uploads.length === 0 ? 'No files yet. Add one above.' : 'No files match.'}
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* Phones: one card per file — name, type · when, status, delete. */}
+            <ul role="list" className="-mx-4 flex flex-col divide-y divide-border border-t border-border md:hidden">
+              {pageRows.map((u) => (
+                <li key={u.id} className="relative flex items-center gap-3 px-4 py-3">
+                  <FileTypeBadge filename={u.filename} />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <Link
+                      href={`/uploads/${u.id}`}
+                      className="truncate font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+                      title={u.filename}
+                    >
+                      {u.filename}
+                    </Link>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {u.kind === 'pos_csv' ? 'Sales export' : 'Inventory scan'} · {fmtWhen(u.created_at)}
+                    </span>
+                    <StatusPill status={u.status} />
+                    {/* Touch screens never show a tooltip: say why it was rejected / failed. */}
+                    {u.reject_reason && <span className="text-xs text-muted-foreground">{u.reject_reason}</span>}
+                  </div>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Delete ${u.filename}`}
+                      className="relative z-10 text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteTarget(u)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div className="overflow-x-auto max-md:hidden">
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-muted-foreground">
@@ -236,6 +272,7 @@ export function UploadsView({
                 </tbody>
               </table>
             </div>
+            </>
           )}
           <Pagination page={safePage} pageCount={pageCount} onPage={setPage} className="pt-1" />
         </CardContent>

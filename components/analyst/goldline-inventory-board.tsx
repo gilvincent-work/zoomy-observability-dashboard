@@ -22,6 +22,7 @@ import {fmtDay, MOVEMENT_STATUS, peso, StorePicker, ToneChip} from '@/components
 import {NumberDialog, priceSubmit, ShipmentDialog, SupplySettingsDialog, warehouseSubmit, type ShipTarget} from '@/components/analyst/goldline-supply-dialogs';
 import {cancelShipmentAction, setHiddenAction} from '@/app/stock/actions';
 import {cn} from '@/lib/utils';
+import {GL_SCROLL_ROW_MOBILE, GL_TILES_MOBILE} from '@/src/goldline-ui';
 
 export type BoardViewData = {
   company: string | null;
@@ -224,7 +225,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
           <Upload className="size-4 text-muted-foreground" aria-hidden />
           <span>
             <span className="font-medium">{data.pendingReview} {data.pendingReview === 1 ? 'scan is' : 'scans are'} waiting for review</span>
-            <span className="text-muted-foreground"> — they&apos;ll update these numbers once committed.</span>
+            <span className="text-muted-foreground">. They&apos;ll update these numbers once committed.</span>
           </span>
         </Link>
       )}
@@ -250,7 +251,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
           <CardContent className="flex flex-col items-center gap-2 px-6 py-12 text-center">
             <Package className="size-6 text-muted-foreground" aria-hidden />
             <h2 className="font-heading text-base font-semibold">No counts yet</h2>
-            <p className="max-w-md text-sm text-muted-foreground">Upload a store&apos;s inventory form and commit it — each product then shows its stock, sales pace and when to ship.</p>
+            <p className="max-w-md text-sm text-muted-foreground">Upload a store&apos;s inventory form and commit it. Each product then shows its stock, sales pace and when to ship.</p>
             {data.canEdit && (
               <Link href="/uploads" className={cn(buttonVariants({size: 'sm'}), 'mt-1')}>
                 <Upload className="size-4" /> Upload a scan
@@ -260,7 +261,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
         </Card>
       ) : (
         <>
-          <section aria-label="Summary" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <section aria-label="Summary" className={cn("grid grid-cols-2 gap-4 lg:grid-cols-4", GL_TILES_MOBILE)}>
             <Metric label="Reorder now" value={String(summary.reorder)} sub={`${summary.out} out · rest under ~10 days`} valueClassName={summary.reorder ? 'text-[var(--status-warn)]' : undefined} />
             <Metric label="Ship now" value={String(summary.shipNow)} sub="won't arrive in time if sent later" valueClassName={summary.shipNow ? 'text-[var(--status-crit)]' : undefined} />
             {showWarehouse ? (
@@ -299,6 +300,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
           <Card className="py-0">
             <CardContent className="flex flex-col gap-3 px-0 pt-4 pb-3">
               <div className="flex flex-wrap items-center gap-2 px-4">
+<div className={GL_SCROLL_ROW_MOBILE}>
                 <SegmentedControl<Filter>
                   ariaLabel="Filter by status"
                   value={filter}
@@ -314,6 +316,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
                     {value: 'not_counted', label: `Not enough data ${counts.not_counted}`},
                   ]}
                 />
+                </div>
                 <NativeSelect
                   aria-label="Product line"
                   value={line}
@@ -517,7 +520,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
               )}
               <div className="flex flex-wrap items-center justify-between gap-2 px-4">
                 <span className="text-xs text-muted-foreground">
-                  {filtered.length ? `Showing ${(safePage - 1) * PAGE_SIZE + 1}–${Math.min(safePage * PAGE_SIZE, filtered.length)} of ${filtered.length}` : ''}
+                  {filtered.length ? `Showing ${(safePage - 1) * PAGE_SIZE + 1} to ${Math.min(safePage * PAGE_SIZE, filtered.length)} of ${filtered.length}` : ''}
                 </span>
                 <Pagination page={safePage} pageCount={pageCount} onPage={setPage} />
               </div>
@@ -527,7 +530,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
           {data.shipments.length > 0 && <OnTheWay shipments={data.shipments} rows={rows} storeName={storeName} company={data.company} canEdit={data.canEdit} today={today} />}
 
           <p className="text-xs leading-relaxed text-muted-foreground">
-            On hand is the latest count (back room = stockroom + drawer · on display). Sold per month is estimated from consecutive counts — or the sales
+            On hand is the latest count (back room = stockroom + drawer · on display). Sold per month is estimated from consecutive counts (or the sales
             report once a product&apos;s POS SKU is linked. <span className="font-medium text-foreground">Need</span> tops each store up to two cycles of
             cover, less anything on the way. <span className="font-medium text-foreground">Ship by</span> is the run-out date minus the store&apos;s delivery
             time. <span className="font-medium text-foreground">Warehouse</span> covers every store&apos;s need; the date under it is when to start producing
@@ -555,7 +558,7 @@ export function GoldlineInventoryBoard({data}: {data: BoardViewData}) {
           open
           onClose={() => setWhEdit(null)}
           title="Warehouse stock"
-          description={`${whEdit.productLine ? `${whEdit.productLine} · ` : ''}${whEdit.name} — units in the warehouse now.`}
+          description={`${whEdit.productLine ? `${whEdit.productLine} · ` : ''}${whEdit.name}: units in the warehouse now.`}
           label="Units in the warehouse"
           initial={whEdit.warehouse}
           submitLabel="Save"

@@ -10,7 +10,7 @@ import type {ItemMovement} from '@/src/goldline-movement';
 
 export const fmtDay = (iso: string | null) =>
   iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : '—';
-export const fmtRange = (start: string, end: string) => `${fmtDay(start)}–${fmtDay(end)}, ${end.slice(0, 4)}`;
+export const fmtRange = (start: string, end: string) => `${fmtDay(start)} to ${fmtDay(end)}, ${end.slice(0, 4)}`;
 export const peso = (n: number) => `₱${Math.round(n).toLocaleString('en-US')}`;
 /** Movement status (Stock forecast, product page): label, tone, sort rank. */
 export const MOVEMENT_STATUS: Record<ItemMovement['status'], {label: string; tone: string | null; rank: number}> = {

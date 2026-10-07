@@ -64,7 +64,7 @@ export async function recordShipmentAction(input: {company: string | null; store
     return {ok: true, arrivesOn: null};
   } catch (err) {
     if (err instanceof SupplyError && err.code === 'not_enough_stock') {
-      return {ok: false, error: `Only ${err.detail ?? 0} in the warehouse — send ${err.detail ?? 0} or fewer, or update the warehouse stock first.`};
+      return {ok: false, error: `Only ${err.detail ?? 0} in the warehouse. Send ${err.detail ?? 0} or fewer, or update the warehouse stock first.`};
     }
     console.error('recordShipmentAction', err);
     return {ok: false, error: 'Could not record the shipment. Please try again.'};
@@ -85,7 +85,7 @@ export async function cancelShipmentAction(input: {company: string | null; id: s
   } catch (err) {
     if (err instanceof SupplyError && err.code === 'not_in_transit') return {ok: false, error: 'That shipment was already cancelled.'};
     if (err instanceof SupplyError && err.code === 'already_arrived') {
-      return {ok: false, error: 'That shipment is due to have arrived — the store’s next count records it, so it can’t be cancelled.'};
+      return {ok: false, error: 'That shipment is due to have arrived. The store’s next count records it, so it can’t be cancelled.'};
     }
     console.error('cancelShipmentAction', err);
     return {ok: false, error: 'Could not cancel the shipment. Please try again.'};
@@ -155,12 +155,12 @@ export async function saveSupplySettingsAction(input: {
   const scoped = Boolean(e.ctx.storeScope);
   if (scoped && (input.defaults || input.lines?.length)) return {ok: false, error: 'Only company-wide roles can change production times or defaults.'};
   if (input.defaults && (intIn(input.defaults.productionDays, 0, 365) == null || intIn(input.defaults.transitDays, 0, 60) == null)) {
-    return {ok: false, error: 'Defaults: production 0–365 days, delivery 0–60 days.'};
+    return {ok: false, error: 'Defaults: production 0 to 365 days, delivery 0 to 60 days.'};
   }
   const lines = (input.lines ?? []).slice(0, 500);
   const stores = (input.stores ?? []).slice(0, 1000);
-  if (lines.some((l) => !l.line || l.line.length > 200 || intIn(l.days, 0, 365) == null)) return {ok: false, error: 'Production times must be 0–365 days.'};
-  if (stores.some((s) => !s.store || intIn(s.days, 0, 60) == null)) return {ok: false, error: 'Delivery times must be 0–60 days.'};
+  if (lines.some((l) => !l.line || l.line.length > 200 || intIn(l.days, 0, 365) == null)) return {ok: false, error: 'Production times must be 0 to 365 days.'};
+  if (stores.some((s) => !s.store || intIn(s.days, 0, 60) == null)) return {ok: false, error: 'Delivery times must be 0 to 60 days.'};
   const out = outOfScopeStores(e.ctx.storeScope, stores.map((s) => s.store));
   if (out.length) return {ok: false, error: `Store ${out[0]} is outside your access.`};
   try {
