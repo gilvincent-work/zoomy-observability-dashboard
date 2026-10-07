@@ -19,7 +19,7 @@ const AUTO_REGISTRY_MAX = 2; // backstop: unrendered query_metric results drawn 
 // The default of every analytical answer is a visualization; a table is its companion. One nudge per request.
 export const CHART_FIRST_TEXT = 'Nothing was drawn and your call was fine. A chart is the default for this data: call render_chart (kind auto, or the form the owner named) first, then render_table again as its companion. If the owner explicitly asked for only a table, call render_table again unchanged.';
 
-const summary = (c: ChosenView) => ({form: c.form, orientation: c.orientation, reason: c.reason, adjustments: c.adjustments});
+const summary = (c: ChosenView) => ({form: c.form, orientation: c.orientation, reason: c.reason, adjustments: c.adjustments, ...(c.notes?.length ? {notes: c.notes} : {})});
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : []);
 
