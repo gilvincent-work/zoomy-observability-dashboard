@@ -80,7 +80,15 @@ export function GoldlineProductView({data}: {data: ProductViewData}) {
                 <Metric label="On the shelf now" value={num(single.onHand)} sub={single.latestEnd ? `counted ${fmtDay(single.latestEnd)}` : 'not counted'}
                   valueClassName={single.onHand === 0 ? 'text-[var(--status-crit)]' : undefined} />
                 <Metric label="Status" value={single.deadStock ? 'Not moving' : status!.label}
-                  sub={single.status === 'out' ? 'deliver first' : single.coverDays != null ? `${coverText(single.coverDays)} of cover` : 'needs 2 counts'}
+                  sub={
+                    single.missingFromLatest
+                      ? "not on the store's latest count"
+                      : single.status === 'out'
+                        ? 'deliver first'
+                        : single.coverDays != null
+                          ? `${coverText(single.coverDays)} of cover`
+                          : 'needs 2 counts'
+                  }
                   valueClassName={TONE_TEXT[single.status]} />
                 <Metric label="Sold last month" value={num(data.soldLastMonth?.sold ?? null)}
                   sub={data.soldLastMonth ? `${data.soldLastMonth.label} · ${sourceName(single.source)}` : '—'} />

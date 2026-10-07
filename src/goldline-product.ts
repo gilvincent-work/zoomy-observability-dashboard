@@ -33,6 +33,7 @@ export type StoreInput = {
   storeName: string | null;
   counts: ItemCount[]; // this item, this store (any order)
   sales: SalesRow[] | null; // null = item not linked to a POS SKU
+  storeLatestEnd?: string | null; // the store's latest count of ANY item (to spot an item missing from it)
 };
 
 export type CountLine = {
@@ -51,9 +52,9 @@ export type StoreProduct = {
   source: SoldSource;
   movement: ItemMovement | null; // null when the store's counts don't include the item
   cycleDays: number | null;
-  latestEnd: string | null; // latest count's period end
+  latestEnd: string | null; // this item's latest count's period end
+  missingFromLatest: boolean; // the store counted since, but this item wasn't on it
   soldByMonth: Map<string, number>; // YYYY-MM → units (from `source`)
-  cyclesInMonth: Map<string, number>; // counts-based: cycles that ended in the month
   stockByMonth: Map<string, number>; // on hand at the month's last count (not carried)
   deliveryByMonth: Map<string, {qty: number; latest: string}>;
   countLines: CountLine[]; // newest first
@@ -91,6 +92,43 @@ export function countLabel(periodEnd: string): string {
   return `${monthShort(monthOf(periodEnd))} ${day <= 16 ? 'A' : 'B'}`;
 }
 
+/** Add `units` sold between two count dates (exclusive → inclusive) to months, by days. */
+function spreadByMonth(into: Map<string, number>, fromEnd: string, toEnd: string, units: number) {
+  const days = Math.round((Date.parse(`${toEnd}T00:00:00Z`) - Date.parse(`${fromEnd}T00:00:00Z`)) / DAY);
+  if (days <= 0) {
+    const m = monthOf(toEnd);
+    into.set(m, (into.get(m) ?? 0) + units);
+    return;
+  }
+  const perDay = units / days;
+  let cursor = Date.parse(`${fromEnd}T00:00:00Z`) + DAY;
+  const end = Date.parse(`${toEnd}T00:00:00Z`);
+  while (cursor <= end) {
+    const m = new Date(cursor).toISOString().slice(0, 7);
+    const [y, mo] = m.split('-').map(Number);
+    const monthEnd = Date.UTC(y, mo, 0);
+    const until = Math.min(end, monthEnd);
+    const n = Math.round((until - cursor) / DAY) + 1;
+    into.set(m, (into.get(m) ?? 0) + perDay * n);
+    cursor = until + DAY;
+  }
+}
+/** Whole units per month, keeping the total (largest remainders get the leftovers). */
+function roundMonths(m: Map<string, number>) {
+  const entries = [...m.entries()];
+  const total = Math.round(entries.reduce((a, [, v]) => a + v, 0));
+  const floored = entries.map(([k, v]) => [k, Math.floor(v + 1e-9), v - Math.floor(v + 1e-9)] as const);
+  let left = total - floored.reduce((a, [, f]) => a + f, 0);
+  const order = [...floored].sort((a, b) => b[2] - a[2]);
+  const bump = new Set<string>();
+  for (const [k] of order) {
+    if (left <= 0) break;
+    bump.add(k);
+    left--;
+  }
+  for (const [k, f] of floored) m.set(k, f + (bump.has(k) ? 1 : 0));
+}
+
 /** Counted sold vs register sold agree: within ±2 units or 10%. */
 export const registerMatches = (counted: number, register: number) => Math.abs(counted - register) <= Math.max(2, Math.round(register * 0.1));
 
@@ -99,25 +137,36 @@ export function buildStoreProduct(input: StoreInput, itemCode: string): StorePro
   const mv = counts.length
     ? storeMovement(counts.map((c) => ({period_start: c.period_start, period_end: c.period_end, rows: [{...c, item_code: itemCode}]})))
     : null;
-  const movement = mv?.items.find((i) => i.item_code === itemCode) ?? null;
+  const itemLatest = counts.length ? counts[counts.length - 1].period_end : null;
+  // The store counted after this item's last row, without it: what we know is stale, so
+  // say "not counted" (as the Stock forecast does) instead of showing old figures.
+  const missingFromLatest = Boolean(itemLatest && input.storeLatestEnd && input.storeLatestEnd > itemLatest);
+  const found = mv?.items.find((i) => i.item_code === itemCode) ?? null;
+  const movement: ItemMovement | null =
+    found && missingFromLatest
+      ? {...found, onHand: null, coverDays: null, stockOutDate: null, suggestedOrder: 0, status: 'not_counted', deadStock: false, anomaly: null}
+      : found;
 
-  // Counts-based sold per month.
+  // Counts-based sold, spread over the days between counts by month (a missed count
+  // doesn't pile two cycles into one month). A count with no on-hand figure is skipped,
+  // but its delivery carries to the next count.
   const countedSold = new Map<string, number>();
-  const cyclesInMonth = new Map<string, number>();
-  let prev: number | null = null;
+  let prev: {onHand: number; end: string} | null = null;
+  let carried = 0;
   for (const c of counts) {
     const oh = onHandOf(c).onHand;
-    if (oh == null) continue;
-    if (prev != null) {
-      const sold = prev + (c.delivery ?? 0) - oh;
-      if (sold >= 0) {
-        const m = monthOf(c.period_end);
-        countedSold.set(m, (countedSold.get(m) ?? 0) + sold);
-        cyclesInMonth.set(m, (cyclesInMonth.get(m) ?? 0) + 1);
-      }
+    if (oh == null) {
+      carried += c.delivery ?? 0;
+      continue;
     }
-    prev = oh;
+    if (prev) {
+      const sold = prev.onHand + carried + (c.delivery ?? 0) - oh;
+      if (sold >= 0) spreadByMonth(countedSold, prev.end, c.period_end, sold);
+    }
+    carried = 0;
+    prev = {onHand: oh, end: c.period_end};
   }
+  roundMonths(countedSold);
 
   const salesSold = new Map<string, number>();
   for (const s of input.sales ?? []) {
@@ -125,6 +174,8 @@ export function buildStoreProduct(input: StoreInput, itemCode: string): StorePro
     salesSold.set(m, (salesSold.get(m) ?? 0) + (Number(s.units) || 0));
   }
   const source: SoldSource = input.sales && input.sales.length ? 'sales' : 'counts';
+  // Sales report where it has the month; the counts fill any month it doesn't.
+  const sold = source === 'sales' ? new Map([...countedSold, ...salesSold]) : countedSold;
 
   const stockByMonth = new Map<string, number>();
   const deliveryByMonth = new Map<string, {qty: number; latest: string}>();
@@ -154,9 +205,9 @@ export function buildStoreProduct(input: StoreInput, itemCode: string): StorePro
     source,
     movement,
     cycleDays: mv?.cycleDays ?? null,
-    latestEnd: counts.length ? counts[counts.length - 1].period_end : null,
-    soldByMonth: source === 'sales' ? salesSold : countedSold,
-    cyclesInMonth,
+    latestEnd: itemLatest,
+    missingFromLatest,
+    soldByMonth: sold,
     stockByMonth,
     deliveryByMonth,
     countLines: [...counts].reverse().map((c) => ({
@@ -231,18 +282,33 @@ export function buildProductPage(stores: StoreProduct[], now: Date = new Date())
   lastReal.stockForecast = lastReal.stockEnd; // seeds the dotted line
 
   // Per-store projections from each store's current on hand, then added up.
+  // Each store runs down from its own last count: first the rest of the current month
+  // (a count on the 15th still has half a month of selling ahead), then the forecast.
+  const curEnd = Date.UTC(Number(cur.slice(0, 4)), Number(cur.slice(5, 7)), 0);
   const perStore = stores.map((s) => {
     const fc = storeForecast(s, future);
-    let stock = s.movement?.onHand ?? stockAt(s, cur);
+    let stock = s.movement?.onHand ?? null;
+    const v = s.movement?.velocity;
+    if (stock != null && v != null && s.cycleDays && s.latestEnd) {
+      const rest = Math.max(0, Math.round((curEnd - Date.parse(`${s.latestEnd}T00:00:00Z`)) / DAY));
+      stock = Math.max(0, Math.round(stock - (v / s.cycleDays) * rest));
+    }
+    const monthEnd = stock;
     const proj = fc.map((f) => {
       if (stock == null || f == null) return stock;
       stock = Math.max(0, stock - f);
       return stock;
     });
-    return {fc, proj};
+    return {fc, proj, monthEnd};
   });
   let runsOutMonthLabel: string | null = null;
   let before = lastReal.stockEnd;
+  // Runs out before the current month is over.
+  const curMonthEnd = sumOrNull(perStore.map((p) => p.monthEnd));
+  if (before != null && before > 0 && curMonthEnd === 0) {
+    lastReal.runsOut = true;
+    runsOutMonthLabel = monthShort(cur);
+  }
   future.forEach((m, k) => {
     const soldForecast = sumOrNull(perStore.map((p) => p.fc[k]));
     const stockForecast = soldForecast == null ? null : sumOrNull(perStore.map((p) => p.proj[k]));
@@ -334,6 +400,7 @@ export type ProductViewData = {
     suggestedOrder: number;
     deadStock: boolean;
     latestEnd: string | null;
+    missingFromLatest: boolean;
     source: SoldSource;
     registerCheck: boolean | null;
     countLines: CountLine[];
@@ -383,6 +450,7 @@ export function productView(item: ProductInfo, inputs: StoreInput[], requested: 
           suggestedOrder: single.movement?.suggestedOrder ?? 0,
           deadStock: single.movement?.deadStock ?? false,
           latestEnd: single.latestEnd,
+          missingFromLatest: single.missingFromLatest,
           source: single.source,
           registerCheck: single.registerCheck,
           countLines: single.countLines,

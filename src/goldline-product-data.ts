@@ -28,7 +28,7 @@ export async function getProductData(companyId: string, itemCode: string, storeS
   const since = addDays(today.toISOString().slice(0, 10), -HISTORY_DAYS);
   const scope = storeScope ? new Set(storeScope) : null;
 
-  const [product, storesRows, counts] = await Promise.all([
+  const [product, storesRows, counts, snaps] = await Promise.all([
     // pagination-ok: one row by primary key (company_id, item_code).
     supa
       .from('gl_products')
@@ -49,6 +49,16 @@ export async function getProductData(companyId: string, itemCode: string, storeS
       if (storeScope) q = q.in('store_code', storeScope);
       return q.order('id').range(from, to);
     }) as unknown as Promise<Array<ItemCount & {store_code: string}>>,
+    // Each store's latest count of any item — to tell "not on the latest count" from current.
+    fetchAllRows('gl_inventory_snapshots', (from, to) => {
+      let q = supa
+        .from('gl_inventory_snapshots') // pagination-ok: paged by fetchAllRows (.range below)
+        .select('store_code,period_end')
+        .eq('company_id', companyId)
+        .gte('period_end', since);
+      if (storeScope) q = q.in('store_code', storeScope);
+      return q.order('period_end', {ascending: false}).order('store_code').range(from, to);
+    }) as unknown as Promise<Array<{store_code: string; period_end: string}>>,
   ]);
   if (product.error) throw new Error(`gl_products read failed: ${product.error.message}`);
   const p = product.data as {sku_code: string | null; product_line: string | null; variant: string | null; unit_price: string | number | null; is_bestseller: boolean | null} | null;
@@ -79,6 +89,8 @@ export async function getProductData(companyId: string, itemCode: string, storeS
     salesBy.set(r.store_code, [...(salesBy.get(r.store_code) ?? []), {period_start: r.period_start, period_end: r.period_end, units: Number(r.units) || 0}]);
   }
   const nameOf = new Map(storesRows.map((s) => [s.store_code, s.name]));
+  const storeLatest = new Map<string, string>();
+  for (const s of snaps) if (!storeLatest.has(s.store_code) || s.period_end > (storeLatest.get(s.store_code) as string)) storeLatest.set(s.store_code, s.period_end);
   const codes = [...countsBy.keys()].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
 
   return {
@@ -95,6 +107,7 @@ export async function getProductData(companyId: string, itemCode: string, storeS
       storeName: nameOf.get(storeCode) ?? null,
       counts: countsBy.get(storeCode) ?? [],
       sales: sku ? (salesBy.get(storeCode) ?? []) : null,
+      storeLatestEnd: storeLatest.get(storeCode) ?? null,
     })),
   };
 }

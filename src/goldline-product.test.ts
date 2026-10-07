@@ -81,10 +81,12 @@ describe('buildProductPage', () => {
     expect(p.chart[2].stockForecast).toBe(9);
     const fc = p.chart.slice(3);
     expect(fc.every((m) => m.isForecast && (m.soldForecast ?? 0) > 0)).toBe(true);
+    // 9 on hand on Oct 15 at ~1.4/day: gone before October ends (the rest of the
+    // month is projected, not skipped), so the marker sits on OCT, once.
     expect(fc[0].stockForecast).toBe(0);
-    expect(fc[0].runsOut).toBe(true);
-    expect(fc.filter((m) => m.runsOut)).toHaveLength(1);
-    expect(p.runsOutMonthLabel).toBe('Nov');
+    expect(p.chart[2].runsOut).toBe(true);
+    expect(p.chart.filter((m) => m.runsOut)).toHaveLength(1);
+    expect(p.runsOutMonthLabel).toBe('Oct');
     expect(p.lastCountedWeeksAgo).toBe(0);
     expect(p.soldTable[0]).toMatchObject({month: '2026-10', sold: 19, partial: true});
     expect(p.soldTable[1].partial).toBe(false);
@@ -115,7 +117,10 @@ describe('buildProductPage', () => {
     );
     const p = buildProductPage([store(CUBAO), makati], NOW);
     expect(p.chart.slice(0, 3).map((m) => m.stockEnd)).toEqual([22, 38, 17]); // Sep: CUBAO 28 + MAKATI 10 (carried)
-    expect(p.chart[2].sold).toBe(21); // Oct: 19 + 2
+    // MAKATI's 2 units between Aug 31 and Oct 15 are spread over Sep and Oct (a missed
+    // count doesn't pile two cycles into one month).
+    expect(p.chart[1].sold).toBe(45); // Sep: 44 + 1
+    expect(p.chart[2].sold).toBe(20); // Oct: 19 + 1
     expect(p.chart[0].sold).toBe(38); // Aug: only CUBAO had a cycle
     const t = productTotals([store(CUBAO), makati]);
     expect(t.onHand).toBe(17);
@@ -193,5 +198,36 @@ describe('productView (store selection)', () => {
     const v = productView(info, [], null, NOW);
     expect(v.stores).toEqual([]);
     expect(v.chart).toEqual([]);
+  });
+});
+
+describe('review fixes', () => {
+  it('a count with no on-hand figure carries its delivery to the next count', () => {
+    const s = store([c('2026-09-01', '2026-09-15', 10), c('2026-09-16', '2026-09-30', null, 20), c('2026-10-01', '2026-10-15', 5)]);
+    const total = [...s.soldByMonth.values()].reduce((a, b) => a + b, 0);
+    expect(total).toBe(25); // 10 + 20 delivered − 5
+  });
+
+  it('an item missing from the store\'s latest count reads "not counted", not stale figures', () => {
+    const s = store(CUBAO, {storeLatestEnd: '2026-10-31'});
+    expect(s.missingFromLatest).toBe(true);
+    expect(s.movement).toMatchObject({status: 'not_counted', onHand: null, suggestedOrder: 0, coverDays: null});
+    expect(s.latestEnd).toBe('2026-10-15');
+    expect(store(CUBAO, {storeLatestEnd: '2026-10-15'}).missingFromLatest).toBe(false);
+  });
+
+  it('a B count (month closed) projects from the month end, no current-month runs-out', () => {
+    const s = store([c('2026-09-16', '2026-09-30', 100), c('2026-10-01', '2026-10-15', 90), c('2026-10-16', '2026-10-31', 80)]);
+    const p = buildProductPage([s], NOW);
+    expect(p.soldTable[0].partial).toBe(false);
+    expect(p.chart[2].runsOut).toBe(false);
+    expect(p.chart[3].stockForecast).toBeGreaterThan(0);
+  });
+
+  it('linked sales fill their months; counts fill the gaps', () => {
+    const s = store(CUBAO, {sales: [{period_start: '2026-09-01', period_end: '2026-09-30', units: 50}]});
+    expect(s.source).toBe('sales');
+    expect(s.soldByMonth.get('2026-09')).toBe(50); // register
+    expect(s.soldByMonth.get('2026-08')).toBe(38); // counts fallback
   });
 });
