@@ -10,6 +10,9 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Ask Coop fast path (Train 1)
+- **Ask Coop fast path (Train 1).** The per-turn context no longer calls contacts, free-form questions or stock unavailable when Explore is on (it did on every turn in PROD). The chat now sends the open page, and dashboard links pasted in a question are described from a page map, so "this" means the page's data. Explore can read stock (5 sources) with sellable Event stock as the default basis, because two kinds of "stock" exist and the dashboard forecast uses Event. Needs `supabase/coop_chat_explore.sql` re-applied on staging and PROD.
+
 ## 2026-10-07 — Goldline Inventory board: counts + forecast in one view, plus the warehouse
 - **Counts and Forecast are merged into one Inventory board** (`/stock`), built like Zoomy's Inventory page. The store picker includes **All stores (N)**. The old `/stock/forecast` redirects here and keeps its `?store=`.
 - **Columns:** Product · Status · Price · On hand (back room = stockroom + drawer · on display) · Trend · this month · last month · 3 months · **Lasts** (days, or months for slow movers) · **Need** · **Warehouse** · **Ship by** · ⋯.
