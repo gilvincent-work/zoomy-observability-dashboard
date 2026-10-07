@@ -133,3 +133,9 @@ select (select count(*) from spin_wheel_leads)::int as leads_count,
 -- @ref G25
 select pet, count(*)::int as leads_count from spin_wheel_leads
 where (collected_at at time zone 'Asia/Manila')::date = date '2026-09-27' group by 1 order by 2 desc, 1;
+
+-- @ref A07_pet_venue_event
+select e.venue as venue, e.name as event, coalesce(o.pet_type, 'untagged') as pet, count(*)::int as orders_count, sum(o.total)::numeric as revenue_php
+from pos_orders o join pos_events e on e.event_id = o.event_id
+where o.status = 'completed' and (e.venue ~* 'sm aura' or e.venue ~* 'circuit')
+group by 1, 2, 3 order by 1, 2, 3;

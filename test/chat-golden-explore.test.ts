@@ -19,9 +19,9 @@ const REFERENCE_SQL = readFileSync(new URL('../scripts/explore-golden-reference.
 const KEYS = parseReferenceSql(REFERENCE_SQL).map((b) => b.key);
 
 describe('EXP-03 the golden set is well formed', () => {
-  it('EXP-03 has the 25 questions G01..G25 once each, plus the regression R01 and the live-only variant G08b', () => {
+  it('EXP-03 has the 25 questions G01..G25 once each, plus the regression R01, the live-only variant G08b and the A7 pet-split case A07', () => {
     expect(GOLDEN_IDS_25).toEqual(Array.from({length: 25}, (_, i) => `G${String(i + 1).padStart(2, '0')}`));
-    expect(EXPLORE_GOLDEN.map((c) => c.id).filter((id) => !GOLDEN_IDS_25.includes(id)).sort()).toEqual(['G08b', 'R01']);
+    expect(EXPLORE_GOLDEN.map((c) => c.id).filter((id) => !GOLDEN_IDS_25.includes(id)).sort()).toEqual(['A07', 'G08b', 'R01']);
     expect(new Set(EXPLORE_GOLDEN.map((c) => c.id)).size).toBe(EXPLORE_GOLDEN.length);
   });
 

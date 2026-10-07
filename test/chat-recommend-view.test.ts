@@ -5,6 +5,7 @@ import {
 } from '../src/chat/recommend-view';
 import {bindBlock} from '../src/chat/bind';
 import {createRenderExecutors} from '../src/chat/render-executors';
+import {renderSkill} from '../src/chat/skills/load';
 import {createReportSession} from '../src/chat/report-session';
 import type {ChatBlock, ViewRequest} from '../src/chat/block-types';
 import type {ColumnRole, ColumnUnit, MetricResult, MetricRow, ResultColumn} from '../src/chat/result-types';
@@ -469,5 +470,15 @@ describe('EXP-07: two categories and one measure (PROD shape: venue, event, pet)
     const res = (await ex.render_chart?.({block: 'new', source: 'r1', kind: 'auto', orientation: 'auto', x: 'auto', y: ['auto'], title: 'Revenue by event and pet'})) as {chosen: {notes?: string[]}};
     expect(res.chosen.notes).toEqual(NOTES);
     expect(blocks[0].caveats).toEqual(expect.arrayContaining(NOTES));
+  });
+});
+
+describe('EXP-07: the skill text quotes the code\'s numbers', () => {
+  it('EXP-07: the explore skill states GROUPED_MAX_SERIES series and the UNTAGGED_NOTE_SHARE note threshold; the base skill does not', () => {
+    const text = renderSkill({explore: true});
+    expect(text).toContain(`grouped bars up to ${GROUPED_MAX_SERIES} series`);
+    expect(text).toContain(`over ${Math.round(UNTAGGED_NOTE_SHARE * 100)}% untagged`);
+    expect(text).toMatch(/\[EXP-08\] A claim about a group/);
+    expect(renderSkill()).not.toContain('EXP-07');
   });
 });
