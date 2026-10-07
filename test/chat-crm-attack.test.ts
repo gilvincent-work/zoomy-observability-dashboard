@@ -18,17 +18,24 @@ describe('no POST, no other method', () => {
   it('every request is GET, and the client takes no method', async () => {
     const {c, calls} = harness();
     for (const id of Object.keys(CRM_ENDPOINTS) as CrmEndpointId[]) await c.get(id);
+    const before = calls.length;
     // @ts-expect-error: get() has no third (init) parameter; a method cannot be passed
     await c.get('metrics', {}, {method: 'POST'}).catch(() => undefined);
+    expect(calls).toHaveLength(before); // the memoised read sent nothing, and no extra request carried the smuggled init
     expect(calls.map((x) => x.init.method)).toEqual(Array(Object.keys(CRM_ENDPOINTS).length).fill('GET'));
   });
-  it('the CRM code under src/chat has no other method, no admin path and no body', () => {
+  it('the CRM code under src/chat has no other HTTP verb, no admin path and no body; only client.ts calls fetch', () => {
     const files = loadDirs(process.cwd(), ['src']);
-    for (const f of Object.keys(files).filter((p) => p.startsWith('src/chat/crm/'))) {
+    const crm = Object.keys(files).filter((p) => p.startsWith('src/chat/crm/'));
+    expect(crm).toEqual(expect.arrayContaining(['src/chat/crm/client.ts', 'src/chat/crm/config.ts']));
+    for (const f of crm) {
       const code = strip(files[f], false);
-      expect(code, f).not.toMatch(/['"](POST|PUT|PATCH|DELETE)['"]/);
+      expect(code, f).not.toMatch(/['"](POST|PUT|PATCH|DELETE|HEAD|OPTIONS)['"]/i);
       expect(code, f).not.toMatch(/\/admin/);
-      expect(code, f).not.toMatch(/method\s*:\s*['"](?!GET['"])/);
+      expect(code, f).not.toMatch(/\bbody\s*:(?!\s*unknown\b)/);
+      // `method:` may only be followed by a quote (the GET literal, or a prose description in tools.ts, whose verbs the line above bans): never by a variable
+      expect(code, f).not.toMatch(/\bmethod\s*:\s*[^'"\s]/);
+      if (f !== 'src/chat/crm/client.ts') expect(code, f).not.toMatch(/\b(fetch|XMLHttpRequest|WebSocket|sendBeacon)\s*\(/);
     }
   });
 });
@@ -72,15 +79,16 @@ describe('the token never leaks', () => {
     expect((calls[0].init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`);
   });
   it('a redirect attempt, an echoing 401 and a network error all end as codes without the token or the host', async () => {
-    const respond = [
-      () => { throw new TypeError(`redirect to https://evil.example/?t=${TOKEN}`); },
-      () => new Response(`bad token ${TOKEN}`, {status: 401}),
-      () => new Response(`{"echo":"${TOKEN}"`, {status: 200}),
+    const respond: [() => Response, string][] = [
+      [() => { throw new TypeError(`redirect to https://evil.example/?t=${TOKEN}`); }, 'unreachable'],
+      [() => new Response(`bad token ${TOKEN}`, {status: 401}), 'upstream_error'],
+      [() => new Response(`{"echo":"${TOKEN}"`, {status: 200}), 'bad_shape'],
     ];
-    for (const r of respond) {
+    for (const [r, want] of respond) {
       const {c} = harness(r);
       const e = await c.get('customers').catch((x: unknown) => x);
       expect(e).toBeInstanceOf(CrmError);
+      expect((e as CrmError).code).toBe(want);
       expect(`${String(e)} ${(e as Error).stack ?? ''} ${JSON.stringify(e)}`).not.toMatch(/SECRET|evil\.example|crm\.example/);
     }
   });
