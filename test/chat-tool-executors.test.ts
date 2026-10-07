@@ -138,7 +138,7 @@ describe('statusFor', () => {
     expect(statusFor('set_report_filters', {pet: 'cat'})).toBe('Updating the dashboard filters');
     expect(statusFor('remove_block', {block: 'b1'})).toBe('Removing a block');
     expect(statusFor('set_report_title', {title: 'Secret'})).toBe('Renaming the dashboard');
-    expect(statusFor('get_digest', {window: 'latest', section: 'comparison'})).toBe('Reading the weekly digest');
+    expect(statusFor('get_digest', {window: 'latest', section: 'comparison'})).toBe('Reading a stored digest');
     expect(statusFor('lookup_product', {query: 'SECRET-SKU', show: 'details'})).toBe('Looking up a product');
     for (const bad of [null, undefined, 5, 'x', {metric: 'drop table'}, {metric: '__proto__'}, {metric: 'constructor'}]) {
       expect(statusFor('query_metric', bad)).toBe('Working on it');

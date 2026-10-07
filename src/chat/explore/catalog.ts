@@ -166,7 +166,7 @@ const eventLeads: ViewDoc = {
 };
 
 const digest: ViewDoc = {
-  about: 'Stored weekly digests (jsonb).',
+  about: 'Stored digests (jsonb); one row per run, windows vary (weekly or about a month).',
   grain: EXPLORE_VIEWS.coop_explore_digest.grain,
   columns: {
     id: col('digest id'),

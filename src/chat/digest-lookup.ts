@@ -5,7 +5,9 @@
 import {formatPeso} from '../pos-format';
 import {manilaDayKey} from '../pos-sales-compute';
 import type {DigestFigure} from '../types';
+import {dedupeReruns, nearestWindows, pickCovering, sameWindow, windowDays, windowLabel, windowOf, type CoverPick, type DigestWindow} from '../digest-windows';
 import {phtDate} from './coverage';
+import {rangeLabel} from './range';
 import type {DigestRow} from './read/digest';
 import type {Check, MeasureDecl, MetricData, MetricError, MetricResult, MetricRow, ResultColumn} from './result-types';
 
@@ -24,15 +26,20 @@ const col = (key: string, label: string, unit: ResultColumn['unit'], role: Resul
 
 // ---- get_digest -----------------------------------------------------------------------------------------------------
 
-export const DIGEST_WINDOWS = ['latest', 'previous', 'recent_weeks'] as const;
+export const DIGEST_WINDOWS = ['latest', 'previous', 'recent_weeks', 'covering'] as const;
 export const DIGEST_SECTIONS = ['comparison', 'figures', 'sales', 'customers', 'shopee', 'lazada', 'products', 'weekly_revenue'] as const;
 export type DigestSection = (typeof DIGEST_SECTIONS)[number];
-/** A stored digest this old or older (days since its window ended) is flagged as stale. A weekly digest plus two days of grace. */
+/** A stored digest this old or older (days since its window ended) is flagged as stale. The newest PROD digests are weekly (2026-10-07): a week plus two days of grace. */
 export const DIGEST_STALE_DAYS = 9;
 
 export interface DigestSource {
   source: 'live' | 'mock';
+  /** The newest DIGEST_ROW_LIMIT digests with their documents, newest first. */
   rows: DigestRow[];
+  /** Every stored window (a narrow read), newest first. Absent: the windows of `rows`. */
+  index?: DigestWindow[];
+  /** Loads one full digest that is not in `rows` (an older one). Absent: only `rows` can be read. */
+  rowAt?: (w: DigestWindow) => Promise<DigestRow | null>;
 }
 
 const FIGURE_COLUMNS: ResultColumn[] = [
@@ -146,13 +153,13 @@ const PUBLISHED: MeasureDecl = {
   label: 'Published figure',
   kind: 'measured',
   unit: 'text',
-  method: 'Figures exactly as published in the stored weekly digest; nothing is recomputed. A figure with a time basis of all time is not for this window.',
+  method: 'Figures exactly as published in the stored digest for its window; nothing is recomputed. A figure with a time basis of all time is not for this window.',
 };
 
 export interface DigestResult {
   result: MetricResult;
   headline: string;
-  window: {label: string; from: string; to: string; which: 'latest' | 'previous'};
+  window: {label: string; from: string; to: string; which: 'latest' | 'previous' | 'covering'};
 }
 
 /** Completed offline POS revenue for a date range, or null when there is no POS data for it. Injected so this file stays pure. */
@@ -252,23 +259,65 @@ function weeklyRevenue(src: DigestSource, now: Date, offline: OfflineRevenueFor 
   return {result, headline: '', window: {label, from: first, to: lastEnd, which: 'latest'}};
 }
 
+const NOT_STORED = 'No stored digest is available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric; Shopee, Lazada and Website figures cannot be answered without it.';
+
+/** Newest first with re-runs removed, so "previous" is never a re-run of "latest". */
+const ordered = (src: DigestSource): DigestRow[] => dedupeReruns(src.rows, windowOf);
+const indexOf = (src: DigestSource): DigestWindow[] => src.index ?? ordered(src).map(windowOf);
+
+/** The owner's day or range for window "covering", or an error. `to` may be "" for one day. */
+function coveringDays(o: Rec): {fromDay: string; toDay: string} | MetricError {
+  const from = text(o.from);
+  const to = text(o.to) || from;
+  if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) {
+    return fail('window "covering" needs the owner\'s date or dates: from (and to for a range, or "" for one day) as YYYY-MM-DD in Philippine time. Ask the owner if they gave none; do not pick dates yourself.');
+  }
+  if (from > to) return fail('from is after to. Ask the owner for the dates again.');
+  return {fromDay: from, toDay: to};
+}
+
+/** The window a "covering" request picks, or null. The executor uses it to load an older row before shaping. */
+export function coveringWindow(input: unknown, src: DigestSource): DigestWindow | null {
+  const o = isRec(input) ? input : {};
+  if (o.window !== 'covering') return null;
+  const days = coveringDays(o);
+  return 'error' in days ? null : (pickCovering(indexOf(src), days.fromDay, days.toDay)?.window ?? null);
+}
+
 export function shapeDigest(input: unknown, src: DigestSource | null, now: Date, offline: OfflineRevenueFor | null = null): DigestResult | MetricError {
   const o = isRec(input) ? input : {};
   if (typeof o.window !== 'string' || !(DIGEST_WINDOWS as readonly string[]).includes(o.window)) return fail(`window ${JSON.stringify(o.window ?? null)} is not allowed. Allowed values for window: ${list(DIGEST_WINDOWS)}.`);
   if (typeof o.section !== 'string' || !(DIGEST_SECTIONS as readonly string[]).includes(o.section)) return fail(`section ${JSON.stringify(o.section ?? null)} is not allowed. Allowed values for section: ${list(DIGEST_SECTIONS)}.`);
   const section = o.section as DigestSection;
-  if ((o.window === 'recent_weeks') !== (section === 'weekly_revenue')) return fail('window "recent_weeks" and section "weekly_revenue" go together: use both for a week-by-week series, or "latest"/"previous" with any other section.');
+  if ((o.window === 'recent_weeks') !== (section === 'weekly_revenue')) return fail('window "recent_weeks" and section "weekly_revenue" go together: use both for a week-by-week series, or "latest", "previous" or "covering" with any other section.');
   if (o.window === 'recent_weeks') {
-    if (!src || src.rows.length === 0) return fail('The weekly digest is not available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric.');
+    if (!src || src.rows.length === 0) return fail('No stored digest is available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric.');
     return weeklyRevenue(src, now, offline, o.from, o.to);
   }
-  const which = o.window as 'latest' | 'previous';
+  const which = o.window as DigestResult['window']['which'];
+  if (!src || src.rows.length === 0) return fail(NOT_STORED);
+  const rows = ordered(src);
 
-  if (!src || src.rows.length === 0) {
-    return fail('The weekly digest is not available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric; Shopee, Lazada and Website figures cannot be answered without it.');
+  let row: DigestRow | undefined;
+  let pick: CoverPick | null = null;
+  let asked: {fromDay: string; toDay: string} | null = null;
+  if (which === 'covering') {
+    const days = coveringDays(o);
+    if ('error' in days) return days;
+    asked = days;
+    const index = indexOf(src);
+    pick = pickCovering(index, days.fromDay, days.toDay);
+    if (!pick) {
+      const near = nearestWindows(index, days.fromDay, days.toDay).map(windowLabel);
+      return fail(`No stored digest covers ${rangeLabel(days.fromDay, days.toDay)}. The nearest stored windows are: ${near.join('; ')}. Say so plainly and offer one of them.`);
+    }
+    const want = pick.window;
+    row = rows.find((r) => sameWindow(windowOf(r), want)) ?? src.rows.find((r) => sameWindow(windowOf(r), want));
+    if (!row) return fail(`The digest for ${windowLabel(want)} could not be loaded. Say so plainly and try again in a moment.`);
+  } else {
+    row = which === 'latest' ? rows[0] : rows[1];
+    if (!row) return fail('Only one digest is stored, so there is no previous window. Use window "latest".');
   }
-  const row = which === 'latest' ? src.rows[0] : src.rows[1];
-  if (!row) return fail('Only one weekly digest is stored, so there is no previous window. Use window "latest".');
 
   const doc = row.digest as unknown as Rec;
   const built = sectionOf(doc, section);
@@ -277,22 +326,23 @@ export function shapeDigest(input: unknown, src: DigestSource | null, now: Date,
     return fail(`The ${which} digest has no ${section} section. Sections it has: ${have.length ? list(have) : 'none'}.`);
   }
 
-  const w = isRec(doc.window) ? doc.window : {};
-  const from = dayOf(text(w.from) || row.window_from);
-  const to = dayOf(text(w.to) || row.window_to);
-  const label = text(w.label) || `${from} to ${to}`;
+  const days = windowDays(windowOf(row));
+  const from = days.min;
+  const to = days.max;
+  const label = windowLabel(windowOf(row));
 
   // Staleness is judged on the NEWEST stored digest: if even that is old, every window here is old.
-  const newest = src.rows[0];
-  const newestDoc = isRec(newest.digest) ? (newest.digest as unknown as Rec) : {};
-  const newestTo = dayOf((isRec(newestDoc.window) ? text(newestDoc.window.to) : '') || newest.window_to);
+  const newestTo = windowDays(windowOf(rows[0])).max;
   const age = daysBetween(newestTo, phtDate(now));
 
   const checks: Check[] = [];
   if (src.source === 'mock') checks.push({code: 'mock_source', status: 'warn', text: 'These are built-in sample digests, not real figures.'});
   if (age >= DIGEST_STALE_DAYS) checks.push({code: 'partial_coverage', status: 'warn', text: `The newest stored digest ended ${newestTo}, ${age} days ago, so anything since is not in it. For recent offline sales use query_metric.`, values: {newest_ended: newestTo, days_ago: age}});
   if (doc.degraded === true) checks.push({code: 'partial_coverage', status: 'warn', text: 'This digest is marked degraded: some sources were missing when it was built.'});
-  checks.push({code: 'partial_coverage', status: 'info', text: `This is the ${label} digest (${from} to ${to}) as published. It is one reporting window, not a full month or a custom range, and nothing is recomputed.`, values: {from, to}});
+  if (pick && asked && !pick.full) {
+    checks.push({code: 'partial_coverage', status: 'warn', text: `You asked about ${rangeLabel(asked.fromDay, asked.toDay)}; this digest covers ${rangeLabel(pick.covered.fromDay, pick.covered.toDay)} of it (its window is ${label}). Say so before any figure.`, values: {from: pick.covered.fromDay, to: pick.covered.toDay}});
+  }
+  checks.push({code: 'partial_coverage', status: 'info', text: `This is the digest for ${label} as published. Digests vary in length (weekly or about a month); this one is a single stored window, not a full month or a custom range, and nothing is recomputed. Name this window in the answer.`, values: {from, to}});
 
   const result: MetricResult = {
     id: '',

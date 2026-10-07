@@ -99,10 +99,13 @@ export function relationsForMode(mode: ChatReadMode): ChatRelationSet {
   return {tables: r.tables, columns: r.columns, allowed: Object.freeze(Object.values(r.tables))};
 }
 
-// The weekly digest (F10). A separate, single-relation allowlist: the digest client may read this and nothing else, and
+// The stored digests (F10). A separate, single-relation allowlist: the digest client may read this and nothing else, and
 // only these columns. ro_role reads a dashboard-owned definer view (supabase/coop_chat_digest.sql) that has no `bundle`;
 // guarded_service reads digest_archive with the same explicit column list (the guard refuses `bundle` and `*`).
 export const DIGEST_COLUMNS = 'window_from,window_to,digest,created_at';
+
+/** The window index (spec F.5): a narrow read of every stored window, no JSON. */
+export const DIGEST_INDEX_COLUMNS = 'window_from,window_to,created_at';
 
 export const DIGEST_RELATIONS = Object.freeze({
   ro_role: 'coop_chat_digest',

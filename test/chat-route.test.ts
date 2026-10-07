@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   session: null as null | {user: {email: string | null}},
   authCalls: 0,
   digests: [] as unknown[],
+  digestIndex: [] as {from: string; to: string; createdAt: string}[],
   getDigestsCalls: 0,
   live: {ok: false, reason: 'not set up'} as {ok: true; data: unknown} | {ok: false; reason: string},
   onLoad: null as null | (() => void),
@@ -52,6 +53,7 @@ vi.mock('@/src/chat/server', () => ({
     return h.live;
   },
   getChatDigest: async () => ({source: 'live', rows: []}),
+  getChatDigestIndex: async () => h.digestIndex,
 }));
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class FakeAnthropic {
@@ -128,6 +130,7 @@ beforeEach(() => {
   h.session = USER;
   h.authCalls = 0;
   h.digests = [];
+  h.digestIndex = [];
   h.getDigestsCalls = 0;
   h.live = {ok: true, data: goldenData()};
   h.onLoad = null;
@@ -341,6 +344,17 @@ describe('POST /api/chat: live mode (no digest, no period)', () => {
     await drain(await post(ask('hi', {week: '2026-06-01', home: false})));
     expect(h.getDigestsCalls).toBe(0);
     expect(systemOf(lastRequest())[1].text).toBe(buildLiveContextBlock());
+  });
+
+  it('F.5: lists the stored digest windows in the per-turn preamble, never in the cached system', async () => {
+    h.digestIndex = [
+      {from: '2026-09-27T16:00:00+00:00', to: '2026-10-04T16:00:00+00:00', createdAt: '2026-10-05T01:00:00+00:00'},
+      {from: '2026-08-01T00:00:00+00:00', to: '2026-09-01T00:00:00+00:00', createdAt: '2026-09-01T02:00:00+00:00'},
+    ];
+    await drain(await post(ask('September sales per channel?')));
+    const last = messagesOf(lastRequest()).at(-1)?.content as Block[];
+    expect(last[0].text).toContain('Sep 28 to Oct 4, 2026; Aug 1, 2026 08:00 to Sep 1, 2026 08:00 (PH time)');
+    expect(JSON.stringify(systemOf(lastRequest()))).not.toContain('[digests]');
   });
 
   it('the tools are the ten read-only tools, with tool_choice auto', async () => {

@@ -37,7 +37,7 @@ export interface ToolDefinition {
 /** What the tool executors need. `data` may be loaded lazily and is cached by the caller. */
 export interface ChatToolContext {
   data: () => Promise<import('./result-types').MetricData>;
-  /** F10: the stored weekly digests, loaded lazily through the digest adapter. Absent means get_digest says it is unavailable. */
+  /** F10: the stored digests, loaded lazily through the digest adapter. Absent means get_digest says it is unavailable. */
   digest?: () => Promise<import('./digest-lookup').DigestSource>;
   now: Date;
   user: string | null;

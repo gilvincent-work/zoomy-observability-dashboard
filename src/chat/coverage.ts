@@ -43,7 +43,7 @@ export function buildCoverage(data: MetricData): CoverageSummary {
 export const UNAVAILABLE: readonly {what: string; why: string}[] = Object.freeze([
   {what: 'Traffic', why: 'The Traffic page shows sample data, not real figures.'},
   {what: 'Meta ads', why: 'Not connected.'},
-  {what: 'Shopee, Lazada and Website sales', why: 'Only in the weekly digest; not queryable yet.'},
+  {what: 'Shopee, Lazada and Website sales', why: 'Only in the stored digests; not queryable yet.'},
   {what: 'Customer-level data', why: 'Not exposed; only totals are available.'},
   {what: 'Anything before the first order date', why: 'There is no data before the first order.'},
 ]);
@@ -51,7 +51,7 @@ export const UNAVAILABLE: readonly {what: string; why: string}[] = Object.freeze
 /** With Explore on, contacts and leads are reachable through run_query, so the contact caveat goes and the digest-only wording drops "not queryable yet". */
 const unavailableFor = (explore: boolean): {what: string; why: string}[] =>
   UNAVAILABLE.filter((u) => !(explore && u.what === 'Customer-level data')).map((u) =>
-    explore && u.what.startsWith('Shopee') ? {...u, why: 'Only in the weekly digest (get_digest).'} : {...u});
+    explore && u.what.startsWith('Shopee') ? {...u, why: 'Only in the stored digests (get_digest).'} : {...u});
 
 export interface DescribeDataResult {
   today: string;

@@ -1,7 +1,8 @@
 // F5 + F7 + F8 + F10: executors for describe_data, query_metric, get_digest, lookup_product, the three render tools and the three report-edit tools, and the progress line for the stream.
 // Pure; data loads lazily. query_metric keeps the FULL result in a per-request store that the render tools bind from.
 import {describeData} from './coverage';
-import {lookupProduct, shapeDigest} from './digest-lookup';
+import {coveringWindow, lookupProduct, shapeDigest, type DigestSource} from './digest-lookup';
+import {sameWindow, windowOf} from '../digest-windows';
 import {METRICS} from './metrics-registry';
 import {createRenderExecutors, type RenderExecutors} from './render-executors';
 import {createReportSession} from './report-session';
@@ -39,11 +40,17 @@ export function createExecutors(ctx: ChatToolContext): ChatExecutors {
     // F10. These results are stored for the render tools but have no MetricRequest recipe, so a block drawn from one is shown in
     // the chat and is not recorded into a saved report (nothing could re-run it).
     get_digest: async (input) => {
-      let source: Awaited<ReturnType<NonNullable<ChatToolContext['digest']>>> | null = null;
+      let source: DigestSource | null = null;
       try {
         source = ctx.digest ? await ctx.digest() : null;
       } catch {
         source = null; // an unreadable digest is "not available", never a crash
+      }
+      // "covering" may pick a digest older than the loaded ones: load that one row first (a narrow, cached read).
+      const want = source ? coveringWindow(input, source) : null;
+      if (source && want && source.rowAt && !source.rows.some((r) => sameWindow(windowOf(r), want))) {
+        const extra = await source.rowAt(want).catch(() => null);
+        if (extra) source = {...source, rows: [...source.rows, extra]};
       }
       // The week-by-week series adds Offline POS for the same dates, so it needs the POS data (loaded lazily, only here).
       const wantsOffline = typeof input === 'object' && input !== null && (input as {window?: unknown}).window === 'recent_weeks';
@@ -100,7 +107,7 @@ export function statusFor(name: string, input: unknown): string {
     }
   }
   if (name === 'run_query') return 'Running an exploratory query'; // constant: never echoes the SQL
-  if (name === 'get_digest') return 'Reading the weekly digest';
+  if (name === 'get_digest') return 'Reading a stored digest';
   if (name === 'lookup_product') return 'Looking up a product';
   if (name === 'render_kpi') return 'Adding a tile';
   if (name === 'render_chart') return 'Drawing a chart';

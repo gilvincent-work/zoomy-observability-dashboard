@@ -42,7 +42,7 @@ function trendRow(row: DigestArchiveRow): string {
 function homeText(): string {
   return [
     '## Mode: getting started (home screen)',
-    'The user is on the Coop home screen and has NOT opened a specific reporting period or channel yet, so no weekly digest is loaded right now. Do NOT cite or invent any Shopee, Lazada or Website figures.',
+    'The user is on the Coop home screen and has NOT opened a specific reporting period or channel yet, so no digest is loaded right now. Do NOT cite or invent any Shopee, Lazada or Website figures.',
     'You CAN answer questions about offline POS sales (revenue, orders, products, bundles, payments, pets, events) with your tools. For anything else, orient them and point them to where they can act:',
     '- Open **Sales** to see the unified cross-channel comparison (Shopee · Lazada · Website): revenue, orders, AOV, units, ad spend and ROAS, plus top products and recommended actions.',
     '- Use the **reporting-period picker** in the top bar to choose a timeframe.',
@@ -52,9 +52,9 @@ function homeText(): string {
 }
 
 // Degraded mode (the live-data path is not available, e.g. production before the read-only database role is applied):
-// no tools are sent and no POS data is read, so Coop answers from the weekly digest only.
+// no tools are sent and no POS data is read, so Coop answers from the digest only.
 const NO_TOOLS_NOTICE =
-  'Live offline POS data is not available right now and you have no tools. Answer only from the weekly digest below. If asked about offline POS sales, products, bundles, payments or events, say plainly that this data is not available right now and offer what the digest can answer.';
+  'Live offline POS data is not available right now and you have no tools. Answer only from the digest below. If asked about offline POS sales, products, bundles, payments or events, say plainly that this data is not available right now and offer what the digest can answer.';
 
 /**
  * The STATIC, cached part of the system prompt: persona, guardrails, output format, brand knowledge and the metric
@@ -97,7 +97,7 @@ export function buildDigestBlock(rows: DigestArchiveRow[], week?: string, opts?:
 
   const lines = [
     `## Selected period: ${range}`,
-    'Weekly digest for this period (Shopee, Lazada and Website figures live here; offline POS figures come from tools):',
+    'Digest for this period (Shopee, Lazada and Website figures live here; offline POS figures come from tools):',
     '```json',
     current ? JSON.stringify(current.digest) : '{}',
     '```',
@@ -109,7 +109,7 @@ export function buildDigestBlock(rows: DigestArchiveRow[], week?: string, opts?:
 }
 
 /**
- * Live mode (tools available): NO period is pre-selected and no digest is loaded. The owner defines the dates; weekly digests
+ * Live mode (tools available): NO period is pre-selected and no digest is loaded. The owner defines the dates; stored digests
  * are reachable only through get_digest, and only for the weeks that exist. Static text, so it is cache-friendly.
  */
 export function buildLiveContextBlock(opts: {explore?: boolean} = {}): string {
@@ -118,8 +118,8 @@ export function buildLiveContextBlock(opts: {explore?: boolean} = {}): string {
     opts.explore
       ? 'No reporting period is selected for you: the owner chooses the dates. If a question asks for a figure for a period and names none, ask which dates before using any tool. Exception: a ranking, profile or "most/least" question with no period means all available data; run it over the whole range, say so in the answer, and offer a narrower period.'
       : 'No reporting period is selected for you: the owner chooses the dates. If a question has no period, ask which dates before using any tool.',
-    'Offline POS figures come from query_metric for any dates the data covers. Shopee, Lazada and Website figures come from get_digest and exist only for the weeks that have a stored weekly digest: say which weeks are missing instead of guessing.',
-    'On the home screen, if asked what you can do, list what you can answer (offline POS metrics for any dates, weekly channel digests, dashboards and charts) and ask what they want to see and for which dates.',
+    'Offline POS figures come from query_metric for any dates the data covers. Shopee, Lazada and Website figures come from the stored digests (get_digest reads one window as published); digest windows vary in length (weekly or about a month) and are listed in the per-turn context: name the window you used and say which dates no digest covers instead of guessing.',
+    'On the home screen, if asked what you can do, list what you can answer (offline POS metrics for any dates, channel digests by date, dashboards and charts) and ask what they want to see and for which dates.',
   ].join('\n');
 }
 

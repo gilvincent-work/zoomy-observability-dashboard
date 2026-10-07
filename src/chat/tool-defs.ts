@@ -83,18 +83,18 @@ const runQuery: ToolDefinition = {
 const getDigest: ToolDefinition = {
   name: 'get_digest',
   description:
-    'Read the stored WEEKLY DIGEST: Shopee, Lazada and Website figures (revenue, orders, ad spend, ROAS, top products, customers), published once a week. ' +
-    'Call it for any question about Shopee, Lazada or the website, or a channel comparison, that the digest in the conversation does not already answer, and for the previous week. ' +
-    'It returns a result id you can pass to render_table or render_chart; the figures are as published and every row says its time basis (never present an all-time figure as this week). ' +
+    'Read ONE stored DIGEST as published: Shopee, Lazada and Website figures (revenue, orders, ad spend, ROAS, top products, customers) for that digest\'s window. Digest windows vary in length (weekly or about a month); the stored windows are listed in the per-turn context. ' +
+    'Call it for a question about Shopee, Lazada or the website, or a channel comparison, in one window. Use window "covering" with the owner\'s date (from, and to for a range) to read the digest that covers it or overlaps it most; "latest" and "previous" read the newest two. ' +
+    'It returns a result id you can pass to render_table or render_chart; the figures are as published, every row says its time basis (never present an all-time figure as this week), and you must name the window it used. ' +
     'For offline POS sales use query_metric instead. Use "comparison" for Lazada vs Shopee vs Website. ' +
-    'For a WEEK-BY-WEEK comparison of online channels and offline sales use window "recent_weeks" with section "weekly_revenue" (one row per stored weekly digest, Offline POS added for the same weeks), pass the dates the owner gave in from and to (ask if they gave none), then ONE render_chart (line when the owner asks for a line, else auto); say which weeks have no online figures.',
+    'For a WEEK-BY-WEEK comparison of online channels and offline sales use window "recent_weeks" with section "weekly_revenue" (one row per week, online figures only for weeks with a stored digest, Offline POS added for the same weeks), pass the dates the owner gave in from and to (ask if they gave none), then ONE render_chart (line when the owner asks for a line, else auto); say which weeks have no online figures.',
   strict: true,
   input_schema: {
     type: 'object',
     properties: {
-      window: {type: 'string', enum: [...DIGEST_WINDOWS], description: '"latest" is the newest stored weekly digest, "previous" the one before it, "recent_weeks" the recent weeks as a series (only with section "weekly_revenue").'},
-      from: {type: 'string', description: 'First date as YYYY-MM-DD, ONLY for window "recent_weeks" (the owner\'s own start date; ask them if they gave none). Otherwise "".'},
-      to: {type: 'string', description: 'Last date as YYYY-MM-DD, ONLY for window "recent_weeks" (the owner\'s own end date). Otherwise "".'},
+      window: {type: 'string', enum: [...DIGEST_WINDOWS], description: '"covering" reads the stored digest that covers the owner\'s date or range (pass from and to); "latest" the newest stored digest; "previous" the one before it; "recent_weeks" the recent weeks as a series (only with section "weekly_revenue").'},
+      from: {type: 'string', description: 'First date as YYYY-MM-DD, ONLY for window "covering" or "recent_weeks" (the owner\'s own date; ask them if they gave none). Otherwise "".'},
+      to: {type: 'string', description: 'Last date as YYYY-MM-DD for a range ("" for one day with "covering"), ONLY for window "covering" or "recent_weeks". Otherwise "".'},
       section: {type: 'string', enum: [...DIGEST_SECTIONS], description: '"comparison" is one row per channel; "figures", "sales" and "customers" are the digest\'s own figure lists; "shopee" and "lazada" their marketplace figures; "products" the top products per channel.'},
     },
     required: ['window', 'section', 'from', 'to'],

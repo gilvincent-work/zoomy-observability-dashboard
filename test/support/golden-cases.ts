@@ -49,8 +49,8 @@ const digestDoc = (over: Partial<DigestDocument> = {}): DigestDocument => ({
 export const GOLDEN_DIGEST: DigestSource = {
   source: 'live',
   rows: [
-    {window_from: '2026-09-21T00:00:00+00:00', window_to: '2026-09-27T23:59:59+00:00', created_at: '2026-09-28T01:00:00+00:00', digest: digestDoc()},
-    {window_from: '2026-09-14T00:00:00+00:00', window_to: '2026-09-20T23:59:59+00:00', created_at: '2026-09-21T01:00:00+00:00', digest: digestDoc({headline: 'Quieter.', window: {label: 'week of Sep 14 to 20', from: '2026-09-14T00:00:00.000Z', to: '2026-09-20T23:59:59.000Z'}})},
+    {window_from: '2026-09-20T16:00:00+00:00', window_to: '2026-09-27T16:00:00+00:00', created_at: '2026-09-28T01:00:00+00:00', digest: digestDoc()},
+    {window_from: '2026-09-13T16:00:00+00:00', window_to: '2026-09-20T16:00:00+00:00', created_at: '2026-09-21T01:00:00+00:00', digest: digestDoc({headline: 'Quieter.', window: {label: 'week of Sep 14 to 20', from: '2026-09-13T16:00:00.000Z', to: '2026-09-20T16:00:00.000Z'}})},
   ],
 };
 

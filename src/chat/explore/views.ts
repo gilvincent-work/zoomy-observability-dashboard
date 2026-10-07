@@ -70,7 +70,7 @@ export const EXPLORE_VIEWS = {
   },
   coop_explore_digest: {
     source: 'digest_archive',
-    grain: 'one row per weekly digest window',
+    grain: 'one row per stored digest run (windows vary: weekly or about a month)',
     columns: ['id', 'window_from', 'window_to', 'bundle', 'digest', 'created_at'],
     optionalColumns: [],
     types: {id: 'uuid', window_from: 'timestamptz', window_to: 'timestamptz', bundle: 'jsonb', digest: 'jsonb', created_at: 'timestamptz'},
