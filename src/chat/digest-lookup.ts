@@ -7,7 +7,7 @@ import {manilaDayKey} from '../pos-sales-compute';
 import type {DigestFigure} from '../types';
 import {dedupeReruns, nearestWindows, pickCovering, sameWindow, windowDays, windowLabel, windowOf, type CoverPick, type DigestWindow} from '../digest-windows';
 import {phtDate} from './coverage';
-import {rangeLabel} from './range';
+import {isRealDay, rangeLabel} from './range';
 import type {DigestRow} from './read/digest';
 import type {Check, MeasureDecl, MetricData, MetricError, MetricResult, MetricRow, ResultColumn} from './result-types';
 
@@ -175,6 +175,7 @@ function coveringDays(o: Rec): {fromDay: string; toDay: string} | MetricError {
   if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) {
     return fail('window "covering" needs the owner\'s date or dates: from (and to for a range, or "" for one day) as YYYY-MM-DD in Philippine time. Ask the owner if they gave none; do not pick dates yourself.');
   }
+  for (const d of [from, to]) if (!isRealDay(d)) return fail(`${d} is not a real date; ask the owner for the dates again.`);
   if (from > to) return fail('from is after to. Ask the owner for the dates again.');
   return {fromDay: from, toDay: to};
 }
