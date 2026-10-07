@@ -3,8 +3,10 @@ import {getDataContext} from '@/src/active-context';
 import {canEditData, outOfScopeStores} from '@/src/company';
 import {classifyUpload} from '@/src/goldline-upload';
 import {parseGoldlinePos} from '@/src/goldline-csv';
+import {PDFDocument} from 'pdf-lib';
 import {
   createUpload,
+  getBatch,
   goldlineConfigured,
   saveExtraction,
   setUploadStatus,
@@ -147,6 +149,41 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
 
   const bytes = await file.arrayBuffer();
 
+  // Optional batch: one store's form uploaded together. Must be this company's and open.
+  const batchRaw = form.get('batch_id');
+  const batchId = typeof batchRaw === 'string' && /^[0-9a-f-]{36}$/i.test(batchRaw) ? batchRaw : null;
+  if (batchRaw && !batchId) return json({error: 'Invalid upload batch.'}, 400);
+  // Batches hold one store's inventory form; a CSV never joins one.
+  if (batchId && cls.kind === 'inventory_pdf') {
+    const batch = await getBatch(companyId, batchId);
+    if (!batch) return json({error: 'Upload batch not found.'}, 404);
+    if (batch.status !== 'open') return json({error: 'This upload batch is already committed.'}, 409);
+    if (batch.store_code && outOfScopeStores(ctx.storeScope, [batch.store_code]).length) {
+      return json({error: `Store ${batch.store_code} is outside your access.`}, 403);
+    }
+  }
+
+  // One page per PDF upload. The uploader splits multi-page PDFs in the browser; any
+  // other caller gets a clear refusal instead of pages 2+ being silently skipped.
+  if (cls.kind === 'inventory_pdf') {
+    let pages = 1;
+    try {
+      const doc = await PDFDocument.load(bytes, {ignoreEncryption: true, updateMetadata: false});
+      if (doc.isEncrypted) {
+        return json({error: 'This PDF is password-protected. Save an unlocked copy and upload that.', status: 'rejected'}, 415);
+      }
+      pages = doc.getPageCount();
+    } catch {
+      return json({error: 'This PDF couldn’t be opened — it may be damaged. Please re-scan it.', status: 'rejected'}, 415);
+    }
+    if (pages > 1) {
+      return json(
+        {error: `This PDF has ${pages} pages. Upload it from the Uploads page, which splits it into pages automatically.`, status: 'rejected'},
+        422,
+      );
+    }
+  }
+
   let uploadId: string;
   try {
     uploadId = await createUpload({
@@ -156,12 +193,23 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
       bytes,
       contentType: cls.contentType,
       uploadedBy,
+      batchId: cls.kind === 'inventory_pdf' ? batchId : null,
     });
   } catch (e) {
     console.error('goldline upload: store failed', e);
     return json({error: 'Could not store the file — please try again.'}, 500);
   }
   track.uploadId = uploadId;
+  // The batch may have been committed while this page was uploading; a page added
+  // after that could never be committed, so stop here with a clear reason.
+  if (batchId && cls.kind === 'inventory_pdf') {
+    const now = await getBatch(companyId, batchId);
+    if (!now || now.status !== 'open') {
+      const reason = 'This store’s form was committed while this page was uploading. Start a new batch to add it.';
+      await setUploadStatus(uploadId, 'failed', {rejectReason: reason}).catch(() => {});
+      return json({uploadId, status: 'failed', error: reason}, 409);
+    }
+  }
   emit({type: 'stage', stage: 'stored'});
 
   // --- POS sales CSV -------------------------------------------------------
@@ -239,7 +287,22 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     emit({type: 'stage', stage: 'saving'});
     await saveExtraction({companyId, uploadId, page, extracted, docConfidence: avgConfidence(extracted)});
     await setUploadStatus(uploadId, 'needs_review', {pageCount: page});
-    return json({uploadId, status: 'needs_review', page, rows: extracted.rows.length, docConfidence: avgConfidence(extracted)});
+    return json({
+      uploadId,
+      status: 'needs_review',
+      page,
+      rows: extracted.rows.length,
+      docConfidence: avgConfidence(extracted),
+      flagged: extracted.rows.filter((r) => (typeof r.confidence === 'number' ? r.confidence : 1) < 0.6).length,
+      // The printed header (page 1 only carries it) — lets a batch prefill store/period.
+      header: {
+        storeCode: extracted.store_code || null,
+        storeName: extracted.store_name || null,
+        periodStart: extracted.period_start ?? null,
+        periodEnd: extracted.period_end ?? null,
+        consultant: extracted.consultant ?? null,
+      },
+    });
   } catch (e) {
     // Log the raw error server-side; show the reviewer a human-readable reason; keep a
     // scrubbed copy in error_detail for diagnosis (never shown prominently in the UI).

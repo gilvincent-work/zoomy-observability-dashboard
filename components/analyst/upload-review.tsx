@@ -4,7 +4,8 @@ import {useMemo, useState} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, FileText, Loader2, Maximize2, X} from 'lucide-react';
-import type {ExtractionRecord, FormPageStrip, UploadRow} from '@/src/goldline-data';
+import type {ExtractionRecord, FormPageStrip, StoreOption, UploadRow} from '@/src/goldline-data';
+import {StoreCodeField} from '@/components/analyst/store-code-field';
 import type {ExtractedRow} from '@/src/goldline-extract-run';
 import {commitReview} from '@/app/uploads/actions';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
@@ -42,6 +43,7 @@ export function UploadReview({
   inventoryHref = null,
   catalog = {},
   pageStrip = null,
+  stores = [],
 }: {
   company: string;
   canEdit: boolean;
@@ -57,6 +59,8 @@ export function UploadReview({
   catalog?: Record<string, CatalogLite>;
   /** Form pages 1–5 of THIS form (same count, or the same upload batch), with flags. */
   pageStrip?: FormPageStrip | null;
+  /** The company's stores, for the store picker. */
+  stores?: StoreOption[];
 }) {
   const router = useRouter();
   const committed = upload.status === 'committed' || extraction?.status === 'confirmed';
@@ -203,9 +207,10 @@ export function UploadReview({
       )}
 
       <div className={cn('flex flex-col gap-5', twoCol && 'lg:flex-row lg:items-start')}>
-        {/* Left: compact scan preview, sticky; click to enlarge. ~28% on desktop. */}
+        {/* Left: scan preview, pinned under the app header while the rows scroll (desktop);
+            sized to the viewport so it's always fully in view. Click to enlarge. */}
         {scanUrl && (
-          <div className="lg:sticky lg:top-4 lg:w-[28%] lg:shrink-0">
+          <div className="lg:sticky lg:top-[calc(3.5rem+1rem)] lg:w-[28%] lg:shrink-0">
             <Card>
               <CardHeader className="gap-0">
                 <div className="flex items-center justify-between gap-2">
@@ -232,7 +237,7 @@ export function UploadReview({
                     src={scanUrl}
                     title="Scanned inventory form"
                     tabIndex={-1}
-                    className="pointer-events-none h-[360px] w-full"
+                    className="pointer-events-none h-[360px] w-full lg:h-[min(640px,calc(100dvh-12rem))]"
                   />
                   <span className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/40 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
                     <span className="inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground">
@@ -293,16 +298,10 @@ export function UploadReview({
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-2 text-xs font-medium text-muted-foreground">Which store and period is this count for?</legend>
                 <div className="flex flex-wrap items-end gap-3">
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs font-medium">Store code</span>
-                    <input
-                      value={storeCode}
-                      onChange={(e) => setStoreCode(e.target.value)}
-                      disabled={committed || !canEdit}
-                      placeholder="e.g. 1"
-                      className="h-9 rounded-md border border-border bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 disabled:opacity-60 w-28"
-                    />
-                  </label>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-medium">Store</span>
+                    <StoreCodeField value={storeCode} onChange={setStoreCode} stores={stores} disabled={committed || !canEdit} />
+                  </div>
                   <label className="flex flex-col gap-1">
                     <span className="text-xs font-medium">Period start</span>
                     <input

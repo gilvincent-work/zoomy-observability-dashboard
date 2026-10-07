@@ -1,6 +1,6 @@
 import {getDataContext} from '@/src/active-context';
 import {canEditData} from '@/src/company';
-import {goldlineConfigured, listUploads} from '@/src/goldline-data';
+import {goldlineConfigured, listStores, listUploads} from '@/src/goldline-data';
 import {UploadsView} from '@/components/analyst/uploads-view';
 
 export const dynamic = 'force-dynamic';
@@ -19,7 +19,7 @@ export default async function Page(props: {searchParams: Promise<{status?: strin
       </div>
     );
   }
-  const uploads = await listUploads(ctx.companyId);
+  const [uploads, stores] = await Promise.all([listUploads(ctx.companyId), listStores(ctx.companyId)]);
   // ?status=needs_review (e.g. from Inventory's "Review" link) pre-sets the filter.
   const {status} = await props.searchParams;
   const STATUSES = ['needs_review', 'committed', 'processing', 'failed', 'rejected'] as const;
@@ -31,6 +31,7 @@ export default async function Page(props: {searchParams: Promise<{status?: strin
       configured={goldlineConfigured()}
       uploads={uploads}
       initialStatus={initialStatus}
+      stores={stores}
     />
   );
 }

@@ -10,6 +10,8 @@ import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {ViewSwitcher} from './company-switcher';
+import {UploadQueueProvider} from './upload-queue';
+import {UploadQueueIndicator} from './upload-queue-indicator';
 import {BrandMark} from './brand-mark';
 import {brandFor} from '@/src/brands';
 import {shouldRedirectFromZoomy} from '@/src/company-nav';
@@ -264,6 +266,9 @@ export function DashboardShell({
 
   return (
     <PlaybookProvider>
+    {/* Upload queue lives in the shell so uploads keep running across in-app navigation. */}
+    <UploadQueueProvider company={nav?.companyId ?? null}>
+    <UploadQueueIndicator />
     <CoopChatProvider scopeLabel={currentRange || undefined}>
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
@@ -628,7 +633,10 @@ export function DashboardShell({
           </button>
         </nav>
 
-        <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-y-auto max-md:pb-[calc(4rem+env(safe-area-inset-bottom))]">
+        {/* The window scrolls, not <main>: overflow-x-clip (not overflow-auto) keeps <main>
+            from becoming a scroll container, so position:sticky inside pages pins to the
+            viewport (review scan, commit bars, Health header). */}
+        <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-x-clip max-md:pb-[calc(4rem+env(safe-area-inset-bottom))]">
           {children}
         </main>
       </div>
@@ -779,6 +787,7 @@ export function DashboardShell({
       </div>
     )}
     </CoopChatProvider>
+    </UploadQueueProvider>
     </PlaybookProvider>
   );
 }
