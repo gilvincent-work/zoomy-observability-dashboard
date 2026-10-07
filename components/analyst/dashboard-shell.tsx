@@ -10,6 +10,8 @@ import {cn} from '@/lib/utils';
 import {fmtRange, hasNoSalesData, periodKind} from '../../src/week';
 import {ThemeToggle} from './theme-toggle';
 import {ViewSwitcher} from './company-switcher';
+import {UploadQueueProvider} from './upload-queue';
+import {UploadQueueIndicator} from './upload-queue-indicator';
 import {BrandMark} from './brand-mark';
 import {brandFor} from '@/src/brands';
 import {shouldRedirectFromZoomy} from '@/src/company-nav';
@@ -264,6 +266,9 @@ export function DashboardShell({
 
   return (
     <PlaybookProvider>
+    {/* Upload queue lives in the shell so uploads keep running across in-app navigation. */}
+    <UploadQueueProvider company={nav?.companyId ?? null}>
+    <UploadQueueIndicator />
     <CoopChatProvider scopeLabel={currentRange || undefined}>
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
@@ -779,6 +784,7 @@ export function DashboardShell({
       </div>
     )}
     </CoopChatProvider>
+    </UploadQueueProvider>
     </PlaybookProvider>
   );
 }

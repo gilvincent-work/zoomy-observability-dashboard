@@ -3,9 +3,9 @@
 import {useEffect, useMemo, useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {AlertTriangle, CheckCircle2, Clock, Loader2, Search, Trash2, X, XCircle} from 'lucide-react';
-import type {UploadKind, UploadRow, UploadStatus} from '@/src/goldline-data';
+import type {StoreOption, UploadKind, UploadRow, UploadStatus} from '@/src/goldline-data';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
-import {UploadPanel} from '@/components/analyst/upload-panel';
+import {BatchUploader} from '@/components/analyst/batch-uploader';
 import {DeleteUploadDialog} from '@/components/analyst/delete-upload-dialog';
 import {FileTypeBadge} from '@/components/analyst/file-type-badge';
 import {Button} from '@/components/ui/button';
@@ -14,7 +14,7 @@ import {Pagination} from '@/components/analyst/pagination';
 import {cn} from '@/lib/utils';
 
 // The Uploads inbox for one company: add a POS .csv or a scanned inventory .pdf
-// (UploadPanel — drag & drop, live progress), then triage the file list. CSVs commit
+// (BatchUploader — a store's form in one go, live per-file progress), then triage the file list. CSVs commit
 // straight to gl_sales; PDFs are read by Claude Vision and land in review — selecting
 // one opens its review page. Search, status/type filters (status also from
 // ?status=), and pagination run client-side. Deleting goes through a confirmation
@@ -58,12 +58,14 @@ export function UploadsView({
   configured,
   uploads,
   initialStatus = 'all',
+  stores = [],
 }: {
   company: string;
   canEdit: boolean;
   configured: boolean;
   uploads: UploadRow[];
   initialStatus?: StatusFilter;
+  stores?: StoreOption[];
 }) {
   const router = useRouter();
 
@@ -107,21 +109,12 @@ export function UploadsView({
       <header className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-semibold tracking-tight">Uploads</h1>
         <p className="text-sm text-muted-foreground">
-          Add a POS sales export or a scan of a store&apos;s inventory form. Sales are saved right away; scans are read
-          automatically and wait for your review.
+          Add a store&apos;s inventory form — every page at once — or a POS sales export. Scans are read automatically and wait
+          for your review; sales are saved right away.
         </p>
       </header>
 
-      <UploadPanel
-        company={company}
-        canEdit={canEdit}
-        configured={configured}
-        onOpenReview={(id) => router.push(`/uploads/${id}`)}
-        onDone={(r) => {
-          toast(r.kind, r.text);
-          router.refresh();
-        }}
-      />
+      <BatchUploader canEdit={canEdit} configured={configured} stores={stores} />
 
       {/* File list */}
       <Card>

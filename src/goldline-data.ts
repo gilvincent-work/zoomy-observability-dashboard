@@ -663,3 +663,18 @@ export class BatchConflictError extends Error {
     super(`item ${itemCode} appears on two pages`);
   }
 }
+
+export type StoreOption = {code: string; name: string};
+
+/** The company's stores (for the store-code pickers), by code. Company-scoped. */
+export async function listStores(companyId: string): Promise<StoreOption[]> {
+  if (!goldlineConfigured()) return [];
+  const supa = db();
+  const rows = (await fetchAllRows('gl_stores', (from, to) =>
+    supa.from('gl_stores').select('store_code,name,status').eq('company_id', companyId).order('store_code').range(from, to),
+  )) as unknown as Array<{store_code: string; name: string; status: string}>;
+  return rows
+    .filter((r) => r.status !== 'closed')
+    .map((r) => ({code: r.store_code, name: r.name}))
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, {numeric: true}));
+}

@@ -10,6 +10,32 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Multi-file uploads: a store's whole form in one go, with progress that follows you
+- **Batch uploads (one store's inventory form for one period).**
+  - Drop or browse several files at once: a PDF per page, one PDF with every page, or both, plus a sales CSV if needed.
+  - Multi-page PDFs are **split into pages in the browser** (pdf-lib, loaded on demand), so every page goes through the existing read → review pipeline with its own progress. This also fixes a gap: a 5-page PDF used to have only one page read. The upload route now refuses multi-page PDFs from any other caller with a clear message.
+  - Up to 20 files, 25 MB each.
+- **Store and period are entered once per batch.** They're prefilled from page 1's printed header (tagged "Read from page 1 — check it") and apply to every page, so pages 2–5 no longer need them re-typed and all pages land in one Inventory count.
+  - **Store is now a searchable dropdown** of the company's stores ("1 · CUBAO"), with "Other store code…" for stores not listed yet. This applies on the batch uploader, the batch review and the single-scan review. `gl_stores` currently holds the 5 stores from the Nichido POS sample.
+- **Reading queue.** Files are read 2 at a time.
+  - Each row shows the file type, name, size, a live status ("Uploading 40%", "Finding the page…", "Reading page 3 · 60 items", "Page 3 · 2 to check") and its own bar.
+  - Each row has Retry, Cancel and Remove.
+  - The batch shows an overall bar with a time estimate, and a pages 1–5 strip marking pages that are in, missing or duplicated.
+  - A CSV waits for the period.
+  - A reload or tab close while uploading asks for confirmation first.
+- **Progress follows you.** The queue lives in the app shell, which stays mounted across in-app navigation, so uploads keep running on other pages.
+  - A compact indicator shows bottom-right on desktop and as a slim bar under the header on mobile ("Reading 3 of 5", bar, current file, View).
+  - When done it turns into "5 pages ready to review → Review" and can be dismissed.
+  - It's hidden on the Uploads pages, where the full panel is.
+- **Batch review** (`/uploads/batch/[id]`).
+  - Store + period once at the top.
+  - **Page tabs** with each page's open-flag count (✓ when clear), plus duplicate and missing-page markers.
+  - Each tab has the scan (click to enlarge), the confidence card and the rows with the flag navigator, the same tools as single-scan review.
+  - A sticky bar always says what's left ("Resolve 2 flagged rows first", "Page 3 was uploaded twice…") and offers "Go to next flag", then **Commit all N pages**.
+- **Atomic commit.** All pages' rows go in ONE upsert into one Inventory count. It refuses when two pages carry the same items (a page scanned twice). Every page must belong to the batch and still be awaiting review. Same authorization, store-scope and validation as a single-page commit.
+- **Data:** new additive `gl_upload_batches` + nullable `gl_uploads.batch_id` (`supabase/goldline_upload_batches.sql`; RLS on, API roles revoked; applied to Staging). Background processing for bulk multi-store uploads stays a later phase.
+- Pure rules tested (`src/upload-batch.ts`). typecheck + full suite (2522) + pagination guard pass; impeccable detector: no findings.
+
 ## 2026-10-07 — Users & Roles: role chips color-coded by company
 - Access chips now carry their company's color, the same hue as its badge in the header view switcher (`companyHue`): Goldline gold, Zoomy green, any other company its own stable hue. A company reads the same everywhere. Coop Admin chips are a neutral tint with a shield icon.
 - The same colors appear in the "+ Add access" menu (color dot per company, shield for Coop Admin) and on the Invite panel's role tiles.
