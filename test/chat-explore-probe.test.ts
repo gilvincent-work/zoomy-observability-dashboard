@@ -117,6 +117,23 @@ describe('exploreHealth: the explore object of /api/chat/health', () => {
     const weird = await exploreHealth(dev, 'a@x.com', {runQuery: () => { throw 'boom'; }});
     expect(weird).toMatchObject({enabled: true, probe: {ok: false, code: 'other'}});
   });
+  it('Train 3: explore health carries the drift status (counts only, no names)', async () => {
+    const runQuery = async (sent: string): Promise<RawQueryResult> => sent.includes('coop_explore_drift_log')
+      ? {columns: [{name: 'checked_at', type: 'timestamp'}, {name: 'findings_count', type: 'number'}], rows: [['2026-10-07T22:00:00Z', 0]], fetched: 1, ms: 1}
+      : okRows;
+    const h = await exploreHealth(dev, 'a@x.com', {runQuery});
+    expect(h).toMatchObject({enabled: true, probe: {ok: true}});
+    expect(h.drift).toMatchObject({checkedAt: '2026-10-07T22:00:00Z', findings: 0});
+    expect(JSON.stringify(h)).not.toMatch(/marketplace_tokens|api_key/);
+  });
+  it('Train 3: a failing drift read is stale, and the probe still reports; off has no drift', async () => {
+    const runQuery = async (sent: string): Promise<RawQueryResult> => {
+      if (sent.includes('coop_explore_drift_log')) throw new ExploreDbError('E_RELATION', '42P01');
+      return okRows;
+    };
+    expect(await exploreHealth(dev, 'a@x.com', {runQuery})).toMatchObject({enabled: true, probe: {ok: true}, drift: {checkedAt: null, findings: null, stale: true}});
+    expect(await exploreHealth({...dev, EXPLORE_MODE: 'off'}, 'a@x.com', {runQuery})).not.toHaveProperty('drift');
+  });
   it('off example for the docs', async () => {
     console.log(JSON.stringify(await exploreHealth({...dev, EXPLORE_ALLOWED_EMAILS: ''}, 'a@x.com'), null, 2));
   });

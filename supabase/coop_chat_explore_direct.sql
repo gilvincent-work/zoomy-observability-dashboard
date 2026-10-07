@@ -13,6 +13,11 @@
 --   select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public'
 --     and has_any_column_privilege('coop_explore_ro', c.oid, 'select')
 --     and ((c.relkind in ('v', 'm', 'f') and not c.relname = any (coop_explore_admin.view_allowlist())) or coop_explore_admin.is_closed_table(c.relname));
+--   select jsonb_pretty(coop_explore_admin.drift_findings());   -- every array empty (the daily job logs the same into coop_explore_drift_log)
+-- KNOWN LIMITS (accepted, Train 3 review): a GRANT ... TO PUBLIC made by supabase_admin (or any superuser / reserved role, which skip
+-- the event trigger) stays readable by the login until the next coop_explore_reapply run (at most 5 minutes); apply_grants covers the
+-- public schema only (other schemas are fenced by USAGE, checked by drift other_schemas); new views (Task 8's included) are unreadable
+-- until added to view_allowlist() (drift unlisted_views lists them).
 -- Recover by hand (grants look wrong, the cron job is missing, or a guard warning mentions a cancel):
 --   select coop_explore_admin.reapply_all();   -- idempotent; returns how many relations it changed
 -- ADD A VIEW for Ask Coop (views are DEFAULT-DENY; tables are not):
@@ -35,6 +40,7 @@
 --      views, and only the trigger takes a new view's grant back in the same transaction), then reapply_all() for the existing ones.
 --   5. Event trigger coop_explore_guard_ddl re-applies on DDL; pg_cron re-applies every 5 minutes as well, because Supabase skips user
 --      event triggers for superusers and reserved roles (https://supabase.com/blog/event-triggers-wo-superuser).
+--   7. A daily drift job (pg_cron coop_explore_drift, 06:00 PH) writes drift_findings() into public.coop_explore_drift_log.
 -- The coop_explore_* views of coop_chat_explore.sql stay (aliases during the switch). Not touched: coop_chat_ro, the coop_chat_* views,
 -- any pos_* DDL.
 
@@ -399,3 +405,141 @@ begin
     raise notice 'pg_cron is not enabled: new objects rely on the event trigger alone until it is';
   end if;
 end $$;
+
+-- 7. Daily drift check (spec 1.6). Names and counts only, never values. /api/chat/health reads the newest row's time and count.
+-- The login reads this table (an open name), so the health route can read it through the same read-only envelope as the chat.
+create table if not exists public.coop_explore_drift_log (
+  id bigserial primary key,
+  checked_at timestamptz not null default now(),
+  findings jsonb not null,
+  findings_count integer not null
+);
+alter table public.coop_explore_drift_log enable row level security;
+revoke all on public.coop_explore_drift_log from public, anon, authenticated;
+-- Supabase default privileges also give anon/authenticated USAGE and UPDATE (setval) on the id sequence: take those back too.
+revoke all on sequence public.coop_explore_drift_log_id_seq from public, anon, authenticated;
+select coop_explore_admin.apply_grants('public.coop_explore_drift_log'::regclass) as drift_log_grant; -- without the trigger too
+
+-- Every key holds an array of names (never values); every array is empty on a healthy database.
+--   closed_readable          a closed relation (secret or tenant name, view not allowlisted, view over a closed object) the login can
+--                            read, whoever granted it (its own grant, PUBLIC). Same rule as readable_closed(), minus mixed tables.
+--   secret_columns_readable  a secret column of an OPEN (mixed) table the login can read.
+--   write_privileges         any non-SELECT privilege (table, column, default privileges), or CREATE on schema public.
+--   unreadable_open          an open relation the login cannot read (owned by a role other than postgres, or a missed grant).
+--   unlisted_views           a public view, materialized view or foreign table that is not allowlisted (not readable: fail closed),
+--                            except names closed by the name rule (gl_*, *_tokens, ...), which are closed on purpose. Allowlist it or
+--                            drop it; Task 8's new views land here until added.
+--   role                     role attribute drift, or ANY role membership: the login is NOINHERIT, so a granted role is invisible to
+--                            has_*_privilege but reachable through SET ROLE.
+--   guard                    the event trigger or the coop_explore_reapply cron job is missing or disabled.
+--   other_schemas            any schema other than public / pg_catalog / information_schema the login holds USAGE on.
+create or replace function coop_explore_admin.drift_findings() returns jsonb language plpgsql stable set search_path = '' as $$
+declare
+  ro oid := (select oid from pg_catalog.pg_roles where rolname = 'coop_explore_ro');
+  f jsonb;
+  guard text[] := '{}';
+  job_ok boolean;
+begin
+  if ro is null then
+    return jsonb_build_object('role', jsonb_build_array('role coop_explore_ro missing'));
+  end if;
+  if not exists (select 1 from pg_catalog.pg_event_trigger where evtname = 'coop_explore_guard_ddl' and evtenabled <> 'D') then
+    guard := guard || 'event trigger coop_explore_guard_ddl missing or disabled'::text;
+  end if;
+  if pg_catalog.to_regclass('cron.job') is null then -- dynamic SQL below: this function must compile without pg_cron
+    guard := guard || 'pg_cron not installed: no coop_explore_reapply backstop'::text;
+  else
+    execute 'select exists (select 1 from cron.job where jobname = ''coop_explore_reapply'' and active)' into job_ok;
+    if not job_ok then
+      guard := guard || 'cron job coop_explore_reapply missing or inactive'::text;
+    end if;
+  end if;
+  with rels as (
+    select c.oid, c.relname, coop_explore_admin.closed_reason(c.oid) as reason
+    from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
+  ),
+  closed_readable as (
+    select format('%s (%s)', r.relname, r.reason) as name from rels r
+    where r.reason is not null and pg_catalog.has_any_column_privilege(ro, r.oid, 'SELECT')
+  ),
+  secret_columns_readable as (
+    select r.relname || '.' || a.attname as name
+    from rels r join pg_catalog.pg_attribute a on a.attrelid = r.oid and a.attnum > 0 and not a.attisdropped
+    where r.reason is null and coop_explore_admin.is_secret_column(r.relname, a.attname)
+      and pg_catalog.has_column_privilege(ro, r.oid, a.attnum, 'SELECT')
+  ),
+  write_privileges as (
+    select r.relname as name from rels r
+    where pg_catalog.has_table_privilege(ro, r.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+       or pg_catalog.has_any_column_privilege(ro, r.oid, 'INSERT,UPDATE,REFERENCES')
+    union all
+    select 'CREATE on schema public' where pg_catalog.has_schema_privilege(ro, 'public', 'CREATE')
+    union all
+    select format('default privilege %s on %s for %s', a.privilege_type, d.defaclobjtype, pg_catalog.pg_get_userbyid(d.defaclrole))
+    from pg_catalog.pg_default_acl d, pg_catalog.aclexplode(d.defaclacl) a
+    where a.grantee = ro and not (a.privilege_type = 'SELECT' and d.defaclobjtype = 'r' and not a.is_grantable)
+  ),
+  unreadable_open as (
+    select r.relname as name from rels r
+    where r.reason is null and not pg_catalog.has_any_column_privilege(ro, r.oid, 'SELECT')
+  ),
+  unlisted_views as (
+    select c.relname as name
+    from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('v', 'm', 'f')
+      and not (c.relname::text = any (coop_explore_admin.view_allowlist()))
+      and not coop_explore_admin.is_closed_table(c.relname)
+  ),
+  role_drift as (
+    select 'role attributes' as what from pg_catalog.pg_roles
+    where oid = ro
+      and not (rolcanlogin and not rolsuper and not rolinherit and not rolcreaterole and not rolcreatedb and not rolreplication and rolbypassrls)
+    union all
+    select 'member of ' || pg_catalog.pg_get_userbyid(m.roleid) from pg_catalog.pg_auth_members m where m.member = ro
+  ),
+  other_schemas as (
+    select n.nspname as name from pg_catalog.pg_namespace n
+    where n.nspname not in ('public', 'pg_catalog', 'information_schema')
+      and pg_catalog.has_schema_privilege(ro, n.oid, 'USAGE')
+  )
+  select jsonb_build_object(
+    'closed_readable', coalesce((select jsonb_agg(name order by name) from closed_readable), '[]'::jsonb),
+    'secret_columns_readable', coalesce((select jsonb_agg(name order by name) from secret_columns_readable), '[]'::jsonb),
+    'write_privileges', coalesce((select jsonb_agg(name order by name) from write_privileges), '[]'::jsonb),
+    'unreadable_open', coalesce((select jsonb_agg(name order by name) from unreadable_open), '[]'::jsonb),
+    'unlisted_views', coalesce((select jsonb_agg(name order by name) from unlisted_views), '[]'::jsonb),
+    'role', coalesce((select jsonb_agg(what order by what) from role_drift), '[]'::jsonb),
+    'guard', to_jsonb(guard),
+    'other_schemas', coalesce((select jsonb_agg(name order by name) from other_schemas), '[]'::jsonb))
+  into f;
+  return f;
+end $$;
+
+-- One row per run (90 days kept); a WARNING in the Postgres log when anything is found. Returns the number of findings.
+create or replace function coop_explore_admin.record_drift() returns integer language plpgsql set search_path = '' as $$
+declare
+  f jsonb := coop_explore_admin.drift_findings();
+  n integer;
+begin
+  select coalesce(sum(jsonb_array_length(e.v)), 0)::integer into n from jsonb_each(f) as e(k, v);
+  insert into public.coop_explore_drift_log (findings, findings_count) values (f, n);
+  delete from public.coop_explore_drift_log where checked_at < now() - interval '90 days';
+  if n > 0 then
+    raise warning 'coop_explore drift: % finding(s): %', n, f::text;
+  end if;
+  return n;
+end $$;
+
+revoke execute on all functions in schema coop_explore_admin from public;
+
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('coop_explore_drift', '0 22 * * *', 'select coop_explore_admin.record_drift()');
+    raise notice 'pg_cron job coop_explore_drift scheduled (daily 22:00 UTC = 06:00 PH)';
+  else
+    raise notice 'pg_cron is not enabled: no daily drift job; run select coop_explore_admin.record_drift() by hand';
+  end if;
+end $$;
+select coop_explore_admin.record_drift() as drift_findings_now;

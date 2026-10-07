@@ -117,8 +117,11 @@ describe.skipIf(!local)('EXP-05 the real driver and the real role (local Postgre
     expect(admin('select count(*) from pos_orders')).toBe(before);
   });
 
-  it('EXP-05 a base table (not a view) is denied by the role (42501 -> E_DB_DENIED)', async () => {
-    expect(await codeOf(run(wrapCursor('select id from pos_orders'), OPTS))).toBe('E_DB_DENIED');
+  // Train 3 (direct reads): base tables are readable on purpose now; a CLOSED table (secret name, scripts/coop-direct-fixture.sql) is
+  // what the role denies.
+  it('EXP-05 a base table is readable, a closed (secret-named) table is denied by the role (42501 -> E_DB_DENIED)', async () => {
+    expect((await run(wrapCursor('select o.id from pos_orders o'), OPTS)).rows.length).toBeGreaterThan(0);
+    expect(await codeOf(run(wrapCursor('select m.marketplace from marketplace_tokens m'), OPTS))).toBe('E_DB_DENIED');
   });
 
   it('EXP-05 a statement timeout surfaces as E_TIMEOUT within about the limit', async () => {

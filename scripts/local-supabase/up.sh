@@ -107,7 +107,7 @@ apply_explore() {
     out="$(psql_pg -o /dev/null < "$ROOT/$f" 2>&1)" || { echo "$out" | grep -v '^NOTICE:' >&2; die "failed applying $f"; }
     echo "applied $f"
     # direct reads: say whether the event trigger and the cron guard were installed (the file never fails on either)
-    echo "$out" | grep -E '^NOTICE: +(event trigger|pg_cron)' | sed 's/^NOTICE: */  /' || true
+    echo "$out" | grep -E '^NOTICE: +(event trigger (coop|NOT)|pg_cron (job|is|could))' | sed 's/^NOTICE: */  /' || true
   done
   # the password is a hex string from .local-env: safe to inline, never printed
   psql_pg -o /dev/null -c "alter role coop_explore_ro with password '${EXPLORE_PG_PASSWORD}'" || die 'could not set the coop_explore_ro password'
