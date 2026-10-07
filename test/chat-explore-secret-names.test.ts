@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {describe, expect, it} from 'vitest';
 import {
   EXPLORE_SECRET_COLUMN_EXCEPTIONS, EXPLORE_SECRET_PARTS, EXPLORE_TENANT_PREFIXES, EXPLORE_TENANT_TABLES,
-  isClosedRelation, isSecretColumn, isSecretName,
+  isClosedRelation, isSecretColumn, isSecretJsonKey, isSecretName,
 } from '../src/chat/explore/secret-names';
 import {EXPLORE_VIEW_NAMES} from '../src/chat/explore/views';
 
@@ -105,6 +105,23 @@ describe('EXP secret names (spec 1.3): one rule, SQL and TS copies equal', () =>
     for (const n of ['shipping_fee', 'pinned', 'monkey', 'hashtag_count', 'keychain', 'tokenized_at', 'email', 'bundle', 'opening_cash', 'apikey']) {
       expect(isSecretName(n), n).toBe(false);
     }
+  });
+
+  it('Task 7 re-review R1: a JSON key keeps its case, so camelCase / PascalCase / UPPER / snake / kebab / glued secret keys are secret', () => {
+    for (const k of ['apiKey', 'accessToken', 'clientSecret', 'refreshToken', 'AccessToken', 'APIKey', 'API_KEY', 'ACCESS_TOKEN', 'x-api-key',
+      'api_key', 'refresh-token', 'pinCode', 'passwordHash', 'apikey', 'APIKEY', 'accesstoken', 'authtoken', 'refreshtoken', 'clientsecret',
+      'passwd', 'pwd', 'signature', 'tokens', 'myToken2', 'x2token', 'md5hash']) {
+      expect(isSecretJsonKey(k), k).toBe(true);
+    }
+    // the whole-word rule still holds for JSON keys: a secret part glued into another word is not a secret
+    for (const k of ['monkey', 'pinned', 'isPinned', 'keyword', 'keywords', 'keychain', 'hashtagCount', 'tokenizedAt', 'shopName', 'threshold',
+      'shipping_fee', 'skuKeyless', 'URLPath', 'id']) {
+      expect(isSecretJsonKey(k), k).toBe(false);
+    }
+  });
+  it('R1 does not touch the SQL column rule: Postgres folds unquoted names, so camelCase stays one part there', () => {
+    for (const n of ['apiKey', 'accessToken']) expect(isSecretName(n), n).toBe(false);
+    expect(isSecretColumn('pos_settings', 'key')).toBe(false);
   });
 
   it('closes secret and tenant tables, never a Zoomy table', () => {

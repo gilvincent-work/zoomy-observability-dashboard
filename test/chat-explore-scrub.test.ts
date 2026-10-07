@@ -63,7 +63,7 @@ describe('2.2 scanner, Task 7 review findings 1-3: JSON as text, glued prefixes,
     expect(scrubValue('{"lazada": {"access_token": "tok"}}').value).toBe(JSON.stringify({lazada: {access_token: HIDDEN}}));
     expect(scrubValue('[{"password": "hunter2"}]').value).toBe(JSON.stringify([{password: HIDDEN}]));
     // not parseable as a whole (wrapped by concat, row text with doubled quotes): the key/value text rule still hides it
-    expect(scrubValue('note: {"api_key": "abc123short", "shop": "Zoomy"}')).toEqual({value: `note: {"api_key": "${HIDDEN}", "shop": "Zoomy"}`, hidden: 1});
+    expect(scrubValue('note: {"api_key": "abc123short", "shop": "Zoomy"}')).toEqual({value: `note: {"api_key":"${HIDDEN}","shop":"Zoomy"}`, hidden: 1});
     expect(scrubValue('(1,"{""refresh_token"": ""xyz"", ""shop"": ""Z""}")')).toEqual({value: `(1,"{""refresh_token"": ""${HIDDEN}"", ""shop"": ""Z""}")`, hidden: 1});
     expect(scrubValue('{"secret": 12345, "n": 1').value).toBe(`{"secret": ${HIDDEN}, "n": 1`);
     // nothing to hide: the text is returned as it was (formatting kept)
@@ -110,6 +110,58 @@ describe('2.2 scanner, Task 7 review findings 1-3: JSON as text, glued prefixes,
       'internationalization_and_localization_settings_for_the_dashboard',
     ];
     for (const v of keep) expect(scrubValue(v), v).toEqual({value: v, hidden: 0});
+  });
+});
+
+describe('2.2 scanner, Task 7 re-review R1/R2: camelCase keys, every JSON span parsed, escaped JSON decoded', () => {
+  it('R1: camelCase / PascalCase / glued secret keys are hidden, parsed and as text', () => {
+    for (const k of ['apiKey', 'accessToken', 'clientSecret', 'refreshToken', 'APIKey', 'apikey']) {
+      expect(scrubValue({[k]: 'shorty', n: 1}), k).toEqual({value: {[k]: HIDDEN, n: 1}, hidden: 1});
+      expect(scrubValue(`{"${k}": "shorty", "n": 1}`), k).toEqual({value: JSON.stringify({[k]: HIDDEN, n: 1}), hidden: 1});
+      expect(scrubValue(`{"${k}": "shorty", "n": 1`).value, k).not.toContain('shorty'); // cut short: the text fallback
+    }
+    expect(scrubValue({shopName: 'Zoomy', isPinned: true, keywords: ['jerky']}).hidden).toBe(0);
+  });
+  it('R2: a secret key over an object or array in text that is not JSON as a whole hides the WHOLE value', () => {
+    expect(scrubValue('note: {"secret": {"nested": "shorty"}}')).toEqual({value: `note: {"secret":"${HIDDEN}"}`, hidden: 1});
+    expect(scrubValue('note: {"tokens": ["a", "b"]}')).toEqual({value: `note: {"tokens":"${HIDDEN}"}`, hidden: 1});
+    expect(scrubValue('{"tokens": {"lazada": "short"}},{"n": 1}').value).not.toContain('short"');
+    // string_agg of several objects: each one is parsed on its own
+    const agg = scrubValue('{"shop": "A", "token": "x1"},{"shop": "B", "apiKey": {"v": "x2"}}');
+    expect(agg).toEqual({value: `{"shop":"A","token":"${HIDDEN}"},{"shop":"B","apiKey":"${HIDDEN}"}`, hidden: 2});
+  });
+  it('R2: escaped (double-encoded) JSON is decoded and scrubbed, as a whole value and inside prose or other JSON', () => {
+    const enc = JSON.stringify(JSON.stringify({token: 'x', shop: 'Z'})); // jsonb string holding serialized JSON, read as ::text
+    expect(scrubValue(enc)).toEqual({value: JSON.stringify(JSON.stringify({token: HIDDEN, shop: 'Z'})), hidden: 1});
+    expect(scrubValue(`note: ${enc}`).value).not.toMatch(/\\"x\\"/);
+    expect(scrubValue(`note: ${enc}`).hidden).toBe(1);
+    const inner = JSON.stringify({payload: JSON.stringify({lazada: JSON.stringify({accessToken: 'deep'})})});
+    expect(scrubValue(inner).value).not.toContain('deep');
+    expect(scrubValue({payload: JSON.stringify({apiKey: 'p1'})}).value).toEqual({payload: JSON.stringify({apiKey: HIDDEN})});
+  });
+  it('R2: unicode-escaped keys are decoded by JSON.parse; a quoted value with an escaped quote is hidden whole', () => {
+    expect(scrubValue('x{"api\\u005fkey": "shorty"}').value).not.toContain('shorty');
+    expect(scrubValue('x{"api_key": "ab\\", c"}').value).not.toContain(' c"');
+    expect(scrubValue('x{"api_key": "ab\\", c", "n": 1').value).not.toContain(' c"'); // cut short: escape-aware fallback
+  });
+  it('R2: text cut mid-span falls back to the pair rule; a cut object or array value is hidden to the end', () => {
+    expect(scrubValue('note: {"secret": {"nested": "shorty", "m"').value).toBe(`note: {"secret": ${HIDDEN}`);
+    expect(scrubValue('note: {"token": ["a", "b"').value).toBe(`note: {"token": ${HIDDEN}`);
+  });
+  it('R2: the scan is bounded: huge or bracket-heavy text returns quickly and still gets the text rules', () => {
+    const big = '{'.repeat(200_000) + '"token": "zz"';
+    const t0 = Date.now();
+    const r = scrubValue(big);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(String(r.value)).not.toContain('zz');
+    const deep = JSON.stringify(JSON.stringify(JSON.stringify(JSON.stringify(JSON.stringify(JSON.stringify(JSON.stringify({a: 1})))))));
+    expect(scrubValue(deep).hidden).toBe(0);
+  });
+  it('no regressions from the span scan: ordinary prose, brackets and JSON keep their text', () => {
+    for (const v of ['price [PHP] {promo}', 'see [1] and {x}', '"quoted" words', '{"shop": "Zoomy",  "threshold": 5}', '[1, 2, 3]',
+      'he said "{not json}"', '{"note": "the key to it"}']) {
+      expect(scrubValue(v), v).toEqual({value: v, hidden: 0});
+    }
   });
 });
 

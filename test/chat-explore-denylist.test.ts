@@ -54,6 +54,14 @@ describe('2.1 JSON read as text cannot carry a secret-named key past the scanner
     await code("select jsonb_extract_path_text(s.value, 'access_token') as v from pos_settings s", 'E_BLOCKED_COLUMN');
     await code("select jsonb_extract_path_text(s.value, 'lazada', 'token') as v from pos_settings s", 'E_BLOCKED_COLUMN');
   });
+  it('Task 7 re-review R1: camelCase, PascalCase, UPPER and glued secret JSON keys are E_BLOCKED_COLUMN too', async () => {
+    for (const k of ['apiKey', 'accessToken', 'clientSecret', 'refreshToken', 'APIKey', 'ACCESS_TOKEN', 'apikey', 'x-api-key']) {
+      await code(`select s.value->>'${k}' as v from pos_settings s`, 'E_BLOCKED_COLUMN');
+    }
+    await code("select jsonb_extract_path_text(s.value, 'lazada', 'refreshToken') as v from pos_settings s", 'E_BLOCKED_COLUMN');
+    await ok("select s.value->>'shopName' as v from pos_settings s");
+    await ok("select s.value->>'isPinned' as v from pos_settings s");
+  });
   it('a JSON key must be a plain literal: a computed key is E_BLOCKED_COLUMN (the name cannot be judged)', async () => {
     await code("select s.value->>('api'||'_key') as v from pos_settings s", 'E_BLOCKED_COLUMN');
     await code("select s.value->>lower('API_KEY') as v from pos_settings s", 'E_BLOCKED_COLUMN');

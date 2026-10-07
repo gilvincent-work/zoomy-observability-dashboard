@@ -2,7 +2,8 @@
 // Pure, no imports. The SQL copy lives in supabase/coop_chat_explore_direct.sql (schema coop_explore_admin); the test
 // test/chat-explore-secret-names.test.ts fails when the two differ. A secret is a WHOLE word part (split on anything that is not
 // a-z0-9), so shipping_fee and pinned stay readable while api_key and refresh_token do not. Glued names (apikey) escape it on
-// purpose: the value scanner (scrub.ts) and the one-time column review cover them.
+// purpose: the value scanner (scrub.ts) and the one-time column review cover them. JSON keys use isSecretJsonKey (below), which also
+// splits camelCase and knows the glued forms.
 export const EXPLORE_SECRET_PARTS = ['password', 'token', 'secret', 'key', 'pin', 'hash', 'credential'] as const;
 /** The tenant fence: Ask Coop is Zoomy-only (owner decision 2026-10-07). */
 export const EXPLORE_TENANT_PREFIXES = ['gl_', 'company_'] as const;
@@ -15,6 +16,27 @@ const FORMS: ReadonlySet<string> = new Set(EXPLORE_SECRET_PARTS.flatMap((p) => [
 export const nameParts = (name: string): string[] => name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
 export const isSecretName = (name: string): boolean => nameParts(name).some((w) => FORMS.has(w));
+
+/**
+ * Secret names written as ONE glued word (no part boundary to find). Not secret as SQL columns (the column review covers those),
+ * but secret as JSON keys and query-string names, where nothing else would catch a short value. A reviewed list, matched whole.
+ */
+export const EXPLORE_GLUED_SECRET_NAMES = [
+  'apikey', 'accesstoken', 'authtoken', 'refreshtoken', 'idtoken', 'clientsecret', 'appsecret', 'secretkey', 'privatekey',
+  'passwd', 'pwd', 'passcode', 'sig', 'sign', 'signature',
+] as const;
+const GLUED: ReadonlySet<string> = new Set(EXPLORE_GLUED_SECRET_NAMES);
+
+/**
+ * The JSON-key rule (Task 7 re-review R1). Unlike SQL identifiers, JSON keys keep their case, so a camelCase or PascalCase boundary is a
+ * part boundary: accessToken -> access, token; APIKey -> api, key; so is a letter-digit one (token2 -> token, 2). Then the same whole-part rule as columns (monkey, isPinned and
+ * keyword stay readable), plus the glued list. For JSON keys only: the SQL column rule above stays as it is (and equal to its SQL copy).
+ */
+export const jsonKeyParts = (key: string): string[] =>
+  nameParts(key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/([A-Z])([A-Z][a-z])/g, '$1_$2').replace(/(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])/g, '_'));
+
+export const isSecretJsonKey = (key: string): boolean =>
+  isSecretName(key) || jsonKeyParts(key).some((w) => FORMS.has(w)) || GLUED.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''));
 
 const isTenantTable = (name: string): boolean => {
   const n = name.toLowerCase();

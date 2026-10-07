@@ -10,7 +10,7 @@ import {parse as pgParse} from 'libpg-query';
 import {fingerprintStatement} from './fingerprint';
 import {DEFAULT_EXPLORE_LIMITS} from './limits';
 import {relationRule} from './access';
-import {EXPLORE_SECRET_COLUMN_EXCEPTIONS, isSecretName} from './secret-names';
+import {EXPLORE_SECRET_COLUMN_EXCEPTIONS, isSecretJsonKey, isSecretName} from './secret-names';
 import {
   EXPLORE_ERROR_CLASS,
   EXPLORE_ERROR_MESSAGES,
@@ -173,7 +173,7 @@ function checkJsonKey(node: unknown, st: State): void {
   }
   if (w.body.sval !== undefined) {
     const key = (w.body.sval as Obj).sval;
-    if (typeof key !== 'string' || st.v.secretName(key.toLowerCase())) st.violations.add('E_BLOCKED_COLUMN');
+    if (typeof key !== 'string' || st.v.secretName(key.toLowerCase()) || isSecretJsonKey(key)) st.violations.add('E_BLOCKED_COLUMN'); // raw key: its case is a part boundary (R1)
   } else if (w.body.ival === undefined) st.violations.add('E_BLOCKED_COLUMN'); // a float, boolean or NULL key: not a key we read
 }
 
