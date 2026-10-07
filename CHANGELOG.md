@@ -10,6 +10,27 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Goldline product page: sales and stock, month by month
+- **New page `/stock/[item]`** for Goldline. It is the per-product view Zoomy already has, and that Nichido's POC sketched.
+  - Header: the product name, item code, price and bestseller ★.
+  - **Four headline numbers:** on the shelf now · status · sold last month · suggested order.
+  - **The sales-and-stock chart:** 3 real and 3 forecast months, an optional vs-last-year comparison, the stock line with delivery ▲ markers, and "runs out".
+  - **What the store counted:** every count with its A/B half, the latest 6 shown, with "Show all".
+  - **How many sold:** a month-by-month table.
+  - Reached by clicking a product on **Inventory** or **Stock forecast**, or an item card on the **Action Feed**. These are now full-row links to that store's view; the Action Feed button keeps its own action.
+- **Decisions (plan §11):**
+  - **Where "sold" comes from.** It's estimated from consecutive counts today (last on hand + delivered − this on hand, by the month each count ends in; a count that rose with no delivery is skipped, not read as zero). A product switches to the **sales report** automatically once its POS SKU is linked and that store has sales rows. The page always names its source, and a **register check** (counts vs register, within ±2 units or 10%) appears for linked products.
+  - **Per store, plus "All stores".** The store picker includes "All stores (N)". The totals add up each store, carrying a store's last count forward through a month it missed. The suggested order is each store's own order added up, so an overstocked store can't hide one that's out. Store managers only see and total their own stores.
+  - **Monthly bars.** The A/B half-month detail lives in the counts table.
+- **The page agrees with the other stock pages.** Status, cover, stock-out date and suggested order come from the existing movement engine (`storeMovement`), so it matches Stock forecast and Action Feed. A store with nothing sold in 2 cycles reads "Not moving".
+- **Empty and early states:** "Not counted yet" when no visible store has counted the product. "Not enough history yet" (the chart starts after a product's second count) while still showing on hand and the counts.
+- **Shared chart:** `StockSalesChart` now treats a missing value as "no data" (no bar, no point) instead of 0, and says "last counted this week". Zoomy always passes numbers, so its page is unchanged.
+- **Built as:**
+  - Pure, tested `src/goldline-product.ts` (18 tests), with `productView` shared by the page and a dev-only preview at `/dev/goldline-product` (synthetic data; 404 in production).
+  - A company- and store-scoped loader that reads one item's ~15 months of counts plus linked sales, paged.
+  - No schema change.
+  - Status labels are now shared between Stock forecast and this page.
+
 ## 2026-10-07 — Uploads: tap a finished file to open its review
 - In the batch file list, a page that has been read is now a **fully clickable row** that opens that page's review (`/uploads/[id]`). Previously you had to aim for a small "Open" text button.
   - The row highlights on hover and shows a chevron, and it is a single keyboard stop with an inset focus ring and a label such as "Review 2.pdf (page 2)".
