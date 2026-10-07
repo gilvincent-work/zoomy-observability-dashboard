@@ -158,7 +158,7 @@ export function UploadReview({
         {extraction && pageStrip && (
           <nav aria-label="Form pages" className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
             <span className="mr-1 text-muted-foreground">
-              {pageStrip.scope === 'count' ? 'Pages in this count' : 'Pages uploaded with this one'}
+              {pageStrip.scope === 'count' ? 'Pages in this count' : pageStrip.scope === 'batch' ? 'Pages in this batch' : 'Pages uploaded with this one'}
             </span>
             {pageStrip.cells.map((p) => {
               const inner = (
@@ -178,7 +178,11 @@ export function UploadReview({
               if (p.current) return <span key={p.page} className={cls} aria-current="page">{inner}</span>;
               if (!p.uploadId)
                 return (
-                  <span key={p.page} className={cn(cls, 'border-dashed text-muted-foreground/60')} title="No scan of this page in this form yet">
+                  <span
+                    key={p.page}
+                    className={cn(cls, 'border-dashed text-muted-foreground/60')}
+                    title={pageStrip.scope === 'batch' ? 'Not uploaded in this batch' : 'No scan of this page in this form yet'}
+                  >
                     {p.page}
                   </span>
                 );
@@ -189,6 +193,11 @@ export function UploadReview({
               );
             })}
             <span className="ml-1 text-[11px] text-muted-foreground">red dot = has flags · ✓ committed</span>
+            {pageStrip.batchId && (
+              <Link href={`/uploads/batch/${pageStrip.batchId}`} className="ml-1 text-[11px] font-medium text-primary underline-offset-4 hover:underline">
+                Review the batch
+              </Link>
+            )}
           </nav>
         )}
       </div>
