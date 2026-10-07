@@ -1,5 +1,6 @@
-// F5 + F7 + F8 + F10: the strict tool definitions (eleven, plus run_query for Explore users) sent to the Messages API, built from the registry. Frozen.
-// Strict-mode limits honoured: 10 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
+// F5 + F7 + F8 + F10: the strict tool definitions sent to the Messages API, built from the registry. Frozen. Eleven base tools; Explore
+// users get fourteen (plus run_query, list_tables, describe_table). Strict-mode limits honoured: at most 20 strict tools per request, no
+// optional parameters, no unions, no min/max/pattern/format keywords.
 import {DIGEST_SECTIONS, DIGEST_WINDOWS, PRODUCT_SHOWS} from './digest-lookup';
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {ToolDefinition} from './stream-types';
@@ -276,7 +277,7 @@ const EXPLORE_TOOLS: readonly ToolDefinition[] = (() => {
   return deepFreeze([...CHAT_TOOLS.slice(0, at), runQuery, listTables, describeTable, ...CHAT_TOOLS.slice(at)]);
 })();
 
-/** The tool list for a user who may use Explore: CHAT_TOOLS with run_query spliced in after query_metric, so set_report_title stays last and keeps the cache breakpoint. */
+/** The tool list for a user who may use Explore: CHAT_TOOLS with run_query, list_tables and describe_table spliced in after query_metric, so set_report_title stays last and keeps the cache breakpoint. */
 export function exploreTools(): readonly ToolDefinition[] {
   return EXPLORE_TOOLS;
 }
