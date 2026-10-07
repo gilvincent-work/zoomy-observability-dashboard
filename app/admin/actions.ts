@@ -4,6 +4,8 @@ import {revalidatePath} from 'next/cache';
 import {auth} from '@/auth';
 import {COOP_VIEW_KEY, fetchMemberships, type CompanyRole} from '@/src/company';
 import {countCoopAdmins, grantRoles, revoke, setStatus} from '@/src/admin-data';
+import {guardEnv} from '@/src/coop-env-server';
+import {PROD_CONFIRM_WORD, prodConfirmOk} from '@/src/coop-env';
 
 // Role-management actions — the ONLY write surface for access. Every action
 // re-derives the active view server-side and requires it to be the Coop Admin view
@@ -98,9 +100,13 @@ export async function grantRolesAction(input: {
   }
 }
 
-export async function setStatusAction(input: {email: string; companyKey: string; status: 'active' | 'suspended'}): Promise<AdminResult> {
+export async function setStatusAction(input: {email: string; companyKey: string; status: 'active' | 'suspended'; confirm?: string}): Promise<AdminResult> {
   const gate = await requireCoopAdmin();
   if ('error' in gate) return {ok: false, error: gate.error};
+  // Production guard: suspending access there must be confirmed by typing the word.
+  if (input.status === 'suspended' && !prodConfirmOk(guardEnv(), input.confirm)) {
+    return {ok: false, error: `Type ${PROD_CONFIRM_WORD} to confirm this change in Production.`};
+  }
   const email = (input.email ?? '').trim().toLowerCase();
   const companyId = parseCompany(input.companyKey);
   if (companyId === undefined) return {ok: false, error: 'Unknown company.'};
@@ -119,9 +125,13 @@ export async function setStatusAction(input: {email: string; companyKey: string;
   }
 }
 
-export async function revokeAction(input: {email: string; companyKey: string}): Promise<AdminResult> {
+export async function revokeAction(input: {email: string; companyKey: string; confirm?: string}): Promise<AdminResult> {
   const gate = await requireCoopAdmin();
   if ('error' in gate) return {ok: false, error: gate.error};
+  // Production guard: removing access there must be confirmed by typing the word.
+  if (!prodConfirmOk(guardEnv(), input.confirm)) {
+    return {ok: false, error: `Type ${PROD_CONFIRM_WORD} to confirm this change in Production.`};
+  }
   const email = (input.email ?? '').trim().toLowerCase();
   const companyId = parseCompany(input.companyKey);
   if (companyId === undefined) return {ok: false, error: 'Unknown company.'};

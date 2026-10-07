@@ -4,6 +4,8 @@ import {cookies} from 'next/headers';
 import {redirect} from 'next/navigation';
 import {auth} from '@/auth';
 import {homeFor, shouldRedirectFromZoomy} from '@/src/company-nav';
+import {currentEnv} from '@/src/coop-env-server';
+import type {CoopEnvKey} from '@/src/coop-env';
 import {
   COOP_VIEW_KEY,
   fetchCompanies,
@@ -90,6 +92,10 @@ export type NavContext = {
   role: CompanyRole;
   isCoopAdmin: boolean;
   views: NavView[];
+  /** Holds an active Coop Admin role — in ANY view (drives the environment switcher). */
+  holdsCoopAdmin: boolean;
+  /** The environment this request is on (Staging / Production). */
+  env: CoopEnvKey;
 };
 
 export const getNavContext = cache(async (): Promise<NavContext | null> => {
@@ -115,5 +121,20 @@ export const getNavContext = cache(async (): Promise<NavContext | null> => {
     role: active.role,
     isCoopAdmin: active.isCoopAdmin,
     views: navViews,
+    holdsCoopAdmin: holdsCoopAdmin(memberships),
+    env: (await currentEnv()).key,
   };
 });
+
+/** An active Coop Admin membership, whatever view is in use (suspended rows are
+ *  already dropped from the session's memberships). */
+export const holdsCoopAdmin = (memberships: Membership[]) => memberships.some((m) => !m.companyId && m.role === 'coop_admin');
+
+/** Session check for Coop-Admin-holder pages (e.g. Manage environments), any view. */
+export async function getCoopAdminHolder(): Promise<{email: string} | null> {
+  const session = await sessionOnce();
+  if (!session) return null;
+  const memberships = (session as {memberships?: Membership[]}).memberships ?? [];
+  const email = session.user?.email?.toLowerCase();
+  return email && holdsCoopAdmin(memberships) ? {email} : null;
+}
