@@ -288,6 +288,7 @@ function FileRow({i, now, onRetry, onCancel, onRemove}: {i: QueueItem; now: numb
         <Link
           href={href}
           aria-label={`Review ${i.name}${i.page ? ` (page ${i.page})` : ''}`}
+          title={i.name}
           className="absolute inset-0 z-0 rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         />
       )}
@@ -312,7 +313,8 @@ function FileRow({i, now, onRetry, onCancel, onRemove}: {i: QueueItem; now: numb
           </div>
         )}
       </div>
-      <div className="relative z-10 flex shrink-0 items-center gap-1">
+      {/* Icons let clicks fall through to the row link; only the buttons catch them. */}
+      <div className="pointer-events-none relative z-10 flex shrink-0 items-center gap-1 [&_button]:pointer-events-auto">
         {done && <Check className="size-4" style={{color: 'var(--status-good)'}} aria-label="Done" />}
         {href && <ChevronRight aria-hidden className="size-4 text-muted-foreground" />}
         {failed && (
