@@ -207,9 +207,10 @@ export function UploadReview({
       )}
 
       <div className={cn('flex flex-col gap-5', twoCol && 'lg:flex-row lg:items-start')}>
-        {/* Left: compact scan preview, sticky; click to enlarge. ~28% on desktop. */}
+        {/* Left: scan preview, pinned under the app header while the rows scroll (desktop);
+            sized to the viewport so it's always fully in view. Click to enlarge. */}
         {scanUrl && (
-          <div className="lg:sticky lg:top-4 lg:w-[28%] lg:shrink-0">
+          <div className="lg:sticky lg:top-[calc(3.5rem+1rem)] lg:w-[28%] lg:shrink-0">
             <Card>
               <CardHeader className="gap-0">
                 <div className="flex items-center justify-between gap-2">
@@ -236,7 +237,7 @@ export function UploadReview({
                     src={scanUrl}
                     title="Scanned inventory form"
                     tabIndex={-1}
-                    className="pointer-events-none h-[360px] w-full"
+                    className="pointer-events-none h-[360px] w-full lg:h-[min(640px,calc(100dvh-12rem))]"
                   />
                   <span className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/40 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
                     <span className="inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground">

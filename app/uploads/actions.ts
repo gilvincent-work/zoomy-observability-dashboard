@@ -6,6 +6,7 @@ import {canEditData, outOfScopeStores} from '@/src/company';
 import {auth} from '@/auth';
 import {
   BatchConflictError,
+  BatchStateError,
   commitBatch,
   commitInventory,
   createBatch,
@@ -270,17 +271,29 @@ export async function commitBatchAction(input: {
   if (input.periodStart > input.periodEnd) return {ok: false, error: 'Period start must not be after period end.'};
   if (outOfScopeStores(ctx.storeScope, [store]).length) return {ok: false, error: `Store ${store} is outside your access.`};
 
-  const owned = new Map((await getBatchPages(ctx.companyId, input.batchId)).map((p) => [p.upload.id, p]));
+  const batchPages = await getBatchPages(ctx.companyId, input.batchId);
+  const owned = new Map(batchPages.map((p) => [p.upload.id, p]));
+  if (batchPages.some((p) => p.upload.status === 'processing')) {
+    return {ok: false, error: 'A page is still being read. Wait for it to finish, then commit.'};
+  }
+  const awaiting = batchPages.filter((p) => p.upload.kind === 'inventory_pdf' && p.upload.status === 'needs_review');
   const pages: Array<{uploadId: string; rows: ReviewedInventoryRow[]}> = [];
+  const sent = new Set<string>();
   for (const p of (Array.isArray(input.pages) ? input.pages : []).slice(0, 50)) {
     const mine = owned.get(p?.uploadId);
     if (!mine) return {ok: false, error: 'A page doesn’t belong to this batch.'};
     if (mine.upload.status !== 'needs_review') return {ok: false, error: `${mine.upload.filename} isn’t awaiting review.`};
+    if (sent.has(p.uploadId)) continue;
+    sent.add(p.uploadId);
     const clean = cleanRows(p.rows);
     if (!clean.ok) return clean;
     pages.push({uploadId: p.uploadId, rows: clean.rows});
   }
-  if (!pages.length || !pages.some((p) => p.rows.length)) return {ok: false, error: 'No valid rows to commit.'};
+  // Every page awaiting review commits together — none left behind in an emptied batch.
+  if (awaiting.length !== sent.size || awaiting.some((p) => !sent.has(p.upload.id))) {
+    return {ok: false, error: 'The pages in this batch changed. Reload the page to see them all, then commit.'};
+  }
+  if (!pages.some((p) => p.rows.length)) return {ok: false, error: 'No valid rows to commit.'};
 
   try {
     const {committed} = await commitBatch({
@@ -297,7 +310,13 @@ export async function commitBatchAction(input: {
     return {ok: true, committed};
   } catch (e) {
     if (e instanceof BatchConflictError) {
-      return {ok: false, error: `Item ${e.itemCode} appears on two pages — it looks like a page was scanned twice. Remove the duplicate page and try again.`};
+      return {ok: false, error: `Item ${e.itemCode} appears more than once — a page may have been scanned twice, or a code was misread. Fix or remove the duplicate and try again.`};
+    }
+    if (e instanceof BatchStateError) {
+      return {
+        ok: false,
+        error: e.reason === 'closed' ? 'This batch was already committed.' : 'The pages in this batch changed. Reload the page to see them all, then commit.',
+      };
     }
     console.error('commitBatchAction', e);
     return {ok: false, error: 'Could not commit these pages. Please try again — committing again is safe.'};

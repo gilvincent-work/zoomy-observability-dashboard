@@ -32,8 +32,24 @@ Dates are local working dates (GMT+8). Newest first.
   - **Page tabs** with each page's open-flag count (✓ when clear), plus duplicate and missing-page markers.
   - Each tab has the scan (click to enlarge), the confidence card and the rows with the flag navigator, the same tools as single-scan review.
   - A sticky bar always says what's left ("Resolve 2 flagged rows first", "Page 3 was uploaded twice…") and offers "Go to next flag", then **Commit all N pages**.
-- **Atomic commit.** All pages' rows go in ONE upsert into one Inventory count. It refuses when two pages carry the same items (a page scanned twice). Every page must belong to the batch and still be awaiting review. Same authorization, store-scope and validation as a single-page commit.
+- **Atomic commit — one Postgres transaction (`gl_commit_batch`).** It locks the batch row, so two simultaneous "Commit all" clicks serialize and the second is refused.
+  - It requires **exactly** the batch's pages awaiting review: none may be left behind, and none may still be reading.
+  - It refuses a repeated item code, whether across pages (a page scanned twice) or within one page. The error names the code.
+  - It upserts every count and closes the pages and the batch together, so a failure leaves nothing half-applied.
+  - Same authorization, store scope and validation as a single-page commit. Service-role only; applied to Staging.
+  - *Why a DB function:* the regression review showed that sequential client-side writes could double-commit under a race, or strand pages after a mid-way failure.
 - **Data:** new additive `gl_upload_batches` + nullable `gl_uploads.batch_id` (`supabase/goldline_upload_batches.sql`; RLS on, API roles revoked; applied to Staging). Background processing for bulk multi-store uploads stays a later phase.
+- **Review hardening:**
+  - The batch review merges pages that finish reading while it's open (it never commits a page that was still empty), keeps your edits across refreshes, and keys tabs by upload.
+  - Password-protected PDFs are refused with a clear message, in the browser and in the route.
+  - Store and period typed before the first upload are saved once the batch exists. Saves are debounced and no longer run inside state updaters.
+  - Cancel works while the batch is being created. Retry only applies to failed or cancelled files.
+  - A CSV never joins a batch, and a batch's store is checked against your store access.
+  - The page refreshes once per burst of finished files, not after every file.
+- **The scan preview now follows you as you scroll** (single-scan and batch review, desktop). It pins just under the header, sized to the viewport.
+  - *Root cause:* the shell's `<main>` was `overflow-y-auto` while the window does the scrolling, which silently disabled every `position: sticky` inside pages.
+  - `<main>` now uses `overflow-x-clip`. This also brings back Channel Compare's sticky panels (offset below the header) and Health's condensing header (now listens to the window).
+  - The batch commit bar is sticky inside the content column instead of `fixed`, so it no longer spans under the sidebar, and it sits above the mobile tab bar.
 - Pure rules tested (`src/upload-batch.ts`). typecheck + full suite (2522) + pagination guard pass; impeccable detector: no findings.
 
 ## 2026-10-07 — Users & Roles: role chips color-coded by company

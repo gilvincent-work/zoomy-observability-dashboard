@@ -100,6 +100,7 @@ export async function splitPdfPages(file: File, nameFor: (i: number, total: numb
   } catch {
     throw new Error(`“${file.name}” couldn’t be opened — it may be damaged. Please re-scan it.`);
   }
+  if (src.isEncrypted) throw new Error(`“${file.name}” is password-protected. Save an unlocked copy and add that.`);
   const total = src.getPageCount();
   if (total <= 1) return [file];
   const out: File[] = [];

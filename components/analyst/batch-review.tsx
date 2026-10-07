@@ -32,7 +32,37 @@ export type BatchReviewPage = {
   scanUrl: string | null;
 };
 
-type PageState = {rows: ExtractedRow[]; resolved: Set<number>; active: number | null; view: ReviewView; query: string};
+type PageState = {
+  rows: ExtractedRow[];
+  resolved: Set<number>;
+  active: number | null;
+  view: ReviewView;
+  query: string;
+  seed: string; // which server snapshot the edits started from (see seedKey)
+};
+
+// A page's edits start from its extraction. Re-seed only when the server has something
+// new for it (a page still reading when the review opened has since finished) — never
+// on a plain refresh, so in-progress edits survive pages arriving while you review.
+const seedKey = (p: BatchReviewPage) => `${p.upload.status}:${p.extraction ? p.extraction.data?.rows?.length ?? 0 : 'none'}`;
+
+function flagsOf(p: BatchReviewPage): number[] {
+  return (p.extraction?.data?.rows ?? [])
+    .map((r, i) => ({c: rowConfidence(r.confidence), i}))
+    .filter((x) => x.c < LOW_BELOW)
+    .map((x) => x.i);
+}
+
+function seedPage(p: BatchReviewPage): PageState {
+  return {
+    rows: (p.extraction?.data?.rows ?? []).map((r) => ({...r})),
+    resolved: new Set<number>(),
+    active: null,
+    view: flagsOf(p).length ? 'needs' : 'all',
+    query: '',
+    seed: seedKey(p),
+  };
+}
 
 function toIntOrNull(s: string): number | null {
   const t = s.trim();
@@ -71,43 +101,50 @@ export function BatchReview({
   const [storeCode, setStoreCode] = useState(defaults.storeCode);
   const [periodStart, setPeriodStart] = useState(defaults.periodStart);
   const [periodEnd, setPeriodEnd] = useState(defaults.periodEnd);
-  const [tab, setTab] = useState(0);
+  const [tabId, setTabId] = useState<string | null>(pages[0]?.upload.id ?? null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
   const [committing, startCommit] = useTransition();
 
-  // Flags per page are fixed at load (editing a value doesn't change the reader's confidence).
-  const flaggedByPage = useMemo(
-    () =>
-      pages.map((p) =>
-        (p.extraction?.data?.rows ?? []).map((r, i) => ({c: rowConfidence(r.confidence), i})).filter((x) => x.c < LOW_BELOW).map((x) => x.i),
-      ),
-    [pages],
-  );
-  const [state, setState] = useState<Record<string, PageState>>(() =>
-    Object.fromEntries(
-      pages.map((p, k) => [
-        p.upload.id,
-        {rows: (p.extraction?.data?.rows ?? []).map((r) => ({...r})), resolved: new Set<number>(), active: null, view: flaggedByPage[k].length ? 'needs' : 'all', query: ''},
-      ]),
-    ),
-  );
+  // Flags per page come from the reader (editing a value doesn't change its confidence).
+  const flaggedById = useMemo(() => Object.fromEntries(pages.map((p) => [p.upload.id, flagsOf(p)])), [pages]);
+  const [state, setState] = useState<Record<string, PageState>>(() => Object.fromEntries(pages.map((p) => [p.upload.id, seedPage(p)])));
+
+  // Pages that arrived or finished reading since the review opened: seed them now
+  // (render-time adjustment, so they're never shown without state).
+  const stale = pages.filter((p) => state[p.upload.id]?.seed !== seedKey(p));
+  if (stale.length) {
+    setState((all) => {
+      const next = {...all};
+      for (const p of stale) {
+        const had = next[p.upload.id];
+        // Keep edits if the snapshot only changed status (e.g. committed elsewhere).
+        next[p.upload.id] = had && had.rows.length && p.extraction ? {...had, seed: seedKey(p)} : seedPage(p);
+      }
+      return next;
+    });
+  }
 
   const reviewable = pages.filter((p) => p.upload.status === 'needs_review');
   const coverage = batchCoverage(pages.map((p) => ({page: p.page})));
-  const pageInfo = pages.map((p, k) => ({
-    uploadId: p.upload.id,
-    page: p.page,
-    flagged: flaggedByPage[k].length,
-    resolved: flaggedByPage[k].filter((i) => state[p.upload.id]?.resolved.has(i)).length,
-    status: p.upload.status,
-  }));
+  const pageInfo = pages.map((p) => {
+    const flags = flaggedById[p.upload.id] ?? [];
+    return {
+      uploadId: p.upload.id,
+      page: p.page,
+      flagged: flags.length,
+      resolved: flags.filter((i) => state[p.upload.id]?.resolved.has(i)).length,
+      status: p.upload.status,
+    };
+  });
   const readiness = batchReadiness({storeCode, periodStart, periodEnd, pages: pageInfo});
 
+  const tab = Math.max(0, pages.findIndex((p) => p.upload.id === tabId));
+  const setTab = (k: number) => setTabId(pages[k]?.upload.id ?? null);
   const cur = pages[tab];
   const curState = cur ? state[cur.upload.id] : null;
-  const curFlags = flaggedByPage[tab] ?? [];
+  const curFlags = cur ? flaggedById[cur.upload.id] ?? [] : [];
   const setCur = (p: Partial<PageState> | ((s: PageState) => Partial<PageState>)) =>
     cur && setState((all) => ({...all, [cur.upload.id]: {...all[cur.upload.id], ...(typeof p === 'function' ? p(all[cur.upload.id]) : p)}}));
 
@@ -140,7 +177,7 @@ export function BatchReview({
         consultant: defaults.consultant,
         pages: reviewable.map((p) => ({
           uploadId: p.upload.id,
-          rows: state[p.upload.id].rows.map((r) => ({
+          rows: (state[p.upload.id]?.rows ?? []).map((r) => ({
             item_code: r.item_code,
             stockroom: r.stockroom,
             drawer: r.drawer,
@@ -165,7 +202,7 @@ export function BatchReview({
   const openFlags = pageInfo.reduce((n, p) => n + Math.max(0, p.flagged - p.resolved), 0);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 pt-6 pb-28">
+    <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 pt-6 pb-6">
       <div className="flex flex-col gap-1">
         <Link href="/uploads" className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-3.5" /> Back to uploads
@@ -297,7 +334,7 @@ export function BatchReview({
           {cur && curState && (
             <div role="tabpanel" className="flex flex-col gap-5 lg:flex-row lg:items-start">
               {cur.scanUrl && (
-                <div className="lg:sticky lg:top-20 lg:w-[28%] lg:shrink-0">
+                <div className="lg:sticky lg:top-[calc(3.5rem+1rem)] lg:w-[28%] lg:shrink-0">
                   <Card>
                     <CardContent className="flex flex-col gap-2">
                       <div className="flex items-center justify-between gap-2">
@@ -314,7 +351,7 @@ export function BatchReview({
                         aria-label="Enlarge scan"
                         className="group relative block w-full overflow-hidden rounded-md border border-border bg-muted"
                       >
-                        <iframe src={cur.scanUrl} title={`Scan of ${cur.upload.filename}`} tabIndex={-1} className="pointer-events-none h-[360px] w-full" />
+                        <iframe src={cur.scanUrl} title={`Scan of ${cur.upload.filename}`} tabIndex={-1} className="pointer-events-none h-[360px] w-full lg:h-[min(640px,calc(100dvh-12rem))]" />
                         <span className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/40 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
                           <span className="inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium">
                             <Maximize2 className="size-3" /> Click to enlarge
@@ -383,8 +420,8 @@ export function BatchReview({
 
       {/* Sticky commit bar */}
       {editable && reviewable.length > 0 && done == null && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-sm md:left-auto md:w-[calc(100%-var(--sidebar-w,0px))]">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-background/90 backdrop-blur-sm max-md:bottom-[calc(4rem+env(safe-area-inset-bottom,0px))]">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
             <span aria-live="polite" className={cn('text-sm', error ? 'text-destructive' : 'text-muted-foreground')}>
               {error ?? (readiness.ready ? `Ready — ${reviewable.length} ${reviewable.length === 1 ? 'page' : 'pages'} into one Inventory count.` : readiness.reason)}
             </span>
@@ -433,7 +470,8 @@ export function BatchReview({
   function goToFlagOnPage(k: number) {
     const p = pages[k];
     const s = state[p.upload.id];
-    const first = unresolvedFlags(flaggedByPage[k], s.resolved)[0];
+    if (!s) return;
+    const first = unresolvedFlags(flaggedById[p.upload.id] ?? [], s.resolved)[0];
     if (first == null) return;
     setState((all) => ({...all, [p.upload.id]: {...all[p.upload.id], active: first, query: '', view: 'needs'}}));
     requestAnimationFrame(() => {

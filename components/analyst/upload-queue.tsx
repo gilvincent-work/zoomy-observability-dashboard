@@ -83,6 +83,8 @@ export function UploadQueueProvider({company, children}: {company: string | null
   const [notice, setNotice] = useState<string | null>(null);
   const aborts = useRef(new Map<string, () => void>());
   const batchPromise = useRef<Promise<string | null> | null>(null);
+  const cancelled = useRef(new Set<string>()); // cancelled before their request went out
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const batchRef = useRef(batch);
   batchRef.current = batch;
   // The company the queue's work belongs to (fixed while a batch is in flight, even if
@@ -111,15 +113,33 @@ export function UploadQueueProvider({company, children}: {company: string | null
     return batchPromise.current;
   }, []);
 
-  const persistBatchInfo = useCallback((b: BatchInfo) => {
-    if (!b.id) return;
-    void updateBatchInfoAction({
-      company: queueCompany.current,
-      batchId: b.id,
-      storeCode: b.storeCode,
-      periodStart: b.periodStart,
-      periodEnd: b.periodEnd,
-    });
+  // Save store + period to the batch whenever they change — including values typed
+  // before the batch existed (saved as soon as it's created). Debounced while typing.
+  useEffect(() => {
+    if (!batch.id) return;
+    const company = queueCompany.current;
+    const t = setTimeout(() => {
+      void updateBatchInfoAction({
+        company,
+        batchId: batch.id!,
+        storeCode: batch.storeCode,
+        periodStart: batch.periodStart,
+        periodEnd: batch.periodEnd,
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [batch.id, batch.storeCode, batch.periodStart, batch.periodEnd]);
+
+  /** Refresh server data once a burst of finished uploads settles, not after each one. */
+  const refreshSoon = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      router.refresh();
+    }, 800);
+  }, [router]);
+  useEffect(() => () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
   }, []);
 
   const run = useCallback(
@@ -131,8 +151,11 @@ export function UploadQueueProvider({company, children}: {company: string | null
       try {
         if (item.kind === 'pdf') batchId = await ensureBatch();
       } catch (e) {
+        if (cancelled.current.delete(item.id)) return patch(item.id, {state: 'cancelled'});
         return patch(item.id, {state: 'failed', error: e instanceof Error ? e.message : 'Could not start the upload.'});
       }
+      // Cancelled while the batch was being created: don't send.
+      if (cancelled.current.delete(item.id)) return patch(item.id, {state: 'cancelled'});
       const b = batchRef.current;
       const {promise, abort} = sendUpload({
         company,
@@ -172,20 +195,16 @@ export function UploadQueueProvider({company, children}: {company: string | null
         // Page 1 prints the store + period: prefill the batch if the user hasn't typed them.
         const h = res.header;
         if (res.page === 1 && h) {
-          setBatch((cur) => {
-            const next: BatchInfo = {
-              ...cur,
-              storeCode: cur.storeCode || h.storeCode || '',
-              periodStart: cur.periodStart || h.periodStart || '',
-              periodEnd: cur.periodEnd || h.periodEnd || '',
-              consultant: cur.consultant ?? h.consultant ?? null,
-              prefilled: cur.prefilled || Boolean((!cur.storeCode && h.storeCode) || (!cur.periodStart && h.periodStart)),
-            };
-            persistBatchInfo(next);
-            return next;
-          });
+          setBatch((cur) => ({
+            ...cur,
+            storeCode: cur.storeCode || h.storeCode || '',
+            periodStart: cur.periodStart || h.periodStart || '',
+            periodEnd: cur.periodEnd || h.periodEnd || '',
+            consultant: cur.consultant ?? h.consultant ?? null,
+            prefilled: cur.prefilled || Boolean((!cur.storeCode && h.storeCode) || (!cur.periodStart && h.periodStart)),
+          }));
         }
-        router.refresh(); // the Files list picks up the new rows
+        refreshSoon(); // the Files list picks up the new rows
       } else {
         patch(item.id, {
           state: 'failed',
@@ -195,7 +214,7 @@ export function UploadQueueProvider({company, children}: {company: string | null
         });
       }
     },
-    [ensureBatch, patch, persistBatchInfo, router],
+    [ensureBatch, patch, refreshSoon],
   );
 
   // Scheduler: keep CONCURRENCY uploads going; CSVs wait for the batch period.
@@ -294,29 +313,34 @@ export function UploadQueueProvider({company, children}: {company: string | null
       notice,
       active,
       addFiles,
-      retry: (id) => patch(id, {state: 'queued', error: undefined, phase: 'uploading', uploadFrac: 0}),
+      retry: (id) =>
+        patch(id, (i) =>
+          i.state === 'failed' || i.state === 'cancelled'
+            ? {state: 'queued', error: undefined, phase: 'uploading', uploadFrac: 0, uploadId: undefined, serverStatus: undefined}
+            : {},
+        ),
       cancel: (id) => {
         const abort = aborts.current.get(id);
-        if (abort) abort();
-        else patch(id, (i) => (i.state === 'queued' || i.state === 'waiting_period' ? {state: 'cancelled'} : {}));
+        if (abort) return abort();
+        const item = items.find((i) => i.id === id);
+        // Running but not sent yet (the batch is still being created): stop it at the gate.
+        if (item?.state === 'running') cancelled.current.add(id);
+        patch(id, (i) => (i.state === 'queued' || i.state === 'waiting_period' || i.state === 'running' ? {state: 'cancelled'} : {}));
       },
       remove: (id) => setItems((all) => all.filter((i) => i.id !== id || i.state === 'running')),
-      setBatchInfo: (p) =>
-        setBatch((cur) => {
-          const next = {...cur, ...p, prefilled: false};
-          persistBatchInfo(next);
-          return next;
-        }),
+      setBatchInfo: (p) => setBatch((cur) => ({...cur, ...p, prefilled: false})),
       reset: () => {
         if (items.some((i) => i.state === 'running')) return;
         setItems([]);
         setBatch(EMPTY_BATCH);
         batchPromise.current = null;
+        cancelled.current.clear();
         setNotice(null);
       },
       dismissNotice: () => setNotice(null),
     }),
-    [batch, items, preparing, notice, active, addFiles, patch, persistBatchInfo],
+    // company: queueCompany.current follows it whenever the queue is empty.
+    [batch, items, preparing, notice, active, addFiles, patch, company],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

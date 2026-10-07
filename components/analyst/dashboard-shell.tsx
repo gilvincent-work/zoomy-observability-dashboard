@@ -633,7 +633,10 @@ export function DashboardShell({
           </button>
         </nav>
 
-        <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-y-auto max-md:pb-[calc(4rem+env(safe-area-inset-bottom))]">
+        {/* The window scrolls, not <main>: overflow-x-clip (not overflow-auto) keeps <main>
+            from becoming a scroll container, so position:sticky inside pages pins to the
+            viewport (review scan, commit bars, Health header). */}
+        <main id="coop-scroll" className="coop-app-in min-w-0 flex-1 overflow-x-clip max-md:pb-[calc(4rem+env(safe-area-inset-bottom))]">
           {children}
         </main>
       </div>

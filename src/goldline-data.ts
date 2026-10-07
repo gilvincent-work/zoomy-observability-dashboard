@@ -609,58 +609,56 @@ export async function commitBatch(input: {
   consultant: string | null;
   pages: Array<{uploadId: string; rows: ReviewedInventoryRow[]}>;
 }): Promise<{committed: number}> {
-  const supa = db();
-  const seen = new Map<string, string>();
+  // One code per count. Checked here for a friendly message; gl_commit_batch re-checks
+  // inside its transaction (it also locks the batch and requires exactly the batch's
+  // pages awaiting review, so a concurrent or partial commit is refused, not half-applied).
+  const seen = new Set<string>();
   for (const p of input.pages) {
     for (const r of p.rows) {
-      const other = seen.get(r.item_code);
-      if (other && other !== p.uploadId) throw new BatchConflictError(r.item_code);
-      seen.set(r.item_code, p.uploadId);
+      if (seen.has(r.item_code)) throw new BatchConflictError(r.item_code);
+      seen.add(r.item_code);
     }
   }
-  const payload = input.pages.flatMap((p) =>
-    p.rows.map((r) => ({
-      company_id: input.companyId,
-      store_code: input.storeCode,
-      item_code: r.item_code,
-      period_start: input.period.start,
-      period_end: input.period.end,
-      consultant: input.consultant,
-      stockroom: r.stockroom,
-      drawer: r.drawer,
-      selling_area: r.selling_area,
-      delivery: r.delivery,
-      ending_on_hand: r.ending_on_hand,
-      source_upload_id: p.uploadId,
+  const {data, error} = await db().rpc('gl_commit_batch', {
+    p_company: input.companyId,
+    p_batch: input.batchId,
+    p_store: input.storeCode,
+    p_start: input.period.start,
+    p_end: input.period.end,
+    p_consultant: input.consultant,
+    p_pages: input.pages.map((p) => ({
+      upload_id: p.uploadId,
+      rows: p.rows.map((r) => ({
+        item_code: r.item_code,
+        stockroom: r.stockroom,
+        drawer: r.drawer,
+        selling_area: r.selling_area,
+        delivery: r.delivery,
+        ending_on_hand: r.ending_on_hand,
+      })),
     })),
-  );
-  if (payload.length) {
-    const ins = await supa.from('gl_inventory').upsert(payload, {onConflict: 'company_id,store_code,item_code,period_start,period_end'});
-    if (ins.error) throw new Error(`gl_inventory upsert failed: ${ins.error.message}`);
+  });
+  if (error) {
+    const msg = error.message ?? '';
+    const dup = /duplicate_item:(.+)$/.exec(msg);
+    if (dup) throw new BatchConflictError(dup[1].trim());
+    if (msg.includes('batch_not_open')) throw new BatchStateError('closed');
+    if (msg.includes('pages_mismatch')) throw new BatchStateError('pages');
+    throw new Error(`gl_commit_batch failed: ${msg}`);
   }
-  const ids = input.pages.map((p) => p.uploadId);
-  const ext = await supa.from('gl_extractions').update({status: 'confirmed'}).eq('company_id', input.companyId).in('upload_id', ids);
-  if (ext.error) throw new Error(`gl_extractions update failed: ${ext.error.message}`);
-  const up = await supa.from('gl_uploads').update({status: 'committed'}).eq('company_id', input.companyId).in('id', ids);
-  if (up.error) throw new Error(`gl_uploads update failed: ${up.error.message}`);
-  const b = await supa
-    .from('gl_upload_batches')
-    .update({
-      status: 'committed',
-      committed_at: new Date().toISOString(),
-      store_code: input.storeCode,
-      period_start: input.period.start,
-      period_end: input.period.end,
-    })
-    .eq('company_id', input.companyId)
-    .eq('id', input.batchId);
-  if (b.error) throw new Error(`gl_upload_batches update failed: ${b.error.message}`);
-  return {committed: payload.length};
+  return {committed: typeof data === 'number' ? data : 0};
+}
+
+/** The batch changed under the reviewer: already committed, or its page set moved. */
+export class BatchStateError extends Error {
+  constructor(public reason: 'closed' | 'pages') {
+    super(`batch state: ${reason}`);
+  }
 }
 
 export class BatchConflictError extends Error {
   constructor(public itemCode: string) {
-    super(`item ${itemCode} appears on two pages`);
+    super(`item ${itemCode} appears more than once`);
   }
 }
 

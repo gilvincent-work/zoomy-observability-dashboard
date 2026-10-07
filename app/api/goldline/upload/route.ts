@@ -153,10 +153,14 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
   const batchRaw = form.get('batch_id');
   const batchId = typeof batchRaw === 'string' && /^[0-9a-f-]{36}$/i.test(batchRaw) ? batchRaw : null;
   if (batchRaw && !batchId) return json({error: 'Invalid upload batch.'}, 400);
-  if (batchId) {
+  // Batches hold one store's inventory form; a CSV never joins one.
+  if (batchId && cls.kind === 'inventory_pdf') {
     const batch = await getBatch(companyId, batchId);
     if (!batch) return json({error: 'Upload batch not found.'}, 404);
     if (batch.status !== 'open') return json({error: 'This upload batch is already committed.'}, 409);
+    if (batch.store_code && outOfScopeStores(ctx.storeScope, [batch.store_code]).length) {
+      return json({error: `Store ${batch.store_code} is outside your access.`}, 403);
+    }
   }
 
   // One page per PDF upload. The uploader splits multi-page PDFs in the browser; any
@@ -164,7 +168,11 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
   if (cls.kind === 'inventory_pdf') {
     let pages = 1;
     try {
-      pages = (await PDFDocument.load(bytes, {ignoreEncryption: true, updateMetadata: false})).getPageCount();
+      const doc = await PDFDocument.load(bytes, {ignoreEncryption: true, updateMetadata: false});
+      if (doc.isEncrypted) {
+        return json({error: 'This PDF is password-protected. Save an unlocked copy and upload that.', status: 'rejected'}, 415);
+      }
+      pages = doc.getPageCount();
     } catch {
       return json({error: 'This PDF couldn’t be opened — it may be damaged. Please re-scan it.', status: 'rejected'}, 415);
     }
@@ -185,7 +193,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
       bytes,
       contentType: cls.contentType,
       uploadedBy,
-      batchId,
+      batchId: cls.kind === 'inventory_pdf' ? batchId : null,
     });
   } catch (e) {
     console.error('goldline upload: store failed', e);
