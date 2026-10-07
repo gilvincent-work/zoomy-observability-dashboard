@@ -92,6 +92,35 @@ export function countLabel(periodEnd: string): string {
   return `${monthShort(monthOf(periodEnd))} ${day <= 16 ? 'A' : 'B'}`;
 }
 
+/**
+ * Units sold per month, estimated from one item's counts at one store (sorted by period
+ * end): last on hand + delivered − this on hand, spread over the days between counts
+ * by month (a missed count doesn't pile two cycles into one month). A count with no
+ * on-hand figure is skipped, but its delivery carries to the next count; a cycle where
+ * the count rose with no delivery is skipped, never read as zero sales.
+ */
+export function countedSoldByMonth(counts: ItemCount[]): Map<string, number> {
+  const sorted = [...counts].sort((a, b) => a.period_end.localeCompare(b.period_end));
+  const out = new Map<string, number>();
+  let prev: {onHand: number; end: string} | null = null;
+  let carried = 0;
+  for (const c of sorted) {
+    const oh = onHandOf(c).onHand;
+    if (oh == null) {
+      carried += c.delivery ?? 0;
+      continue;
+    }
+    if (prev) {
+      const sold = prev.onHand + carried + (c.delivery ?? 0) - oh;
+      if (sold >= 0) spreadByMonth(out, prev.end, c.period_end, sold);
+    }
+    carried = 0;
+    prev = {onHand: oh, end: c.period_end};
+  }
+  roundMonths(out);
+  return out;
+}
+
 /** Add `units` sold between two count dates (exclusive → inclusive) to months, by days. */
 function spreadByMonth(into: Map<string, number>, fromEnd: string, toEnd: string, units: number) {
   const days = Math.round((Date.parse(`${toEnd}T00:00:00Z`) - Date.parse(`${fromEnd}T00:00:00Z`)) / DAY);
@@ -147,26 +176,7 @@ export function buildStoreProduct(input: StoreInput, itemCode: string): StorePro
       ? {...found, onHand: null, coverDays: null, stockOutDate: null, suggestedOrder: 0, status: 'not_counted', deadStock: false, anomaly: null}
       : found;
 
-  // Counts-based sold, spread over the days between counts by month (a missed count
-  // doesn't pile two cycles into one month). A count with no on-hand figure is skipped,
-  // but its delivery carries to the next count.
-  const countedSold = new Map<string, number>();
-  let prev: {onHand: number; end: string} | null = null;
-  let carried = 0;
-  for (const c of counts) {
-    const oh = onHandOf(c).onHand;
-    if (oh == null) {
-      carried += c.delivery ?? 0;
-      continue;
-    }
-    if (prev) {
-      const sold = prev.onHand + carried + (c.delivery ?? 0) - oh;
-      if (sold >= 0) spreadByMonth(countedSold, prev.end, c.period_end, sold);
-    }
-    carried = 0;
-    prev = {onHand: oh, end: c.period_end};
-  }
-  roundMonths(countedSold);
+  const countedSold = countedSoldByMonth(counts);
 
   const salesSold = new Map<string, number>();
   for (const s of input.sales ?? []) {

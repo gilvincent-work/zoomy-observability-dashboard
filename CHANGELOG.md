@@ -10,6 +10,50 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Goldline Inventory board: counts + forecast in one view, plus the warehouse
+- **Counts and Forecast are merged into one Inventory board** (`/stock`), built like Zoomy's Inventory page. The store picker includes **All stores (N)**. The old `/stock/forecast` redirects here and keeps its `?store=`.
+- **Columns:** Product · Status · Price · On hand (back room = stockroom + drawer · on display) · Trend · this month · last month · 3 months · **Lasts** (days, or months for slow movers) · **Need** · **Warehouse** · **Ship by** · ⋯.
+- **Controls:**
+  - Sort any column; the default is most urgent first.
+  - Filter by status (Needs action / Out / Healthy / Not enough data) and by product line, and search.
+  - Show hidden products, paging, and cards on mobile.
+  - Clicking a row opens the product page.
+- **The supply side,** from the business's own sheet columns:
+  - **Benta per month** is the pace.
+  - **How many months will it last** is Lasts.
+  - **Ilan ung need ng <store>** is Need: a top-up to two cycles of cover, less anything already on the way.
+  - **Ilan pa ung nasa warehouse** is Warehouse.
+  - **Gano katagal umabot sa store** is the per-store delivery time, which gives **Ship by** (run-out date − delivery time; "Now" once that's past). The header says when a send today would arrive.
+  - **Gano katagal gumawa** is the per-product-line production time, which gives **Produce by**: when the warehouse, after covering every store's need, runs dry, minus production time. It shows "produce now" if needs already exceed stock.
+- **Tiles:** Reorder now · Ship now · Warehouse short · Produce soon (within 2 weeks).
+- **Actions (⋯ menu and header):**
+  - View product page.
+  - **Record shipment** (warehouse → store). It is atomic: it refuses more than the warehouse holds and shows "on the way" until the store's next count records the delivery. **On the way** lists shipments, each with Cancel, which returns the units.
+  - **Edit warehouse stock**, **Change price** (logged to `gl_price_changes`), and **Hide product**.
+  - **Supply settings:** company defaults, per-store delivery days and per-line production days.
+  - Store-scoped roles can ship and set their own stores' delivery times, but not company-wide values.
+- **Sample data:** the warehouse stock and lead times aren't gathered yet, so `supabase/goldline_supply.sql` seeds **sample values** (`is_sample`). A banner says so, and anything edited in Coop is saved as real. The seed:
+  - production: lip ~30 days, lashes/accessories ~45, the rest ~21
+  - delivery: Metro Manila 2 days, Visayas 6, Mindanao 8
+  - warehouse: a deterministic 0–399 per item, a few at 0
+- **Data (additive, applied to Staging):**
+  - New tables `gl_supply_settings`, `gl_line_lead_times`, `gl_store_transit`, `gl_warehouse_stock`, `gl_shipments` and `gl_price_changes`; plus `gl_products.hidden`.
+  - New RPCs `gl_record_shipment`, `gl_cancel_shipment` and `gl_set_price`, which are service-role only.
+- **Regression-review fixes:**
+  - **Dates:** they use Philippine time (the server's UTC date was a day behind before 8am Manila).
+  - **Cancelling a shipment:** a shipment due to have arrived can't be cancelled, which would put stock back that's at the store; it shows "due · awaiting count".
+  - **Writes check their targets:** they verify the product, store and product line exist in the company, and a store-scoped role with no stores is denied rather than treated as unrestricted.
+  - **"Ship by":** it clears once what's on the way covers the need, so the "Needs action" filter matches the Ship now tile.
+  - **Store-scoped roles:** they don't see warehouse-wide flags, which would be computed from their stores only.
+  - **Shipping from "All stores":** it requires picking a store.
+  - **Price changes:** an unchanged price isn't logged.
+  - **Loader:** it appends instead of copying arrays, and linked-sales lookups are chunked.
+  - **Verified in a browser:** the store and product pickers work inside the dialogs.
+- **Shared logic and tests:**
+  - Pure, tested `src/goldline-supply.ts` (13 tests). It builds on `storeMovement`, so statuses match the Action Feed and the product page.
+  - The "sold per month from counts" logic is now `countedSoldByMonth`, shared with the product page.
+  - Dev-only preview at `/dev/goldline-inventory` (404 in production).
+
 ## 2026-10-07 — Goldline product page: sales and stock, month by month
 - **New page `/stock/[...item]`** for Goldline. It is the per-product view Zoomy already has, and that Nichido's POC sketched.
   - Header: the product name, item code, price and bestseller ★.

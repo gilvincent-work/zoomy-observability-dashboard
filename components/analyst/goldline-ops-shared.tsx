@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
 import {NativeSelect} from '@/components/ui/native-select';
 import {cn} from '@/lib/utils';
@@ -50,35 +49,6 @@ export function StorePicker({
         </option>
       ))}
     </NativeSelect>
-  );
-}
-
-export function InventoryTabs({store}: {store: string | null}) {
-  const pathname = usePathname();
-  const q = store ? `?store=${encodeURIComponent(store)}` : '';
-  const tabs = [
-    {href: '/stock', label: 'Counts'},
-    {href: '/stock/forecast', label: 'Forecast'},
-  ];
-  return (
-    <nav aria-label="Inventory views" className="inline-flex rounded-md border p-0.5 text-xs">
-      {tabs.map((t) => {
-        const on = pathname === t.href;
-        return (
-          <Link
-            key={t.href}
-            href={`${t.href}${q}`}
-            aria-current={on ? 'page' : undefined}
-            className={cn(
-              'rounded-[5px] px-2.5 py-1 font-medium transition-colors duration-150 ease-out',
-              on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {t.label}
-          </Link>
-        );
-      })}
-    </nav>
   );
 }
 
