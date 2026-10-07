@@ -9,6 +9,7 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { assertLocalPostgres } from './local-only.mjs'
 import { EXPLORE_EXTRA_CORPUS, EXPLORE_NEGATIVE_CORPUS, EXPLORE_POSITIVE_CORPUS } from '../test/support/explore-corpus.mjs'
+import { DIRECT_READ_ATTACKS } from '../test/support/direct-read-attacks.mjs'
 
 const URL_ = process.env.EXPLORE_DATABASE_URL
 assertLocalPostgres(URL_) // first: this script never opens a connection to anything but the local stack
@@ -223,6 +224,18 @@ try {
 {
   const f = drift()
   rec('(i) after the probes: no probe object is left, the trigger is enabled and the drift job is clean', q(`select count(*) from pg_class where relname like 'explore\\_probe\\_%' or relname in ('gl_probe', 'company_probe')`) === '0' && q("select evtenabled from pg_event_trigger where evtname = 'coop_explore_guard_ddl'") === 'O' && driftClean(f), JSON.stringify(f))
+}
+
+// ---- (k) Train 3 attack suite against the database (validator bypassed; test/support/direct-read-attacks.mjs) ---------------------
+// MUST rows: the database alone refuses in all three modes. PARSER rows: recorded (the database would run them; the guard is the
+// layer). SCAN rows: test/chat-explore-scan.integration.test.ts (the scanner in client.ts is the layer).
+for (const x of DIRECT_READ_ATTACKS) {
+  if (x.db === 'MUST') {
+    const r1 = await m1(x.sql), r2 = await m2(x.sql), r3 = await m3(x.sql)
+    rec(`(k) ${x.id} MUST (${x.category}): the database alone refuses in M1, M2 and M3`, rejectedByDb(r1) && rejectedByDb(r2) && rejectedByDb(r3), `M1 ${label(r1)}, M2 ${label(r2)}, M3 ${label(r3)}`)
+  } else if (x.db === 'PARSER') {
+    console.log(`INFO (k) ${x.id} PARSER-only (${x.category}): M3 ${label(await m3(x.sql))}`)
+  }
 }
 
 // ---- the corpus, validator bypassed ------------------------------------------------------------------------------------------

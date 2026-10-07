@@ -27,6 +27,34 @@ insert into public.explore_fixture_notes values
   (2, 'eyJ' || repeat('a', 12) || '.' || repeat('b', 12) || '.' || repeat('c', 12), '{}'::jsonb),
   (3, 'plain note 12345, nothing secret', '{"price": 129.5, "sku": "P1"}'::jsonb);
 
+-- Task 9 attack suite (test/support/direct-read-attacks.mjs): JSON under secret-shaped keys with SHORT planted values (no shape rule
+-- can see "shorty": only the key rules can), request headers stored as jsonb, cut-short and double-encoded JSON, 202 rows for the
+-- span bound, and the over-hiding controls. An open table with no secret column: the event trigger grants it whole.
+drop table if exists public.explore_fixture_payloads;
+create table public.explore_fixture_payloads (id int primary key, note text, payload jsonb);
+insert into public.explore_fixture_payloads (id, payload) values
+  (1,  '{"api_key": "shorty", "token": "shorty", "accessToken": "shorty", "apiKey": "shorty", "APIKey": "shorty", "lazada": {"refreshToken": "shorty"}}'),
+  (2,  '{"apiKey":"shorty","clientSecret":"s2"}'),
+  (3,  '{"tokens":{"lazada":"short"}}'),
+  (4,  '{"token": "shorty-planted-value"}'),
+  (5,  '{"token":"shorty"}'),
+  (6,  '{"$token":"shorty"}'),
+  (7,  '{"lazada:token":"shorty"}'),
+  (8,  '{"@token":"shorty"}'),
+  (9,  '{"apiKey": "shorty-unterminated"}'),
+  (10, '{"shop": {"token": "shorty"}}'),
+  (11, '{"headers":{"Authorization":"Bearer shorty","Cookie":"sid=shorty","Set-Cookie":"x"}}'),
+  (12, '{"bearer":"shorty","passphrase":"shorty","jwt":"shorty","otp":"shorty","cvv":"shorty","cvc":"shorty"}'),
+  (13, '{"access_token": "shorty"}'),
+  (14, '{"key":"color","value":"red"}'),
+  (15, '{"monkey":"banana","isPinned":true,"keyword":"jerky","hashtag":"zoomy"}');
+insert into public.explore_fixture_payloads (id, note) values
+  (20, md5('t9') || left(md5('t10'), 8)), -- a 40-character hex token, built at apply time
+  (21, 'sort key=price'),
+  (22, 'chickenjerkytreatsforsmalldogs100g');
+insert into public.explore_fixture_payloads (id, payload) select n, jsonb_build_object('n', n) from generate_series(1000, 1200) n;
+insert into public.explore_fixture_payloads (id, payload) values (1201, to_jsonb('{"token":"shorty"}'::text)); -- double-encoded, last
+
 -- Innocent names over a closed table and over a secret column: must NOT be granted (Review Focus 1)
 create view public.explore_fixture_token_view as select m.marketplace, m.updated_at from public.marketplace_tokens m;
 create view public.explore_fixture_alias_view as select x.id, x.api_key as label2 from public.explore_fixture_mixed x;
