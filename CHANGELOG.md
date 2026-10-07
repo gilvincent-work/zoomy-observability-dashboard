@@ -10,6 +10,17 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-08 — Ask Coop reads the whole database except secrets (Train 3)
+- **Access.** `run_query` reads every `public` table and view by its own name. The view-per-table model hid every new table and column until someone re-ran SQL, and it narrowed the owner's "everything except passwords and credentials" without saying so.
+- **The lock stays in the database.** The read-only login gets `SELECT` plus `BYPASSRLS`. One whole-word secret-name rule (password, token, secret, key, pin, hash, credential, with a reviewed `pos_settings.key` exception) and the Zoomy-only tenant fence (`gl_*`, `company_*`, `companies`) close tables and columns. The allowlist is 29 views.
+- **Future objects.** An event trigger re-applies the rule on every DDL, and a 5-minute pg_cron job backs it, because Supabase skips user event triggers for superusers and reserved roles. A daily drift job shows up in `/api/chat/health`.
+- **App layers.** A value scanner hides secret-shaped values that sit under innocent names, and fails closed past every bound. `list_tables` and `describe_table` read the live schema. A 66-case attack suite covers the parser and scanner. Two limits are accepted: string-function splitting of a secret, and X58 text in Postgres logs.
+- **Owner decision.** `digest_archive.bundle` stays queryable (the UI still never selects it).
+- **Catalog.** A runtime catalog generated from `knowledge/data-catalog/` drives the prompt, the page map and the go-links. The `tables.md` edits live outside git. `crm-tools.md` is deferred to Train 4.
+- **Answers.** Default views (`pos_orders_completed`, Event stock) replace a filter lint. "Completed" means `status = 'completed'`. The `stock_on_hand` and `stock_cover` registry metrics arrived, a code-written basis note is added, and each question has a cost cap.
+- **Aliases.** The `coop_explore_*` views stay as aliases until a later PR.
+- **Apply order.** `coop_chat_explore_direct.sql`, `coop_chat_default_views.sql` and `coop_chat_stock.sql`, by hand on staging. PROD waits for zoomy-pos to revoke public execute on its write RPCs.
+
 ## 2026-10-07 — Ask Coop digest periods and charts (Train 2)
 - **Digests by date.** Ask Coop reads digests by date in Philippine days. `window_from` is a PH-midnight `timestamptz` and was read with `slice(0,10)`, which showed 27 Sep for a window starting 28 Sep. PROD holds mixed windows (weekly, about a month, rolling 30 days, re-runs), so every stored window is listed per turn (newest re-run only), and `get_digest` can pick the one covering a date.
 - **Any period per channel.** New `get_channel_report`: Shopee and Lazada from the digests' per-day `daily` data (merged per channel and day, newest digest wins), Website from live CRM orders, Offline from POS. AOV is recomputed, never averaged. Old windows without `daily` are summed only when they tile exactly, and overlapping ones are refused as "not combinable". Website units are "unknown" when the CRM has no line items. The chat route now passes `getCrmOrders` to this one tool: a deliberate, temporary architecture exception (aggregates only, fence test updated) that Train 4's GET-only CRM tools replace.
