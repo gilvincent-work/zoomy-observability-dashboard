@@ -35,7 +35,7 @@ export function buildActions(input: {
   const {storeCode, items, catalog, countedCurrent, currentPeriod, lastCountEnd} = input;
   const out: Action[] = [];
   const stockHref = `/stock?store=${encodeURIComponent(storeCode)}`;
-  const forecastHref = `/stock/forecast?store=${encodeURIComponent(storeCode)}`;
+  const forecastHref = `/stock?store=${encodeURIComponent(storeCode)}`;
   const nameOf = (code: string) => catalog[code]?.name ?? code;
   const priceOf = (code: string) => catalog[code]?.price ?? 0;
 

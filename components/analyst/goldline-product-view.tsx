@@ -34,7 +34,7 @@ export function GoldlineProductView({data}: {data: ProductViewData}) {
   const {item, single, totals, chart} = data;
   const [vsLastYear, setVsLastYear] = useState(false);
   const title = item.productLine ? `${item.productLine} · ${item.name}` : item.name;
-  const backHref = data.store ? `/stock/forecast?store=${encodeURIComponent(data.store)}` : '/stock/forecast';
+  const backHref = data.store ? `/stock?store=${encodeURIComponent(data.store)}` : '/stock';
   const hasSales = chart.some((m) => (m.isForecast ? m.soldForecast : m.sold) != null);
   const status = single ? MOVEMENT_STATUS[single.status] : null;
 
@@ -42,7 +42,7 @@ export function GoldlineProductView({data}: {data: ProductViewData}) {
     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6">
       <header className="flex flex-col gap-3">
         <Link href={backHref} className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
-          <ArrowLeft className="size-3.5" aria-hidden /> Stock forecast
+          <ArrowLeft className="size-3.5" aria-hidden /> Inventory
         </Link>
         <div className="flex flex-col gap-2">
           <h1 className="flex flex-wrap items-center gap-2 font-heading text-2xl font-semibold tracking-tight text-balance">
