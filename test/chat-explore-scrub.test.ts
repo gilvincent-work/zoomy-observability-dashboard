@@ -191,8 +191,9 @@ describe('2.2 scanner, Task 7 re-review round 2 N1-N5: past a bound it fails clo
     expect(String(r.value).endsWith(HIDDEN)).toBe(true);
   });
   it('N1: a cell over the length bound is cut before any scan and the rest is hidden; the scanned head stays readable', () => {
-    const r = noLeak('x'.repeat(100_001) + ' ' + enc1, 'over 100k, then encoded');
-    expect(String(r.value).startsWith('x'.repeat(1000))).toBe(true);
+    // the padding has word breaks: a cut that does not split a run keeps the whole head (a split run is hidden whole, K2 below)
+    const r = noLeak('xxxx '.repeat(20_000) + 'x ' + enc1, 'over 100k, then encoded');
+    expect(String(r.value).startsWith('xxxx '.repeat(200))).toBe(true);
     expect(String(r.value).endsWith(HIDDEN)).toBe(true);
     noLeak(JSON.stringify(JSON.stringify({pad: 'a'.repeat(100_001), token: 'shorty'})), 'large double-encoded jsonb');
     noLeak('x'.repeat(100_001) + ' {"$token":"shorty"}', 'over 100k, unusual key');
@@ -242,6 +243,77 @@ describe('2.2 scanner, Task 7 re-review round 2 N1-N5: past a bound it fails clo
     let o: unknown = {token: 'shorty'};
     for (let k = 0; k < 20_000; k++) o = [o];
     noLeak(o, 'deep parsed');
+  });
+});
+
+describe('2.2 scanner, Task 7 re-review round 3 K1-K3: parsed keys are scanned; the cut never leaves a token prefix; long or escaped cut keys', () => {
+  const noLeak = (v: unknown, label: string) => {
+    const r = scrubValue(v);
+    expect(JSON.stringify(r.value), label).not.toContain('shorty');
+    expect(r.hidden, label).toBeGreaterThan(0);
+    return r;
+  };
+  it('K1: keys of a PARSED value (jsonb arrives parsed) are scanned like values: token-shaped keys and JSON-text keys, at depth and in arrays', () => {
+    expect(scrubValue({devices: {[jwt]: {platform: 'ios'}}})).toEqual({value: {devices: {[HIDDEN]: {platform: 'ios'}}}, hidden: 1});
+    expect(scrubValue({sessions: {[hex]: 'active', other: 1}})).toEqual({value: {sessions: {[HIDDEN]: 'active', other: 1}}, hidden: 1});
+    // a JSON-text key is scanned (shorty hidden inside it) AND is a secret NAME (its parts include token), so its value is hidden too
+    expect(scrubValue({a: {'{"token":"shorty"}': 1}})).toEqual({value: {a: {'{"token":"[hidden]"}': HIDDEN}}, hidden: 2});
+    expect(scrubValue({a: {'{"shop":"Z","sig":"shorty"}': 1}}).value).toEqual({a: {'{"shop":"Z","sig":"[hidden]"}': 1}}); // not a secret name: value kept
+    expect(scrubValue([{[skKey]: 1}, {ok: [{[jwt]: 2}]}])).toEqual({value: [{[HIDDEN]: 1}, {ok: [{[HIDDEN]: 2}]}], hidden: 2});
+    expect(scrubValue({[`sign=${'f'.repeat(20)}`]: 1}).value).toEqual({[`sign=${HIDDEN}`]: 1}); // the query-string rule on a key
+    // the same objects as TEXT already hid the key (the text rules see the whole string): parsed and text now agree
+    expect(scrubValue(JSON.stringify({sessions: {[hex]: 'active'}})).value).toBe(JSON.stringify({sessions: {[HIDDEN]: 'active'}}));
+    // a secret-NAMED key is a name, not a value: it stays readable and its value is hidden, as before
+    expect(scrubValue({api_key: 'shorty'})).toEqual({value: {api_key: HIDDEN}, hidden: 1});
+  });
+  it('K1: two keys hidden to the same marker both survive (the second is suffixed); a __proto__ key survives too (N6)', () => {
+    expect(scrubValue({[hex]: 1, [jwt]: 2})).toEqual({value: {[HIDDEN]: 1, [`${HIDDEN} 2`]: 2}, hidden: 2});
+    expect(scrubValue({[hex]: 1, [jwt]: 2, [skKey]: 3}).value).toEqual({[HIDDEN]: 1, [`${HIDDEN} 2`]: 2, [`${HIDDEN} 3`]: 3});
+    const r = scrubValue(JSON.parse('{"__proto__": {"x": 1}, "token": "shorty"}'));
+    expect(Object.keys(r.value as object)).toEqual(['__proto__', 'token']);
+    expect(JSON.stringify(r.value)).toBe(`{"__proto__":{"x":1},"token":"${HIDDEN}"}`);
+    expect(Object.getPrototypeOf(r.value)).toBeNull();
+    expect(scrubValue('x {"__proto__": {"x": 1}, "token": "shorty"}').value).toBe(`x {"__proto__":{"x":1},"token":"${HIDDEN}"}`);
+  });
+  it('K2: the 100,000-character cut never leaves the readable prefix of a run it splits: the whole run joins the hidden tail', () => {
+    const pad = (n: number) => 'w '.repeat(n / 2); // word breaks, so only the run at the cut is in question
+    const hex40 = 'a1b2c3d4e5'.repeat(4);
+    const split20 = pad(99_980) + hex40; // the cut falls 20 characters into a 40-hex run
+    expect(scrubValue(split20)).toEqual({value: pad(99_980) + HIDDEN, hidden: 1});
+    const opaque = pad(99_960) + ' ' + 'Ab1'.repeat(13) + 'Z'; // a 40-character token cut one character short
+    expect(scrubValue(opaque)).toEqual({value: pad(99_960) + ' ' + HIDDEN, hidden: 1});
+    const jwtSplit = pad(99_990) + jwt; // the cut falls in the payload: no header, no payload prefix
+    expect(scrubValue(jwtSplit)).toEqual({value: pad(99_990) + HIDDEN, hidden: 1});
+    const url = pad(99_980) + 'postgres://coop:s3cret-pw@db.example.com/app'; // the cut falls inside the password
+    expect(scrubValue(url)).toEqual({value: pad(99_980) + HIDDEN, hidden: 1});
+    // the run ends exactly at the cut: complete, judged by the rules, and nothing before it is hidden
+    const exact = pad(99_960) + hex40 + ' ' + 'tail words';
+    expect(scrubValue(exact)).toEqual({value: pad(99_960) + HIDDEN + HIDDEN, hidden: 2});
+    expect(scrubValue(pad(99_980) + 'readable words here and more')).toEqual({value: pad(99_980) + 'readable words here ' + HIDDEN, hidden: 1});
+    // a cell that is one run of over 100,000 characters is hidden whole, not cut to a 100,000-character prefix
+    expect(scrubValue('a'.repeat(100_001))).toEqual({value: HIDDEN, hidden: 1});
+  });
+  it('K3: the cut-short fallback reads keys over 64 characters and keys with backslash escapes', () => {
+    noLeak('x {"lazada_seller_center_refresh_token_for_shop_12345_production_env_x":"shorty"', '66-character key');
+    noLeak('x {"' + 'a'.repeat(500) + '_token":"shorty"', '500-character key');
+    noLeak('x {"a\\_token":"shorty"', 'escaped underscore');
+    noLeak('x {"a\\"token":"shorty"', 'escaped quote');
+    noLeak('x {"tok\\nen_token":"shorty"', 'escaped newline');
+    noLeak('x {"a\\\\token":"shorty"', 'escaped backslash');
+    noLeak('"{\\"a\\\\_token\\":\\"shorty\\"', 'level 1, escaped underscore');
+    noLeak('(1,"{""a\\_token"": ""shorty""', 'row literal, escaped underscore');
+    // an escape never swallows the closing quote: the key ends at ITS quote, so the pair after a plain key is still judged ...
+    expect(scrubValue('x {"a\\"b":"keep","token":"shorty"')).toEqual({value: `x {"a\\"b":"keep","token":"${HIDDEN}"`, hidden: 1});
+    // ... and at escape level 1 the secret pair is the FIRST one, not a merged key ending at the last quote (which would leak shorty)
+    noLeak('"{\\"token\\":\\"shorty\\",\\"shop\\":\\"Zoomy\\"', 'level 1, two pairs, cut');
+    expect(scrubValue('x {"a\\"b":"keep","n":1')).toEqual({value: 'x {"a\\"b":"keep","n":1', hidden: 0});
+  });
+  it('K3: the fallback with escapes is still linear', () => {
+    for (const c of ['"a\\"'.repeat(25_000), '"\\\\_token":'.repeat(10_000), '\\"'.repeat(50_000), '"' + 'a'.repeat(99_999)]) {
+      const t0 = performance.now();
+      scrubValue(c);
+      expect(performance.now() - t0, c.slice(0, 12)).toBeLessThan(500);
+    }
   });
 });
 

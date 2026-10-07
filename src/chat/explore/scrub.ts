@@ -8,10 +8,14 @@
 // again, up to MAX_JSON_DEPTH.
 // The scan is bounded (MAX_SCAN_CHARS, MAX_STEPS, MAX_SPANS, MAX_JSON_DEPTH, MAX_NEST per cell) and every bound FAILS CLOSED (Task 7
 // re-review round 2 N1): text the structural pass did not judge is hidden, never handed to the text rules. A cell longer than
-// MAX_SCAN_CHARS is cut there first (the rest hidden), so no rule ever sees more than that. The "name": value pair rules are only the
-// fallback for JSON cut short inside an otherwise scanned cell (left(x::text, n)), and they hide to the end whenever they cannot see
-// where the value ends. Every rule is linear in the cell length (round 2 N4): no rule rescans a run from every position.
+// MAX_SCAN_CHARS is cut there first (the rest hidden), so no rule ever sees more than that; a cut that would split a run of token
+// characters moves back to the start of that run, so no readable prefix of a token is ever left (round 3 K2). The "name": value pair
+// rules are only the fallback for JSON cut short inside an otherwise scanned cell (left(x::text, n)), and they hide to the end whenever
+// they cannot see where the value ends. Every rule is linear in the cell length (round 2 N4): no rule rescans a run from every position.
 // Secret JSON keys use isSecretJsonKey (camelCase aware, Task 7 re-review R1; credential header names, round 2 N3).
+// Object KEYS of a parsed value are scanned like values (round 3 K1): a jsonb column arrives from the driver already parsed, so a map
+// keyed by a device, push or session token ({devices: {"<jwt>": {...}}}) would otherwise reach the model with the key in clear, while
+// the same value read as ::text was hidden. Rewritten objects have no prototype (Object.create(null)), so a __proto__ key survives (N6).
 // Runs are bounded by "not a letter or digit" (never \b: `_` is a word character, so `key_<hex>` would slip past, Task 7 review).
 // False positives are accepted on purpose (a 32-hex device id), but the shapes are chosen so ordinary data is never hit: a uuid's
 // hex groups are short, digit-only strings (order numbers, phones) need a letter, SKUs are upper-case, and dashes break a run.
@@ -55,12 +59,14 @@ const has = (re: RegExp) => (m: string) => re.test(m);
 /**
  * The cut-short fallback: a "name": in JSON text, at any escape level (\"name\" inside a JSON string, \\\"name\\\" one deeper), or
  * ""name"": in a row literal. Only the name and the separator are matched; the value is read by hand, so a pair that is kept never
- * swallows the text after it (an object value under a plain key is still searched). Keys: any run without a quote or backslash, up to
- * 64 characters, or \uXXXX escapes ($token, lazada:token, @token; N2).
+ * swallows the text after it (an object value under a plain key is still searched). Keys: any length (round 3 K3), any character but
+ * a bare quote or newline ($token, lazada:token, @token; N2), with backslash escapes (\_, \", \n, \uXXXX, \\) read as two characters.
+ * An escape never swallows the CLOSING quote of its own level: each key character is guarded by (?!<close>), so at level 1 the key
+ * `token` in \"token\":\"x\",\"shop\": ends at its own \", never at the last one (a merged key would hide the wrong value).
  */
-const KEY_BODY = String.raw`((?:\\u[0-9a-fA-F]{4}|[^"\\\n]){1,64})`;
-const PAIR_KEY = new RegExp(String.raw`(?<![\\"])(\\*)"${KEY_BODY}\1"\s*:\s*`, 'g');
-const ROW_KEY = new RegExp(String.raw`""${KEY_BODY}""\s*:\s*`, 'g');
+const keyBody = (close: string) => String.raw`((?:(?!${close})(?:\\.|[^"\\\n]))+)`;
+const PAIR_KEY = new RegExp(String.raw`(?<![\\"])(\\*)"${keyBody(String.raw`\1"`)}\1"\s*:\s*`, 'g');
+const ROW_KEY = new RegExp(String.raw`""${keyBody('""')}""\s*:\s*`, 'g');
 const ROW_VALUE_END = /""(?=\s*(?:[,}\])]|$))/g;
 const BARE = /-?[^\s,}\])"]+/y;
 
@@ -196,13 +202,20 @@ function spanEnd(s: string, i: number, b: Budget): number {
 }
 
 
-function scrubText(s: string, depth: number, b: Budget): Scrubbed {
+/** A character that can be part of a token run in any rule (letters, digits, base64 and JWT symbols, hash `$`, URL `:/@%`). */
+const RUN_CHAR = /[A-Za-z0-9+/=_.:$@%-]/;
+
+function scrubText(s: string, depth: number, b: Budget): {value: string; hidden: number} {
   if (depth > MAX_JSON_DEPTH && /[{[]/.test(s)) return {value: HIDDEN, hidden: 1}; // JSON past the decode bound: not judged, hidden
   let hidden = 0;
   let tail = ''; // the hidden marker for text the structural pass did not judge
   let text = s;
   if (text.length > MAX_SCAN_CHARS) {
-    text = text.slice(0, MAX_SCAN_CHARS); // cut BEFORE any rule runs: nothing past this is judged, so it is hidden
+    // cut BEFORE any rule runs: nothing past this is judged, so it is hidden. A cut inside a run of token characters would leave the
+    // run's prefix readable, under every length threshold (K2): move the cut back to the start of that run (a plain loop, linear).
+    let cut = MAX_SCAN_CHARS;
+    if (RUN_CHAR.test(text[cut])) while (cut > 0 && RUN_CHAR.test(text[cut - 1])) cut -= 1;
+    text = text.slice(0, cut);
     tail = HIDDEN;
     hidden += 1;
   }
@@ -279,14 +292,18 @@ function scrub(v: unknown, depth: number, b: Budget, nest: number): Scrubbed {
     return {value, hidden};
   }
   let hidden = 0;
-  const value: Record<string, unknown> = {};
+  const value: Record<string, unknown> = Object.create(null); // no prototype: a __proto__ key is stored, not interpreted (N6)
   for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    const kr = scrubText(k, depth, b); // the key is text too (K1): a token-shaped key, or JSON holding a secret, is hidden like a value
+    hidden += kr.hidden;
+    let key = kr.value;
+    for (let n = 2; key in value; n += 1) key = `${kr.value} ${n}`; // two keys hidden to the same marker: keep both entries
     if (isSecretJsonKey(k) && x !== null && x !== undefined && x !== '') {
-      value[k] = HIDDEN;
+      value[key] = HIDDEN;
       hidden += 1;
     } else {
       const r = scrub(x, depth, b, nest + 1);
-      value[k] = r.value;
+      value[key] = r.value;
       hidden += r.hidden;
     }
   }
