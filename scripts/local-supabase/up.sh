@@ -5,7 +5,8 @@
 #   scripts/local-supabase/up.sh --reapply  re-run ONLY the SQL files against the running stack
 #   scripts/local-supabase/up.sh --explore  (alone or with --reapply) ALSO build the Ask Coop Explore data layer: the booth-lead tables,
 #                                           scripts/coop-explore-fixture.sql (fictional rows with deliberate traps), supabase/coop_chat_explore.sql
-#                                           (role coop_explore_ro + fifteen views), its password, and print supabase/coop_chat_explore_checks.sql
+#                                           (role coop_explore_ro + fifteen views), supabase/coop_chat_explore_direct.sql
+#                                           (direct reads: grants, trigger, cron) and scripts/coop-direct-fixture.sql (secret and tenant traps), its password, and print supabase/coop_chat_explore_checks.sql
 # Uses only the cached images (nothing is pulled), its own network `coop-local`, containers `coop-local-db` (127.0.0.1:54421)
 # and `coop-local-rest` (127.0.0.1:54423), and the proxy on 127.0.0.1:54420. No volume: scripts/local-supabase/down.sh = clean slate.
 # Secrets are generated on first run into the gitignored scripts/local-supabase/.local-env and never printed.
@@ -102,9 +103,11 @@ apply_sql() {
 apply_explore() {
   local f out
   [ -n "${EXPLORE_PG_PASSWORD:-}" ] || die 'EXPLORE_PG_PASSWORD is not in .local-env'
-  for f in supabase/spin_wheel_leads.sql supabase/spin_wheel_leads_instagram.sql scripts/coop-explore-fixture.sql supabase/coop_chat_explore.sql; do
+  for f in supabase/spin_wheel_leads.sql supabase/spin_wheel_leads_instagram.sql scripts/coop-explore-fixture.sql supabase/coop_chat_explore.sql supabase/coop_chat_explore_direct.sql scripts/coop-direct-fixture.sql; do
     out="$(psql_pg -o /dev/null < "$ROOT/$f" 2>&1)" || { echo "$out" | grep -v '^NOTICE:' >&2; die "failed applying $f"; }
     echo "applied $f"
+    # direct reads: say whether the event trigger and the cron guard were installed (the file never fails on either)
+    echo "$out" | grep -E '^NOTICE: +(event trigger|pg_cron)' | sed 's/^NOTICE: */  /' || true
   done
   # the password is a hex string from .local-env: safe to inline, never printed
   psql_pg -o /dev/null -c "alter role coop_explore_ro with password '${EXPLORE_PG_PASSWORD}'" || die 'could not set the coop_explore_ro password'
