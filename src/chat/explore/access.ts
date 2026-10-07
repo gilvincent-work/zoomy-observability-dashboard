@@ -2,6 +2,7 @@
 // The database is the lock (supabase/coop_chat_explore_direct.sql): tables open unless closed by name, views DEFAULT-DENY through
 // coop_explore_admin.view_allowlist(). This file is the parser's copy of the same rule (layer 2), and test/chat-explore-denylist.test.ts
 // fails when EXPLORE_VIEW_ALLOWLIST differs from the SQL list.
+import {CATALOG_DATA} from '../catalog';
 import {CHAT_RELATIONS, DIGEST_RELATIONS} from '../read/relations';
 import {isClosedRelation, isSecretName} from './secret-names';
 import {EXPLORE_VIEW_NAMES} from './views';
@@ -12,6 +13,9 @@ export const EXPLORE_VIEW_ALLOWLIST: readonly string[] = Object.freeze([
   ...EXPLORE_VIEW_NAMES, // coop_explore_* (supabase/coop_chat_explore.sql)
   'pos_inventory', 'pos_inventory_by_location', // zoomy-pos read views
 ]);
+
+/** Catalog domains with at least one open table: the list_tables enum (tool-defs.ts) and its runtime check (schema-tools.ts). */
+export const EXPLORE_OPEN_DOMAINS: readonly string[] = Object.freeze(CATALOG_DATA.domains.filter((d) => d.tables.some((t) => !isClosedRelation(t))).map((d) => d.id));
 
 /** Relations the app refuses although the database grants them. ONE line, easy to change. Empty: the drift log is readable (Task 4 review). */
 export const EXPLORE_APP_CLOSED_RELATIONS: readonly string[] = [];

@@ -3,8 +3,7 @@
 import {DIGEST_SECTIONS, DIGEST_WINDOWS, PRODUCT_SHOWS} from './digest-lookup';
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {ToolDefinition} from './stream-types';
-import {CATALOG_DATA} from './catalog';
-import {isClosedRelation} from './explore/secret-names';
+import {EXPLORE_OPEN_DOMAINS} from './explore/access';
 
 const sortedUnion = (pick: (id: (typeof METRIC_IDS)[number]) => string[]): string[] =>
   [...new Set(METRIC_IDS.flatMap(pick))].sort();
@@ -259,12 +258,11 @@ const setReportTitle: ToolDefinition = {
 export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, getDigest, getChannelReport, lookupProduct, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);
 
 // Schema tools (spec 2.3): live from the database as the read-only login, merged with the catalog notes. Only domains with an open table.
-const OPEN_DOMAINS = CATALOG_DATA.domains.filter((d) => d.tables.some((t) => !isClosedRelation(t))).map((d) => d.id);
 const listTables: ToolDefinition = {
   name: 'list_tables',
   description: 'List every table and view run_query can read, with its domain, a one-line meaning and the preferred default view. Use it when you do not know which table holds something. "all" for every domain.',
   strict: true,
-  input_schema: {type: 'object', properties: {domain: {type: 'string', enum: ['all', ...OPEN_DOMAINS], description: 'A domain id, or "all".'}}, required: ['domain'], additionalProperties: false},
+  input_schema: {type: 'object', properties: {domain: {type: 'string', enum: ['all', ...EXPLORE_OPEN_DOMAINS], description: 'A domain id, or "all".'}}, required: ['domain'], additionalProperties: false},
 };
 const describeTable: ToolDefinition = {
   name: 'describe_table',

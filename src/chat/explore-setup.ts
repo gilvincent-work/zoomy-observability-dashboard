@@ -37,12 +37,14 @@ export function setupExplore(args: {env: ExploreEnv; email: string | null; now: 
     }
     const runQuery = args.runQuery ?? createRunQuery(access);
     const {limits} = access;
+    const dayGate = () => exploreDayCounter(args.user, limits.maxPerUserDay, args.now); // one allowance for run_query and the schema tools
     const executor = createExploreExecutor({
       runQuery, validate: createLiveValidator(runQuery), limits, now: args.now, user: args.user, store: args.store, sink: args.sink,
       leadFacts: () => loadLeadFacts({runQuery, validate: validateExploreSql, limits, sink: args.sink}),
-      dayGate: () => exploreDayCounter(args.user, limits.maxPerUserDay, args.now),
+      dayGate,
     });
-    return {executor, coverageLine: () => loadCoverageLine({runQuery, validate: validateExploreSql, limits, sink: args.sink}), schema: createSchemaTools(runQuery)};
+    const schema = createSchemaTools(runQuery, {user: args.user, sink: args.sink, dayGate});
+    return {executor, coverageLine: () => loadCoverageLine({runQuery, validate: validateExploreSql, limits, sink: args.sink}), schema};
   } catch {
     return null; // fail closed
   }
