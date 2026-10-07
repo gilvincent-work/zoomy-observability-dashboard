@@ -10,6 +10,16 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-07 — Ask Coop reads the website CRM (Train 4)
+- **Four GET-only tools.** Website customers, orders and abandoned checkouts live only in the CRM Worker, so Ask Coop gets `get_crm_metrics`, `list_crm_orders`, `list_crm_customers` and `list_crm_checkouts`. Totals, groups and paging are computed in code; results chart and pass the number check.
+- **Decision: the model never sees a URL, the token, a checkout link, a voucher code, the raw Shopify blob or free-text line-item properties.** The chat has its own guarded client (GET only, one base URL, endpoint and parameter allowlists, read-scoped token, 5 s / 4 MB / 8 GETs / 6 calls per turn). Both it and the pages share one field allowlist (`src/crm-project.ts`). This replaces the spec's "value scanner reused" for CRM data (owner sign-off in the PR).
+- **Monthly report reads through the same client.** `get_channel_report`'s Website row uses the new client; the temporary Train 2 exception for the old reader (`src/crm-data.ts`) is gone.
+- **Decision: customer text is untrusted.** It is cleaned, capped and marked in every result. An answer that used CRM or Explore text shows links as plain text. There is no send or write tool, so injected text has nowhere to go.
+- **Three prompt states.** The prompt text depends on: no CRM env; CRM env set with `CHAT_CRM_TOOLS=off`; tools on. `get_digest` and `NOT_STORED` are true in all three, so the model never claims tools it does not have.
+- **Env.** `CRM_API_URL`, `CRM_API_READ_TOKEN`; optional kill switch `CHAT_CRM_TOOLS=off` hides the tools without touching the Website CRM page.
+- **Known limits.** Only the Worker enforces that the read token cannot open `/admin` (the dashboard never calls it, and a test pins that). Customer text can only be labelled untrusted, not stopped.
+- Best practice: `knowledge/best-practices/chat-readonly-api-tools.md`.
+
 ## 2026-10-07 — Ask Coop digest periods and charts (Train 2)
 - **Digests by date.** Ask Coop reads digests by date in Philippine days. `window_from` is a PH-midnight `timestamptz` and was read with `slice(0,10)`, which showed 27 Sep for a window starting 28 Sep. PROD holds mixed windows (weekly, about a month, rolling 30 days, re-runs), so every stored window is listed per turn (newest re-run only), and `get_digest` can pick the one covering a date.
 - **Any period per channel.** New `get_channel_report`: Shopee and Lazada from the digests' per-day `daily` data (merged per channel and day, newest digest wins), Website from live CRM orders, Offline from POS. AOV is recomputed, never averaged. Old windows without `daily` are summed only when they tile exactly, and overlapping ones are refused as "not combinable". Website units are "unknown" when the CRM has no line items. The chat route now passes `getCrmOrders` to this one tool: a deliberate, temporary architecture exception (aggregates only, fence test updated) that Train 4's GET-only CRM tools replace.
