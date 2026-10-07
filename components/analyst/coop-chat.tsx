@@ -17,7 +17,7 @@ import type {SavedReportRef} from '@/src/reports-suggest';
 
 // `blocks` (F7): stat tiles, charts and tables the server bound; `at` = length of the accumulated raw text when the block
 // arrived, so the answer reads caveat, headline, block, then whatever streamed after it. `content` stays plain text.
-type Msg = {role: 'user' | 'assistant'; content: string; error?: boolean; blocks?: PlacedBlock[]};
+type Msg = {role: 'user' | 'assistant'; content: string; error?: boolean; blocks?: PlacedBlock[]; untrusted?: true};
 type NavAction = {label: string; path: string};
 
 type Side = 'left' | 'right';
@@ -56,7 +56,7 @@ function loadMessages(raw: string): Msg[] {
   for (const m of parsed as Record<string, unknown>[]) {
     if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') continue;
     const blocks = sanitizeBlocks(m.blocks);
-    out.push({role: m.role, content: m.content, ...(m.error === true ? {error: true} : {}), ...(blocks.length ? {blocks} : {})});
+    out.push({role: m.role, content: m.content, ...(m.error === true ? {error: true} : {}), ...(m.untrusted === true ? {untrusted: true as const} : {}), ...(blocks.length ? {blocks} : {})});
   }
   return out;
 }
@@ -179,7 +179,7 @@ export function CoopChatProvider({children, scopeLabel}: {children: React.ReactN
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {'content-type': 'application/json'},
-          body: JSON.stringify({messages: history.map(({blocks: _blocks, ...rest}) => rest), week, home, report: reportBody(reportAtSend), page: {path: window.location.pathname, query: window.location.search.slice(1)}}),
+          body: JSON.stringify({messages: history.map(({blocks: _blocks, untrusted: _untrusted, ...rest}) => rest), week, home, report: reportBody(reportAtSend), page: {path: window.location.pathname, query: window.location.search.slice(1)}}),
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {
@@ -635,7 +635,7 @@ function CoopChatDrawer({
                           </div>
                         ) : p.text.trim() ? (
                           <div key={pi} className={ASSISTANT_BUBBLE}>
-                            <ChatMarkdown text={p.text} knownHostsOnly={(m.blocks ?? []).some((b) => b.block.exploratory === true)} />
+                            <ChatMarkdown text={p.text} knownHostsOnly={m.untrusted === true || (m.blocks ?? []).some((b) => b.block.exploratory === true)} />
                           </div>
                         ) : null,
                       )
