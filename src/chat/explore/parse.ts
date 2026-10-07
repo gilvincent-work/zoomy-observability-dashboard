@@ -2,7 +2,7 @@
 // ever sent to the database. Spec section 4. Pure module (no `server-only`, no Next import) so vitest and the proof script can load it.
 // Only THIS file imports `libpg-query`. It never throws: an unexpected exception becomes E_WRAPPER_MISMATCH (fail closed).
 //
-// Layers (spec 5.4): this is layer 2 of 5. It is not the only lock: the role holds SELECT on ten views and nothing else, and a
+// Layers (spec 5.4): this is layer 2 of 5. It is not the only lock: the role holds SELECT on the Explore views and nothing else, and a
 // READ ONLY transaction is NOT a barrier by itself (Day 1), so everything here is default-deny:
 //   - every AST node type must be on EXPLORE_NODE_TYPES, anything else is E_NODE;
 //   - the exact string that will be sent (the DECLARE ... CURSOR FOR wrapper) is parsed too and must equal the standalone SELECT.

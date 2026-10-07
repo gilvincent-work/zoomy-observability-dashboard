@@ -5,7 +5,7 @@
 #   scripts/local-supabase/up.sh --reapply  re-run ONLY the SQL files against the running stack
 #   scripts/local-supabase/up.sh --explore  (alone or with --reapply) ALSO build the Ask Coop Explore data layer: the booth-lead tables,
 #                                           scripts/coop-explore-fixture.sql (fictional rows with deliberate traps), supabase/coop_chat_explore.sql
-#                                           (role coop_explore_ro + ten views), its password, and print supabase/coop_chat_explore_checks.sql
+#                                           (role coop_explore_ro + fifteen views), its password, and print supabase/coop_chat_explore_checks.sql
 # Uses only the cached images (nothing is pulled), its own network `coop-local`, containers `coop-local-db` (127.0.0.1:54421)
 # and `coop-local-rest` (127.0.0.1:54423), and the proxy on 127.0.0.1:54420. No volume: scripts/local-supabase/down.sh = clean slate.
 # Secrets are generated on first run into the gitignored scripts/local-supabase/.local-env and never printed.
@@ -83,7 +83,7 @@ fi
 set -a; . "$ENVF"; set +a
 
 # ---- the SQL, in order ----------------------------------------------------------------------------------------------
-EXPLORE_VIEWS="coop_explore_orders coop_explore_order_items coop_explore_products coop_explore_bundles coop_explore_bundle_items coop_explore_events coop_explore_prices coop_explore_price_changes coop_explore_event_leads coop_explore_digest"
+EXPLORE_VIEWS="coop_explore_orders coop_explore_order_items coop_explore_products coop_explore_bundles coop_explore_bundle_items coop_explore_events coop_explore_prices coop_explore_price_changes coop_explore_event_leads coop_explore_digest coop_explore_inventory coop_explore_inventory_by_location coop_explore_inventory_lots coop_explore_stock_movements coop_explore_stock_event"
 
 apply_sql() {
   local f out v

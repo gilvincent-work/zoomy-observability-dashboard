@@ -12,8 +12,8 @@ where c.relkind = 'v' and c.relname like 'coop\_explore\_%'
   and a.attname ~* 'password|token|secret|key|pin|hash|credential'
 order by 1, 2;
 
--- (b) Privileges on the ten views, from the relation ACLs.
--- EXPECTED: exactly ten rows, grantee coop_explore_ro, privilege SELECT; and NO row for PUBLIC, anon or authenticated.
+-- (b) Privileges on the fifteen views, from the relation ACLs.
+-- EXPECTED: exactly fifteen rows, grantee coop_explore_ro, privilege SELECT; and NO row for PUBLIC, anon or authenticated.
 -- BAD: any other grantee or privilege (PostgREST would expose contact data to anon/authenticated).
 select c.relname as view_name,
        case a.grantee when 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee,
@@ -25,7 +25,7 @@ where c.relkind = 'v' and c.relname like 'coop\_explore\_%'
   and (a.grantee = 0 or pg_get_userbyid(a.grantee) in ('coop_explore_ro', 'anon', 'authenticated'))
 order by 1, 2, 3;
 
--- (c) Any privilege the role holds on a relation in public OTHER than SELECT on the ten views.
+-- (c) Any privilege the role holds on a relation in public OTHER than SELECT on the fifteen views.
 -- EXPECTED: 0 rows. BAD: any row (a base table, another view, or a write privilege on an explore view).
 select c.relname as relation, c.relkind,
        has_table_privilege('coop_explore_ro', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') as any_table_privilege,
@@ -100,7 +100,12 @@ with contract(view_name, cols, optional_cols) as (values
   ('coop_explore_prices',        'product_id,price', 'currency,updated_by,updated_at'),
   ('coop_explore_price_changes', 'id,product_id,old_price,new_price,changed_at', 'reason,changed_by,device_id'),
   ('coop_explore_event_leads',   'lead_id,email,mobile,prize,campaign,collected_at,consent_at,created_at,instagram,pet', ''),
-  ('coop_explore_digest',        'id,window_from,window_to,bundle,digest,created_at', '')
+  ('coop_explore_digest',        'id,window_from,window_to,bundle,digest,created_at', ''),
+  ('coop_explore_inventory',     'product_id,stock,next_expiry', ''),
+  ('coop_explore_inventory_by_location', 'product_id,location,stock', ''),
+  ('coop_explore_inventory_lots', 'lot_id,product_id,location,lot_code,expires_on,qty_received,qty_on_hand,received_at,updated_at', ''),
+  ('coop_explore_stock_movements', 'id,product_id,delta,reason,created_by,created_at', 'lot_id,location,order_id'),
+  ('coop_explore_stock_event',    'product_id,stock', '')
 ), actual as (
   select c.relname as view_name,
          array_agg(a.attname::text order by a.attnum) as cols,
@@ -125,6 +130,7 @@ from contract k
 left join actual act on act.view_name = k.view_name
 order by 1;
 
+-- (h) (coop_explore_stock_event is left out: it hides the location column on purpose, it is a filter not a pass-through.)
 -- (h) Drift: base-table columns that are neither exposed nor blocked by the name pattern (a column added after this file was applied).
 -- EXPECTED: 0 rows. A row means: re-apply supabase/coop_chat_explore.sql (the view does not show the column yet), then document it.
 select s.view_name, bc.column_name as base_column_not_in_view
@@ -132,7 +138,9 @@ from (values
   ('coop_explore_orders', 'pos_orders'), ('coop_explore_order_items', 'pos_order_items'), ('coop_explore_products', 'pos_products'),
   ('coop_explore_bundles', 'pos_bundles'), ('coop_explore_bundle_items', 'pos_bundle_items'), ('coop_explore_events', 'pos_events'),
   ('coop_explore_prices', 'pos_prices'), ('coop_explore_price_changes', 'pos_price_changes'), ('coop_explore_event_leads', 'spin_wheel_leads'),
-  ('coop_explore_digest', 'digest_archive')
+  ('coop_explore_digest', 'digest_archive'),
+  ('coop_explore_inventory', 'pos_inventory'), ('coop_explore_inventory_by_location', 'pos_inventory_by_location'),
+  ('coop_explore_inventory_lots', 'pos_inventory_lots'), ('coop_explore_stock_movements', 'pos_stock_movements')
 ) s(view_name, source_table)
 join information_schema.columns bc on bc.table_schema = 'public' and bc.table_name = s.source_table
 where bc.column_name !~* 'password|token|secret|key|pin|hash|credential'
