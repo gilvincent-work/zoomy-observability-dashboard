@@ -143,7 +143,7 @@ describe('CHAT_TOOLS', () => {
     expect(Object.keys(props(lookup_product))).toEqual(['query', 'show']);
     expect(props(lookup_product).show.enum).toEqual(['details', 'price_history']);
     expect(props(lookup_product).query.enum).toBeUndefined();
-    expect(get_digest.description).toMatch(/Shopee, Lazada or the website/);
+    expect(get_digest.description).toMatch(/Shopee and Lazada figures, and the website's figures as published/);
     expect(get_digest.description).toMatch(/query_metric/);
     expect(lookup_product.description).toMatch(/names a specific product or SKU/);
     expect(lookup_product.description).toMatch(/top_products/);

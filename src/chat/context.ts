@@ -60,15 +60,16 @@ const NO_TOOLS_NOTICE =
  * The STATIC, cached part of the system prompt: persona, guardrails, output format, brand knowledge and the metric
  * catalog. Byte-identical on every call (no dates, no digest, no counts) so the prompt cache holds.
  */
-export function buildStaticSystem(opts: {tools?: boolean; explore?: boolean; crm?: boolean} = {}): string {
+export function buildStaticSystem(opts: {tools?: boolean; explore?: boolean; crm?: boolean; website?: boolean} = {}): string {
   const withTools = opts.tools !== false;
   const explore = withTools && opts.explore === true; // Explore needs the tools path: it is never sent in digest-only mode
   const crm = withTools && opts.crm === true; // the CRM tools need the tools path too
+  const website = withTools && (opts.website === true || crm); // the CRM can be read (get_channel_report's Website row is live)
   return [
     `You are ${COOP_CHAT.agentName}, ${COOP_CHAT.persona}`,
     '',
     '## Guardrails',
-    buildGuardrails({explore, crm}),
+    buildGuardrails({explore, crm, website}),
     READ_ONLY_STATEMENT,
     `If a request is out of scope, reply exactly: "${COOP_CHAT.refusal}"`,
     '',
@@ -113,7 +114,7 @@ export function buildDigestBlock(rows: DigestArchiveRow[], week?: string, opts?:
  * Live mode (tools available): NO period is pre-selected and no digest is loaded. The owner defines the dates; stored digests
  * are reachable only through get_digest, and only for the weeks that exist. Static text, so it is cache-friendly.
  */
-export function buildLiveContextBlock(opts: {explore?: boolean; crm?: boolean} = {}): string {
+export function buildLiveContextBlock(opts: {explore?: boolean; crm?: boolean; website?: boolean} = {}): string {
   return [
     '## Period',
     opts.explore
@@ -121,8 +122,10 @@ export function buildLiveContextBlock(opts: {explore?: boolean; crm?: boolean} =
       : 'No reporting period is selected for you: the owner chooses the dates. If a question has no period, ask which dates before using any tool.',
     opts.crm
       ? 'Offline POS figures come from query_metric for any dates the data covers. Shopee and Lazada figures come from the stored digests (get_digest reads one window as published; get_channel_report totals any dates per channel); digest windows vary in length (weekly or about a month) and are listed in the per-turn context: name the window you used and say which dates no digest covers instead of guessing. Website orders, customers and abandoned checkouts come live from the CRM tools for any dates (list_crm_orders, list_crm_customers, list_crm_checkouts; get_crm_metrics for a snapshot); get_channel_report\'s Website row reads the same CRM orders.'
-      : 'Offline POS figures come from query_metric for any dates the data covers. Shopee, Lazada and Website figures come from the stored digests (get_digest reads one window as published; get_channel_report totals any dates per channel); digest windows vary in length (weekly or about a month) and are listed in the per-turn context: name the window you used and say which dates no digest covers instead of guessing.',
-    'On the home screen, if asked what you can do, list what you can answer (offline POS metrics for any dates, channel digests by date, dashboards and charts) and ask what they want to see and for which dates.',
+      : opts.website
+        ? 'Offline POS figures come from query_metric for any dates the data covers. Shopee and Lazada figures come from the stored digests (get_digest reads one window as published; get_channel_report totals any dates per channel); digest windows vary in length (weekly or about a month) and are listed in the per-turn context: name the window you used and say which dates no digest covers instead of guessing. Website totals for any dates come from get_channel_report, whose Website row reads live CRM orders; other website figures come from the stored digests.'
+        : 'Offline POS figures come from query_metric for any dates the data covers. Shopee, Lazada and Website figures come from the stored digests (get_digest reads one window as published; get_channel_report totals any dates per channel); digest windows vary in length (weekly or about a month) and are listed in the per-turn context: name the window you used and say which dates no digest covers instead of guessing.',
+    `On the home screen, if asked what you can do, list what you can answer (offline POS metrics for any dates, channel digests by date, ${opts.crm ? 'website orders, customers and abandoned carts, ' : ''}dashboards and charts) and ask what they want to see and for which dates.`,
   ].join('\n');
 }
 
