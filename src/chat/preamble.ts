@@ -49,7 +49,7 @@ export function digestIndexLine(windows: readonly DigestWindow[], max = 20): str
   if (windows.length === 0) return null;
   const shown = windows.slice(0, max).map(windowLabel).join('; ');
   const more = windows.length > max ? `; and ${windows.length - max} older` : '';
-  return `[digests] Stored digest windows, newest first (lengths vary: weekly or about a month): ${shown}${more}. Read one with get_digest window "covering" and the owner's dates, and name the window you used.`;
+  return `[digests] Stored digest windows, newest first (lengths vary: weekly or about a month): ${shown}${more}. Read one with get_digest window "covering" and the owner's dates, and name the window you used. Total any dates per channel (a month, a custom range, by week or month) with get_channel_report.`;
 }
 
 const TOOL_RULES =

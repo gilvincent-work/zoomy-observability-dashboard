@@ -41,6 +41,7 @@ vi.mock('@/auth', () => ({
 vi.mock('@/src/active-context', () => ({
   getActiveContext: async () => null,
 }));
+vi.mock('@/src/crm-data', () => ({crmConfigured: () => false, getCrmOrders: async () => []}));
 vi.mock('@/src/data', () => ({
   getDigests: async () => {
     h.getDigestsCalls += 1;
@@ -357,7 +358,7 @@ describe('POST /api/chat: live mode (no digest, no period)', () => {
     expect(JSON.stringify(systemOf(lastRequest()))).not.toContain('[digests]');
   });
 
-  it('the tools are the ten read-only tools, with tool_choice auto', async () => {
+  it('the tools are the eleven read-only tools, with tool_choice auto', async () => {
     await drain(await post(ask()));
     const p = lastRequest();
     expect((p.tools as {name: string}[]).map((t) => t.name)).toEqual(CHAT_TOOLS.map((t) => t.name));
@@ -479,7 +480,7 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
   };
   const toolNames = (p: Record<string, unknown>) => (p.tools as {name: string}[]).map((t) => t.name);
 
-  it('off by default: ten tools, no run_query, no exploratory prompt block, no coverage query', async () => {
+  it('off by default: eleven tools, no run_query, no exploratory prompt block, no coverage query', async () => {
     await drain(await post(ask()));
     expect(toolNames(lastRequest())).toEqual(CHAT_TOOLS.map((t) => t.name));
     expect(systemOf(lastRequest())[0].text).toBe(buildStaticSystem({tools: true}));
@@ -487,11 +488,11 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
     expect(h.exploreRuns).toEqual([]);
   });
 
-  it('on for an allowed user: run_query is the 11th tool, the prompt has the catalog and the all-available-data rule, and the preamble carries the coverage line source', async () => {
+  it('on for an allowed user: run_query is the 12th tool, the prompt has the catalog and the all-available-data rule, and the preamble carries the coverage line source', async () => {
     ON();
     await drain(await post(ask()));
     expect(toolNames(lastRequest())).toContain('run_query');
-    expect(toolNames(lastRequest())).toHaveLength(11);
+    expect(toolNames(lastRequest())).toHaveLength(12);
     expect(systemOf(lastRequest())[0].text).toBe(buildStaticSystem({tools: true, explore: true}));
     expect(systemOf(lastRequest())[1].text).toBe(buildLiveContextBlock({explore: true}));
     expect(h.exploreRuns).toHaveLength(1); // the fixed coverage statement, wrapped in the cursor, through the injected driver
@@ -504,7 +505,7 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
     ON();
     vi.stubEnv('EXPLORE_ALLOWED_EMAILS', 'someone.else@example.test');
     await drain(await post(ask()));
-    expect(toolNames(lastRequest())).toHaveLength(10);
+    expect(toolNames(lastRequest())).toHaveLength(11);
     expect(h.exploreRuns).toEqual([]);
   });
 
@@ -512,7 +513,7 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
     ON();
     vi.stubEnv('EXPLORE_DATABASE_URL', 'postgres://postgres:pw@127.0.0.1:54421/postgres');
     await drain(await post(ask()));
-    expect(toolNames(lastRequest())).toHaveLength(10);
+    expect(toolNames(lastRequest())).toHaveLength(11);
   });
 
   it('on but the live read path is degraded (digest-only): no tools at all, so no run_query', async () => {

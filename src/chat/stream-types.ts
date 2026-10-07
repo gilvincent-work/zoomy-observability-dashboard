@@ -39,6 +39,8 @@ export interface ChatToolContext {
   data: () => Promise<import('./result-types').MetricData>;
   /** F10: the stored digests, loaded lazily through the digest adapter. Absent means get_digest says it is unavailable. */
   digest?: () => Promise<import('./digest-lookup').DigestSource>;
+  /** F.6: live CRM orders for get_channel_report's Website row, read lazily. Absent means the CRM is not connected. */
+  crmOrders?: () => Promise<{orders: import('../custom-range').RangeOrder[]; asOf: string}>;
   now: Date;
   user: string | null;
   /** F7: the render tools call this with each block they bind; the route forwards it to the stream. */

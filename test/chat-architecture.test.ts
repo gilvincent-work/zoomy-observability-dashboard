@@ -34,9 +34,11 @@ describe('real tree', () => {
     expect(writeCallsIn(files)).toEqual([]);
   });
 
-  it('the legacy exception is exactly the old digest import and is not traversed', () => {
-    expect(closure.legacyHits).toEqual(['src/data.ts']);
+  // Train 4 replaces the CRM exception with GET-only CRM tools.
+  it('the legacy exceptions are exactly the old digest import and the read-only CRM orders reader (F.6), and are not traversed', () => {
+    expect([...closure.legacyHits].sort()).toEqual(['src/crm-data.ts', 'src/data.ts']);
     expect(closure.files.has('src/data.ts')).toBe(false);
+    expect(closure.files.has('src/crm-data.ts')).toBe(false);
   });
 });
 
@@ -148,8 +150,8 @@ describe('reports separation rules fire on planted violations', () => {
 });
 
 describe('LEGACY_ALLOWED_IMPORTS', () => {
-  it('has exactly one entry so it can only shrink deliberately', () => {
-    expect(LEGACY_ALLOWED_IMPORTS).toEqual(['src/data.ts']);
+  it('has exactly these entries so it can only shrink deliberately', () => {
+    expect(LEGACY_ALLOWED_IMPORTS).toEqual(['src/crm-data.ts', 'src/data.ts']);
   });
 });
 

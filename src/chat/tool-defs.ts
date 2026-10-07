@@ -1,4 +1,4 @@
-// F5 + F7 + F8 + F10: the strict tool definitions (ten, plus run_query for Explore users) sent to the Messages API, built from the registry. Frozen.
+// F5 + F7 + F8 + F10: the strict tool definitions (eleven, plus run_query for Explore users) sent to the Messages API, built from the registry. Frozen.
 // Strict-mode limits honoured: 10 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
 import {DIGEST_SECTIONS, DIGEST_WINDOWS, PRODUCT_SHOWS} from './digest-lookup';
 import {METRICS, METRIC_IDS} from './metrics-registry';
@@ -87,17 +87,38 @@ const getDigest: ToolDefinition = {
     'Call it for a question about Shopee, Lazada or the website, or a channel comparison, in one window. Use window "covering" with the owner\'s date (from, and to for a range) to read the digest that covers it or overlaps it most; "latest" and "previous" read the newest two. ' +
     'It returns a result id you can pass to render_table or render_chart; the figures are as published, every row says its time basis (never present an all-time figure as this week), and you must name the window it used. ' +
     'For offline POS sales use query_metric instead. Use "comparison" for Lazada vs Shopee vs Website. ' +
-    'For a WEEK-BY-WEEK comparison of online channels and offline sales use window "recent_weeks" with section "weekly_revenue" (one row per week, online figures only for weeks with a stored digest, Offline POS added for the same weeks), pass the dates the owner gave in from and to (ask if they gave none), then ONE render_chart (line when the owner asks for a line, else auto); say which weeks have no online figures.',
+    'For a total over any dates (a month, a custom range) or a trend by week or month, use get_channel_report instead.',
   strict: true,
   input_schema: {
     type: 'object',
     properties: {
-      window: {type: 'string', enum: [...DIGEST_WINDOWS], description: '"covering" reads the stored digest that covers the owner\'s date or range (pass from and to); "latest" the newest stored digest; "previous" the one before it; "recent_weeks" the recent weeks as a series (only with section "weekly_revenue").'},
-      from: {type: 'string', description: 'First date as YYYY-MM-DD, ONLY for window "covering" or "recent_weeks" (the owner\'s own date; ask them if they gave none). Otherwise "".'},
-      to: {type: 'string', description: 'Last date as YYYY-MM-DD for a range ("" for one day with "covering"), ONLY for window "covering" or "recent_weeks". Otherwise "".'},
+      window: {type: 'string', enum: [...DIGEST_WINDOWS], description: '"covering" reads the stored digest that covers the owner\'s date or range (pass from and to); "latest" the newest stored digest; "previous" the one before it;'},
+      from: {type: 'string', description: 'First date as YYYY-MM-DD, ONLY for window "covering" (the owner\'s own date; ask them if they gave none). Otherwise "".'},
+      to: {type: 'string', description: 'Last date as YYYY-MM-DD for a range ("" for one day with "covering"), ONLY for window "covering". Otherwise "".'},
       section: {type: 'string', enum: [...DIGEST_SECTIONS], description: '"comparison" is one row per channel; "figures", "sales" and "customers" are the digest\'s own figure lists; "shopee" and "lazada" their marketplace figures; "products" the top products per channel.'},
     },
     required: ['window', 'section', 'from', 'to'],
+    additionalProperties: false,
+  },
+};
+
+const getChannelReport: ToolDefinition = {
+  name: 'get_channel_report',
+  description:
+    'Totals per sales channel for ANY dates the owner names (a month, a quarter, a custom range), or a channel trend by week or month: revenue, orders, units and average order value. ' +
+    'Shopee and Lazada are summed from the stored digests\' per-day sales (newest digest wins per day), Website from live CRM orders, Offline from completed POS orders; AOV is recomputed from the totals. ' +
+    'Call it for "the September report per channel", "Shopee vs Lazada this quarter" or "week by week online vs offline". It returns a result id for render_chart / render_table and coverage notes: say every note that names missing days or "not combinable" windows BEFORE any figure, and never fill a gap yourself. ' +
+    'Ad spend, ROAS and top products are not in it (use get_digest for one published window). Pass the owner\'s dates; ask if they gave none.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    properties: {
+      from: {type: 'string', description: 'First day, YYYY-MM-DD in Philippine time: the owner\'s own date. "" only if they gave none (the tool then asks for them).'},
+      to: {type: 'string', description: 'Last day, YYYY-MM-DD, inclusive.'},
+      channels: {type: 'array', items: {type: 'string', enum: ['all', 'shopee', 'lazada', 'website', 'offline']}, description: '["all"] for every channel, or the ones the owner named.'},
+      granularity: {type: 'string', enum: ['total', 'week', 'month'], description: '"total" for one row per channel; "week" (Monday to Sunday) or "month" for a trend, one row per period.'},
+    },
+    required: ['from', 'to', 'channels', 'granularity'],
     additionalProperties: false,
   },
 };
@@ -233,7 +254,7 @@ const setReportTitle: ToolDefinition = {
   cache_control: {type: 'ephemeral'},
 };
 
-export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, getDigest, lookupProduct, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);
+export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, getDigest, getChannelReport, lookupProduct, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);
 
 const EXPLORE_TOOLS: readonly ToolDefinition[] = (() => {
   const at = CHAT_TOOLS.findIndex((t) => t.name === 'query_metric') + 1;
