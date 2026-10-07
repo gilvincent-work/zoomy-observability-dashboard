@@ -55,6 +55,64 @@ describe('2.2 value scanner: secret-shaped values never reach the model (Review 
   });
 });
 
+describe('2.2 scanner, Task 7 review findings 1-3: JSON as text, glued prefixes, common secret shapes', () => {
+  const h40 = 'f'.repeat(40);
+  const hex32 = '4a8a08f09d37b73795649038408b5f33';
+  it('finding 1: JSON that arrives as TEXT keeps the secret-named-key rule (jsonb::text, ->> of an object, row text, wrapped JSON)', () => {
+    expect(scrubValue('{"api_key": "abc123short", "shop": "Zoomy"}')).toEqual({value: JSON.stringify({api_key: HIDDEN, shop: 'Zoomy'}), hidden: 1});
+    expect(scrubValue('{"lazada": {"access_token": "tok"}}').value).toBe(JSON.stringify({lazada: {access_token: HIDDEN}}));
+    expect(scrubValue('[{"password": "hunter2"}]').value).toBe(JSON.stringify([{password: HIDDEN}]));
+    // not parseable as a whole (wrapped by concat, row text with doubled quotes): the key/value text rule still hides it
+    expect(scrubValue('note: {"api_key": "abc123short", "shop": "Zoomy"}')).toEqual({value: `note: {"api_key": "${HIDDEN}", "shop": "Zoomy"}`, hidden: 1});
+    expect(scrubValue('(1,"{""refresh_token"": ""xyz"", ""shop"": ""Z""}")')).toEqual({value: `(1,"{""refresh_token"": ""${HIDDEN}"", ""shop"": ""Z""}")`, hidden: 1});
+    expect(scrubValue('{"secret": 12345, "n": 1').value).toBe(`{"secret": ${HIDDEN}, "n": 1`);
+    // nothing to hide: the text is returned as it was (formatting kept)
+    expect(scrubValue('{"shop": "Zoomy",  "threshold": 5}')).toEqual({value: '{"shop": "Zoomy",  "threshold": 5}', hidden: 0});
+    expect(scrubValue('{"refresh_token": null, "password": ""}').hidden).toBe(0);
+  });
+  it('finding 2: a token glued to a prefix by _ is still hidden (no \\b between _ and the run)', () => {
+    expect(scrubValue(`key_${h40}`).value).toBe(`key_${HIDDEN}`);
+    expect(scrubValue(`shpat_${hex32}`).value).not.toContain(hex32);
+    expect(scrubValue(`shpss_${hex32}`).value).not.toContain(hex32);
+    expect(scrubValue('shpca_AbCd1234EfGh5678IjKl9012MnOp').value).toBe(HIDDEN);
+    expect(scrubValue('re_AbCd1234_EfGh5678IjKl9012MnOpQr').value).toBe(HIDDEN);
+    expect(scrubValue('AIza' + 'Sy0123456789abcdefABCDEF_-ghijklmn').value).toBe(HIDDEN);
+    expect(scrubValue('GOCSPX-AbCd1234EfGh5678IjKl90').value).toBe(HIDDEN);
+    expect(scrubValue('glpat' + '-AbCd1234EfGh5678IjKl').value).toBe(HIDDEN);
+    expect(scrubValue('xoxe' + '-1-AbCd1234EfGh5678').value).toBe(HIDDEN);
+    expect(scrubValue(`id_${'a1B2'.repeat(10)}`).value).toBe(`id_${HIDDEN}`);
+  });
+  it('finding 3: credential URLs, token query strings, bcrypt/argon2/crypt hashes, base64 with +/=, 32-char app secrets', () => {
+    expect(scrubValue('postgres://coop:s3cret-pw@db.example.com:5432/app').value).toBe(`postgres://${HIDDEN}@db.example.com:5432/app`);
+    expect(scrubValue('https://api.example.com/cb?access_token=abc123&shop=1').value).toBe(`https://api.example.com/cb?access_token=${HIDDEN}&shop=1`);
+    expect(scrubValue('token=shortvalue').value).toBe(`token=${HIDDEN}`);
+    expect(scrubValue('https://x.example/p?sign=ABC123&api_key=k1').value).toBe(`https://x.example/p?sign=${HIDDEN}&api_key=${HIDDEN}`);
+    expect(scrubValue('$2b$12$' + 'R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW').value).toBe(HIDDEN);
+    expect(scrubValue('$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo').value).toBe(HIDDEN);
+    expect(scrubValue('$6$rounds=5000$saltsalt$' + 'Ab1/'.repeat(10)).value).toBe(HIDDEN);
+    expect(scrubValue('dGhpcyBpcyBhIHNlY3JldCB2YWx1ZSB0aGF0IGlz+bG9uZw==').value).toBe(HIDDEN);
+    expect(scrubValue('Xy7kQ2mN9pLr4sTv8wZa1bCd5eFg3hJk').value).toBe(HIDDEN); // 32 mixed: the Lazada app_secret shape
+    expect(scrubValue('xy7kq2mn9plr4stv8wza1bcd5efg3hjk').value).toBe(HIDDEN); // 32 lower + digits
+  });
+  it('no false positives from the new shapes: uuids, SKUs, order numbers, dates, emails, phones, prices, image urls, words', () => {
+    const keep = [
+      '3f2b9c1e-8d7a-4b6e-9f0a-1c2d3e4f5a6b',
+      'ZMY-JERKY-100G-CHICKEN', 'SKU_DOGTREATS_100G_2026', 'ZOOMYCHICKENJERKY100GPACKOFTWELVE01', // 35 upper + digits: a long SKU
+      '250928ABCD1234', '1234567890123456', 'SPEPH0123456789A',
+      '2026-09-28', '2026-09-28T04:00:00+08:00', '28/09/2026',
+      'juan.delacruz1990@gmail.com', 'zoomy.orders+lazada@zoomy.ph', '+63 917 123 4567', '09171234567',
+      '₱1,290.00', 'Price $12.50 each, $3$ off', 'P1,290 / 3 = 430',
+      'https://cdn.shopify.com/s/files/1/0612/3456/7890/products/IMG1234.jpg?v=1696000000',
+      'https://zoomy.ph/collections/all?page=2&sort_by=price-ascending&keyword=jerky',
+      'https://zoomy.ph/p?utm_source=fb&utm_campaign=sept_sale',
+      'monkey business: the key to a good treat is chicken',
+      '{"shop": "Zoomy", "pinned": true, "keywords": ["jerky"]}',
+      'internationalization_and_localization_settings_for_the_dashboard',
+    ];
+    for (const v of keep) expect(scrubValue(v), v).toEqual({value: v, hidden: 0});
+  });
+});
+
 describe('2.2 the result says what the scanner hid; base-table reads keep the Train 1 notes', () => {
   const limits = {maxRows: 200, maxCols: 12, maxBytes: 65536, timeoutMs: 5000, maxSqlChars: 2000, maxCallsPerQuestion: 5, maxPerUserDay: 100, modelRows: 50, maxRelations: 8, maxDepth: 20};
   const shape = async (relations: string[], hidden?: number) => {

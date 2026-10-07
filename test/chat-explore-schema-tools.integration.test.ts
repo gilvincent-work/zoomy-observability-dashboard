@@ -48,4 +48,17 @@ describe.skipIf(!local)('Task 7 schema tools and the live validator on the real 
       expect((await validate(sql)).ok, sql).toBe(true);
     }
   });
+  it('JSON read as text (Task 7 review finding 1): refused by name, and what passes is hidden by the KEY rule, not by luck of the hex shape', async () => {
+    const validate = createLiveValidator(run);
+    expect(await validate('select n::text as v from explore_fixture_notes n')).toMatchObject({ok: false, code: 'E_SELECT_STAR'});
+    expect(await validate("select n.payload->'lazada'->>'access_token' as v from explore_fixture_notes n")).toMatchObject({ok: false, code: 'E_BLOCKED_COLUMN'});
+    expect(await validate("select jsonb_extract_path_text(n.payload, 'lazada', 'access_token') as v from explore_fixture_notes n")).toMatchObject({ok: false, code: 'E_BLOCKED_COLUMN'});
+    for (const sql of ["select n.payload::text as v from explore_fixture_notes n where n.id = 1", "select n.payload->>'lazada' as v from explore_fixture_notes n where n.id = 1"]) {
+      const ok = await validate(sql);
+      if (!ok.ok) throw new Error(`${sql}: ${ok.code}`);
+      const r = await run(ok.sent, {timeoutMs: 3000, maxRows: 5});
+      expect(r.rows, sql).toEqual([[expect.stringMatching(/"access_token":"\[hidden\]"/)]]); // the whole value, the fixture- prefix too
+      expect(r.hidden, sql).toBe(1);
+    }
+  });
 });
