@@ -243,7 +243,7 @@ export function BatchUploader({canEdit, configured, stores}: {canEdit: boolean; 
 
             <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border" aria-label="Files in this batch">
               {q.items.map((i) => (
-                <FileRow key={i.id} i={i} now={now} onRetry={() => q.retry(i.id)} onCancel={() => q.cancel(i.id)} onRemove={() => q.remove(i.id)} />
+                <FileRow key={i.id} i={i} batchId={q.batch.id ?? null} now={now} onRetry={() => q.retry(i.id)} onCancel={() => q.cancel(i.id)} onRemove={() => q.remove(i.id)} />
               ))}
             </ul>
 
@@ -269,13 +269,14 @@ export function BatchUploader({canEdit, configured, stores}: {canEdit: boolean; 
   );
 }
 
-function FileRow({i, now, onRetry, onCancel, onRemove}: {i: QueueItem; now: number; onRetry: () => void; onCancel: () => void; onRemove: () => void}) {
+function FileRow({i, batchId, now, onRetry, onCancel, onRemove}: {i: QueueItem; batchId: string | null; now: number; onRetry: () => void; onCancel: () => void; onRemove: () => void}) {
   const pct = itemPercent(i, now);
   const failed = i.state === 'failed';
   const done = i.state === 'done';
-  // A read page opens its own review: the whole row is the target (stretched link),
-  // so there's no small "Open" to aim for.
-  const href = done && i.uploadId && i.kind === 'pdf' ? `/uploads/${i.uploadId}` : null;
+  // A read page opens the batch review on that page's tab (the same view as "Review &
+  // commit"), so there is one place to review. The whole row is the target (stretched
+  // link), so there's no small "Open" to aim for.
+  const href = done && i.uploadId && i.kind === 'pdf' ? (batchId ? `/uploads/batch/${batchId}?page=${i.uploadId}` : `/uploads/${i.uploadId}`) : null;
   return (
     <li
       className={cn(

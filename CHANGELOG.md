@@ -10,6 +10,15 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-10 — One review view for a batch; unsaved edits are kept
+- **A page in an open batch always opens in the batch review, on that page's tab.**
+  - *Why:* clicking a file in a bulk upload opened the single-scan review, while "Review & commit N pages" opened the batch review: two different screens for the same pages, each with its own store and period fields, and edits made in one were not in the other.
+  - The file rows in the uploader now link to `/uploads/batch/<batch>?page=<upload>`. `/uploads/<upload>` redirects there too when the scan is waiting for review inside an open batch, so the Files list and old links land in the same place. Committed, failed and single-file uploads keep the single-scan page.
+  - The open tab is kept in the address (`?page=`), so Back, refresh and shared links return to the same page.
+- **Edits made while reviewing are kept if you leave and come back.** Changed counts and flags marked as checked are saved in the browser per batch (`src/review-draft.ts`) and restored when the review opens again; they are cleared on commit.
+  - *Decision:* drafts live in the browser, not in `gl_extractions`. That table must keep the reader's original values, because the writer profile learns from the difference between them and what the reviewer confirmed. Trade-off: a draft does not follow you to another device or browser. A draft is tied to the exact reading it was made on, so a page that is read again starts fresh.
+- **Removed the "Scan reader" accuracy line from the Uploads page** (not wanted there). Each reading still records whether the writer profile was used, so accuracy can still be measured.
+
 ## 2026-10-09 — Scan reader learns the writer's handwriting from reviewed pages
 - **Each scan is now read alongside an earlier copy of the same page that a person already reviewed, plus notes on the digits misread before.**
   - *Why:* in Phase 1 one person fills in the forms for both pilot stores. Claude can't be fine-tuned on one person's handwriting, but it learns a style well from examples sent with each request. In the Oct 9 test batch the reader got 1 of 210 handwritten numbers wrong: this writer's 8 was read as 5 (MPMLSCB03 drawer 82, read as 52).
