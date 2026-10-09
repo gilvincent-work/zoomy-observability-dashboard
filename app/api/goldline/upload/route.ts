@@ -13,6 +13,7 @@ import {
   upsertSales,
 } from '@/src/goldline-data';
 import {detectPage, extractInventoryPage, extractionConfigured, type ExtractedPage} from '@/src/goldline-extract-run';
+import {getWriterProfile} from '@/src/goldline-writer-data';
 import {humanizeExtractError, INVENTORY_PAGES, MANIFESTS} from '@/src/goldline-extract';
 
 // Goldline upload endpoint. Accepts ONE file (multipart/form-data, field `file`)
@@ -153,11 +154,13 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
   const batchRaw = form.get('batch_id');
   const batchId = typeof batchRaw === 'string' && /^[0-9a-f-]{36}$/i.test(batchRaw) ? batchRaw : null;
   if (batchRaw && !batchId) return json({error: 'Invalid upload batch.'}, 400);
+  let batchStore: string | null = null; // lets the reader prefer this store's reference page
   // Batches hold one store's inventory form; a CSV never joins one.
   if (batchId && cls.kind === 'inventory_pdf') {
     const batch = await getBatch(companyId, batchId);
     if (!batch) return json({error: 'Upload batch not found.'}, 404);
     if (batch.status !== 'open') return json({error: 'This upload batch is already committed.'}, 409);
+    batchStore = batch.store_code ?? null;
     if (batch.store_code && outOfScopeStores(ctx.storeScope, [batch.store_code]).length) {
       return json({error: `Store ${batch.store_code} is outside your access.`}, 403);
     }
@@ -276,7 +279,10 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     }
 
     emit({type: 'stage', stage: 'reading', page, items: MANIFESTS[page]?.length ?? 0});
-    const extracted = await extractInventoryPage(pdfBase64, page);
+    // The writer profile: an earlier reviewed copy of this page + notes from past
+    // corrections, learned from this database's committed scans (empty on any error).
+    const profile = await getWriterProfile(companyId, page, batchStore, ctx.storeScope);
+    const extracted = await extractInventoryPage(pdfBase64, page, profile);
     // Same store-scope fence for the scanned form's store.
     const outPdf = outOfScopeStores(ctx.storeScope, [extracted.store_code]);
     if (outPdf.length) {

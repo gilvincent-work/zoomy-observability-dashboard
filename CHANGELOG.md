@@ -10,6 +10,19 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-09 — Scan reader learns the writer's handwriting from reviewed pages
+- **Each scan is now read alongside an earlier copy of the same page that a person already reviewed, plus notes on the digits misread before.**
+  - *Why:* in Phase 1 one person fills in the forms for both pilot stores. Claude can't be fine-tuned on one person's handwriting, but it learns a style well from examples sent with each request. In the Oct 9 test batch the reader got 1 of 210 handwritten numbers wrong: this writer's 8 was read as 5 (MPMLSCB03 drawer 82, read as 52).
+  - **Reference page:** the newest committed copy of the same form page with at least 8 handwritten numbers. It prefers the batch's store when known, else any store (one writer). It is sent with its confirmed values and an instruction never to copy them. Near-blank pages (page 4) get no reference.
+  - **Writer notes:** built from every cell a reviewer changed in the last 40 committed scans (the reader's value in `gl_extractions.rows` compared with the confirmed value in `gl_inventory` by `source_upload_id`). They name digit confusions ("this writer's 8 was misread as 5"), missed values and stray marks, with recent examples.
+  - **Row totals settle doubtful digits:** the system prompt now says ending on hand is stockroom + drawer + selling + delivery (true for 13 of 14 Staging rows that have an ending). When a row doesn't add up, the reader re-reads the doubtful digit and records the other reading in the hint, or flags the row.
+  - **Learned from the connected database, nothing hard-coded:** Staging learns from Staging reviews, prod from prod reviews. Prod starts with no profile and reads exactly as before until its first pages are reviewed. Any error building the profile falls back to the old read. `GL_WRITER_PROFILE=off` turns it off.
+  - **Cost and speed:** a read with a reference sends one more page image (about 440 KB PDF for page 2). The system prompt is prompt-cached; the reference is not, because each form page gets a different reference so a cache write would never be reused. Building the profile gives up after 8 s (the upload then reads the old way), and the reviewed-scan reads are kept in memory for 60 s so a 5-page batch doesn't repeat them.
+  - **Store scope:** a store-scoped user's reads only use references and corrections from their own stores, and their accuracy line counts only those stores.
+  - Accuracy counts every value that was written or that the reader saw, so a stray mark read as a number counts against it. Digit notes only use single-digit misreads; swaps like 15 vs 51 count as other misreads instead of becoming noisy digit notes.
+  - **Measured:** each staged extraction records whether a profile was used (`rows.reader`). The Uploads page shows "Scan reader · X of Y handwritten numbers read right in the last N reviewed pages", and once there are pages from both groups, the rate with and without the reference.
+  - The review gate is unchanged: nothing is saved to inventory until a person confirms it. No schema change.
+
 ## 2026-10-07 — Event tiles get "View all products" (event-scoped rankings)
 - **Each event tile's Top sellers block now ends with "View all products →".** It opens Product rankings scoped to that event (`/offline-sales/rankings?event=<id>`), with the Products and Bundles tabs, sort, search and paging the overview's View all already has.
   - *Why:* the existing View all ranks every offline sale together; the team wanted the full list (including the "kulelat" bottom sellers) for one event.
