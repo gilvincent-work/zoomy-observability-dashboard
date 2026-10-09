@@ -1,9 +1,12 @@
-// F5 + F7 + F8 + F10: the strict tool definitions (eleven, plus run_query for Explore users and four website CRM tools when the CRM is configured) sent to the Messages API, built from the registry. Frozen.
-// Strict-mode limits honoured: 10 tools, no optional parameters, no unions, no min/max/pattern/format keywords.
+// F5 + F7 + F8 + F10: the strict tool definitions sent to the Messages API, built from the registry. Frozen. Eleven base tools; Explore
+// users get fourteen (plus run_query, list_tables, describe_table); the four website CRM tools add to either (fifteen, or eighteen with
+// Explore; see chatTools). Strict-mode limits honoured: at most 20 strict tools per request, no optional parameters, no unions, no
+// min/max/pattern/format keywords.
 import {CHECKOUT_GROUPS, CHECKOUT_STAGES, CHECKOUT_STATUSES, CRM_LIMIT_VALUES, CUSTOMER_BUYERS, CUSTOMER_GROUPS, CUSTOMER_SORTS, CUSTOMER_TIERS, ORDER_GROUPS, ORDER_STATUSES} from './crm/tools';
 import {DIGEST_SECTIONS, DIGEST_WINDOWS, PRODUCT_SHOWS} from './digest-lookup';
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {ToolDefinition} from './stream-types';
+import {EXPLORE_OPEN_DOMAINS} from './explore/access';
 
 const sortedUnion = (pick: (id: (typeof METRIC_IDS)[number]) => string[]): string[] =>
   [...new Set(METRIC_IDS.flatMap(pick))].sort();
@@ -64,7 +67,7 @@ const queryMetric: ToolDefinition = {
 const runQuery: ToolDefinition = {
   name: 'run_query',
   description:
-    'EXPLORATORY. Run ONE read-only SQL SELECT on the coop_explore_* views listed in the catalog, only when query_metric, lookup_product and get_digest cannot answer ' +
+    'EXPLORATORY. Run ONE read-only SQL SELECT on the database tables (see the data index; call describe_table first), only when query_metric, lookup_product and get_digest cannot answer ' +
     '(the registry has no measure or filter for the ask). Name every column (no select *). Aggregate in SQL; never return raw rows to count or add them yourself. ' +
     'step "probe" = a quick look (row count, null share, distinct values), not stored; step "final" = the query whose result you will explain or draw, stored with an id x1, x2... for render_chart / render_table / render_kpi. ' +
     'On an error code, fix the SQL and call again. At most 5 calls per question.',
@@ -342,11 +345,26 @@ const setReportTitle: ToolDefinition = {
 
 export const CHAT_TOOLS: readonly ToolDefinition[] = deepFreeze([describeData, queryMetric, getDigest, getChannelReport, lookupProduct, renderKpi, renderChart, renderTable, setReportFilters, removeBlock, setReportTitle]);
 
+// Schema tools (spec 2.3): live from the database as the read-only login, merged with the catalog notes. Only domains with an open table.
+const listTables: ToolDefinition = {
+  name: 'list_tables',
+  description: 'List every table and view run_query can read, with its domain, a one-line meaning and the preferred default view. Use it when you do not know which table holds something. "all" for every domain.',
+  strict: true,
+  input_schema: {type: 'object', properties: {domain: {type: 'string', enum: ['all', ...EXPLORE_OPEN_DOMAINS], description: 'A domain id, or "all".'}}, required: ['domain'], additionalProperties: false},
+};
+const describeTable: ToolDefinition = {
+  name: 'describe_table',
+  description: 'Get the readable columns (name, type, nullable) of one table or view, live from the database, with its catalog meaning. Call it before writing run_query SQL on a table you have not described in this conversation. Secret columns are never listed.',
+  strict: true,
+  input_schema: {type: 'object', properties: {table: {type: 'string', description: 'The exact table or view name, no schema.'}}, required: ['table'], additionalProperties: false},
+};
+
 const VARIANTS = new Map<string, readonly ToolDefinition[]>();
 
 /**
- * The tool list for one request: CHAT_TOOLS, plus run_query after query_metric (Explore users), plus the four CRM tools after
- * get_channel_report (CRM configured and CHAT_CRM_TOOLS not off). set_report_title stays last and keeps the cache breakpoint.
+ * The tool list for one request: CHAT_TOOLS, plus run_query, list_tables and describe_table after query_metric (Explore users), plus
+ * the four CRM tools after get_channel_report (CRM configured and CHAT_CRM_TOOLS not off). set_report_title stays last and keeps the
+ * cache breakpoint. Sizes: 11 base, 14 with Explore, 15 with the CRM tools, 18 with both (strict-tool limit 20).
  */
 export function chatTools(opts: {explore: boolean; crm: boolean}): readonly ToolDefinition[] {
   const key = `${opts.explore}-${opts.crm}`;
@@ -355,7 +373,7 @@ export function chatTools(opts: {explore: boolean; crm: boolean}): readonly Tool
   const out: ToolDefinition[] = [];
   for (const t of CHAT_TOOLS) {
     out.push(t);
-    if (opts.explore && t.name === 'query_metric') out.push(runQuery);
+    if (opts.explore && t.name === 'query_metric') out.push(runQuery, listTables, describeTable);
     if (opts.crm && t.name === 'get_channel_report') out.push(...CRM_TOOLS);
   }
   const frozen = opts.explore || opts.crm ? deepFreeze(out) : CHAT_TOOLS;

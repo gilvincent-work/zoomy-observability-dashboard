@@ -10,6 +10,23 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-08 — Ask Coop reads the whole database except secrets (Train 3)
+- **Access.** `run_query` reads every `public` table and view by its own name. The view-per-table model hid every new table and column until someone re-ran SQL, and it narrowed the owner's "everything except passwords and credentials" without saying so.
+- **The lock stays in the database.** The read-only login gets `SELECT` plus `BYPASSRLS`. One whole-word secret-name rule (password, token, secret, key, pin, hash, credential, with a reviewed `pos_settings.key` exception) and the Zoomy-only tenant fence (`gl_*`, `company_*`, `companies`) close tables and columns. The allowlist is 29 views.
+- **Future objects.** An event trigger re-applies the rule on every DDL, and a 5-minute pg_cron job backs it, because Supabase skips user event triggers for superusers and reserved roles. A daily drift job shows up in `/api/chat/health`.
+- **App layers.** A value scanner hides secret-shaped values that sit under innocent names, and fails closed past every bound. `list_tables` and `describe_table` read the live schema. A 66-case attack suite covers the parser and scanner. Two limits are accepted: string-function splitting of a secret, and X58 text in Postgres logs.
+- **Owner decision.** `digest_archive.bundle` stays queryable (the UI still never selects it).
+- **Catalog.** A runtime catalog generated from `knowledge/data-catalog/` drives the prompt, the page map and the go-links. The `tables.md` edits live outside git. `crm-tools.md` is deferred to Train 4.
+- **Answers.** A new default view, `pos_orders_completed`, sits next to `pos_orders`; the status lint now fires only on raw `pos_orders` with no status filter. Event stock keeps its Train 1 view (`coop_explore_stock_event`). "Completed" means what the dashboard counts: every order that is not voided (`status is distinct from 'voided'`, a null status included), the same in `query_metric`, the view, the coverage line and the Offline Sales page; in practice status is only `completed` or `voided`. The `stock_on_hand` and `stock_cover` registry metrics arrived, and a code-written basis note is added.
+- **Cost cap.** Each question has a cost cap in input-token equivalents: `CHAT_TURN_BUDGET` (default 300000); past it the turn stops with a "try a narrower question" line.
+- **Go-links.** The chat can open 18 dashboard destinations (was 8), from the catalog's page map (`components/analyst/coop-chat.tsx` `APP_PATHS`).
+- **Health.** `/api/chat/health` adds `drift` (the daily drift job's newest time and count) and `uncatalogued` (open tables missing from the catalog).
+- **Website.** When the CRM is configured, the prompt says Website totals come from live orders through `get_channel_report`, and the gap line names what is still not readable (customers, carts, order lists).
+- **Aliases.** The `coop_explore_*` views stay as aliases until a later PR.
+- **Train 2 merged in.** Its final fix wave (one event-label rule, `min(min(btrim(e.name) collate "C")) over (partition by lower(btrim(e.name)))`, and a parser that accepts only `collate "C"`) now governs the base-table examples too: one label rule across the skill, E01-E18 and the tool descriptions.
+- **Apply order.** By hand on staging: `coop_chat_explore_direct.sql`, then `coop_chat_default_views.sql`, then `coop_chat_stock.sql` (it needs the `coop_chat_ro` role from `coop_chat_readonly.sql`; the readonly checks (b) now expect ten grants). Check with `coop_chat_explore_direct_checks.sql`; `coop_chat_explore_checks.sql` is for the Train 1 state only. PROD waits for zoomy-pos to revoke public execute on its write RPCs.
+- **Rollback.** Unset `EXPLORE_MODE` first (or deploy a pre-Train 3 app): the prompt names base tables the rolled-back login cannot read. Then `coop_chat_explore_direct_rollback.sql`, `coop_chat_explore.sql` and the Train 1 checks.
+
 ## 2026-10-07 — Ask Coop reads the website CRM (Train 4)
 - **Four GET-only tools.** Website customers, orders and abandoned checkouts live only in the CRM Worker, so Ask Coop gets `get_crm_metrics`, `list_crm_orders`, `list_crm_customers` and `list_crm_checkouts`. Totals, groups and paging are computed in code; results chart and pass the number check.
 - **Decision: the model never sees a URL, the token, a checkout link, a voucher code, the raw Shopify blob or free-text line-item properties.** The chat has its own guarded client (GET only, one base URL, endpoint and parameter allowlists, read-scoped token, 5 s / 4 MB / 8 GETs / 6 calls per turn). Both it and the pages share one field allowlist (`src/crm-project.ts`). This replaces the spec's "value scanner reused" for CRM data (owner sign-off in the PR).
@@ -21,6 +38,7 @@ Dates are local working dates (GMT+8). Newest first.
 - **Env.** `CRM_API_URL`, `CRM_API_READ_TOKEN`; optional kill switch `CHAT_CRM_TOOLS=off` hides the tools without touching the Website CRM page.
 - **Known limits.** Only the Worker enforces that the read token cannot open `/admin` (the dashboard never calls it, and a test pins that). Customer text can only be labelled untrusted, not stopped.
 - Best practice: `knowledge/best-practices/chat-readonly-api-tools.md`.
+- **Merged onto Train 3.** The CRM tools sit after `get_channel_report` next to Explore's `list_tables` / `describe_table` (15 tools with the CRM, 18 with Explore too; the strict limit is 20). The per-turn "Not available" line keeps the three CRM states and appends the catalog-built "Not in the database" line from the same flags (`DataFlags {website, crm}`).
 
 ## 2026-10-07 — Ask Coop digest periods and charts (Train 2)
 - **Digests by date.** Ask Coop reads digests by date in Philippine days. `window_from` is a PH-midnight `timestamptz` and was read with `slice(0,10)`, which showed 27 Sep for a window starting 28 Sep. PROD holds mixed windows (weekly, about a month, rolling 30 days, re-runs), so every stored window is listed per turn (newest re-run only), and `get_digest` can pick the one covering a date.

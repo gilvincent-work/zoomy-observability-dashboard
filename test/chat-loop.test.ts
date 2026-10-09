@@ -2,6 +2,7 @@ import {describe, expect, it, vi} from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
 import {readFileSync} from 'node:fs';
 import {runChatLoop, UNTRUSTED_TEXT_TOOLS, CHAT_DEADLINE_MS, TOOL_DEADLINE_MS, WRAP_UP_TEXT, CUT_OFF_TEXT, DEGENERATE_TEXT, DEADLINE_TEXT, MAX_STEPS_TEXT, ACCOUNT_ERROR_TEXT, ORDER_NUDGE_TEXT, REFUSAL_TEXT, SAFE_ERROR_TEXT, type ChatLoopOptions, type MessagesClient} from '../src/chat/loop';
+import {COST_CAP_TEXT} from '../src/chat/cost';
 import {assertRequestShape} from '../src/chat/request-shape';
 import {CHAT_TOOLS, chatTools, exploreTools} from '../src/chat/tool-defs';
 import {createExecutors} from '../src/chat/tool-executors';
@@ -295,6 +296,37 @@ describe('runChatLoop', () => {
       const summary = await runChatLoop(opts);
       expect(client.requests).toHaveLength(2);
       expect(summary.stopReason).toBe('deadline');
+    });
+  });
+
+  describe('2.8 cost cap per turn', () => {
+    const big = (...uses: Block[]): Scripted => ({content: [THINKING, ...uses], stop_reason: 'tool_use', usage: {input_tokens: 400_000, output_tokens: 0}});
+
+    it('a budget already spent before any tool result stops with COST_CAP_TEXT, stopReason cost_cap and no model call', async () => {
+      const client = new FakeClient(() => ({text: ['never sent']}));
+      const {events, opts} = setup(client, {turnBudget: 0});
+      const summary = await runChatLoop(opts);
+      expect(summary.stopReason).toBe('cost_cap');
+      expect(client.requests).toHaveLength(0);
+      expect(events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('')).toContain(COST_CAP_TEXT);
+      expect(events.at(-1)).toMatchObject({t: 'done'});
+    });
+
+    it('over the budget after a tool step: exactly one more model call, made without tools being callable (the wrap-up), then done', async () => {
+      const client: FakeClient = new FakeClient((n): Scripted => (n === 1 ? big(toolUse('t1', 'query_metric', QUERY)) : {text: ['Revenue was ₱100.']}));
+      const {opts, events} = setup(client, {turnBudget: 1000});
+      const summary = await runChatLoop(opts);
+      expect(client.requests).toHaveLength(2);
+      expect(client.req(1).tool_choice).toEqual({type: 'none'});
+      expect(summary.stopReason).toBe('wrapped_up');
+      expect(events.filter((e) => e.t === 'text').map((e) => (e as {d: string}).d).join('')).toBe('Revenue was ₱100.');
+    });
+
+    it('no budget option: no cap', async () => {
+      const client: FakeClient = new FakeClient((n): Scripted => (n === 1 ? big(toolUse('t1', 'query_metric', QUERY)) : {text: ['ok']}));
+      const summary = await runChatLoop(setup(client).opts);
+      expect(client.req(1).tool_choice).toEqual({type: 'auto'});
+      expect(summary.stopReason).toBe('end_turn');
     });
   });
 

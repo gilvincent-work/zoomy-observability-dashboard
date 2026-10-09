@@ -1,6 +1,9 @@
 -- coop_chat_explore_checks.sql
 -- READ-ONLY audit queries (selects only, plus one DO block that only RAISEs NOTICEs). Safe on PROD. Paste into the SQL editor after
 -- applying supabase/coop_chat_explore.sql. Each query states its expected result. Spec: 2026-10-05-ask-coop-explore-spec.md 2.4.
+-- TRAIN 1 STATE ONLY: before supabase/coop_chat_explore_direct.sql, or after supabase/coop_chat_explore_direct_rollback.sql (then
+-- re-run supabase/coop_chat_explore.sql first). While the direct reads are applied, run supabase/coop_chat_explore_direct_checks.sql
+-- INSTEAD: there (b), (c) and (d) below read BAD by design (the login reads every open table, with BYPASSRLS).
 
 -- (a) A4. Any column of any coop_explore_* view whose NAME matches the blocked pattern.
 -- EXPECTED: 0 rows. BAD: any row (the generator did not drop it; do not use the role until fixed).
@@ -41,8 +44,9 @@ where c.relkind in ('r', 'v', 'm', 'p', 'f')
   )
 order by 1;
 
--- (d) Role attributes. EXPECTED: rolcanlogin true; rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls all false;
--- rolconnlimit = 10. BAD: anything else.
+-- (d) Role attributes. EXPECTED: rolcanlogin true; rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls all
+-- false; rolconnlimit = 10. BAD: anything else. (BYPASSRLS true is the direct-read state: the direct checks (a) own that expectation,
+-- and the rollback sets NOBYPASSRLS again.)
 select rolname, rolcanlogin, rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls, rolconnlimit
 from pg_roles where rolname = 'coop_explore_ro';
 

@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import {getDigests} from '@/src/data';
 import {buildDigestBlock, buildLiveContextBlock, buildStaticSystem} from '@/src/chat/context';
 import {CHAT_EFFORT, COOP_CHAT} from '@/src/chat/config';
+import {turnBudgetFromEnv} from '@/src/chat/cost';
 import {CHAT_DEADLINE_MS, runChatLoop, SAFE_ERROR_TEXT} from '@/src/chat/loop';
 import {encodeEvent} from '@/src/chat/stream-protocol';
 import {dashboardLinks, pageContextLine, readPageInput} from '@/src/chat/pages';
@@ -95,9 +96,11 @@ export async function POST(req: Request) {
   const crmAccess = resolveCrmAccess(process.env);
   const crm: CrmClient | null = live.ok && crmAccess.enabled ? createCrmClient({baseUrl: crmAccess.baseUrl, token: crmAccess.token, fetch}) : null;
   const crmTools = crm !== null && crmAccess.enabled && crmAccess.tools;
+  // get_channel_report reads live website (CRM) orders whenever the CRM client exists: the prompt's Website lines follow these flags.
+  const website = crm !== null;
   const system = [
-    {type: 'text' as const, text: buildStaticSystem({tools: live.ok, explore: explore !== null, crm: crmTools, website: crm !== null}), cache_control: {type: 'ephemeral' as const}},
-    {type: 'text' as const, text: live.ok ? buildLiveContextBlock({explore: explore !== null, crm: crmTools, website: crm !== null}) : buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
+    {type: 'text' as const, text: buildStaticSystem({tools: live.ok, explore: explore !== null, crm: crmTools, website}), cache_control: {type: 'ephemeral' as const}},
+    {type: 'text' as const, text: live.ok ? buildLiveContextBlock({explore: explore !== null, crm: crmTools, website}) : buildDigestBlock(rows, body.week, {home: body.home === true}), cache_control: {type: 'ephemeral' as const}},
   ];
 
   const anthropic = new Anthropic({apiKey: key});
@@ -111,10 +114,10 @@ export async function POST(req: Request) {
       system,
       tools: live.ok ? chatTools({explore: explore !== null, crm: crmTools}) : [],
       messages,
-      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null, page: pageLine, digests: digestLine, crm: crmTools, website: crm !== null}) : buildDegradedPreamble(now),
+      preamble: live.ok && report ? buildPreamble(live.data, now, report.outline(), coverage, {explore: explore !== null, page: pageLine, digests: digestLine, flags: {website, crm: crmTools}}) : buildDegradedPreamble(now),
       executors:
         live.ok && report
-          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, crmOrders: crm ? () => websiteOrdersForReport({client: crm, user}) : undefined, explore: explore?.executor, crm: crmTools && crm ? crm : undefined})
+          ? createExecutors({data: async () => live.data, now, user, emitBlock: (block) => emit({t: 'block', block}), report, emitReport: (spec) => emit({t: 'report', spec}), digest: getChatDigest, crmOrders: crm ? () => websiteOrdersForReport({client: crm, user}) : undefined, explore: explore?.executor, exploreSchema: explore?.schema, crm: crmTools && crm ? crm : undefined})
           : {},
       emit,
       user,
@@ -122,6 +125,7 @@ export async function POST(req: Request) {
       deadlineMs: Math.max(0, CHAT_DEADLINE_MS - (Date.now() - started)),
       signal: req.signal,
       exploreGap: explore?.executor.gap,
+      turnBudget: turnBudgetFromEnv(process.env),
     }).then(() => undefined),
   );
 }

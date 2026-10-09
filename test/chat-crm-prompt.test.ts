@@ -34,7 +34,7 @@ describe('prompt truth with the CRM tools on (Review Focus: never call an enable
     expect(buildLiveContextBlock({crm: true})).toMatch(/list_crm_orders/);
     expect(buildLiveContextBlock({crm: true})).not.toMatch(STALE_WEBSITE);
     expect(buildLiveContextBlock()).toMatch(/Shopee, Lazada and Website figures come from the stored digests/);
-    const p = buildPreamble(data(), NOW, undefined, null, {crm: true});
+    const p = buildPreamble(data(), NOW, undefined, null, {flags: {crm: true}});
     expect(p).toMatch(/Website orders, customers and abandoned checkouts ARE available live/);
     expect(p).not.toMatch(STALE_WEBSITE);
     expect(buildPreamble(data(), NOW)).toMatch(/Shopee\/Lazada\/Website sales \(stored digests only\)/);
@@ -105,7 +105,7 @@ describe('three CRM states across every prompt text', () => {
     expect(buildLiveContextBlock(STATES.none)).not.toMatch(/website orders, customers and abandoned carts/);
   });
   it('preamble', () => {
-    const pre = (o: object) => buildPreamble(data(), NOW, undefined, null, o);
+    const pre = (flags: {website?: boolean; crm?: boolean}) => buildPreamble(data(), NOW, undefined, null, {flags});
     expect(pre(STATES.none)).toMatch(/Shopee\/Lazada\/Website sales \(stored digests only\)/);
     expect(pre(STATES.report)).toMatch(LIVE_VIA_REPORT);
     expect(pre(STATES.report)).not.toMatch(/Shopee\/Lazada\/Website sales \(stored digests only\)/);
