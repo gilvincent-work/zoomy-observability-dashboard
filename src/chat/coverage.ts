@@ -49,10 +49,16 @@ export const UNAVAILABLE: readonly {what: string; why: string}[] = Object.freeze
   {what: 'Anything before the first order date', why: 'There is no data before the first order.'},
 ]);
 
-/** With Explore on, contacts and leads are reachable through run_query, so the contact caveat goes and the digest-only wording drops "not queryable yet". */
-const unavailableFor = (explore: boolean): {what: string; why: string}[] =>
-  UNAVAILABLE.filter((u) => !(explore && u.what === 'Customer-level data')).map((u) =>
-    explore && u.what.startsWith('Shopee') ? {...u, why: 'Only in the stored digests (get_digest).'} : {...u});
+/** With Explore on, contacts and leads are reachable through run_query; with the CRM tools on, Website sales and website customers are live. */
+const unavailableFor = (explore: boolean, crm = false, website = false): {what: string; why: string}[] =>
+  UNAVAILABLE.filter((u) => !(explore && u.what === 'Customer-level data')).map((u) => {
+    if (u.what.startsWith('Shopee')) {
+      if (crm || website) return {what: 'Shopee and Lazada sales', why: `Only in the stored digests (get_digest). Website totals for any dates come from get_channel_report${crm ? ', and website orders and customers from the CRM tools' : ''}.`};
+      return {...u, why: explore ? 'Only in the stored digests (get_digest).' : u.why};
+    }
+    if (crm && u.what === 'Customer-level data') return {what: 'POS customer-level data', why: 'Not exposed; only totals are available. Website customers come from list_crm_customers.'};
+    return {...u};
+  });
 
 export interface DescribeDataResult {
   today: string;
@@ -80,7 +86,7 @@ function noteFor(c: CoverageSummary): string {
   return c.source === 'mock' ? `This is sample data, not real sales. ${base}` : base;
 }
 
-export function describeData(input: {metric: string}, data: MetricData, now: Date, explore = false): DescribeDataResult | {error: string} {
+export function describeData(input: {metric: string}, data: MetricData, now: Date, explore = false, crm = false, website = false): DescribeDataResult | {error: string} {
   const raw = (input as {metric?: unknown} | null)?.metric;
   const ids = METRIC_IDS as readonly string[];
   if (typeof raw !== 'string' || (raw !== 'all' && !ids.includes(raw))) {
@@ -105,6 +111,6 @@ export function describeData(input: {metric: string}, data: MetricData, now: Dat
         supports: {pet: m.supportsPet, event: m.supportsEvent, compare: m.supportsCompare},
       };
     }),
-    unavailable: unavailableFor(explore),
+    unavailable: unavailableFor(explore, crm, website),
   };
 }

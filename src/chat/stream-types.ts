@@ -10,6 +10,7 @@ export type ChatStreamEvent =
   | {t: 'text'; d: string} // a text delta of the answer (markdown, may contain <suggest>/<go> tags)
   | {t: 'block'; block: ChatBlock} // a stat tile, chart or table bound by the server from a stored result (F7)
   | {t: 'report'; spec: ReportSpec | null} // F8: the report after this turn changed it (null = nothing open); the client keeps it and sends it back
+  | {t: 'untrusted'} // Train 4: the answer may quote customer-entered text (CRM lists, Explore rows); the drawer renders its links as plain text
   | {t: 'done'; steps: number; usage: ChatUsage}
   | {t: 'error'; message: string};
 
@@ -53,4 +54,8 @@ export interface ChatToolContext {
   explore?: (input: unknown) => Promise<unknown>;
   /** list_tables / describe_table (Explore users only), built with the same read-only runner. */
   exploreSchema?: {list_tables: (input: unknown) => Promise<unknown>; describe_table: (input: unknown) => Promise<unknown>};
+  /** Train 4: the GET-only website CRM client for this request; present only when the CRM is configured and CHAT_CRM_TOOLS is not off. Absent means the four CRM tools are not registered. */
+  crm?: import('./crm/client').CrmClient;
+  /** Where audit lines go (tests pass a fake). Absent means console. */
+  sink?: import('./audit').AuditSink;
 }

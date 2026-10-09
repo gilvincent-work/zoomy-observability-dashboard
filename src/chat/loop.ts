@@ -13,6 +13,10 @@ import type {ChatStreamEvent, ChatUsage, ToolDefinition} from './stream-types';
 import {statusFor} from './tool-executors';
 import {dispatchToolCall, RUN_QUERY_TOOL, type ToolExecutors, type ToolResult} from './tools';
 
+/** Tools whose results carry text typed by customers or staff. After one succeeds, the stream says `untrusted` once, and the drawer
+ *  renders every link in that answer as plain text (no exfiltration by a clicked, injected link; images are never rendered). */
+export const UNTRUSTED_TEXT_TOOLS: ReadonlySet<string> = new Set(['run_query', 'list_crm_orders', 'list_crm_customers', 'list_crm_checkouts']);
+
 /** The only part of the Anthropic SDK the loop touches. The real `new Anthropic()` satisfies it. */
 export interface MessageStreamLike extends AsyncIterable<Anthropic.MessageStreamEvent> {
   finalMessage(): Promise<Anthropic.Message>;
@@ -104,6 +108,7 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
   const seen: unknown[] = [];
   // EXP-04 (spec 7): after a run_query FINAL succeeded, the text of this turn is held until the number check has passed.
   let exploreUsed = false;
+  let untrustedSent = false;
   let reportUsed = false; // a get_channel_report result succeeded: the app draws it when the model typed a table instead (live A8)
   let registryUsed = false; // a query_metric result succeeded: the app may draw it when the model forgot (backstop)
   // An Explore-capable turn (the run_query tool was sent) holds ALL text until its step ends: narration in a step that only calls tools
@@ -372,6 +377,10 @@ export async function runChatLoop(opts: ChatLoopOptions): Promise<ChatLoopSummar
     }
     for (const r of results) if (!r.is_error) seen.push(r.content);
     calls.forEach((c, i) => {
+      if (!untrustedSent && UNTRUSTED_TEXT_TOOLS.has(String(c.name)) && !results[i].is_error) {
+        untrustedSent = true;
+        emit({t: 'untrusted'});
+      }
       const content = results[i].content as {id?: unknown} | null;
       if (c.name === 'run_query' && !results[i].is_error && typeof content?.id === 'string') exploreUsed = true;
       if (c.name === 'query_metric' && !results[i].is_error && typeof content?.id === 'string') registryUsed = true;

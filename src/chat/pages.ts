@@ -3,11 +3,18 @@
 import {CATALOG_DATA} from './catalog';
 export type PageInfo = {route: string; title: string; shows: string; data: string};
 
+// Train 4: an API Ask Coop reads with its own tools (apis.md "Ask Coop" = "tools: ...") names those tools on every page that reads it.
+const API_TOOLS = new Map(CATALOG_DATA.apis.filter((a) => /^tools:/i.test(a.askCoop)).map((a) => [a.id, a.askCoop.replace(/^tools:\s*/i, '')]));
+const withTools = (data: string, domains: readonly string[]): string => {
+  const tools = domains.flatMap((d) => API_TOOLS.get(d) ?? []);
+  return tools.length > 0 ? `${data}; read live by the tools ${tools.join('; ')}` : data;
+};
+
 export const PAGES: readonly PageInfo[] = CATALOG_DATA.pages.map((p) => ({
   route: p.route,
   title: p.title,
   shows: p.redirectTo ? `redirects to ${p.redirectTo}` : p.shows,
-  data: p.fenced ? "another company's data: Ask Coop cannot read it" : p.data,
+  data: p.fenced ? "another company's data: Ask Coop cannot read it" : withTools(p.data, p.domains),
 }));
 
 const MAX_PATH = 200;

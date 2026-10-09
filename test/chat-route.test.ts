@@ -42,7 +42,6 @@ vi.mock('@/auth', () => ({
 vi.mock('@/src/active-context', () => ({
   getActiveContext: async () => null,
 }));
-vi.mock('@/src/crm-data', () => ({crmConfigured: () => false, getCrmOrders: async () => []}));
 vi.mock('@/src/data', () => ({
   getDigests: async () => {
     h.getDigestsCalls += 1;
@@ -95,6 +94,9 @@ vi.mock('@/src/chat/preamble', async () => await import('../src/chat/preamble'))
 vi.mock('@/src/chat/pages', async () => await import('../src/chat/pages'));
 vi.mock('@/src/chat/report-session', async () => await import('../src/chat/report-session'));
 vi.mock('@/src/chat/tool-defs', async () => await import('../src/chat/tool-defs'));
+vi.mock('@/src/chat/crm/config', async () => await import('../src/chat/crm/config'));
+vi.mock('@/src/chat/crm/client', async () => await import('../src/chat/crm/client'));
+vi.mock('@/src/chat/crm/executors', async () => await import('../src/chat/crm/executors'));
 vi.mock('@/src/chat/tool-executors', async () => await import('../src/chat/tool-executors'));
 // Explore: the real gate and executor, but the driver is a fake that records what it is asked (never a real connection).
 vi.mock('@/src/chat/explore-setup', async () => {
@@ -143,6 +145,9 @@ beforeEach(() => {
   h.loopOpts.length = 0;
   h.exploreRuns.length = 0;
   vi.stubEnv('EXPLORE_MODE', '');
+  vi.stubEnv('CRM_API_URL', '');
+  vi.stubEnv('CRM_API_READ_TOKEN', '');
+  vi.stubEnv('CHAT_CRM_TOOLS', '');
   vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-not-a-real-key');
   vi.stubEnv('DEV_AUTH_BYPASS', '');
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -529,5 +534,26 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
     await drain(await post(ask()));
     expect(lastRequest().tools).toBeUndefined();
     expect(h.exploreRuns).toEqual([]);
+  });
+});
+
+describe('POST /api/chat: website CRM tools gating (Train 4, fail closed)', () => {
+  const names = () => (lastRequest().tools as {name: string}[]).map((t) => t.name);
+  const CRM = ['get_crm_metrics', 'list_crm_orders', 'list_crm_customers', 'list_crm_checkouts'];
+
+  it('no CRM env: none of the four tools is sent', async () => {
+    await drain(await post(ask()));
+    expect(names().filter((n) => CRM.includes(n))).toEqual([]);
+  });
+
+  it('CRM env set: the four tools follow get_channel_report; CHAT_CRM_TOOLS=off removes them again', async () => {
+    vi.stubEnv('CRM_API_URL', 'https://crm.example');
+    vi.stubEnv('CRM_API_READ_TOKEN', 'tok');
+    await drain(await post(ask()));
+    const n = names();
+    expect(n.slice(n.indexOf('get_channel_report'), n.indexOf('get_channel_report') + 5)).toEqual(['get_channel_report', ...CRM]);
+    vi.stubEnv('CHAT_CRM_TOOLS', 'off');
+    await drain(await post(ask()));
+    expect(names().filter((x) => CRM.includes(x))).toEqual([]);
   });
 });

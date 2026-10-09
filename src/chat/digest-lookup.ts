@@ -163,7 +163,7 @@ export interface DigestResult {
 }
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
-const NOT_STORED = 'No stored digest is available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric; Shopee, Lazada and Website figures cannot be answered without it.';
+const NOT_STORED = 'No stored digest is available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric; Shopee and Lazada figures cannot be answered without it; Website totals come from get_channel_report only when the website CRM is connected (and from the CRM tools when available); otherwise Website figures cannot be answered either.';
 
 /** Newest first with re-runs removed, so "previous" is never a re-run of "latest". */
 const ordered = (src: DigestSource): DigestRow[] => dedupeReruns(src.rows, windowOf);
