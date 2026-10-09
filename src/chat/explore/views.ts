@@ -114,3 +114,7 @@ export const EXPLORE_VIEWS = {
 
 export type ExploreViewName = keyof typeof EXPLORE_VIEWS;
 export const EXPLORE_VIEW_NAMES = Object.keys(EXPLORE_VIEWS) as ExploreViewName[];
+
+/** A Train 1 alias view's base table, or the name itself. The coop_explore_* views stay as aliases until a later PR drops them. */
+export const baseRelation = (name: string): string =>
+  Object.prototype.hasOwnProperty.call(EXPLORE_VIEWS, name) ? EXPLORE_VIEWS[name as ExploreViewName].source : name;

@@ -35,6 +35,9 @@ const ITEM_COLS = 'order_id,product_id,bundle_id,bundle_group,qty,unit_price,lin
 const EVENT_COLS = 'event_id,name,venue,city,starts_on,ends_on,status,created_at';
 const PRICE_COLS = 'product_id,price';
 const PRICE_CHANGE_COLS = 'id,product_id,old_price,new_price,changed_at';
+const STOCK_COLS = 'product_id,location,stock';
+const SALE_MOVEMENT_COLS = 'id,product_id,delta,reason,created_at';
+const STOCK_CONFIG_COLS = 'key,value';
 const COLUMNS = Object.freeze({
   orders: ORDER_COLS,
   items: ITEM_COLS,
@@ -43,6 +46,9 @@ const COLUMNS = Object.freeze({
   events: EVENT_COLS,
   prices: PRICE_COLS,
   priceChanges: PRICE_CHANGE_COLS,
+  stock: STOCK_COLS,
+  saleMovements: SALE_MOVEMENT_COLS,
+  stockConfig: STOCK_CONFIG_COLS,
 });
 
 export const CHAT_RELATIONS = Object.freeze({
@@ -55,6 +61,9 @@ export const CHAT_RELATIONS = Object.freeze({
       events: 'coop_chat_events',
       prices: 'coop_chat_prices',
       priceChanges: 'coop_chat_price_changes',
+      stock: 'coop_chat_stock_by_location',
+      saleMovements: 'coop_chat_sale_movements',
+      stockConfig: 'coop_chat_stock_config',
     }),
     columns: COLUMNS,
   }),
@@ -67,6 +76,9 @@ export const CHAT_RELATIONS = Object.freeze({
       events: 'pos_events',
       prices: 'pos_prices',
       priceChanges: 'pos_price_changes',
+      stock: 'pos_inventory_by_location',
+      saleMovements: 'pos_stock_movements',
+      stockConfig: 'pos_settings',
     }),
     columns: COLUMNS,
   }),
@@ -85,6 +97,9 @@ export interface ChatRelationMap {
   events: string;
   prices: string;
   priceChanges: string;
+  stock: string;
+  saleMovements: string;
+  stockConfig: string;
 }
 
 export interface ChatRelationSet {

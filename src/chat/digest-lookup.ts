@@ -4,6 +4,7 @@
 // Design: knowledge/architecture/2026-10-01-talk-to-data-design.md Slice 5.
 import {formatPeso} from '../pos-format';
 import {manilaDayKey} from '../pos-sales-compute';
+import {isCompletedOrder} from './order-status';
 import type {DigestFigure} from '../types';
 import {dedupeReruns, nearestWindows, pickCovering, sameWindow, windowDays, windowLabel, windowOf, type CoverPick, type DigestWindow} from '../digest-windows';
 import {phtDate} from './coverage';
@@ -162,7 +163,7 @@ export interface DigestResult {
 }
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
-const NOT_STORED = 'No stored digest is available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric; Shopee, Lazada and Website figures cannot be answered without it.';
+const NOT_STORED = 'No stored digest is available right now (not connected, or none has been stored yet). Say so plainly. Offline POS figures still come from query_metric; Shopee and Lazada figures cannot be answered without it; Website totals come from get_channel_report only when the website CRM is connected (and from the CRM tools when available); otherwise Website figures cannot be answered either.';
 
 /** Newest first with re-runs removed, so "previous" is never a re-run of "latest". */
 const ordered = (src: DigestSource): DigestRow[] => dedupeReruns(src.rows, windowOf);
@@ -379,7 +380,7 @@ export function lookupProduct(input: unknown, data: MetricData): MetricResult | 
     );
   }
 
-  const completed = data.orders.filter((o2) => o2.status !== 'voided' && !Number.isNaN(Date.parse(o2.created_at)));
+  const completed = data.orders.filter((o2) => isCompletedOrder(o2) && !Number.isNaN(Date.parse(o2.created_at)));
   let dataFrom: string | null = null;
   let dataTo: string | null = null;
   for (const o2 of completed) {

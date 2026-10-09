@@ -143,7 +143,7 @@ describe('CHAT_TOOLS', () => {
     expect(Object.keys(props(lookup_product))).toEqual(['query', 'show']);
     expect(props(lookup_product).show.enum).toEqual(['details', 'price_history']);
     expect(props(lookup_product).query.enum).toBeUndefined();
-    expect(get_digest.description).toMatch(/Shopee, Lazada or the website/);
+    expect(get_digest.description).toMatch(/Shopee and Lazada figures, and the website's figures as published/);
     expect(get_digest.description).toMatch(/query_metric/);
     expect(lookup_product.description).toMatch(/names a specific product or SKU/);
     expect(lookup_product.description).toMatch(/top_products/);
@@ -160,10 +160,30 @@ describe('CHAT_TOOLS', () => {
 });
 
 describe('exploreTools (spec 3.1)', () => {
-  it('is CHAT_TOOLS with run_query after query_metric: 12 tools, set_report_title still last with the cache breakpoint', () => {
+  it('Train 3: the Explore tool list adds list_tables and describe_table after run_query, stays within the strict-tool limit', () => {
+    const names = exploreTools().map((t) => t.name);
+    expect(names.slice(names.indexOf('run_query'), names.indexOf('run_query') + 3)).toEqual(['run_query', 'list_tables', 'describe_table']);
+    expect(names[names.length - 1]).toBe('set_report_title'); // the cache breakpoint stays last
+    expect(names.length).toBeLessThanOrEqual(20); // Anthropic strict tool use limit; re-check with the claude-api skill if it fails
+  });
+  it('Train 3: list_tables offers only domains with an open table (no tenancy, no marketplace-tokens, no empty domain); both are strict', () => {
+    const lt = exploreTools().find((x) => x.name === 'list_tables')!;
+    const dt = exploreTools().find((x) => x.name === 'describe_table')!;
+    const domains = (lt.input_schema.properties as Record<string, {enum: string[]}>).domain.enum;
+    expect(domains[0]).toBe('all');
+    expect(domains).toContain('pos-sales');
+    for (const d of ['tenancy', 'marketplace-tokens', 'goldline', 'pawpal']) expect(domains).not.toContain(d);
+    for (const t of [lt, dt]) {
+      expect(t.strict).toBe(true);
+      expect(t.input_schema.additionalProperties).toBe(false);
+      expect(t.input_schema.required.length).toBe(Object.keys(t.input_schema.properties).length);
+    }
+    expect(exploreTools().find((x) => x.name === 'run_query')!.description).not.toMatch(/coop_explore_\* views listed/);
+  });
+  it('is CHAT_TOOLS with run_query (then list_tables, describe_table) after query_metric: 14 tools, set_report_title still last with the cache breakpoint', () => {
     const t = exploreTools();
-    expect(t).toHaveLength(12);
-    expect(t.map((x) => x.name).filter((n) => n !== 'run_query')).toEqual(CHAT_TOOLS.map((x) => x.name));
+    expect(t).toHaveLength(14);
+    expect(t.map((x) => x.name).filter((n) => !['run_query', 'list_tables', 'describe_table'].includes(n))).toEqual(CHAT_TOOLS.map((x) => x.name));
     expect(t.map((x) => x.name).indexOf('run_query')).toBe(t.map((x) => x.name).indexOf('query_metric') + 1);
     expect(t[t.length - 1].name).toBe('set_report_title');
     expect(t[t.length - 1].cache_control).toEqual({type: 'ephemeral'});

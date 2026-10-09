@@ -48,7 +48,7 @@ type LineItem = {title: string; quantity: number; unitPrice: number; discount: n
 
 // Port of the batch's parseLineItems (zoomy-observability src/observability/sales.js)
 // so a full-period range reconciles to the digest. Tolerant; never throws.
-function parseLineItems(raw: unknown): LineItem[] {
+export function parseLineItems(raw: unknown): LineItem[] {
   let items: unknown;
   try {
     items = typeof raw === 'string' ? JSON.parse(raw) : raw;
