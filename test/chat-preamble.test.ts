@@ -77,7 +77,7 @@ describe('buildPreamble', () => {
 
   it('stays short and has no money or other percentages', () => {
     const p = buildPreamble(data(), now);
-    expect(p.length).toBeLessThan(600);
+    expect(p.length).toBeLessThan(1200); // was 600 before the catalog-built "Not in the database" line (measured 1068)
     expect(p).not.toMatch(/₱|PHP|\$/);
     expect(p.match(/\d+%/g)).toEqual(['33%']);
   });

@@ -30,6 +30,7 @@ export function createExecutors(ctx: ChatToolContext): ChatExecutors {
     ...createRenderExecutors(ctx, session),
     ...createReportExecutors(ctx, session, data),
     ...(ctx.explore ? {run_query: ctx.explore} : {}),
+    ...(ctx.exploreSchema ? {list_tables: ctx.exploreSchema.list_tables, describe_table: ctx.exploreSchema.describe_table} : {}),
     describe_data: async (input) => describeData(input as {metric: string}, await data(), ctx.now, !!ctx.explore),
     query_metric: async (input) => {
       const result = runMetric(input, await data(), ctx.now);
@@ -134,6 +135,8 @@ export function statusFor(name: string, input: unknown): string {
     }
   }
   if (name === 'run_query') return 'Running an exploratory query'; // constant: never echoes the SQL
+  if (name === 'list_tables') return 'Listing the tables';
+  if (name === 'describe_table') return "Reading a table's columns";
   if (name === 'get_digest') return 'Reading a stored digest';
   if (name === 'get_channel_report') return 'Building the channel report';
   if (name === 'lookup_product') return 'Looking up a product';
