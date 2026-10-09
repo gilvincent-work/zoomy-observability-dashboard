@@ -1,6 +1,6 @@
 'use client';
 
-import {useMemo, useState, useTransition} from 'react';
+import {useEffect, useMemo, useRef, useState, useTransition} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, FileText, Loader2, Maximize2, X} from 'lucide-react';
@@ -11,6 +11,7 @@ import {commitBatchAction, updateBatchInfoAction} from '@/app/uploads/actions';
 import {batchCoverage, batchReadiness, FORM_PAGES} from '@/src/upload-batch';
 import {LOW_BELOW, rowConfidence, toneText} from '@/src/review-confidence';
 import {stepFlag, unresolvedFlags, type CatalogLite} from '@/src/review-workbench';
+import {draftKey, packPage, parseDraft, unpackPage, type Draft} from '@/src/review-draft';
 import {DocumentConfidence} from '@/components/analyst/document-confidence';
 import {reviewRowEl, ReviewRows, type ColKey, type ReviewView} from '@/components/analyst/review-rows';
 import {useUploadQueue} from '@/components/analyst/upload-queue';
@@ -83,6 +84,7 @@ export function BatchReview({
   catalog,
   stores,
   otherFiles,
+  initialPageId = null,
 }: {
   company: string;
   canEdit: boolean;
@@ -92,6 +94,8 @@ export function BatchReview({
   catalog: Record<string, CatalogLite>;
   stores: StoreOption[];
   otherFiles: UploadRow[];
+  /** The page (upload id) to open on: set when the reviewer came in from one file. */
+  initialPageId?: string | null;
 }) {
   const router = useRouter();
   const queue = useUploadQueue();
@@ -101,7 +105,7 @@ export function BatchReview({
   const [storeCode, setStoreCode] = useState(defaults.storeCode);
   const [periodStart, setPeriodStart] = useState(defaults.periodStart);
   const [periodEnd, setPeriodEnd] = useState(defaults.periodEnd);
-  const [tabId, setTabId] = useState<string | null>(pages[0]?.upload.id ?? null);
+  const [tabId, setTabId] = useState<string | null>((pages.find((p) => p.upload.id === initialPageId) ?? pages[0])?.upload.id ?? null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
@@ -143,7 +147,66 @@ export function BatchReview({
   const readiness = batchReadiness({storeCode, periodStart, periodEnd, pages: pageInfo});
 
   const tab = Math.max(0, pages.findIndex((p) => p.upload.id === tabId));
-  const setTab = (k: number) => setTabId(pages[k]?.upload.id ?? null);
+  const setTab = (k: number) => {
+    const id = pages[k]?.upload.id ?? null;
+    setTabId(id);
+    // Keep the open page in the address, so Back/refresh/a shared link return to it.
+    if (id) window.history.replaceState(null, '', `?page=${id}`);
+  };
+
+  // Unsaved edits are kept in this browser per batch (see src/review-draft.ts), so
+  // leaving the review and coming back keeps the reviewer's values and checked flags.
+  // `hydrated` flips in the same update as the restore, so the save effect first runs
+  // with the restored state and never overwrites a stored draft with the fresh reading.
+  const draftsLoaded = useRef(false);
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    if (draftsLoaded.current) return;
+    draftsLoaded.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- marks the one-time localStorage restore below as done
+    setHydrated(true);
+    if (!editable) return;
+    let draft: Draft | null = null;
+    try {
+      draft = parseDraft(window.localStorage.getItem(draftKey(batch.id)));
+    } catch {
+      /* storage blocked: review still works, edits just aren't kept */
+    }
+    if (!draft) return;
+    const saved = draft.pages;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from localStorage after hydration (reading it during render would mismatch the server HTML)
+    setState((all) => {
+      const next = {...all};
+      for (const p of pages) {
+        if (p.upload.status !== 'needs_review') continue;
+        const back = unpackPage(p.extraction?.data?.rows ?? [], saved[p.upload.id]);
+        if (back && next[p.upload.id]) next[p.upload.id] = {...next[p.upload.id], rows: back.rows, resolved: back.resolved};
+      }
+      return next;
+    });
+  }, [batch.id, editable, pages]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (committed) {
+        window.localStorage.removeItem(draftKey(batch.id)); // nothing left to keep
+        return;
+      }
+      if (!editable) return; // view-only: never touch an editor's draft in this browser
+      const out: Draft = {v: 1, savedAt: Date.now(), pages: {}};
+      for (const p of pages) {
+        const s = state[p.upload.id];
+        if (!s || p.upload.status !== 'needs_review') continue;
+        const d = packPage(p.extraction?.data?.rows ?? [], s.rows, s.resolved);
+        if (d) out.pages[p.upload.id] = d;
+      }
+      if (Object.keys(out.pages).length) window.localStorage.setItem(draftKey(batch.id), JSON.stringify(out));
+      else window.localStorage.removeItem(draftKey(batch.id));
+    } catch {
+      /* storage blocked or full */
+    }
+  }, [hydrated, state, pages, editable, committed, batch.id]);
   const cur = pages[tab];
   const curState = cur ? state[cur.upload.id] : null;
   const curFlags = cur ? flaggedById[cur.upload.id] ?? [] : [];
@@ -194,6 +257,11 @@ export function BatchReview({
         return;
       }
       setDone(res.committed);
+      try {
+        window.localStorage.removeItem(draftKey(batch.id));
+      } catch {
+        /* storage blocked */
+      }
       if (queue?.batch.id === batch.id) queue.reset(); // the corner indicator's job is done
       router.refresh();
     });
