@@ -147,7 +147,7 @@ export const EXPLORE_EXTRA_CORPUS = [
   row('X14', 'cast', `select o.status::varchar as s from ${O} o`, 'E_CAST', 'n/a'),
   row('X15', 'cast', `select o.status::text[] as s from ${O} o`, 'E_CAST', 'n/a'),
   row('X16', 'node', `select array[o.id] as a from ${O} o`, 'E_NODE', 'n/a'),
-  row('X17', 'node', `select o.status collate "C" as s from ${O} o`, 'E_NODE', 'n/a'),
+  row('X17', 'node', `select o.status collate "en_US" as s from ${O} o`, 'E_NODE', 'n/a'),
   row('X18', 'node', `select count(*) as n from ${O} o group by grouping sets ((o.status), ())`, 'E_NODE', 'n/a'),
   row('X19', 'node', `select (o.id).x as a from ${O} o`, 'E_NODE', 'n/a'),
   row('X21', 'node', `select o.id from only ${O} o`, 'E_NODE', 'n/a'),

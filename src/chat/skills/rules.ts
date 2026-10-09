@@ -77,6 +77,8 @@ export const RULES: readonly {id: string; enforcedBy: RuleEnforcement; where: st
   {id: 'EXP-04', enforcedBy: 'code', where: 'src/chat/loop.ts number check in enforce mode for Explore turns'},
   {id: 'EXP-05', enforcedBy: 'code', where: 'src/chat/explore/parse.ts lint W_NO_STATUS_FILTER + src/chat/explore/client.ts SET LOCAL timezone Asia/Manila'},
   {id: 'EXP-06', enforcedBy: 'guide', where: 'guide'},
+  {id: 'EXP-07', enforcedBy: 'code', where: 'src/chat/recommend-view.ts decideTwoDim: two categories + one measure pivot, GROUPED_MAX_SERIES, small multiples, untagged note over UNTAGGED_NOTE_SHARE'},
+  {id: 'EXP-08', enforcedBy: 'guide', where: 'guide'},
 ];
 
 /** Numbers the skill text uses as `{{NAME}}` placeholders, taken from code so the text cannot drift. */

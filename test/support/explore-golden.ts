@@ -544,6 +544,39 @@ export const EXPLORE_GOLDEN: ExploreGoldenCase[] = [
     live: true,
     liveWhy: 'Regression: the Day 1 count mismatch (registry 11 and 8 vs base 7 and 4); the answer must name the tagged and date-attributed parts',
   },
+  {
+    // A7 (spec 2c.5): the PROD screenshot question. The owner asked for grouped bars and got 9 truncated bars, and the answer said "Dog is the
+    // top pet tag at both venues" while the biggest Circuit Mall event was fully untagged. The fixture has that trap (X-EV6, locallymade ph).
+    id: 'A07',
+    question: 'Revenue by pet tag for every event at the SM Aura and Circuit Mall venues, as grouped bars.',
+    path: 'explore',
+    mustCall: ['run_query', 'render_chart'],
+    mustNotCall: [],
+    views: ['coop_explore_orders', 'coop_explore_events'],
+    invariant: 'I-UNTAGGED',
+    reference: 'A07_pet_venue_event',
+    rubric: [
+      'One group per event and one color per pet; untagged revenue is its own series.',
+      'The answer says locallymade ph has no pet tag at all and gives the Circuit Mall untagged share from the Notes line.',
+      'No claim covers "both venues" or "every event" unless it holds for every row, untagged included.',
+    ],
+    script: [
+      [run('final', 'revenue and orders by venue, event and pet', "select e.venue as venue, e.name as event, coalesce(o.pet_type, 'untagged') as pet, count(*) as orders_count, round(sum(o.total), 2) as revenue_php from coop_explore_orders o join coop_explore_events e on e.event_id = o.event_id where (e.venue ilike '%sm aura%' or e.venue ilike '%circuit%') and o.status = 'completed' group by e.venue, e.name, coalesce(o.pet_type, 'untagged') order by e.venue, e.name, revenue_php desc")],
+      // The first render step is nudged to write the caveat first (the real model repeats the same call), so the script repeats it too.
+      [{name: 'render_chart', input: {block: 'new', source: 'x1', kind: 'grouped_bar', orientation: 'auto', x: 'auto', y: ['auto'], title: 'Revenue by event and pet'}}],
+      [{name: 'render_chart', input: {block: 'new', source: 'x1', kind: 'grouped_bar', orientation: 'auto', x: 'auto', y: ['auto'], title: 'Revenue by event and pet'}}],
+    ],
+    compares: [{ref: 'A07_pet_venue_event', result: 'x1', keys: ['venue', 'event', 'pet'], figures: ['orders_count', 'revenue_php']}],
+    verify: (c) => {
+      const drawn = c.results.find((x) => x.name === 'render_chart' && !x.is_error)?.content as {chosen?: {form?: string; notes?: string[]}} | undefined;
+      const out: string[] = [];
+      if (drawn?.chosen?.form !== 'grouped_bar') out.push(`chart form ${drawn?.chosen?.form} is not grouped_bar`);
+      if (!drawn?.chosen?.notes?.includes('locallymade ph: 100% of revenue has no pet tag.')) out.push('no Notes line for the fully untagged event');
+      if (!drawn?.chosen?.notes?.some((n) => /^Circuit Mall: \d+% of revenue has no pet tag\.$/.test(n))) out.push('no Notes line for the Circuit Mall venue');
+      if (/both venues/i.test(c.text)) out.push('the answer claims something for both venues');
+      return out;
+    },
+  },
 ];
 
 export const GOLDEN_IDS_25 = EXPLORE_GOLDEN.filter((c) => /^G\d\d$/.test(c.id)).map((c) => c.id);

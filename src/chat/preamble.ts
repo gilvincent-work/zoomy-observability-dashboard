@@ -1,4 +1,5 @@
 // F4: the per-turn coverage block and the static catalog for the cached system prompt. Pure.
+import {windowLabel, type DigestWindow} from '../digest-windows';
 import {buildCoverage, phtDate} from './coverage';
 import {METRICS, METRIC_IDS} from './metrics-registry';
 import type {MetricData} from './result-types';
@@ -14,7 +15,7 @@ function longToday(now: Date): string {
   return `${WEEKDAYS[pht.getUTCDay()]}, ${pht.getUTCDate()} ${FULL_MONTHS[pht.getUTCMonth()]} ${pht.getUTCFullYear()}`;
 }
 
-const NOT_AVAILABLE_BASE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (weekly digest only). Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet.';
+const NOT_AVAILABLE_BASE = 'Not available: Traffic (sample data only), Meta ads (not connected), Shopee/Lazada/Website sales (stored digests only). Pet type and event ARE available (pet_mix, event_rollup): run once per event or pet.';
 const NOT_AVAILABLE_NO_EXPLORE = 'Contact details (email, phone, instagram) are not exposed by the metrics. Questions no metric covers cannot be answered.';
 const EXPLORE_AVAILABLE = 'For questions no metric covers (contacts, leads, stock, voided orders, hours), use run_query on the Explore views.';
 const notAvailable = (explore: boolean): string => `${NOT_AVAILABLE_BASE} ${explore ? EXPLORE_AVAILABLE : NOT_AVAILABLE_NO_EXPLORE}`;
@@ -25,7 +26,7 @@ export function buildDegradedPreamble(now: Date): string {
 }
 
 /** `outline` is the figure-free text of the open report (F8), or '' / absent when none is open. It rides in the per-turn preamble only, never in the cached system or tools. */
-export function buildPreamble(data: MetricData, now: Date, outline?: string, exploreCoverage?: string | null, opts: {explore?: boolean; page?: string | null} = {}): string {
+export function buildPreamble(data: MetricData, now: Date, outline?: string, exploreCoverage?: string | null, opts: {explore?: boolean; page?: string | null; digests?: string | null} = {}): string {
   const c = buildCoverage(data);
   const head = `[context] Today is ${longToday(now)} (Philippine time; ${phtDate(now)}).`;
   let cover: string;
@@ -37,9 +38,18 @@ export function buildPreamble(data: MetricData, now: Date, outline?: string, exp
     cover = `${lead} ${shortDate(c.dataFrom)} to ${shortDate(c.dataTo)} (${c.orders} completed orders${share}).`;
   }
   const base = `${head} ${cover} ${notAvailable(opts.explore === true)} If a question is outside this range, say what the data covers.`;
-  const withPage = opts.page ? `${base}\n${opts.page}` : base;
-  const withCoverage = exploreCoverage ? `${withPage}\n${exploreCoverage}` : withPage;
+const withPage = opts.page ? `${base}\n${opts.page}` : base;
+  const withDigests = opts.digests ? `${withPage}\n${opts.digests}` : withPage;
+  const withCoverage = exploreCoverage ? `${withDigests}\n${exploreCoverage}` : withDigests;
   return outline ? `${withCoverage}\n${outline}` : withCoverage;
+}
+
+/** F.5: the stored digest windows, one per-turn line (never in the cached prompt: it changes when a digest lands). Null when none. */
+export function digestIndexLine(windows: readonly DigestWindow[], max = 20): string | null {
+  if (windows.length === 0) return null;
+  const shown = windows.slice(0, max).map(windowLabel).join('; ');
+  const more = windows.length > max ? `; and ${windows.length - max} older` : '';
+  return `[digests] Stored digest windows, newest first (lengths vary: weekly or about a month): ${shown}${more}. Read one with get_digest window "covering" and the owner's dates, and name the window you used. Total any dates per channel (a month, a custom range, by week or month) with get_channel_report.`;
 }
 
 const TOOL_RULES =

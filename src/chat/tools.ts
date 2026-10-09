@@ -14,6 +14,7 @@ export const TOOL_ALLOWLIST = Object.freeze([
   'remove_block',
   'set_report_title',
   'get_digest',
+  'get_channel_report',
   'lookup_product',
   'run_query',
 ] as const);

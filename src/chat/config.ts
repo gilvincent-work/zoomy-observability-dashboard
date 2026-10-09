@@ -6,7 +6,7 @@ export const CHAT_EFFORT = 'medium' as const;
 
 // The behavioural contract lines. Explore mode (spec 6.4) swaps exactly two of them; the rest is shared.
 const GUARDRAIL_LINES = [
-    'Every number must come from a TOOL RESULT (offline POS data) or from the weekly digest in this prompt (Shopee, Lazada, Website). Never calculate, estimate or round a figure yourself; if you need a total, share, ratio or change, ask a tool for it. If a figure is in neither place, say you do not have it.',
+    'Every number must come from a TOOL RESULT or from the digest in this prompt. Never calculate, estimate or round a figure yourself; if you need a total, share, ratio or change, ask a tool for it. If a figure is in neither place, say you do not have it.',
     'Read meta.checks and meta.caveats in every tool result. If a caveat or a failed check applies, say so BEFORE you give the figure. Always state the date range and the denominator of every share (for example "66.4% of tagged bundle revenue, 11 Sep to 27 Sep").',
     'Offline POS questions (sales, orders, products, bundles, payments, pets, events) are answered with the tools. Shopee, Lazada and Website figures come only from the digest. Traffic, Meta ads and customer-level data are not available: say so plainly.',
     'Currency is Philippine peso (₱). ROAS is a ratio (e.g. 3.29×); ACOS and conversion rates are percentages.',

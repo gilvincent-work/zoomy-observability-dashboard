@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   session: null as null | {user: {email: string | null}},
   authCalls: 0,
   digests: [] as unknown[],
+  digestIndex: [] as {from: string; to: string; createdAt: string}[],
   getDigestsCalls: 0,
   live: {ok: false, reason: 'not set up'} as {ok: true; data: unknown} | {ok: false; reason: string},
   onLoad: null as null | (() => void),
@@ -40,6 +41,7 @@ vi.mock('@/auth', () => ({
 vi.mock('@/src/active-context', () => ({
   getActiveContext: async () => null,
 }));
+vi.mock('@/src/crm-data', () => ({crmConfigured: () => false, getCrmOrders: async () => []}));
 vi.mock('@/src/data', () => ({
   getDigests: async () => {
     h.getDigestsCalls += 1;
@@ -52,6 +54,7 @@ vi.mock('@/src/chat/server', () => ({
     return h.live;
   },
   getChatDigest: async () => ({source: 'live', rows: []}),
+  getChatDigestIndex: async () => h.digestIndex,
 }));
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class FakeAnthropic {
@@ -128,6 +131,7 @@ beforeEach(() => {
   h.session = USER;
   h.authCalls = 0;
   h.digests = [];
+  h.digestIndex = [];
   h.getDigestsCalls = 0;
   h.live = {ok: true, data: goldenData()};
   h.onLoad = null;
@@ -343,7 +347,18 @@ describe('POST /api/chat: live mode (no digest, no period)', () => {
     expect(systemOf(lastRequest())[1].text).toBe(buildLiveContextBlock());
   });
 
-  it('the tools are the ten read-only tools, with tool_choice auto', async () => {
+  it('F.5: lists the stored digest windows in the per-turn preamble, never in the cached system', async () => {
+    h.digestIndex = [
+      {from: '2026-09-27T16:00:00+00:00', to: '2026-10-04T16:00:00+00:00', createdAt: '2026-10-05T01:00:00+00:00'},
+      {from: '2026-08-01T00:00:00+00:00', to: '2026-09-01T00:00:00+00:00', createdAt: '2026-09-01T02:00:00+00:00'},
+    ];
+    await drain(await post(ask('September sales per channel?')));
+    const last = messagesOf(lastRequest()).at(-1)?.content as Block[];
+    expect(last[0].text).toContain('Sep 28 to Oct 4, 2026; Aug 1, 2026 08:00 to Sep 1, 2026 08:00 (PH time)');
+    expect(JSON.stringify(systemOf(lastRequest()))).not.toContain('[digests]');
+  });
+
+  it('the tools are the eleven read-only tools, with tool_choice auto', async () => {
     await drain(await post(ask()));
     const p = lastRequest();
     expect((p.tools as {name: string}[]).map((t) => t.name)).toEqual(CHAT_TOOLS.map((t) => t.name));
@@ -465,7 +480,7 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
   };
   const toolNames = (p: Record<string, unknown>) => (p.tools as {name: string}[]).map((t) => t.name);
 
-  it('off by default: ten tools, no run_query, no exploratory prompt block, no coverage query', async () => {
+  it('off by default: eleven tools, no run_query, no exploratory prompt block, no coverage query', async () => {
     await drain(await post(ask()));
     expect(toolNames(lastRequest())).toEqual(CHAT_TOOLS.map((t) => t.name));
     expect(systemOf(lastRequest())[0].text).toBe(buildStaticSystem({tools: true}));
@@ -473,11 +488,11 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
     expect(h.exploreRuns).toEqual([]);
   });
 
-  it('on for an allowed user: run_query is the 11th tool, the prompt has the catalog and the all-available-data rule, and the preamble carries the coverage line source', async () => {
+  it('on for an allowed user: run_query is the 12th tool, the prompt has the catalog and the all-available-data rule, and the preamble carries the coverage line source', async () => {
     ON();
     await drain(await post(ask()));
     expect(toolNames(lastRequest())).toContain('run_query');
-    expect(toolNames(lastRequest())).toHaveLength(11);
+    expect(toolNames(lastRequest())).toHaveLength(12);
     expect(systemOf(lastRequest())[0].text).toBe(buildStaticSystem({tools: true, explore: true}));
     expect(systemOf(lastRequest())[1].text).toBe(buildLiveContextBlock({explore: true}));
     expect(h.exploreRuns).toHaveLength(1); // the fixed coverage statement, wrapped in the cursor, through the injected driver
@@ -490,7 +505,7 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
     ON();
     vi.stubEnv('EXPLORE_ALLOWED_EMAILS', 'someone.else@example.test');
     await drain(await post(ask()));
-    expect(toolNames(lastRequest())).toHaveLength(10);
+    expect(toolNames(lastRequest())).toHaveLength(11);
     expect(h.exploreRuns).toEqual([]);
   });
 
@@ -498,7 +513,7 @@ describe('POST /api/chat: Explore gating (fail closed)', () => {
     ON();
     vi.stubEnv('EXPLORE_DATABASE_URL', 'postgres://postgres:pw@127.0.0.1:54421/postgres');
     await drain(await post(ask()));
-    expect(toolNames(lastRequest())).toHaveLength(10);
+    expect(toolNames(lastRequest())).toHaveLength(11);
   });
 
   it('on but the live read path is degraded (digest-only): no tools at all, so no run_query', async () => {

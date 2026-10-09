@@ -1,6 +1,8 @@
 import {describe, it, expect} from 'vitest';
-import {buildDegradedPreamble, buildPreamble, buildStaticCatalog} from '../src/chat/preamble';
+import {buildDegradedPreamble, buildPreamble, buildStaticCatalog, digestIndexLine} from '../src/chat/preamble';
 import {METRICS, METRIC_IDS} from '../src/chat/metrics-registry';
+import {dedupeReruns, windowOf} from '../src/digest-windows';
+import {SEPTEMBER_ROWS} from './support/channel-report-fixture';
 import type {MetricData} from '../src/chat/result-types';
 import type {PosOrder} from '../src/pos-sales-types';
 
@@ -119,5 +121,22 @@ describe('buildDegradedPreamble', () => {
     expect(text).toMatch(/Live offline POS data is not available right now/);
     expect(text).not.toMatch(/\d+%|₱|\d+ completed orders/);
     expect(buildDegradedPreamble(new Date('2026-09-30T17:00:00Z'))).toBe(text);
+  });
+});
+
+describe('F.5 the [digests] line', () => {
+  const now = new Date('2026-10-07T04:00:00Z');
+  const idx = dedupeReruns(SEPTEMBER_ROWS.map(windowOf), (w) => w);
+  it('lists every stored window in PH dates, newest first, re-runs once, exact times when not PH-aligned', () => {
+    const line = digestIndexLine(idx) as string;
+    expect(line).toContain('[digests] Stored digest windows, newest first (lengths vary: weekly or about a month): Sep 28 to Oct 4, 2026; Sep 21 to Sep 27, 2026; Sep 1 to Sep 27, 2026; Aug 1, 2026 08:00 to Sep 1, 2026 08:00 (PH time); Jul 10, 2026 11:40 to Aug 9, 2026 11:40 (PH time).');
+    expect(line).toContain('get_digest window "covering"');
+  });
+  it('caps the list and is null when nothing is stored', () => {
+    expect(digestIndexLine(idx, 2)).toContain('Sep 21 to Sep 27, 2026; and 3 older.');
+    expect(digestIndexLine([])).toBeNull();
+  });
+  it('rides in the per-turn preamble after the page line', () => {
+    expect(buildPreamble(data(), now, undefined, null, {page: '[page] x', digests: '[digests] y'})).toMatch(/\[page\] x\n\[digests\] y$/);
   });
 });

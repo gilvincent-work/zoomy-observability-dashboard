@@ -34,9 +34,25 @@ describe('real tree', () => {
     expect(writeCallsIn(files)).toEqual([]);
   });
 
-  it('the legacy exception is exactly the old digest import and is not traversed', () => {
-    expect(closure.legacyHits).toEqual(['src/data.ts']);
+  // Train 4 replaces the CRM exception with GET-only CRM tools.
+  it('the legacy exceptions are exactly the old digest import and the read-only CRM orders reader (F.6), and are not traversed', () => {
+    expect([...closure.legacyHits].sort()).toEqual(['src/crm-data.ts', 'src/data.ts']);
     expect(closure.files.has('src/data.ts')).toBe(false);
+    expect(closure.files.has('src/crm-data.ts')).toBe(false);
+  });
+
+  // The exception is two names, not the module: a chat file that reached getCrmCustomers or the PII-bearing readers would pass the test above.
+  it('the CRM exception is exactly {crmConfigured, getCrmOrders}, imported by name', () => {
+    const all = loadDirs(process.cwd(), ['src/chat', 'app/api/chat']);
+    const names = new Set<string>();
+    for (const [f, src] of Object.entries(all)) {
+      if (/\.(test|spec)\./.test(f)) continue;
+      for (const m of strip(src, false).matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"][^'"]*crm-data['"]/g)) {
+        for (const n of m[1].split(',')) if (n.trim()) names.add(n.trim().split(/\s+as\s+/)[0]);
+      }
+      expect(/import\s+(?!type\b)(?!\{)[^;]*['"][^'"]*crm-data['"]|import\s*\*[^;]*crm-data|import\(['"][^'"]*crm-data/.test(strip(src, false)), `${f} imports crm-data other than by name`).toBe(false);
+    }
+    expect([...names].sort()).toEqual(['crmConfigured', 'getCrmOrders']);
   });
 });
 
@@ -148,8 +164,8 @@ describe('reports separation rules fire on planted violations', () => {
 });
 
 describe('LEGACY_ALLOWED_IMPORTS', () => {
-  it('has exactly one entry so it can only shrink deliberately', () => {
-    expect(LEGACY_ALLOWED_IMPORTS).toEqual(['src/data.ts']);
+  it('has exactly these entries so it can only shrink deliberately', () => {
+    expect(LEGACY_ALLOWED_IMPORTS).toEqual(['src/crm-data.ts', 'src/data.ts']);
   });
 });
 

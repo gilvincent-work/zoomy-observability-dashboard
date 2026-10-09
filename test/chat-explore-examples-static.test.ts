@@ -102,11 +102,13 @@ describe('the examples', () => {
   });
 });
 
-describe('E02 labels each event by its group key (live test 5)', () => {
-  it('selects lower(btrim(e.name)) as event and never min()/max() of the raw name', async () => {
+describe('E02 labels each event by one spelling per event (live test 5, A7)', () => {
+  it('groups by lower(btrim(e.name)) and labels with min(min(btrim(e.name) collate "C")) over the same partition', async () => {
     const {EXPLORE_EXAMPLES: ex} = await import('../src/chat/explore/examples');
     const e02 = ex.find((e) => e.id === 'E02')!;
-    expect(e02.sql).toMatch(/select lower\(btrim\(e\.name\)\) as event/);
-    expect(ex.map((e) => e.sql).join('\n')).not.toMatch(/\b(min|max)\(\s*btrim\(e\.name\)/);
+    expect(e02.sql).toMatch(/select min\(min\(btrim\(e\.name\) collate "C"\)\) over \(partition by lower\(btrim\(e\.name\)\)\) as event/);
+    expect(e02.sql).toMatch(/group by lower\(btrim\(e\.name\)\)/);
+    expect(e02.sql).not.toMatch(/lower\(btrim\(e\.name\)\) as event/);
+    expect(e02.teaches.join(' ')).not.toMatch(/never min\(\)/);
   });
 });
