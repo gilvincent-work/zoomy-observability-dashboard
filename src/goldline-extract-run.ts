@@ -8,6 +8,7 @@ import {
   PAGE_DETECT_SCHEMA,
   EXTRACT_MODEL,
 } from './goldline-extract';
+import type {WriterProfile} from './goldline-writer-data';
 
 // The live Claude Vision call for one scanned inventory page. Server-only; reads
 // ANTHROPIC_API_KEY from the env (never the browser). The hard, reusable parts —
@@ -33,6 +34,9 @@ export type ExtractedPage = {
   period_end?: string | null;
   consultant?: string | null;
   rows: ExtractedRow[];
+  /** How this page was read (stamped by us, not the model): which writer profile was
+   *  used, so reader accuracy can be compared before and after it. */
+  reader?: {profile: boolean; reference_upload_id: string | null; notes: boolean};
 };
 
 /** True when extraction is configured; lets callers disable the PDF path cleanly. */
@@ -90,7 +94,7 @@ export async function detectPage(pdfBase64: string): Promise<number> {
  * response (page_mismatch / unreadable). The caller marks the upload failed and
  * surfaces the reason to the reviewer.
  */
-export async function extractInventoryPage(pdfBase64: string, page: number): Promise<ExtractedPage> {
+export async function extractInventoryPage(pdfBase64: string, page: number, profile?: WriterProfile): Promise<ExtractedPage> {
   if (!extractionConfigured()) throw new Error('ANTHROPIC_API_KEY is not set');
   const system = buildSystemPrompt();
   const manifest = buildManifestPrompt(page); // throws if this page has no manifest yet
@@ -101,13 +105,15 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
     // Pages 2 & 4 have ~67–68 rows; 8000 tokens truncated the JSON. 16000 covers the
     // largest page's one-object-per-item output with headroom.
     max_tokens: 16000,
-    system,
+    // Cached: the system prompt is the same for every page (ignored by the API if it is
+    // under the model's minimum cacheable size, which is harmless).
+    system: [{type: 'text', text: system, cache_control: {type: 'ephemeral'}}],
     // Structured output — the first text block is valid JSON matching the schema.
     output_config: {format: {type: 'json_schema', schema: EXTRACTION_SCHEMA}},
     // Note: no `thinking` param. Sonnet 5 rejects `{type:'disabled'}` with a 400
     // ("send {type:'between_tools'} instead"); for a pure, no-tools extraction we
     // just omit it and let the model default. Keep it omitted unless we add tools.
-    messages: [{role: 'user', content: [pdfDoc(pdfBase64), {type: 'text', text: manifest}]}],
+    messages: [{role: 'user', content: [...referenceBlocks(profile), pdfDoc(pdfBase64), {type: 'text', text: readText(manifest, profile)}]}],
   };
 
   // Cast through unknown: output_config/thinking are newer params and the exact SDK
@@ -130,7 +136,26 @@ export async function extractInventoryPage(pdfBase64: string, page: number): Pro
   }
   // store_code is header-only (page 1); normalize a missing/null one to '' so the
   // rest of the pipeline (and the reviewer's editable field) has a string.
-  return {...parsed, store_code: typeof parsed.store_code === 'string' ? parsed.store_code : ''};
+  return {
+    ...parsed,
+    store_code: typeof parsed.store_code === 'string' ? parsed.store_code : '',
+    reader: {profile: Boolean(profile?.reference || profile?.notes), reference_upload_id: profile?.reference?.uploadId ?? null, notes: Boolean(profile?.notes)},
+  };
+}
+
+/** The writer's reference page (an earlier confirmed scan of the same page + its
+ *  confirmed values), ahead of the page being read. Not cached: each form page of a
+ *  batch gets a different reference, so a cache write would never be read back. */
+function referenceBlocks(profile?: WriterProfile) {
+  const ref = profile?.reference;
+  if (!ref) return [];
+  return [pdfDoc(ref.pdfBase64), {type: 'text', text: ref.text}];
+}
+
+/** The instruction after the page being read: writer notes (if any), then the manifest. */
+function readText(manifest: string, profile?: WriterProfile): string {
+  const lead = profile?.reference ? 'The scan just above is the page to read now.' : null;
+  return [lead, profile?.notes ?? null, manifest].filter(Boolean).join('\n\n');
 }
 
 /** Minimal runtime guard: a rows array of {item_code} objects (store_code is optional —

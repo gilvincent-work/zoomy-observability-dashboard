@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import {useEffect, useMemo, useState} from 'react';
 import {useRouter} from 'next/navigation';
-import {AlertTriangle, CheckCircle2, Clock, Loader2, Search, Trash2, X, XCircle} from 'lucide-react';
+import {AlertTriangle, CheckCircle2, Clock, Loader2, ScanLine, Search, Trash2, X, XCircle} from 'lucide-react';
 import type {StoreOption, UploadKind, UploadRow, UploadStatus} from '@/src/goldline-data';
+import type {ReaderAccuracy} from '@/src/goldline-writer-data';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {BatchUploader} from '@/components/analyst/batch-uploader';
 import {DeleteUploadDialog} from '@/components/analyst/delete-upload-dialog';
@@ -53,6 +54,36 @@ function fmtWhen(iso: string): string {
 
 type Toast = {id: number; kind: 'ok' | 'err'; text: string};
 
+const pct = (s: {cells: number; corrected: number}) => `${(Math.floor(((s.cells - Math.min(s.corrected, s.cells)) / s.cells) * 1000) / 10).toFixed(1)}%`;
+
+/** How well the scan reader is doing on this writer's handwriting, from pages people
+ *  reviewed: the share of handwritten numbers that needed no correction. Once pages are
+ *  read with the writer's reference, that group is shown on its own so the gain is visible. */
+function ReaderAccuracyNote({a}: {a: ReaderAccuracy}) {
+  const right = a.cells - Math.min(a.corrected, a.cells);
+  return (
+    <p className="flex items-start gap-2 text-xs text-muted-foreground">
+      <ScanLine aria-hidden className="mt-px size-3.5 shrink-0" />
+      <span>
+        <span className="font-medium text-foreground">Scan reader</span> ·{' '}
+        <span className="tabular-nums">
+          {right} of {a.cells}
+        </span>{' '}
+        handwritten numbers read right in the last {a.pages} reviewed {a.pages === 1 ? 'page' : 'pages'} (
+        <span className="tabular-nums">{pct(a)}</span>).
+        {a.after.cells > 0 && a.before.cells > 0 && (
+          <>
+            {' '}
+            With the writer&apos;s reference: <span className="tabular-nums text-foreground">{pct(a.after)}</span>, before it:{' '}
+            <span className="tabular-nums">{pct(a.before)}</span>.
+          </>
+        )}{' '}
+        It learns this writer&apos;s handwriting from the pages you review.
+      </span>
+    </p>
+  );
+}
+
 export function UploadsView({
   company,
   canEdit,
@@ -60,6 +91,7 @@ export function UploadsView({
   uploads,
   initialStatus = 'all',
   stores = [],
+  readerAccuracy = null,
 }: {
   company: string;
   canEdit: boolean;
@@ -67,6 +99,7 @@ export function UploadsView({
   uploads: UploadRow[];
   initialStatus?: StatusFilter;
   stores?: StoreOption[];
+  readerAccuracy?: ReaderAccuracy | null;
 }) {
   const router = useRouter();
 
@@ -113,6 +146,7 @@ export function UploadsView({
           Add a store&apos;s inventory form (every page at once) or a POS sales export. Scans are read automatically and wait
           for your review; sales are saved right away.
         </p>
+        {readerAccuracy && <ReaderAccuracyNote a={readerAccuracy} />}
       </header>
 
       <BatchUploader canEdit={canEdit} configured={configured} stores={stores} />
