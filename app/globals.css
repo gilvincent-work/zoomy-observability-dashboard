@@ -283,3 +283,8 @@ html.coop-splash-seen .coop-splash { display: none; }
   .coop-chip-hint,
   .coop-shine { animation: none; }
 }
+
+/* Native controls (date pickers' calendar icon, scrollbars, select popups) follow the
+   app's theme, so they stay visible in dark mode. */
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }

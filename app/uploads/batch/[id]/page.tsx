@@ -10,8 +10,9 @@ export const dynamic = 'force-dynamic';
 
 // Review one upload batch — a store's inventory form for one period — and commit every
 // page into one Inventory count. Company-scoped: another tenant's batch id is a 404.
-export default async function Page(props: {params: Promise<{id: string}>}) {
+export default async function Page(props: {params: Promise<{id: string}>; searchParams: Promise<{page?: string}>}) {
   const {id} = await props.params;
+  const {page: openPage} = await props.searchParams;
   const ctx = await getDataContext();
   if (!ctx || !ctx.companyId) {
     return (
@@ -61,6 +62,7 @@ export default async function Page(props: {params: Promise<{id: string}>}) {
       pages={pages}
       catalog={catalog}
       stores={stores}
+      initialPageId={typeof openPage === 'string' ? openPage : null}
       otherFiles={raw.filter((p) => p.upload.kind !== 'inventory_pdf').map((p) => p.upload)}
     />
   );

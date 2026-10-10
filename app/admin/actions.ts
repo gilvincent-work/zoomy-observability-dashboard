@@ -4,6 +4,8 @@ import {revalidatePath} from 'next/cache';
 import {auth} from '@/auth';
 import {COOP_VIEW_KEY, fetchMemberships, type CompanyRole} from '@/src/company';
 import {countCoopAdmins, grantRoles, revoke, setStatus} from '@/src/admin-data';
+import {guardEnv} from '@/src/coop-env-server';
+import {PROD_CONFIRM_WORD, prodConfirmOk} from '@/src/coop-env';
 
 // Role-management actions — the ONLY write surface for access. Every action
 // re-derives the active view server-side and requires it to be the Coop Admin view
@@ -24,7 +26,7 @@ async function requireCoopAdmin(): Promise<{actor: string} | {error: string}> {
   // fetchMemberships drops suspended rows.
   const memberships = await fetchMemberships(actor);
   const stillCoopAdmin = memberships.some((m) => m.companyId === null && m.role === 'coop_admin');
-  if (!stillCoopAdmin) return {error: 'Not authorized — you need an active Coop Admin role.'};
+  if (!stillCoopAdmin) return {error: 'Not authorized. You need an active Coop Admin role.'};
   return {actor};
 }
 
@@ -45,7 +47,7 @@ export async function grantRoleAction(input: {email: string; companyKey: string;
   const companyId = parseCompany(input.companyKey);
   if (companyId === undefined) return {ok: false, error: 'Unknown company.'};
   if (companyId === null && input.role !== 'coop_admin') return {ok: false, error: 'A company role needs a company.'};
-  if (companyId !== null && input.role === 'coop_admin') return {ok: false, error: 'Coop Admin is cross-tenant — leave the company blank.'};
+  if (companyId !== null && input.role === 'coop_admin') return {ok: false, error: 'Coop Admin is cross-tenant, so leave the company blank.'};
 
   try {
     const {granted} = await grantRoles({actor: gate.actor, email, grants: [{companyId, role: input.role}]});
@@ -55,7 +57,7 @@ export async function grantRoleAction(input: {email: string; companyKey: string;
     return {ok: true};
   } catch (e) {
     console.error('grantRoleAction', e);
-    return {ok: false, error: 'Could not grant the role — please try again.'};
+    return {ok: false, error: 'Could not grant the role. Please try again.'};
   }
 }
 
@@ -82,7 +84,7 @@ export async function grantRolesAction(input: {
     const companyId = parseCompany(g.companyKey);
     if (companyId === undefined) return {ok: false, error: 'Unknown company.'};
     if (companyId === null && g.role !== 'coop_admin') return {ok: false, error: 'A company role needs a company.'};
-    if (companyId !== null && g.role === 'coop_admin') return {ok: false, error: 'Coop Admin is cross-tenant — leave the company blank.'};
+    if (companyId !== null && g.role === 'coop_admin') return {ok: false, error: 'Coop Admin is cross-tenant, so leave the company blank.'};
     parsed.push({companyId, role: g.role});
   }
 
@@ -94,13 +96,17 @@ export async function grantRolesAction(input: {
     return {ok: true};
   } catch (e) {
     console.error('grantRolesAction', e);
-    return {ok: false, error: 'Could not grant these roles — nothing was changed. Please try again.'};
+    return {ok: false, error: 'Could not grant these roles, so nothing was changed. Please try again.'};
   }
 }
 
-export async function setStatusAction(input: {email: string; companyKey: string; status: 'active' | 'suspended'}): Promise<AdminResult> {
+export async function setStatusAction(input: {email: string; companyKey: string; status: 'active' | 'suspended'; confirm?: string}): Promise<AdminResult> {
   const gate = await requireCoopAdmin();
   if ('error' in gate) return {ok: false, error: gate.error};
+  // Production guard: suspending access there must be confirmed by typing the word.
+  if (input.status === 'suspended' && !prodConfirmOk(guardEnv(), input.confirm)) {
+    return {ok: false, error: `Type ${PROD_CONFIRM_WORD} to confirm this change in Production.`};
+  }
   const email = (input.email ?? '').trim().toLowerCase();
   const companyId = parseCompany(input.companyKey);
   if (companyId === undefined) return {ok: false, error: 'Unknown company.'};
@@ -115,13 +121,17 @@ export async function setStatusAction(input: {email: string; companyKey: string;
     return {ok: true};
   } catch (e) {
     console.error('setStatusAction', e);
-    return {ok: false, error: 'Could not update access — please try again.'};
+    return {ok: false, error: 'Could not update access. Please try again.'};
   }
 }
 
-export async function revokeAction(input: {email: string; companyKey: string}): Promise<AdminResult> {
+export async function revokeAction(input: {email: string; companyKey: string; confirm?: string}): Promise<AdminResult> {
   const gate = await requireCoopAdmin();
   if ('error' in gate) return {ok: false, error: gate.error};
+  // Production guard: removing access there must be confirmed by typing the word.
+  if (!prodConfirmOk(guardEnv(), input.confirm)) {
+    return {ok: false, error: `Type ${PROD_CONFIRM_WORD} to confirm this change in Production.`};
+  }
   const email = (input.email ?? '').trim().toLowerCase();
   const companyId = parseCompany(input.companyKey);
   if (companyId === undefined) return {ok: false, error: 'Unknown company.'};
@@ -136,6 +146,6 @@ export async function revokeAction(input: {email: string; companyKey: string}): 
     return {ok: true};
   } catch (e) {
     console.error('revokeAction', e);
-    return {ok: false, error: 'Could not revoke access — please try again.'};
+    return {ok: false, error: 'Could not revoke access. Please try again.'};
   }
 }

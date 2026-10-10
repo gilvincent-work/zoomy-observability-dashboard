@@ -13,6 +13,7 @@ import {
   upsertSales,
 } from '@/src/goldline-data';
 import {detectPage, extractInventoryPage, extractionConfigured, type ExtractedPage} from '@/src/goldline-extract-run';
+import {getWriterProfile} from '@/src/goldline-writer-data';
 import {humanizeExtractError, INVENTORY_PAGES, MANIFESTS} from '@/src/goldline-extract';
 
 // Goldline upload endpoint. Accepts ONE file (multipart/form-data, field `file`)
@@ -116,7 +117,7 @@ async function safeHandle(req: Request, emit: Emit): Promise<Outcome> {
         errorDetail: msg(e),
       }).catch(() => {});
     }
-    return {body: {uploadId: track.uploadId, status: 'failed', error: 'Upload failed — please try again.'}, status: 500};
+    return {body: {uploadId: track.uploadId, status: 'failed', error: 'Upload failed. Please try again.'}, status: 500};
   }
 }
 
@@ -153,11 +154,13 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
   const batchRaw = form.get('batch_id');
   const batchId = typeof batchRaw === 'string' && /^[0-9a-f-]{36}$/i.test(batchRaw) ? batchRaw : null;
   if (batchRaw && !batchId) return json({error: 'Invalid upload batch.'}, 400);
+  let batchStore: string | null = null; // lets the reader prefer this store's reference page
   // Batches hold one store's inventory form; a CSV never joins one.
   if (batchId && cls.kind === 'inventory_pdf') {
     const batch = await getBatch(companyId, batchId);
     if (!batch) return json({error: 'Upload batch not found.'}, 404);
     if (batch.status !== 'open') return json({error: 'This upload batch is already committed.'}, 409);
+    batchStore = batch.store_code ?? null;
     if (batch.store_code && outOfScopeStores(ctx.storeScope, [batch.store_code]).length) {
       return json({error: `Store ${batch.store_code} is outside your access.`}, 403);
     }
@@ -174,7 +177,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
       }
       pages = doc.getPageCount();
     } catch {
-      return json({error: 'This PDF couldn’t be opened — it may be damaged. Please re-scan it.', status: 'rejected'}, 415);
+      return json({error: 'This PDF couldn’t be opened. It may be damaged, so please re-scan it.', status: 'rejected'}, 415);
     }
     if (pages > 1) {
       return json(
@@ -197,7 +200,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     });
   } catch (e) {
     console.error('goldline upload: store failed', e);
-    return json({error: 'Could not store the file — please try again.'}, 500);
+    return json({error: 'Could not store the file. Please try again.'}, 500);
   }
   track.uploadId = uploadId;
   // The batch may have been committed while this page was uploading; a page added
@@ -242,7 +245,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     } catch (e) {
       console.error('goldline upload: gl_sales commit failed', e);
       await setUploadStatus(uploadId, 'failed', {rejectReason: 'Could not save sales rows.'});
-      return json({uploadId, status: 'failed', error: 'Could not save sales rows — please try again.'}, 500);
+      return json({uploadId, status: 'failed', error: 'Could not save sales rows. Please try again.'}, 500);
     }
   }
 
@@ -253,7 +256,7 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     return json({
       uploadId,
       status: 'needs_review',
-      note: 'Stored. Extraction is not configured (ANTHROPIC_API_KEY missing) — review manually.',
+      note: 'Stored. Extraction is not configured (ANTHROPIC_API_KEY missing), so review it manually.',
     });
   }
 
@@ -265,18 +268,21 @@ async function handle(req: Request, emit: Emit, track: {uploadId?: string} = {})
     emit({type: 'stage', stage: 'detecting'});
     const page = await detectPage(pdfBase64);
     if (page === 0) {
-      const reason = 'This doesn’t look like a Nichido inventory form page. Please upload a clear scan of an inventory page (1–5).';
+      const reason = 'This doesn’t look like a Nichido inventory form page. Please upload a clear scan of an inventory page (pages 1 to 5).';
       await setUploadStatus(uploadId, 'failed', {rejectReason: reason});
       return json({uploadId, status: 'failed', error: reason}, 422);
     }
     if (!INVENTORY_PAGES.includes(page)) {
-      const reason = 'This is page 6, the daily Sales Report — not an inventory page. Only inventory pages (1–5) are read here.';
+      const reason = 'This is page 6, the daily Sales Report, not an inventory page. Only inventory pages (1 to 5) are read here.';
       await setUploadStatus(uploadId, 'rejected', {rejectReason: reason, pageCount: page});
       return json({uploadId, status: 'rejected', error: reason}, 422);
     }
 
     emit({type: 'stage', stage: 'reading', page, items: MANIFESTS[page]?.length ?? 0});
-    const extracted = await extractInventoryPage(pdfBase64, page);
+    // The writer profile: an earlier reviewed copy of this page + notes from past
+    // corrections, learned from this database's committed scans (empty on any error).
+    const profile = await getWriterProfile(companyId, page, batchStore, ctx.storeScope);
+    const extracted = await extractInventoryPage(pdfBase64, page, profile);
     // Same store-scope fence for the scanned form's store.
     const outPdf = outOfScopeStores(ctx.storeScope, [extracted.store_code]);
     if (outPdf.length) {

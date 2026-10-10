@@ -205,6 +205,14 @@ export function buildSystemPrompt(): string {
     '- Ignore pre-printed marks ("(Bestseller)", stars, the printed price) and the dark',
     '  family-header bars; read only handwriting in the count columns.',
     '- If a cell is struck out and rewritten, take the rewrite and flag it.',
+    '- ending_on_hand is the row total: stockroom + drawer + selling_area + delivery',
+    '  (empty cells count as 0). When ending_on_hand is written and the row does not add',
+    '  up, re-read the doubtful digits. If one plausible reading of a single digit makes it',
+    '  add up, use it, lower the confidence, and put the other reading in "alt". If none',
+    '  does, keep what is written, set confidence below 0.6, and say so in "alt".',
+    '- You may be shown an earlier, already-checked page by the same writer, with its',
+    '  confirmed values, and notes on digits misread before. Use them only to learn how',
+    '  this person writes; never copy values from the reference page.',
     '- Give each value a confidence 0–1. If a digit is unreadable/overwritten, take your',
     '  best reading, set confidence below 0.6, and put the other candidate in "alt".',
     '- Confirm the footer page number matches the manifest page; if it does not, return',
@@ -263,16 +271,16 @@ export const PAGE_DETECT_SCHEMA = {
 export function humanizeExtractError(raw: unknown): string {
   const s = (raw instanceof Error ? raw.message : String(raw ?? '')).toLowerCase();
   if (s.includes('manifest for page')) {
-    return 'We couldn’t match this to a known Nichido inventory page (1–5). Please upload a clear scan of an inventory page, or review this file manually.';
+    return 'We couldn’t match this to a known Nichido inventory page (pages 1 to 5). Please upload a clear scan of an inventory page, or review this file manually.';
   }
   if (s.includes('page_mismatch')) {
-    return "The form's page number didn't match what we expected. Please upload a clear scan of an inventory page (1–5).";
+    return "The form's page number didn't match what we expected. Please upload a clear scan of an inventory page (pages 1 to 5).";
   }
   if (s.includes('anthropic_api_key') || s.includes('not configured')) {
-    return 'Automatic reading isn’t set up for this environment yet — the file was saved for manual review.';
+    return 'Automatic reading isn’t set up for this environment yet. The file was saved for manual review.';
   }
   if (s.includes('credit balance') || s.includes('billing')) {
-    return 'Automatic reading is paused (the AI account is out of credits). The file was saved — ask an admin to top up, then try again.';
+    return 'Automatic reading is paused (the AI account is out of credits). The file was saved. Ask an admin to top up, then try again.';
   }
   if (s.includes('overloaded') || s.includes('529')) {
     return 'The reader is busy right now. Please try uploading again in a moment.';
@@ -290,10 +298,10 @@ export function humanizeExtractError(raw: unknown): string {
     s.includes('declined') ||
     s.includes('unreadable')
   ) {
-    return 'We couldn’t read this scan reliably. Try a clearer, flat, full-page scan — or review it manually.';
+    return 'We couldn’t read this scan reliably. Try a clearer, flat, full-page scan, or review it manually.';
   }
   // 400s, invalid_request_error, and anything else: a safe generic (raw is logged).
-  return 'We couldn’t process this scan. It’s been saved — please try again, or review it manually.';
+  return 'We couldn’t process this scan. It’s been saved. Please try again, or review it manually.';
 }
 
 /** The JSON schema the model must return (header + one object per item). */

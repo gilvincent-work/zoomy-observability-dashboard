@@ -10,6 +10,28 @@ a `Claude-Session` trailer. Reads the shared Coop Supabase (Staging on the
 
 Dates are local working dates (GMT+8). Newest first.
 
+## 2026-10-10 — One review view for a batch; unsaved edits are kept
+- **A page in an open batch always opens in the batch review, on that page's tab.**
+  - *Why:* clicking a file in a bulk upload opened the single-scan review, while "Review & commit N pages" opened the batch review: two different screens for the same pages, each with its own store and period fields, and edits made in one were not in the other.
+  - The file rows in the uploader now link to `/uploads/batch/<batch>?page=<upload>`. `/uploads/<upload>` redirects there too when the scan is waiting for review inside an open batch, so the Files list and old links land in the same place. Committed, failed and single-file uploads keep the single-scan page.
+  - The open tab is kept in the address (`?page=`), so Back, refresh and shared links return to the same page.
+- **Edits made while reviewing are kept if you leave and come back.** Changed counts and flags marked as checked are saved in the browser per batch (`src/review-draft.ts`) and restored when the review opens again; they are cleared on commit.
+  - *Decision:* drafts live in the browser, not in `gl_extractions`. That table must keep the reader's original values, because the writer profile learns from the difference between them and what the reviewer confirmed. Trade-off: a draft does not follow you to another device or browser. A draft is tied to the exact reading it was made on, so a page that is read again starts fresh.
+- **Removed the "Scan reader" accuracy line from the Uploads page** (not wanted there). Each reading still records whether the writer profile was used, so accuracy can still be measured.
+
+## 2026-10-09 — Scan reader learns the writer's handwriting from reviewed pages
+- **Each scan is now read alongside an earlier copy of the same page that a person already reviewed, plus notes on the digits misread before.**
+  - *Why:* in Phase 1 one person fills in the forms for both pilot stores. Claude can't be fine-tuned on one person's handwriting, but it learns a style well from examples sent with each request. In the Oct 9 test batch the reader got 1 of 210 handwritten numbers wrong: this writer's 8 was read as 5 (MPMLSCB03 drawer 82, read as 52).
+  - **Reference page:** the newest committed copy of the same form page with at least 8 handwritten numbers. It prefers the batch's store when known, else any store (one writer). It is sent with its confirmed values and an instruction never to copy them. Near-blank pages (page 4) get no reference.
+  - **Writer notes:** built from every cell a reviewer changed in the last 40 committed scans (the reader's value in `gl_extractions.rows` compared with the confirmed value in `gl_inventory` by `source_upload_id`). They name digit confusions ("this writer's 8 was misread as 5"), missed values and stray marks, with recent examples.
+  - **Row totals settle doubtful digits:** the system prompt now says ending on hand is stockroom + drawer + selling + delivery (true for 13 of 14 Staging rows that have an ending). When a row doesn't add up, the reader re-reads the doubtful digit and records the other reading in the hint, or flags the row.
+  - **Learned from the connected database, nothing hard-coded:** Staging learns from Staging reviews, prod from prod reviews. Prod starts with no profile and reads exactly as before until its first pages are reviewed. Any error building the profile falls back to the old read. `GL_WRITER_PROFILE=off` turns it off.
+  - **Cost and speed:** a read with a reference sends one more page image (about 440 KB PDF for page 2). The system prompt is prompt-cached; the reference is not, because each form page gets a different reference so a cache write would never be reused. Building the profile gives up after 8 s (the upload then reads the old way), and the reviewed-scan reads are kept in memory for 60 s so a 5-page batch doesn't repeat them.
+  - **Store scope:** a store-scoped user's reads only use references and corrections from their own stores, and their accuracy line counts only those stores.
+  - Accuracy counts every value that was written or that the reader saw, so a stray mark read as a number counts against it. Digit notes only use single-digit misreads; swaps like 15 vs 51 count as other misreads instead of becoming noisy digit notes.
+  - **Measured:** each staged extraction records whether a profile was used (`rows.reader`). The Uploads page shows "Scan reader · X of Y handwritten numbers read right in the last N reviewed pages", and once there are pages from both groups, the rate with and without the reference.
+  - The review gate is unchanged: nothing is saved to inventory until a person confirms it. No schema change.
+
 ## 2026-10-08 — Ask Coop reads the whole database except secrets (Train 3)
 - **Access.** `run_query` reads every `public` table and view by its own name. The view-per-table model hid every new table and column until someone re-ran SQL, and it narrowed the owner's "everything except passwords and credentials" without saying so.
 - **The lock stays in the database.** The read-only login gets `SELECT` plus `BYPASSRLS`. One whole-word secret-name rule (password, token, secret, key, pin, hash, credential, with a reviewed `pos_settings.key` exception) and the Zoomy-only tenant fence (`gl_*`, `company_*`, `companies`) close tables and columns. The allowlist is 29 views.
@@ -58,6 +80,58 @@ Dates are local working dates (GMT+8). Newest first.
 
 ## 2026-10-07 — Ask Coop fast path (Train 1)
 - **Ask Coop fast path (Train 1).** The per-turn context no longer calls contacts, free-form questions or stock unavailable when Explore is on (it did on every turn in PROD). The chat now sends the open page, and dashboard links pasted in a question are described from a page map, so "this" means the page's data. Explore can read stock (5 views over 4 zoomy-pos sources; `coop_explore_stock_event` is the default) with sellable Event stock as the default basis, because two kinds of "stock" exist and the dashboard forecast uses Event. `pos_locations` was left out (it may not exist on staging or PROD), and `coop_chat_explore.sql` now stops in step 0 with a clear message if a stock source or `pos_inventory_by_location.location` is missing. Needs `supabase/coop_chat_explore.sql` re-applied on staging and PROD.
+
+## 2026-10-07 — Event tiles get "View all products" (event-scoped rankings)
+- **Each event tile's Top sellers block now ends with "View all products →".** It opens Product rankings scoped to that event (`/offline-sales/rankings?event=<id>`), with the Products and Bundles tabs, sort, search and paging the overview's View all already has.
+  - *Why:* the existing View all ranks every offline sale together; the team wanted the full list (including the "kulelat" bottom sellers) for one event.
+  - **Carries the tile's state:** the active Day pill (`&day=`) and the Revenue/Units + Top/Bottom toggles (`&sort=`, `&dir=`), so the full list's first rows match the tile's top 5. Multi-day events show the same Day pills on the rankings page.
+  - Same order set as the tile: read-time resolved event attribution (`resolveOrderEvents`), then the optional day filter. An unknown event id is a 404; a `day` outside the event's dates falls back to all days.
+  - Header names the event and the back link returns to Events. No schema change.
+- Rankings range label reads "1 to 10 of 42" instead of using an en dash (UI copy rule).
+
+## 2026-10-07 — Upload review shows only this batch's pages; dark-mode date icons
+- **"Pages uploaded with this one" no longer pulls in other uploads.**
+  - *Why:* the strip predates batch uploads. For a scan not yet committed, it guessed the form's pages as "anything the same person uploaded within 12 hours". A batch of pages 2 and 3 therefore showed pages 1, 4 and 5 from earlier test uploads, which was confusing.
+  - **Now a scan in an upload batch shows exactly that batch's pages,** labelled "Pages in this batch". Pages with no readable scan in the batch show as empty ("No readable scan of this page in this batch"), and a **Review the batch** link opens the batch review.
+  - Committed scans still show the pages committed into the same store and period. The 12-hour guess remains only for older uploads that have no batch.
+- **Calendar icons in dark mode:** native controls now follow the app theme (`color-scheme` on `:root` / `.dark`). The date pickers' calendar icon is visible on dark fields, and scrollbars and native select popups match too.
+
+## 2026-10-07 — Goldline works on phones (desktop unchanged)
+- **Checked every Goldline page at phone width (390 px) against Staging data.** Nothing scrolled sideways, but several screens were hard to use. Every fix applies **below the tablet breakpoint only**; desktop renders exactly as before (checked).
+  - **Row editor (scan review and batch review):** each row is now a card with all five counts as labelled, larger fields (Stockroom · Drawer · Selling · Delivery · Ending), the reader's hint and **Looks right**. Before, only two columns fit and the rest needed side-scrolling. "Go to next flag" finds whichever layout is showing.
+  - **Scan preview:** phones can't show a PDF inside a page (it rendered as a blank box), so it becomes a **View the scan** button that opens the phone's PDF viewer.
+  - **Store health:** a card per store (score, form status, in stock, cover, dead stock, low · out) instead of a squeezed table.
+  - **Uploads:** a card per file (name, type · time, status, delete).
+  - **Inventory:** the status filter is one swipeable row instead of two-line labels.
+  - **Summary tiles** are tighter across Overview, Stores, Inventory, product page and Store health. The Overview's three tiles sit two per row.
+- **Review fixes:** the Inventory filter wrapper disappears from layout on desktop (`md:contents`), so the desktop filter row is pixel-identical. The phone lists carry `role="list"` for screen readers. Upload cards show a rejected file's reason as text, since touch screens never show tooltips.
+- **No em/en dashes in UI copy.** About 60 user-facing strings were rewritten: error messages, page copy, date ranges ("Oct 6 to Oct 7"), "Showing 1 to 25 of 263", and split-file names ("cubao (page 2 of 5).pdf"). The rule is now in the workspace `CLAUDE.md` ("UI Copy"). The scan reader's own instructions are unchanged, since they aren't user-facing.
+- **Local dev:** `DEV_AUTH_AS="goldline:company_admin,coop_admin"` gives the dev-bypass session memberships so tenant pages render locally. It has the same double gate as `DEV_AUTH_BYPASS`, so it's inert on any deployment. The layout's "Zoomy viewer" check now follows the session's view like a real one (unchanged without `DEV_AUTH_AS`).
+
+## 2026-10-07 — Environment switcher (Staging ↔ Production) for Coop Admins
+- **Who sees it:** anyone who **holds a Coop Admin role**, in whatever view they're using. A Coop Admin who's in the Goldline or Zoomy view still sees it. It's checked on the server from the person's memberships; people without that role never get it.
+- **Header pill** ("Staging" / "Production", colour-coded blue / purple), styled after the reference console:
+  - Its menu lists the two environments with a colour rail, marks the current one **Active**, and links the other to **the same page** on that site, keeping filters and anchor.
+  - A **Manage environments** link sits at the bottom.
+  - A thin colour strip along the top of the header (thicker in Production) shows Coop Admins where they are.
+- **Only two environments:** the develop branch also deploys to Staging.
+- **Decided: link between deployments, not switch the data source.** Each environment keeps its own database keys and sign-in, so the Staging site never holds a production key and Staging stays prod-free. That also works with prod and Staging being on different Supabase accounts.
+- **No settings needed on either Vercel project.** The environment list lives in code (`src/coop-env.ts`).
+- **Each site knows which environment it is from the database it's connected to,** not from the address it was reached on (a site can be served from deployment URLs, branch aliases or custom domains).
+  - The **Production confirm fails closed:** only the Staging database counts as Staging, so anything else, including an unrecognised database, still asks for PRODUCTION.
+  - *Why:* the regression review caught that an address-based check would treat the prod deployment as Staging when opened through a non-canonical URL, which would skip the confirm and mislabel the audit entry.
+- **Manage environments (`/admin/environments`),** read-only, for Coop Admin role holders in any view. For each site it shows the address, whether it's up and connected to its database, the deployed branch and commit, and the database (ID partly hidden). It reads each site's new public **`/api/health`**, which returns only those facts; no data, no secrets.
+- **Production safeguards:**
+  - In Users & Roles on Production, **Suspend** and **Remove access** require typing **PRODUCTION**. This is checked in the server actions too, not only in the UI. Reactivating is unaffected.
+  - Each access change records its **environment** in `company_user_audit.env`, via the additive `supabase/company_user_audit_env.sql`, applied to Staging. Until that's applied to prod, the audit write falls back to the old row, so no entry is ever lost.
+- **To use it on Production:**
+  - The prod site needs this code deployed; until then Manage environments shows prod as "running an older version".
+  - You need a Coop Admin role in prod's own `company_users` (reviewed SQL), because each site checks its own database.
+- **Other review fixes:**
+  - `/api/health` reuses its database check for 20 s, so repeated hits can't load the database.
+  - Manage environments distinguishes "behind Vercel protection" and "unexpected response" from "not reachable".
+  - The switcher keeps the current #anchor (read at click time), and the Active row is readable by screen readers.
+- **Tests:** database-based environment detection, the fail-closed guard, links and the confirm rule (`src/coop-env.test.ts`), plus the server-side Production guard (`test/admin-actions.test.ts`). Dev-only preview at `/dev/env-switcher`.
 
 ## 2026-10-07 — Goldline pages load faster (and stay fast at 300 stores)
 - **Measured first** on Staging, from Manila, one run per request:
@@ -1906,6 +1980,7 @@ scope for Business Health (`#coop-scroll`) unchanged — `<main>` still owns scr
 all breakpoints. **Deferred to phase 2:** per-view content density (table→card
 transforms, chart label density, typography) and the PWA layer (manifest, icons,
 service worker).
+
 ## 2026-09-24 — All contacts: the three lists merged — `feat(customers)`
 
 `/customers/all` is the hub's new landing view: one row per PERSON across the

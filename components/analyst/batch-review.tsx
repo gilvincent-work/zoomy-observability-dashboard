@@ -1,6 +1,6 @@
 'use client';
 
-import {useMemo, useState, useTransition} from 'react';
+import {useEffect, useMemo, useRef, useState, useTransition} from 'react';
 import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, FileText, Loader2, Maximize2, X} from 'lucide-react';
@@ -11,8 +11,9 @@ import {commitBatchAction, updateBatchInfoAction} from '@/app/uploads/actions';
 import {batchCoverage, batchReadiness, FORM_PAGES} from '@/src/upload-batch';
 import {LOW_BELOW, rowConfidence, toneText} from '@/src/review-confidence';
 import {stepFlag, unresolvedFlags, type CatalogLite} from '@/src/review-workbench';
+import {draftKey, packPage, parseDraft, unpackPage, type Draft} from '@/src/review-draft';
 import {DocumentConfidence} from '@/components/analyst/document-confidence';
-import {ReviewRows, type ColKey, type ReviewView} from '@/components/analyst/review-rows';
+import {reviewRowEl, ReviewRows, type ColKey, type ReviewView} from '@/components/analyst/review-rows';
 import {useUploadQueue} from '@/components/analyst/upload-queue';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button, buttonVariants} from '@/components/ui/button';
@@ -83,6 +84,7 @@ export function BatchReview({
   catalog,
   stores,
   otherFiles,
+  initialPageId = null,
 }: {
   company: string;
   canEdit: boolean;
@@ -92,6 +94,8 @@ export function BatchReview({
   catalog: Record<string, CatalogLite>;
   stores: StoreOption[];
   otherFiles: UploadRow[];
+  /** The page (upload id) to open on: set when the reviewer came in from one file. */
+  initialPageId?: string | null;
 }) {
   const router = useRouter();
   const queue = useUploadQueue();
@@ -101,7 +105,7 @@ export function BatchReview({
   const [storeCode, setStoreCode] = useState(defaults.storeCode);
   const [periodStart, setPeriodStart] = useState(defaults.periodStart);
   const [periodEnd, setPeriodEnd] = useState(defaults.periodEnd);
-  const [tabId, setTabId] = useState<string | null>(pages[0]?.upload.id ?? null);
+  const [tabId, setTabId] = useState<string | null>((pages.find((p) => p.upload.id === initialPageId) ?? pages[0])?.upload.id ?? null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
@@ -143,7 +147,66 @@ export function BatchReview({
   const readiness = batchReadiness({storeCode, periodStart, periodEnd, pages: pageInfo});
 
   const tab = Math.max(0, pages.findIndex((p) => p.upload.id === tabId));
-  const setTab = (k: number) => setTabId(pages[k]?.upload.id ?? null);
+  const setTab = (k: number) => {
+    const id = pages[k]?.upload.id ?? null;
+    setTabId(id);
+    // Keep the open page in the address, so Back/refresh/a shared link return to it.
+    if (id) window.history.replaceState(null, '', `?page=${id}`);
+  };
+
+  // Unsaved edits are kept in this browser per batch (see src/review-draft.ts), so
+  // leaving the review and coming back keeps the reviewer's values and checked flags.
+  // `hydrated` flips in the same update as the restore, so the save effect first runs
+  // with the restored state and never overwrites a stored draft with the fresh reading.
+  const draftsLoaded = useRef(false);
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    if (draftsLoaded.current) return;
+    draftsLoaded.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- marks the one-time localStorage restore below as done
+    setHydrated(true);
+    if (!editable) return;
+    let draft: Draft | null = null;
+    try {
+      draft = parseDraft(window.localStorage.getItem(draftKey(batch.id)));
+    } catch {
+      /* storage blocked: review still works, edits just aren't kept */
+    }
+    if (!draft) return;
+    const saved = draft.pages;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from localStorage after hydration (reading it during render would mismatch the server HTML)
+    setState((all) => {
+      const next = {...all};
+      for (const p of pages) {
+        if (p.upload.status !== 'needs_review') continue;
+        const back = unpackPage(p.extraction?.data?.rows ?? [], saved[p.upload.id]);
+        if (back && next[p.upload.id]) next[p.upload.id] = {...next[p.upload.id], rows: back.rows, resolved: back.resolved};
+      }
+      return next;
+    });
+  }, [batch.id, editable, pages]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (committed) {
+        window.localStorage.removeItem(draftKey(batch.id)); // nothing left to keep
+        return;
+      }
+      if (!editable) return; // view-only: never touch an editor's draft in this browser
+      const out: Draft = {v: 1, savedAt: Date.now(), pages: {}};
+      for (const p of pages) {
+        const s = state[p.upload.id];
+        if (!s || p.upload.status !== 'needs_review') continue;
+        const d = packPage(p.extraction?.data?.rows ?? [], s.rows, s.resolved);
+        if (d) out.pages[p.upload.id] = d;
+      }
+      if (Object.keys(out.pages).length) window.localStorage.setItem(draftKey(batch.id), JSON.stringify(out));
+      else window.localStorage.removeItem(draftKey(batch.id));
+    } catch {
+      /* storage blocked or full */
+    }
+  }, [hydrated, state, pages, editable, committed, batch.id]);
   const cur = pages[tab];
   const curState = cur ? state[cur.upload.id] : null;
   const curFlags = cur ? flaggedById[cur.upload.id] ?? [] : [];
@@ -160,7 +223,7 @@ export function BatchReview({
     if (index == null) return;
     setCur({active: index, query: '', view: 'needs'});
     requestAnimationFrame(() => {
-      const row = document.getElementById(`review-row-${index}`);
+      const row = reviewRowEl(index);
       row?.scrollIntoView({behavior: 'smooth', block: 'center'});
       row?.querySelector<HTMLInputElement>('input')?.focus({preventScroll: true});
     });
@@ -194,6 +257,11 @@ export function BatchReview({
         return;
       }
       setDone(res.committed);
+      try {
+        window.localStorage.removeItem(draftKey(batch.id));
+      } catch {
+        /* storage blocked */
+      }
       if (queue?.batch.id === batch.id) queue.reset(); // the corner indicator's job is done
       router.refresh();
     });
@@ -275,7 +343,7 @@ export function BatchReview({
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               {coverage.duplicates.length > 0 && (
                 <span className="inline-flex items-center gap-1" style={{color: toneText('var(--status-warn)')}}>
-                  <AlertTriangle className="size-3.5" aria-hidden /> Page {coverage.duplicates.join(', ')} is here twice — remove the extra copy from Uploads.
+                  <AlertTriangle className="size-3.5" aria-hidden /> Page {coverage.duplicates.join(', ')} is here twice. Remove the extra copy from Uploads.
                 </span>
               )}
               {coverage.missing.length > 0 && (
@@ -347,11 +415,25 @@ export function BatchReview({
                           <ExternalLink className="size-3.5" /> Open
                         </a>
                       </div>
-                      <button
+{/* Phones can't show a PDF inside the page — open it in the phone's viewer instead. */}
+                <a
+                  href={cur.scanUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm transition-colors active:bg-muted md:hidden"
+                >
+                  <FileText aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="font-medium">View the scan</span>
+                    <span className="text-xs text-muted-foreground">Opens the PDF to compare with the rows below</span>
+                  </span>
+                  <ExternalLink aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                </a>
+                <button
                         type="button"
                         onClick={() => setLightbox(cur.scanUrl)}
                         aria-label="Enlarge scan"
-                        className="group relative block w-full overflow-hidden rounded-md border border-border bg-muted"
+                        className="group relative block w-full overflow-hidden rounded-md border border-border bg-muted max-md:hidden"
                       >
                         <iframe src={cur.scanUrl} title={`Scan of ${cur.upload.filename}`} tabIndex={-1} className="pointer-events-none h-[360px] w-full lg:h-[min(640px,calc(100dvh-12rem))]" />
                         <span className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/40 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
@@ -416,7 +498,7 @@ export function BatchReview({
 
       {otherFiles.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Also in this batch: {otherFiles.map((f) => f.filename).join(', ')} (sales — saved directly).
+          Also in this batch: {otherFiles.map((f) => f.filename).join(', ')} (sales, saved directly).
         </p>
       )}
 
@@ -425,7 +507,7 @@ export function BatchReview({
         <div className="sticky bottom-0 z-30 -mx-4 border-t border-border bg-background/90 backdrop-blur-sm max-md:bottom-16">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
             <span aria-live="polite" className={cn('text-sm', error ? 'text-destructive' : 'text-muted-foreground')}>
-              {error ?? (readiness.ready ? `Ready — ${reviewable.length} ${reviewable.length === 1 ? 'page' : 'pages'} into one Inventory count.` : readiness.reason)}
+              {error ?? (readiness.ready ? `Ready: ${reviewable.length} ${reviewable.length === 1 ? 'page' : 'pages'} into one Inventory count.` : readiness.reason)}
             </span>
             <div className="flex items-center gap-2">
               {!readiness.ready && openFlags > 0 && (
@@ -477,7 +559,7 @@ export function BatchReview({
     if (first == null) return;
     setState((all) => ({...all, [p.upload.id]: {...all[p.upload.id], active: first, query: '', view: 'needs'}}));
     requestAnimationFrame(() => {
-      const row = document.getElementById(`review-row-${first}`);
+      const row = reviewRowEl(first);
       row?.scrollIntoView({behavior: 'smooth', block: 'center'});
       row?.querySelector<HTMLInputElement>('input')?.focus({preventScroll: true});
     });

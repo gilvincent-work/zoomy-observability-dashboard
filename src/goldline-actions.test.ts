@@ -37,7 +37,7 @@ describe('buildActions', () => {
     const a = buildActions({...base, countedCurrent: false});
     expect(a).toHaveLength(1);
     expect(a[0]).toMatchObject({kind: 'gap', severity: 'critical'});
-    expect(a[0].title).toMatch(/Oct 1–Oct 15/);
+    expect(a[0].title).toMatch(/Oct 1 to Oct 15/);
   });
 
   it('is empty when nothing needs doing', () => {

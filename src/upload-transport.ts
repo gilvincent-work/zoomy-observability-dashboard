@@ -72,7 +72,7 @@ export function sendUpload(input: {
         reject(new Error(`Upload failed (${xhr.status}). Please try again.`));
       }
     };
-    xhr.onerror = () => reject(new Error('Network error — check your connection and try again.'));
+    xhr.onerror = () => reject(new Error('Network error. Check your connection and try again.'));
     xhr.onabort = () => reject(new DOMException('Upload cancelled', 'AbortError'));
 
     const fd = new FormData();
@@ -98,7 +98,7 @@ export async function splitPdfPages(file: File, nameFor: (i: number, total: numb
   try {
     src = await PDFDocument.load(await file.arrayBuffer(), {ignoreEncryption: true, updateMetadata: false});
   } catch {
-    throw new Error(`“${file.name}” couldn’t be opened — it may be damaged. Please re-scan it.`);
+    throw new Error(`“${file.name}” couldn’t be opened. It may be damaged, so please re-scan it.`);
   }
   if (src.isEncrypted) throw new Error(`“${file.name}” is password-protected. Save an unlocked copy and add that.`);
   const total = src.getPageCount();

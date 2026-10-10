@@ -54,6 +54,7 @@ export type UploadRow = {
   uploaded_by: string | null;
   created_at: string;
   storage_path: string | null;
+  batch_id?: string | null; // set when uploaded as part of a store's form (multi-file upload)
 };
 
 /** Store the raw file, then open a gl_uploads row. Returns the new upload id. */
@@ -263,7 +264,7 @@ export async function getUpload(companyId: string, id: string): Promise<UploadRo
   const supa = db();
   const res = await supa
     .from('gl_uploads')
-    .select('id,company_id,kind,filename,status,page_count,reject_reason,uploaded_by,created_at,storage_path')
+    .select('id,company_id,kind,filename,status,page_count,reject_reason,uploaded_by,created_at,storage_path,batch_id')
     .eq('company_id', companyId)
     .eq('id', id)
     .maybeSingle();
@@ -414,9 +415,11 @@ export async function catalogForCodes(
 
 export type FormPageCell = {page: number; uploadId: string | null; status: UploadStatus | null; flagged: number; current: boolean};
 export type FormPageStrip = {
-  /** count = the scans committed into the same store + period; batch = scans the same
-   *  person uploaded around the same time (pages 2–5 carry no store until reviewed). */
-  scope: 'count' | 'batch';
+  /** count = the scans committed into the same store + period; batch = the scans
+   *  uploaded together as one store's form (its upload batch); recent = legacy uploads
+   *  with no batch: the same person's scans around the same time. */
+  scope: 'count' | 'batch' | 'recent';
+  batchId: string | null;
   cells: FormPageCell[];
 };
 
@@ -426,7 +429,9 @@ const BATCH_WINDOW_MS = 12 * 60 * 60 * 1000;
  * The review page's "form pages 1–5" strip, limited to the SAME form so a link never
  * opens another store's page:
  *  • committed scan → the scans committed into the same store + period count;
- *  • pending scan   → the uploader's other scans within ±12 h (one sitting's batch).
+ *  • pending scan in an upload batch → exactly the scans of that batch (pages that
+ *    weren't uploaded show as empty — never someone's other uploads from that day);
+ *  • pending scan with no batch (older uploads) → the uploader's scans within ±12 h.
  * For each page: this scan if it's that page, else the newest sibling of that page.
  * Company-scoped; every read is bounded.
  */
@@ -436,7 +441,7 @@ export async function formPageStrip(companyId: string, currentUploadId: string, 
   const upload = await getUpload(companyId, currentUploadId);
   if (!upload) return null;
 
-  let scope: FormPageStrip['scope'] = 'batch';
+  let scope: FormPageStrip['scope'] = 'recent';
   let ids: string[] = [];
   if (upload.status === 'committed') {
     // pagination-ok: single row — where this scan landed.
@@ -464,7 +469,21 @@ export async function formPageStrip(companyId: string, currentUploadId: string, 
       ids = [...new Set(src.map((r) => r.source_upload_id).filter((x): x is string => Boolean(x)))];
     }
   }
-  if (scope === 'batch') {
+  if (scope !== 'count' && upload.batch_id) {
+    scope = 'batch';
+    // pagination-ok: one upload batch (≤ 20 files).
+    const inBatch = await supa
+      .from('gl_uploads')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('batch_id', upload.batch_id)
+      .eq('kind', 'inventory_pdf')
+      .in('status', ['needs_review', 'committed'])
+      .limit(50);
+    if (inBatch.error) throw new Error(`gl_uploads read failed: ${inBatch.error.message}`);
+    ids = ((inBatch.data ?? []) as Array<{id: string}>).map((u) => u.id);
+  }
+  if (scope === 'recent') {
     const t = Date.parse(upload.created_at);
     let q = supa
       .from('gl_uploads')
@@ -512,7 +531,7 @@ export async function formPageStrip(companyId: string, currentUploadId: string, 
       current: Boolean(current && current.page === page),
     };
   });
-  return {scope, cells};
+  return {scope, batchId: upload.batch_id ?? null, cells};
 }
 
 

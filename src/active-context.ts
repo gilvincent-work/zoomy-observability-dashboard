@@ -4,6 +4,9 @@ import {cookies} from 'next/headers';
 import {redirect} from 'next/navigation';
 import {auth} from '@/auth';
 import {homeFor, shouldRedirectFromZoomy} from '@/src/company-nav';
+import {currentEnv} from '@/src/coop-env-server';
+import {devSessionWithMemberships} from '@/src/dev-auth';
+import type {CoopEnvKey} from '@/src/coop-env';
 import {
   COOP_VIEW_KEY,
   fetchCompanies,
@@ -46,7 +49,8 @@ async function cookieView(session: ViewSession | null): Promise<string | null> {
  * doesn't hold and falls back to one they do, so it can never grant access.
  */
 // One session read per request (the layout, the page and the nav all ask for it).
-const sessionOnce = cache(() => auth());
+// (Local dev only: DEV_AUTH_AS can stand in a session with memberships — see dev-auth.)
+const sessionOnce = cache(async () => devSessionWithMemberships() ?? (await auth()));
 
 export async function getActiveContext(requested?: string | null): Promise<ActiveContext | null> {
   const session = await sessionOnce();
@@ -90,6 +94,10 @@ export type NavContext = {
   role: CompanyRole;
   isCoopAdmin: boolean;
   views: NavView[];
+  /** Holds an active Coop Admin role — in ANY view (drives the environment switcher). */
+  holdsCoopAdmin: boolean;
+  /** The environment this request is on (Staging / Production). */
+  env: CoopEnvKey;
 };
 
 export const getNavContext = cache(async (): Promise<NavContext | null> => {
@@ -115,5 +123,20 @@ export const getNavContext = cache(async (): Promise<NavContext | null> => {
     role: active.role,
     isCoopAdmin: active.isCoopAdmin,
     views: navViews,
+    holdsCoopAdmin: holdsCoopAdmin(memberships),
+    env: (await currentEnv()).key,
   };
 });
+
+/** An active Coop Admin membership, whatever view is in use (suspended rows are
+ *  already dropped from the session's memberships). */
+export const holdsCoopAdmin = (memberships: Membership[]) => memberships.some((m) => !m.companyId && m.role === 'coop_admin');
+
+/** Session check for Coop-Admin-holder pages (e.g. Manage environments), any view. */
+export async function getCoopAdminHolder(): Promise<{email: string} | null> {
+  const session = await sessionOnce();
+  if (!session) return null;
+  const memberships = (session as {memberships?: Membership[]}).memberships ?? [];
+  const email = session.user?.email?.toLowerCase();
+  return email && holdsCoopAdmin(memberships) ? {email} : null;
+}

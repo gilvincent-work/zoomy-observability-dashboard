@@ -16,7 +16,7 @@ import {Button} from '@/components/ui/button';
 
 function fmtPeriod(start: string, end: string): string {
   const md = (s: string) => new Date(`${s}T00:00:00Z`).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
-  return `${md(start)}–${md(end)}, ${end.slice(0, 4)}`;
+  return `${md(start)} to ${md(end)}, ${end.slice(0, 4)}`;
 }
 
 export function DeleteUploadDialog({
@@ -142,7 +142,7 @@ export function DeleteUploadDialog({
                 </span>
                 <span>
                   The file and its reading are deleted too. To bring the numbers back, upload and commit it again. If an earlier scan
-                  covered the same items, its counts were replaced by this one and won&apos;t return on their own — re-commit that scan.
+                  covered the same items, its counts were replaced by this one and won&apos;t return on their own. Re-commit that scan.
                 </span>
               </>
             ) : (
